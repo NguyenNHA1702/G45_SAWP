@@ -79,6 +79,44 @@ npm run dev
 
 ---
 
-## 4. Documentation & Guidelines
+## 4. Standard System Messages & Error Codes (SRS MSG01 - MSG50)
+
+The system adheres strictly to the **Report 3 SRS Message Dictionary** (Section 5.3), standardizing all user feedback into 50 predefined codes (`MSG01` to `MSG50`).
+
+### Backend Developer Usage (`Core.Constants.SystemMessages`):
+```csharp
+using Core.Constants;
+using Core.DTOs;
+
+// 1. Returning standardized responses from Services / Controllers:
+return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);  // Toast (Success): "Lưu thông tin thành công."
+return ApiResponse<bool>.Ok(true, SystemMessages.MSG18);  // Toast (Success): "Đã lưu điểm danh."
+return ApiResponse<bool>.Fail(SystemMessages.MSG01);      // Error: "Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ."
+return ApiResponse<bool>.Fail(SystemMessages.MSG27);      // Error: "Đã quá thời hạn đăng ký hoặc hủy ăn trưa cho ngày này."
+
+// 2. Dynamic Dictionary lookup by string key:
+SystemMessage? msg = SystemMessages.GetByCode("MSG01");   // null-safe case-insensitive lookup
+SystemMessage direct = SystemMessages.All["MSG08"];
+```
+
+### Frontend Developer Usage (`SYSTEM_MESSAGES`):
+Located in `sawp-frontend/src/constants/messages.ts`:
+```tsx
+import { SYSTEM_MESSAGES, getSystemMessage } from '@/constants/messages';
+
+// 1. Dictionary lookup by key:
+const sysMsg = getSystemMessage("MSG08"); // or direct: SYSTEM_MESSAGES["MSG08"]
+
+// 2. Showing standard notifications or toasts:
+const code = response.data.code; // e.g. "MSG08"
+const msg = code ? getSystemMessage(code) : undefined;
+toast.success(msg?.content ?? response.data.message);
+```
+
+For the complete catalog of all 50 codes, contexts, and messages, consult [Documents/DEVELOPER_GUIDE.md](file:///d:/VS_Studio/G45_SAWP/Documents/DEVELOPER_GUIDE.md#3-standard-system-messages--error-codes-srs-msg01---msg50).
+
+---
+
+## 5. Documentation & Guidelines
 For in-depth project structure, file locations, coding conventions, and standard AI UI generation prompt, refer to:
 - 📖 [Documents/DEVELOPER_GUIDE.md](file:///d:/VS_Studio/G45_SAWP/Documents/DEVELOPER_GUIDE.md)

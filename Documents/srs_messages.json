@@ -1,0 +1,361 @@
+{
+  "headers": [
+    "#",
+    "Message code",
+    "Message Type",
+    "Context",
+    "Content"
+  ],
+  "messages": [
+    [
+      "1",
+      "MSG01",
+      "Inline / Toast (Error)",
+      "Required or invalid input",
+      "Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ."
+    ],
+    [
+      "2",
+      "MSG02",
+      "Toast (Error)",
+      "Invalid login/current password",
+      "Tên đăng nhập hoặc mật khẩu không chính xác."
+    ],
+    [
+      "3",
+      "MSG03",
+      "Toast (Error)",
+      "Inactive/deactivated account",
+      "Tài khoản hiện không hoạt động. Vui lòng liên hệ quản trị viên."
+    ],
+    [
+      "4",
+      "MSG04",
+      "Inline (Error)",
+      "New password policy or confirmation fails",
+      "Mật khẩu mới chưa đáp ứng yêu cầu hoặc xác nhận mật khẩu không khớp."
+    ],
+    [
+      "5",
+      "MSG05",
+      "Toast (Success)",
+      "Login successful",
+      "Đăng nhập thành công."
+    ],
+    [
+      "6",
+      "MSG06",
+      "Toast (Success)",
+      "Logout successful",
+      "Đã đăng xuất khỏi hệ thống."
+    ],
+    [
+      "7",
+      "MSG07",
+      "Toast (Error)",
+      "Session expired",
+      "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+    ],
+    [
+      "8",
+      "MSG08",
+      "Toast (Success)",
+      "Record saved",
+      "Lưu thông tin thành công."
+    ],
+    [
+      "9",
+      "MSG09",
+      "Toast (Error)",
+      "Operation cannot be completed in current state",
+      "Không thể thực hiện thao tác với trạng thái hiện tại."
+    ],
+    [
+      "10",
+      "MSG10",
+      "Toast (Error)",
+      "Permission/data-scope denied",
+      "Bạn không có quyền truy cập hoặc thực hiện thao tác này."
+    ],
+    [
+      "11",
+      "MSG11",
+      "Toast (Error)",
+      "Student not found",
+      "Không tìm thấy hồ sơ học sinh."
+    ],
+    [
+      "12",
+      "MSG12",
+      "Inline / Toast (Error)",
+      "Duplicate student code",
+      "Mã học sinh đã tồn tại trong hệ thống."
+    ],
+    [
+      "13",
+      "MSG13",
+      "Toast (Success)",
+      "Guardian link updated",
+      "Đã cập nhật liên kết phụ huynh/người giám hộ."
+    ],
+    [
+      "14",
+      "MSG14",
+      "Toast (Error)",
+      "No active school year",
+      "Chưa có năm học đang hoạt động."
+    ],
+    [
+      "15",
+      "MSG15",
+      "Toast (Error)",
+      "Class unavailable/capacity conflict",
+      "Lớp được chọn không còn phù hợp hoặc đã đạt giới hạn sĩ số."
+    ],
+    [
+      "16",
+      "MSG16",
+      "Toast (Success)",
+      "Class assignment saved",
+      "Đã cập nhật phân lớp cho học sinh."
+    ],
+    [
+      "17",
+      "MSG17",
+      "Inline / Toast (Error)",
+      "Schedule conflict",
+      "Thời khóa biểu bị trùng khung giờ. Vui lòng kiểm tra lại."
+    ],
+    [
+      "18",
+      "MSG18",
+      "Toast (Success)",
+      "Attendance saved",
+      "Đã lưu điểm danh."
+    ],
+    [
+      "19",
+      "MSG19",
+      "Toast (Error)",
+      "Attendance record locked",
+      "Bản ghi điểm danh đã bị khóa. Vui lòng liên hệ Giáo vụ nếu cần điều chỉnh."
+    ],
+    [
+      "20",
+      "MSG20",
+      "Toast (Error)",
+      "Teacher not authorized for class",
+      "Bạn không được phân công phụ trách lớp này."
+    ],
+    [
+      "21",
+      "MSG21",
+      "Toast (Success)",
+      "Leave request submitted",
+      "Đã gửi đơn xin nghỉ/vắng học."
+    ],
+    [
+      "22",
+      "MSG22",
+      "Notification / Toast (Success)",
+      "Leave approved",
+      "Đơn xin nghỉ/vắng học đã được chấp thuận."
+    ],
+    [
+      "23",
+      "MSG23",
+      "Notification / Toast (Info)",
+      "Leave rejected",
+      "Đơn xin nghỉ/vắng học không được chấp thuận."
+    ],
+    [
+      "24",
+      "MSG24",
+      "Inline / Toast (Error)",
+      "Invalid/overlapping leave dates",
+      "Khoảng thời gian xin nghỉ không hợp lệ hoặc đang trùng với yêu cầu khác."
+    ],
+    [
+      "25",
+      "MSG25",
+      "Toast (Success)",
+      "Lunch registration successful",
+      "Đăng ký ăn trưa thành công."
+    ],
+    [
+      "26",
+      "MSG26",
+      "Toast (Success)",
+      "Lunch cancellation successful",
+      "Đã hủy đăng ký ăn trưa."
+    ],
+    [
+      "27",
+      "MSG27",
+      "Toast (Error)",
+      "Lunch cutoff passed",
+      "Đã quá thời hạn đăng ký hoặc hủy ăn trưa cho ngày này."
+    ],
+    [
+      "28",
+      "MSG28",
+      "Toast (Error)",
+      "Lunch service unavailable",
+      "Dịch vụ ăn trưa không khả dụng cho ngày đã chọn."
+    ],
+    [
+      "29",
+      "MSG29",
+      "Toast (Info)",
+      "Duplicate lunch registration",
+      "Học sinh đã có đăng ký ăn trưa cho ngày này."
+    ],
+    [
+      "30",
+      "MSG30",
+      "Toast (Success)",
+      "Administrative request submitted",
+      "Đã gửi yêu cầu hành chính."
+    ],
+    [
+      "31",
+      "MSG31",
+      "Notification / Toast (Success)",
+      "Request approved",
+      "Yêu cầu đã được phê duyệt."
+    ],
+    [
+      "32",
+      "MSG32",
+      "Notification / Toast (Info)",
+      "Request rejected",
+      "Yêu cầu không được phê duyệt."
+    ],
+    [
+      "33",
+      "MSG33",
+      "Notification / Toast (Success)",
+      "Request completed",
+      "Yêu cầu đã được xử lý hoàn tất."
+    ],
+    [
+      "34",
+      "MSG34",
+      "Toast (Error)",
+      "Request cannot be cancelled",
+      "Yêu cầu không thể hủy ở trạng thái hiện tại."
+    ],
+    [
+      "35",
+      "MSG35",
+      "Notification / Toast (Success)",
+      "Class transfer applied",
+      "Đã cập nhật chuyển lớp cho học sinh."
+    ],
+    [
+      "36",
+      "MSG36",
+      "Notification / Toast (Success)",
+      "School document issued",
+      "Tài liệu/giấy xác nhận đã được xử lý và phát hành."
+    ],
+    [
+      "37",
+      "MSG37",
+      "Toast (Success)",
+      "Notifications marked read",
+      "Đã đánh dấu thông báo là đã đọc."
+    ],
+    [
+      "38",
+      "MSG38",
+      "Toast (Success)",
+      "User account created",
+      "Tạo tài khoản người dùng thành công."
+    ],
+    [
+      "39",
+      "MSG39",
+      "Toast (Success)",
+      "User account deactivated",
+      "Đã vô hiệu hóa tài khoản người dùng."
+    ],
+    [
+      "40",
+      "MSG40",
+      "Toast (Success)",
+      "Role/permission updated",
+      "Đã cập nhật vai trò và quyền truy cập."
+    ],
+    [
+      "41",
+      "MSG41",
+      "Inline / Toast (Error)",
+      "Invalid attachment/import file",
+      "Tệp không hợp lệ, không đúng định dạng hoặc vượt quá dung lượng cho phép."
+    ],
+    [
+      "42",
+      "MSG42",
+      "Toast (Error)",
+      "Audit-log access denied",
+      "Bạn không có quyền xem nhật ký hệ thống."
+    ],
+    [
+      "43",
+      "MSG43",
+      "Empty-state message",
+      "No matching data",
+      "Không có dữ liệu phù hợp để hiển thị."
+    ],
+    [
+      "44",
+      "MSG44",
+      "Toast (Success)",
+      "Configuration saved",
+      "Đã lưu cấu hình hệ thống."
+    ],
+    [
+      "45",
+      "MSG45",
+      "Confirmation Dialog",
+      "Confirm sensitive action",
+      "Bạn có chắc chắn muốn thực hiện thao tác này?"
+    ],
+    [
+      "46",
+      "MSG46",
+      "Toast (Success)",
+      "Password changed",
+      "Đổi mật khẩu thành công."
+    ],
+    [
+      "47",
+      "MSG47",
+      "Toast (Success)",
+      "Profile/contact updated",
+      "Cập nhật thông tin thành công."
+    ],
+    [
+      "48",
+      "MSG48",
+      "Toast / Summary",
+      "Import completed",
+      "Nhập dữ liệu hoàn tất. Vui lòng kiểm tra kết quả các bản ghi thành công và lỗi."
+    ],
+    [
+      "49",
+      "MSG49",
+      "Toast / Summary (Error)",
+      "Import has no/partial valid rows",
+      "Một số dữ liệu không thể nhập. Vui lòng kiểm tra danh sách lỗi."
+    ],
+    [
+      "50",
+      "MSG50",
+      "Toast (Error)",
+      "Unexpected system error",
+      "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau."
+    ]
+  ]
+}

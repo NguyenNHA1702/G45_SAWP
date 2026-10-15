@@ -17,6 +17,10 @@ SAWP.Backend/
 ├── SAWP.sln                                          # Visual Studio / .NET CLI Solution File
 │
 ├── 1. Core/                                          # Domain Layer (Zero external dependencies)
+│   ├── Constants/                                    # Standard System Constants & Messages (SRS)
+│   │   ├── SystemMessage.cs                          # SystemMessage record descriptor (Code, Type, Context, Content)
+│   │   └── SystemMessages.cs                         # Strongly-typed MSG01 to MSG50 constants & dictionary
+│   │
 │   ├── Entities/                                     # Domain Model Entities (Logical ERD)
 │   │   ├── User.cs                                   # User login accounts, credentials, contact info
 │   │   ├── Role.cs                                   # System roles (Admin, Teacher, Parent, etc.)
@@ -331,9 +335,146 @@ Always run these commands from the `SAWP.Backend` directory:
 
 ---
 
-## 3. Frontend Developer Guide (FE)
+## 3. Standard System Messages & Error Codes (SRS MSG01 - MSG50)
 
-### 3.1. Architecture & Design Principles
+Per the **SRS Specification (Section 5.3 Message Dictionary)**, all user feedback, toast notifications, confirmation dialogs, inline form errors, and workflow alerts are standardized into 50 codes (**MSG01** through **MSG50**).
+
+Both Backend and Frontend have pre-scaffolded, strongly-typed constants:
+- **Backend:** `Core.Constants.SystemMessages` (in `SAWP.Backend/Core/Constants/SystemMessages.cs`)
+- **Frontend:** `SYSTEM_MESSAGES` (in `sawp-frontend/src/constants/messages.ts`)
+
+### 3.1. ApiResponse<T> Standard Payload Structure
+All API endpoints return the standardized envelope `ApiResponse<T>` containing the optional standard `Code`:
+```json
+{
+  "success": true,
+  "code": "MSG08",
+  "message": "Lưu thông tin thành công.",
+  "data": { ... },
+  "errors": null
+}
+```
+
+### 3.2. Backend Usage in Services & Controllers
+
+#### A. Direct Strong-Typed Constants (Recommended)
+```csharp
+using Core.Constants;
+using Core.DTOs;
+
+// 1. Success with standard message
+return ApiResponse<bool>.Ok(true, SystemMessages.MSG08); // Code: "MSG08", Message: "Lưu thông tin thành công."
+return ApiResponse<bool>.Ok(true, SystemMessages.MSG18); // Code: "MSG18", Message: "Đã lưu điểm danh."
+return ApiResponse<bool>.Ok(true, SystemMessages.MSG25); // Code: "MSG25", Message: "Đăng ký ăn trưa thành công."
+
+// 2. Failure / Validation error with standard message
+return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11); // Code: "MSG11", Message: "Không tìm thấy hồ sơ học sinh."
+return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "StudentCode is required." });
+return ApiResponse<bool>.Fail(SystemMessages.MSG27); // Code: "MSG27", Message: "Đã quá thời hạn đăng ký hoặc hủy ăn trưa cho ngày này."
+```
+
+#### B. Dynamic Dictionary Lookup by String Key (`GetByCode` or `All[key]`)
+When you receive or parse a message code as a string (e.g. from a configuration, external event, or dynamic validation rule):
+```csharp
+// Safe lookup: returns null if key does not exist (Case-insensitive)
+SystemMessage? msg = SystemMessages.GetByCode("MSG01");
+if (msg != null)
+{
+    return ApiResponse<bool>.Fail(msg);
+}
+
+// Or direct dictionary access via All:
+SystemMessage msg2 = SystemMessages.All["MSG08"];
+```
+
+### 3.3. Frontend Usage in React Components
+
+#### A. Dictionary Lookup by String Key (`getSystemMessage` or `SYSTEM_MESSAGES[key]`)
+```tsx
+import { SYSTEM_MESSAGES, getSystemMessage } from '@/constants/messages';
+import { toast } from 'react-hot-toast';
+
+// 1. Safe helper lookup (returns undefined if code is not found)
+const msg = getSystemMessage("MSG08");
+console.log(msg?.content); // "Lưu thông tin thành công."
+
+// 2. Direct map indexer
+const directMsg = SYSTEM_MESSAGES["MSG01"];
+```
+
+#### B. Handling API Responses with Toast Notifications
+```tsx
+// Handling an API response from Backend:
+if (response.data.success) {
+  // Show standard success toast
+  toast.success(response.data.message || SYSTEM_MESSAGES.MSG08.content);
+} else {
+  // Fall back to dictionary if message text is missing
+  const sysMsg = response.data.code ? getSystemMessage(response.data.code) : null;
+  toast.error(sysMsg?.content || response.data.message || 'Error occurred');
+}
+```
+
+### 3.4. Complete System Message Catalog (MSG01 - MSG50)
+
+| Code | Type | Context | Default Vietnamese Message |
+| :--- | :--- | :--- | :--- |
+| **MSG01** | Inline / Toast (Error) | Required or invalid input | Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ. |
+| **MSG02** | Toast (Error) | Invalid login/current password | Tên đăng nhập hoặc mật khẩu không chính xác. |
+| **MSG03** | Toast (Error) | Inactive/deactivated account | Tài khoản hiện không hoạt động. Vui lòng liên hệ quản trị viên. |
+| **MSG04** | Inline (Error) | New password policy or confirmation fails | Mật khẩu mới chưa đáp ứng yêu cầu hoặc xác nhận mật khẩu không khớp. |
+| **MSG05** | Toast (Success) | Login successful | Đăng nhập thành công. |
+| **MSG06** | Toast (Success) | Logout successful | Đã đăng xuất khỏi hệ thống. |
+| **MSG07** | Toast (Error) | Session expired | Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại. |
+| **MSG08** | Toast (Success) | Record saved | Lưu thông tin thành công. |
+| **MSG09** | Toast (Error) | Operation cannot be completed in current state | Không thể thực hiện thao tác với trạng thái hiện tại. |
+| **MSG10** | Toast (Error) | Permission/data-scope denied | Bạn không có quyền truy cập hoặc thực hiện thao tác này. |
+| **MSG11** | Toast (Error) | Student not found | Không tìm thấy hồ sơ học sinh. |
+| **MSG12** | Inline / Toast (Error) | Duplicate student code | Mã học sinh đã tồn tại trong hệ thống. |
+| **MSG13** | Toast (Success) | Guardian link updated | Đã cập nhật liên kết phụ huynh/người giám hộ. |
+| **MSG14** | Toast (Error) | No active school year | Chưa có năm học đang hoạt động. |
+| **MSG15** | Toast (Error) | Class unavailable/capacity conflict | Lớp được chọn không còn phù hợp hoặc đã đạt giới hạn sĩ số. |
+| **MSG16** | Toast (Success) | Class assignment saved | Đã cập nhật phân lớp cho học sinh. |
+| **MSG17** | Inline / Toast (Error) | Schedule conflict | Thời khóa biểu bị trùng khung giờ. Vui lòng kiểm tra lại. |
+| **MSG18** | Toast (Success) | Attendance saved | Đã lưu điểm danh. |
+| **MSG19** | Toast (Error) | Attendance record locked | Bản ghi điểm danh đã bị khóa. Vui lòng liên hệ Giáo vụ nếu cần điều chỉnh. |
+| **MSG20** | Toast (Error) | Teacher not authorized for class | Bạn không được phân công phụ trách lớp này. |
+| **MSG21** | Toast (Success) | Leave request submitted | Đã gửi đơn xin nghỉ/vắng học. |
+| **MSG22** | Notification / Toast (Success) | Leave approved | Đơn xin nghỉ/vắng học đã được chấp thuận. |
+| **MSG23** | Notification / Toast (Info) | Leave rejected | Đơn xin nghỉ/vắng học không được chấp thuận. |
+| **MSG24** | Inline / Toast (Error) | Invalid/overlapping leave dates | Khoảng thời gian xin nghỉ không hợp lệ hoặc đang trùng với yêu cầu khác. |
+| **MSG25** | Toast (Success) | Lunch registration successful | Đăng ký ăn trưa thành công. |
+| **MSG26** | Toast (Success) | Lunch cancellation successful | Đã hủy đăng ký ăn trưa. |
+| **MSG27** | Toast (Error) | Lunch cutoff passed | Đã quá thời hạn đăng ký hoặc hủy ăn trưa cho ngày này. |
+| **MSG28** | Toast (Error) | Lunch service unavailable | Dịch vụ ăn trưa không khả dụng cho ngày đã chọn. |
+| **MSG29** | Toast (Info) | Duplicate lunch registration | Học sinh đã có đăng ký ăn trưa cho ngày này. |
+| **MSG30** | Toast (Success) | Administrative request submitted | Đã gửi yêu cầu hành chính. |
+| **MSG31** | Notification / Toast (Success) | Request approved | Yêu cầu đã được phê duyệt. |
+| **MSG32** | Notification / Toast (Info) | Request rejected | Yêu cầu không được phê duyệt. |
+| **MSG33** | Notification / Toast (Success) | Request completed | Yêu cầu đã được xử lý hoàn tất. |
+| **MSG34** | Toast (Error) | Request cannot be cancelled | Yêu cầu không thể hủy ở trạng thái hiện tại. |
+| **MSG35** | Notification / Toast (Success) | Class transfer applied | Đã cập nhật chuyển lớp cho học sinh. |
+| **MSG36** | Notification / Toast (Success) | School document issued | Tài liệu/giấy xác nhận đã được xử lý và phát hành. |
+| **MSG37** | Toast (Success) | Notifications marked read | Đã đánh dấu thông báo là đã đọc. |
+| **MSG38** | Toast (Success) | User account created | Tạo tài khoản người dùng thành công. |
+| **MSG39** | Toast (Success) | User account deactivated | Đã vô hiệu hóa tài khoản người dùng. |
+| **MSG40** | Toast (Success) | Role/permission updated | Đã cập nhật vai trò và quyền truy cập. |
+| **MSG41** | Inline / Toast (Error) | Invalid attachment/import file | Tệp không hợp lệ, không đúng định dạng hoặc vượt quá dung lượng cho phép. |
+| **MSG42** | Toast (Error) | Audit-log access denied | Bạn không có quyền xem nhật ký hệ thống. |
+| **MSG43** | Empty-state message | No matching data | Không có dữ liệu phù hợp để hiển thị. |
+| **MSG44** | Toast (Success) | Configuration saved | Đã lưu cấu hình hệ thống. |
+| **MSG45** | Confirmation Dialog | Confirm sensitive action | Bạn có chắc chắn muốn thực hiện thao tác này? |
+| **MSG46** | Toast (Success) | Password changed | Đổi mật khẩu thành công. |
+| **MSG47** | Toast (Success) | Profile/contact updated | Cập nhật thông tin thành công. |
+| **MSG48** | Toast / Summary | Import completed | Nhập dữ liệu hoàn tất. Vui lòng kiểm tra kết quả các bản ghi thành công và lỗi. |
+| **MSG49** | Toast / Summary (Error) | Import has no/partial valid rows | Một số dữ liệu không thể nhập. Vui lòng kiểm tra danh sách lỗi. |
+| **MSG50** | Toast (Error) | Unexpected system error | Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau. |
+
+---
+
+## 4. Frontend Developer Guide (FE)
+
+### 4.1. Architecture & Design Principles
 The frontend in `sawp-frontend/` is built with **React 18 + TypeScript + Vite**. It strictly follows a **Contract-First** approach:
 1. **Types (`src/types/`):** TypeScript interfaces mirroring backend DTOs (`common.types.ts`, `auth.types.ts`, `student.types.ts`, etc.).
 2. **API Contracts (`src/services/contracts/`):** Explicit interfaces for API interactions (`IAuthApi.ts`, `IStudentApi.ts`).

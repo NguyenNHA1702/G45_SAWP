@@ -27,7 +27,7 @@ public class ExceptionHandlingMiddleware
             context.Response.ContentType = "application/json";
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
-            var response = ApiResponse<string>.Fail("An internal error occurred.", new List<string> { ex.Message });
+            var response = ApiResponse<string>.Fail(Core.Constants.SystemMessages.MSG50, new List<string> { ex.Message });
             var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             await context.Response.WriteAsync(json);
         }
