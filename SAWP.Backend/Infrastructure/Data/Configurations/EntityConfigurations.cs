@@ -332,3 +332,22 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
                .OnDelete(DeleteBehavior.SetNull);
     }
 }
+
+public class GuardianLinkDetailConfiguration : IEntityTypeConfiguration<GuardianLinkDetail>
+{
+    public void Configure(EntityTypeBuilder<GuardianLinkDetail> builder)
+    {
+        builder.HasKey(gld => gld.Id);
+        builder.Property(gld => gld.StudentCode).HasMaxLength(50).IsRequired();
+        builder.Property(gld => gld.GuardianPhone).HasMaxLength(20);
+        builder.Property(gld => gld.GuardianIdentityCard).HasMaxLength(50);
+        builder.Property(gld => gld.ProofDocumentUrl).HasMaxLength(500);
+        builder.Property(gld => gld.VerificationDetails).HasMaxLength(500);
+
+        builder.HasOne(gld => gld.AdministrativeRequest)
+               .WithOne(ar => ar.GuardianLinkDetail)
+               .HasForeignKey<GuardianLinkDetail>(gld => gld.AdministrativeRequestId)
+               .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
