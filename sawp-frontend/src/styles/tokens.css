@@ -1,0 +1,72 @@
+:root {
+  /* ===== Colors (Playful Geometric – Light) ===== */
+  --color-bg: #fffdf5;
+  --color-fg: #1e293b;
+  --color-muted: #f1f5f9;
+  --color-muted-fg: #64748b;
+  --color-accent: #8b5cf6;
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: #ede9fe;
+  --color-secondary: #f472b6;
+  --color-secondary-soft: #fce7f3;
+  --color-tertiary: #fbbf24;
+  --color-tertiary-soft: #fef3c7;
+  --color-quaternary: #34d399;
+  --color-quaternary-soft: #d1fae5;
+  --color-border: #e2e8f0;
+  --color-input-border: #cbd5e1;
+  --color-card: #ffffff;
+  --color-ring: #8b5cf6;
+
+  /* Trạng thái điểm danh – xoay vòng màu "confetti" */
+  --status-present: var(--color-quaternary);
+  --status-present-soft: var(--color-quaternary-soft);
+  --status-late: var(--color-tertiary);
+  --status-late-soft: var(--color-tertiary-soft);
+  --status-excused: var(--color-accent);
+  --status-excused-soft: var(--color-accent-soft);
+  --status-unexcused: var(--color-secondary);
+  --status-unexcused-soft: var(--color-secondary-soft);
+
+  /* ===== Typography (scale 1.25 – Major Third) ===== */
+  --font-heading: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --fs-xs: 0.64rem;
+  --fs-sm: 0.8rem;
+  --fs-base: 1rem;
+  --fs-md: 1.25rem;
+  --fs-lg: 1.563rem;
+  --fs-xl: 1.953rem;
+  --fs-2xl: 2.441rem;
+
+  /* ===== Radius & Border ===== */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+  --border-w: 2px;
+  --border: var(--border-w) solid var(--color-fg);
+
+  /* ===== Shadows (hard, no blur) ===== */
+  --shadow-pop: 4px 4px 0 0 var(--color-fg);
+  --shadow-pop-hover: 6px 6px 0 0 var(--color-fg);
+  --shadow-pop-active: 2px 2px 0 0 var(--color-fg);
+  --shadow-card: 8px 8px 0 0 var(--color-border);
+  --shadow-card-featured: 8px 8px 0 0 var(--color-secondary);
+
+  /* ===== Spacing ===== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ===== Motion ===== */
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur: 300ms;
+
+  --container: 72rem; /* max-w-6xl */
+}

@@ -2,6 +2,7 @@ namespace Core.Interfaces;
 
 public interface IUnitOfWork : IDisposable
 {
+    IUserRepository Users { get; }
     IStudentRepository Students { get; }
     IAttendanceRepository Attendance { get; }
     ILunchRepository Lunch { get; }

@@ -1,0 +1,125 @@
+/* ================= BUTTON ================= */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: 10px 22px;
+  border: var(--border);
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  transition: transform var(--dur) var(--ease-bounce), box-shadow var(--dur) var(--ease-bounce), background-color 200ms;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn--primary {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  box-shadow: var(--shadow-pop);
+}
+.btn--primary:not(:disabled):hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-pop-hover); }
+.btn--primary:not(:disabled):active { transform: translate(2px, 2px); box-shadow: var(--shadow-pop-active); }
+.btn__icon {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; color: var(--color-accent);
+}
+
+.btn--secondary { background: transparent; color: var(--color-fg); }
+.btn--secondary:not(:disabled):hover { background: var(--color-tertiary); }
+
+.btn--sm { padding: 6px 14px; font-size: var(--fs-sm); }
+.btn--full { width: 100%; }
+
+/* ================= CARD ================= */
+.card {
+  position: relative;
+  background: var(--color-card);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+}
+.card--featured { box-shadow: var(--shadow-card-featured); }
+.card--hover { transition: transform var(--dur) var(--ease-bounce); }
+.card--hover:hover { transform: rotate(-1deg) scale(1.02); }
+.card__float-icon {
+  position: absolute; top: -22px; left: var(--space-5);
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: var(--border); background: var(--color-tertiary);
+  box-shadow: var(--shadow-pop-active);
+}
+
+/* ================= FORM ================= */
+.field { display: flex; flex-direction: column; gap: var(--space-1); }
+.label {
+  font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--color-muted-fg);
+}
+.input, .select {
+  min-height: 44px;
+  padding: 8px 14px;
+  background: var(--color-card);
+  border: var(--border-w) solid var(--color-input-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 4px 4px 0 0 transparent;
+  transition: border-color 200ms, box-shadow var(--dur) var(--ease-bounce);
+}
+.input:focus, .select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 4px 4px 0 0 var(--color-accent);
+}
+.input:disabled, .select:disabled { background: var(--color-muted); cursor: not-allowed; }
+.input--sm { min-height: 36px; padding: 4px 10px; font-size: var(--fs-sm); }
+
+/* ================= BADGE / CHIP ================= */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px;
+  border: var(--border-w) solid var(--color-fg);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-sm); font-weight: 600;
+  background: var(--color-muted);
+  white-space: nowrap;
+}
+.badge--mint   { background: var(--color-quaternary-soft); }
+.badge--amber  { background: var(--color-tertiary-soft); }
+.badge--violet { background: var(--color-accent-soft); }
+.badge--pink   { background: var(--color-secondary-soft); }
+.badge--muted  { border-color: var(--color-border); color: var(--color-muted-fg); }
+
+/* ================= BANNER ================= */
+.banner {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  font-weight: 500;
+}
+.banner--warning { background: var(--color-tertiary-soft); }
+.banner--info    { background: var(--color-accent-soft); }
+.banner--danger  { background: var(--color-secondary-soft); }
+
+/* ================= DIALOG / MODAL ================= */
+.dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: var(--space-6);
+  border: var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 8px 8px 0 0 var(--color-accent);
+  background: var(--color-card);
+  color: var(--color-fg);
+}
+.dialog[open] { animation: pop-in 400ms var(--ease-bounce); }
+.dialog::backdrop { background: rgb(30 41 59 / 0.45); }
+.dialog__title { font-size: var(--fs-lg); }
+.dialog__body { margin-bottom: var(--space-5); }
+.dialog__actions { display: flex; justify-content: flex-end; gap: var(--space-3); }
+
+/* ================= CONFETTI DECOR ================= */
+.decor { position: absolute; pointer-events: none; z-index: -1; }
+.decor--circle   { width: 180px; height: 180px; border-radius: 50%; background: var(--color-tertiary); }
+.decor--triangle { width: 0; height: 0; border-left: 28px solid transparent; border-right: 28px solid transparent; border-bottom: 48px solid var(--color-secondary); }
+.decor--square   { width: 36px; height: 36px; background: var(--color-quaternary); border: var(--border); transform: rotate(15deg); }

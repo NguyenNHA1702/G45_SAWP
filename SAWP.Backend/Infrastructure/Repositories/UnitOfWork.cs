@@ -11,17 +11,20 @@ public class UnitOfWork : IUnitOfWork
     private IDbContextTransaction? _currentTransaction;
     private readonly ConcurrentDictionary<string, object> _repositories = new();
 
+    public IUserRepository Users { get; }
     public IStudentRepository Students { get; }
     public IAttendanceRepository Attendance { get; }
     public ILunchRepository Lunch { get; }
 
     public UnitOfWork(
         ApplicationDbContext context,
+        IUserRepository users,
         IStudentRepository students,
         IAttendanceRepository attendance,
         ILunchRepository lunch)
     {
         _context = context;
+        Users = users;
         Students = students;
         Attendance = attendance;
         Lunch = lunch;
