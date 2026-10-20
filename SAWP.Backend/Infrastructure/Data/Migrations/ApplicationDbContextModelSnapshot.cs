@@ -100,6 +100,9 @@ namespace Infrastructure.Data.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
+                    b.Property<int>("Session")
+                        .HasColumnType("int");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -364,10 +367,19 @@ namespace Infrastructure.Data.Migrations
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("IsLunchCancelled")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("KeepLunchService")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Session")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("StartDate")
                         .HasColumnType("datetime2");
@@ -428,8 +440,14 @@ namespace Infrastructure.Data.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("IsLocked")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsServing")
                         .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LockedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Remarks")
                         .HasMaxLength(250)

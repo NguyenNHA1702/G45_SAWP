@@ -180,6 +180,104 @@ public static class DbInitializer
                 Address = "Hà Nội"
             };
             context.Guardians.Add(guardian);
+            await context.SaveChangesAsync();
+        }
+
+        // 3. Demo School Year & Class 1A
+        var activeYear = await context.SchoolYears.FirstOrDefaultAsync(y => y.IsActive);
+        if (activeYear == null)
+        {
+            activeYear = new SchoolYear
+            {
+                YearName = "Năm học 2026-2027",
+                StartDate = new DateTime(2026, 9, 5),
+                EndDate = new DateTime(2027, 5, 31),
+                IsActive = true
+            };
+            context.SchoolYears.Add(activeYear);
+            await context.SaveChangesAsync();
+        }
+
+        var teacherProfile = await context.StaffProfiles.FirstOrDefaultAsync(sp => sp.StaffCode == "GV001");
+        var class1A = await context.Classes.FirstOrDefaultAsync(c => c.ClassName == "1A");
+        if (class1A == null)
+        {
+            class1A = new Class
+            {
+                SchoolYearId = activeYear.Id,
+                ClassName = "1A",
+                Grade = 1,
+                RoomNumber = "Phòng 101",
+                Capacity = 35,
+                HomeroomTeacherId = teacherProfile?.Id,
+                Status = "Active"
+            };
+            context.Classes.Add(class1A);
+            await context.SaveChangesAsync();
+        }
+
+        // 4. Demo Students & Guardian Linkage
+        var guardianObj = await context.Guardians.FirstOrDefaultAsync();
+        if (!await context.Students.AnyAsync(s => s.StudentCode == "HS001"))
+        {
+            var student1 = new Student
+            {
+                StudentCode = "HS001",
+                FullName = "Trần Đức Anh",
+                DateOfBirth = new DateTime(2020, 5, 12),
+                Gender = "Nam",
+                EnrollmentDate = new DateTime(2026, 9, 5),
+                Status = "Enrolled"
+            };
+            var student2 = new Student
+            {
+                StudentCode = "HS002",
+                FullName = "Nguyễn Minh Châu",
+                DateOfBirth = new DateTime(2020, 8, 22),
+                Gender = "Nữ",
+                EnrollmentDate = new DateTime(2026, 9, 5),
+                Status = "Enrolled"
+            };
+            var student3 = new Student
+            {
+                StudentCode = "HS003",
+                FullName = "Lê Hoàng Long",
+                DateOfBirth = new DateTime(2020, 2, 10),
+                Gender = "Nam",
+                EnrollmentDate = new DateTime(2026, 9, 5),
+                Status = "Enrolled"
+            };
+
+            context.Students.AddRange(student1, student2, student3);
+            await context.SaveChangesAsync();
+
+            // Assign to Class 1A
+            context.ClassAssignments.AddRange(
+                new ClassAssignment { ClassId = class1A.Id, StudentId = student1.Id, AcademicYear = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 5) },
+                new ClassAssignment { ClassId = class1A.Id, StudentId = student2.Id, AcademicYear = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 5) },
+                new ClassAssignment { ClassId = class1A.Id, StudentId = student3.Id, AcademicYear = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 5) }
+            );
+
+            // Link parent1 to student1
+            if (guardianObj != null)
+            {
+                context.StudentGuardians.Add(new StudentGuardian
+                {
+                    GuardianId = guardianObj.Id,
+                    StudentId = student1.Id,
+                    Relationship = RelationshipTypes.Father,
+                    IsPrimaryContact = true
+                });
+            }
+
+            // Register Lunch for student1 & student2
+            context.LunchRegistrations.AddRange(
+                new LunchRegistration { StudentId = student1.Id, Date = DateTime.Today, IsActive = true, MealType = MealType.StandardLunch },
+                new LunchRegistration { StudentId = student1.Id, Date = DateTime.Today.AddDays(1), IsActive = true, MealType = MealType.StandardLunch },
+                new LunchRegistration { StudentId = student2.Id, Date = DateTime.Today, IsActive = true, MealType = MealType.StandardLunch }
+            );
+
+            await context.SaveChangesAsync();
         }
 
         await context.SaveChangesAsync();

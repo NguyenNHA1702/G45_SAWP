@@ -12,6 +12,7 @@ public class AttendanceRecord
     public virtual Class Class { get; set; } = null!;
 
     public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
     public AttendanceStatus Status { get; set; } = AttendanceStatus.Present;
 
     public int RecordedByUserId { get; set; }

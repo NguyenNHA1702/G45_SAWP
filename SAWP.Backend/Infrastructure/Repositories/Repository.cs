@@ -48,4 +48,6 @@ public class Repository<T> : IRepository<T> where T : class
         _dbSet.Remove(entity);
         return Task.CompletedTask;
     }
+
+    public virtual IQueryable<T> Query() => _dbSet.AsQueryable();
 }
