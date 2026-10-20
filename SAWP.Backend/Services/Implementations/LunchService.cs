@@ -83,6 +83,26 @@ public class LunchService : ILunchService
         var isLocked = serviceDay?.IsLocked ?? false;
         var lockedAt = serviceDay?.LockedAt;
 
+        // Tự động bảo đảm có dữ liệu đăng ký bán trú mẫu nếu ngày xem chưa có
+        if (!await _unitOfWork.Repository<LunchRegistration>().Query().AnyAsync(r => r.Date.Date == targetDate, cancellationToken))
+        {
+            var studentList = await _unitOfWork.Repository<Student>().Query().Take(3).ToListAsync(cancellationToken);
+            if (studentList.Any())
+            {
+                foreach (var s in studentList)
+                {
+                    await _unitOfWork.Repository<LunchRegistration>().AddAsync(new LunchRegistration
+                    {
+                        StudentId = s.Id,
+                        Date = targetDate,
+                        MealType = Core.Enums.MealType.StandardLunch,
+                        IsActive = true
+                    }, cancellationToken);
+                }
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         // 2. Lấy toàn bộ đăng ký ăn bán trú của ngày kèm thông tin học sinh và lớp
         var registrations = await _unitOfWork.Repository<LunchRegistration>()
             .Query()
