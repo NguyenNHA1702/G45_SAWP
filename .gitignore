@@ -364,4 +364,8 @@ FodyWeavers.xsd
 
 # Local Superpowers and AI Agent skills (keep local, do not push)
 docs/superpowers/
-.agents/
+.agents/
+
+# Local documents and Word files (keep local, do not push)
+Documents/
+*.docx
