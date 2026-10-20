@@ -37,28 +37,25 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- WF2: Điểm danh (Chỉ Teacher) ---
+  // --- Điểm danh (Chỉ Teacher) ---
   {
-    label: 'Điểm danh lớp (WF2)',
+    label: 'Điểm danh lớp',
     path: '/teacher/attendance',
     icon: CalendarCheck2,
     roles: ['Teacher'],
-    badge: 'Mới',
   },
   {
-    label: 'Duyệt đơn nghỉ (WF 1.2.3)',
+    label: 'Duyệt đơn xin nghỉ',
     path: '/teacher/leave-requests',
     icon: FileCheck,
     roles: ['Teacher'],
-    badge: 'Mới',
   },
   // --- Phụ huynh theo dõi chuyên cần (Chỉ Parent) ---
   {
-    label: 'Đơn xin nghỉ học (WF 1.2.3)',
+    label: 'Đơn xin nghỉ học',
     path: '/parent/leave-requests',
     icon: FileText,
     roles: ['Parent'],
-    badge: 'Mới',
   },
   {
     label: 'Chuyên cần của con',
@@ -68,11 +65,10 @@ const NAV_ITEMS: NavItem[] = [
   },
   // --- Bếp ăn bán trú (ServiceStaff, Teacher, Admin) ---
   {
-    label: 'Báo cáo suất ăn Bếp (WF 1.2.3)',
+    label: 'Báo cáo suất ăn Bếp',
     path: '/service/headcount',
     icon: UtensilsCrossed,
     roles: ['ServiceStaff', 'Teacher', 'Admin'],
-    badge: 'Live',
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {

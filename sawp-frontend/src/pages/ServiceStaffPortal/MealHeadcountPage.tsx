@@ -20,7 +20,11 @@ import type { DailyMealBoard } from '../../services/implementations/lunchApi';
 
 export default function MealHeadcountPage() {
   const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   });
   const [board, setBoard] = useState<DailyMealBoard | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -73,7 +77,7 @@ export default function MealHeadcountPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <span className="badge badge--amber" style={{ marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Sparkles size={14} /> WFL 1.2.3 & 1.2.4: Tổ Bán trú & Bếp ăn
+              <Sparkles size={14} /> Tổ Bán trú & Bếp ăn
             </span>
             <h1 style={{ margin: '4px 0 8px 0', fontSize: '1.9rem', fontWeight: 800 }}>
               Bảng Vận Hành <span className="squiggle">Suất Ăn Bán Trú</span>
@@ -430,7 +434,7 @@ export default function MealHeadcountPage() {
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Chốt số liệu Bán trú lúc 08h15</h3>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-muted-fg)' }}>Quy trình WFL-10: Gửi số liệu sang bếp trưởng</p>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-muted-fg)' }}>Gửi số liệu chuẩn xác sang bếp trưởng</p>
               </div>
             </div>
 
@@ -490,7 +494,7 @@ export default function MealHeadcountPage() {
               <div>
                 <div style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase' }}>PHÒNG GD&ĐT HUYỆN ĐAN PHƯỢNG</div>
                 <div style={{ fontSize: '0.95rem', fontWeight: 800, textTransform: 'uppercase' }}>TRƯỜNG TIỂU HỌC TÂN LẬP A</div>
-                <div style={{ fontSize: '0.78rem', color: '#555' }}>Hệ thống Quản lý Bán trú SAWP - WFL-10</div>
+                <div style={{ fontSize: '0.78rem', color: '#555' }}>Hệ thống Quản lý Bán trú SAWP</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>

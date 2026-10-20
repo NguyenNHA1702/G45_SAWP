@@ -60,7 +60,7 @@ export default function DashboardPage() {
             >
               <CalendarCheck2 size={22} color="var(--color-fg)" />
             </div>
-            <h3>Điểm danh hằng ngày (WF2)</h3>
+            <h3>Điểm danh hằng ngày</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
               Điểm danh lớp chủ nhiệm / tiết đầu, tự động trừ suất ăn và gửi cảnh báo vắng tới phụ huynh.
             </p>
