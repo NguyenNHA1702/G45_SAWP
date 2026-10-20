@@ -5,6 +5,8 @@ import {
   CalendarCheck2,
   ChevronRight,
   ClipboardList,
+  FileCheck,
+  FileText,
   GraduationCap,
   KeyRound,
   LayoutDashboard,
@@ -43,19 +45,34 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['Teacher'],
     badge: 'Mới',
   },
+  {
+    label: 'Duyệt đơn nghỉ (WF 1.2.3)',
+    path: '/teacher/leave-requests',
+    icon: FileCheck,
+    roles: ['Teacher'],
+    badge: 'Mới',
+  },
   // --- Phụ huynh theo dõi chuyên cần (Chỉ Parent) ---
+  {
+    label: 'Đơn xin nghỉ học (WF 1.2.3)',
+    path: '/parent/leave-requests',
+    icon: FileText,
+    roles: ['Parent'],
+    badge: 'Mới',
+  },
   {
     label: 'Chuyên cần của con',
     path: '/parent/attendance',
     icon: ClipboardList,
     roles: ['Parent'],
   },
-  // --- Bếp ăn bán trú (Chỉ ServiceStaff) ---
+  // --- Bếp ăn bán trú (ServiceStaff, Teacher, Admin) ---
   {
-    label: 'Báo cáo suất ăn Bếp',
+    label: 'Báo cáo suất ăn Bếp (WF 1.2.3)',
     path: '/service/headcount',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff'],
+    roles: ['ServiceStaff', 'Teacher', 'Admin'],
+    badge: 'Live',
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {
