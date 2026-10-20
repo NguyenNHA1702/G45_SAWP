@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local Superpowers and AI Agent skills (keep local, do not push)
+docs/superpowers/
+.agents/
