@@ -28,6 +28,7 @@ builder.Services.AddScoped<ILunchRepository, LunchRepository>();
 // 3. Business Logic Services (Services -> Services Interfaces)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
+builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 builder.Services.AddScoped<ILunchService, LunchService>();
 builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
