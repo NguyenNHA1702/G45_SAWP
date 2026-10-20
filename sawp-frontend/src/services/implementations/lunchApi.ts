@@ -46,19 +46,19 @@ export interface RestoreMealPayload {
 
 export const lunchApi = {
   getDailyMealBoard: async (date?: string): Promise<DailyMealBoard> => {
-    const res = await apiClient.get<DailyMealBoard>('/lunch/live-board', {
+    const res = await apiClient.get<{ success: boolean; data: DailyMealBoard }>('/lunch/live-board', {
       params: date ? { date } : {}
     });
-    return res.data;
+    return res.data.data;
   },
 
   lockDailyMeal: async (payload: LockMealDayPayload): Promise<boolean> => {
-    const res = await apiClient.post<boolean>('/lunch/lock-day', payload);
-    return res.data;
+    const res = await apiClient.post<{ success: boolean; data: boolean; message: string }>('/lunch/lock-day', payload);
+    return res.data.data ?? res.data.success;
   },
 
   restoreMeal: async (payload: RestoreMealPayload): Promise<boolean> => {
-    const res = await apiClient.post<boolean>('/lunch/restore-meal', payload);
-    return res.data;
+    const res = await apiClient.post<{ success: boolean; data: boolean; message: string }>('/lunch/restore-meal', payload);
+    return res.data.data ?? res.data.success;
   }
 };
