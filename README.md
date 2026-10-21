@@ -3,7 +3,7 @@
 **Capstone Project:** SEP490 - Group 45  
 **Topic:** Primary School Administrative and Boarding Welfare Management Platform  
 **Live Demo / Repository Reference:** [https://github.com/NguyenNHA1702/SAWP-Demo](https://github.com/NguyenNHA1702/SAWP-Demo)  
-**Detailed Developer Documentation:** See [Documents/DEVELOPER_GUIDE.md](file:///d:/VS_Studio/G45_SAWP/Documents/DEVELOPER_GUIDE.md)
+**Detailed Developer Documentation:** See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 
 ---
 
@@ -113,10 +113,10 @@ const msg = code ? getSystemMessage(code) : undefined;
 toast.success(msg?.content ?? response.data.message);
 ```
 
-For the complete catalog of all 50 codes, contexts, and messages, consult [Documents/DEVELOPER_GUIDE.md](file:///d:/VS_Studio/G45_SAWP/Documents/DEVELOPER_GUIDE.md#3-standard-system-messages--error-codes-srs-msg01---msg50).
+For the complete catalog of all 50 codes, contexts, and messages, consult [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md#3-standard-system-messages--error-codes-srs-msg01---msg50).
 
 ---
 
 ## 5. Documentation & Guidelines
 For in-depth project structure, file locations, coding conventions, and standard AI UI generation prompt, refer to:
-- 📖 [Documents/DEVELOPER_GUIDE.md](file:///d:/VS_Studio/G45_SAWP/Documents/DEVELOPER_GUIDE.md)
+- 📖 [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)

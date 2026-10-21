@@ -366,6 +366,5 @@ FodyWeavers.xsd
 docs/superpowers/
 .agents/
 
-# Local documents and Word files (keep local, do not push)
-Documents/
+# Word files (keep local, do not push)
 *.docx
