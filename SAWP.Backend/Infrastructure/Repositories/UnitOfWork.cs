@@ -13,6 +13,7 @@ public class UnitOfWork : IUnitOfWork
 
     public IUserRepository Users { get; }
     public IStudentRepository Students { get; }
+    public IClassRepository Classes { get; }
     public IAttendanceRepository Attendance { get; }
     public ILunchRepository Lunch { get; }
     public IClassScheduleRepository Schedules { get; }
@@ -22,6 +23,7 @@ public class UnitOfWork : IUnitOfWork
         ApplicationDbContext context,
         IUserRepository users,
         IStudentRepository students,
+        IClassRepository classes,
         IAttendanceRepository attendance,
         ILunchRepository lunch,
         IClassScheduleRepository schedules,
@@ -30,6 +32,7 @@ public class UnitOfWork : IUnitOfWork
         _context = context;
         Users = users;
         Students = students;
+        Classes = classes;
         Attendance = attendance;
         Lunch = lunch;
         Schedules = schedules;

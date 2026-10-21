@@ -14,6 +14,7 @@ public class Class
     public string? RoomNumber { get; set; }
     public int Capacity { get; set; } = 35;
     public string Status { get; set; } = "Active";
+    public bool IsPlacementPublished { get; set; } = false;
 
     public virtual ICollection<ClassAssignment> ClassAssignments { get; set; } = new List<ClassAssignment>();
     public virtual ICollection<AttendanceRecord> AttendanceRecords { get; set; } = new List<AttendanceRecord>();

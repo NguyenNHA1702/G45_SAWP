@@ -24,6 +24,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IStudentRepository, StudentRepository>();
+builder.Services.AddScoped<IClassRepository, ClassRepository>();
 builder.Services.AddScoped<IAttendanceRepository, AttendanceRepository>();
 builder.Services.AddScoped<ILunchRepository, LunchRepository>();
 builder.Services.AddScoped<IClassScheduleRepository, ClassScheduleRepository>();
@@ -35,6 +36,8 @@ builder.Services.AddSingleton<ISchoolClock, SchoolClock>();
 // 3. Business Logic Services (Services -> Services Interfaces)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IStudentService, StudentService>();
+builder.Services.AddScoped<IClassService, ClassService>();
+builder.Services.AddScoped<IGuardianService, GuardianService>();
 builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 builder.Services.AddScoped<ILunchService, LunchService>();
 builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
@@ -128,19 +131,22 @@ var app = builder.Build();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-if (app.Environment.IsDevelopment())
+// Enable Swagger documentation & UI for local testing and development
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SAWP API v1");
+    c.RoutePrefix = "swagger";
+});
 
-app.UseCors("AllowAll");
+// Redirect root to swagger UI
+app.MapGet("/", () => Results.Redirect("/swagger"));
 
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
-
+app.UseCors("AllowAll");
 
 // Auto seed demo data if needed
 using (var scope = app.Services.CreateScope())
@@ -154,5 +160,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
 
 app.Run();

@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<AdministrativeRequest> AdministrativeRequests => Set<AdministrativeRequest>();
     public DbSet<ClassTransferDetail> ClassTransferDetails => Set<ClassTransferDetail>();
     public DbSet<DocumentRequestDetail> DocumentRequestDetails => Set<DocumentRequestDetail>();
+    public DbSet<GuardianLinkDetail> GuardianLinkDetails => Set<GuardianLinkDetail>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 

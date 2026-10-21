@@ -4,6 +4,7 @@ public interface IUnitOfWork : IDisposable
 {
     IUserRepository Users { get; }
     IStudentRepository Students { get; }
+    IClassRepository Classes { get; }
     IAttendanceRepository Attendance { get; }
     ILunchRepository Lunch { get; }
     IClassScheduleRepository Schedules { get; }

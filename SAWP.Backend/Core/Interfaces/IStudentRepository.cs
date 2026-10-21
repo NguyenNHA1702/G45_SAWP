@@ -14,4 +14,7 @@ public interface IStudentRepository : IRepository<Student>
     Task<Dictionary<int, List<int>>> GetGuardianUserIdsAsync(IEnumerable<int> studentIds, CancellationToken ct = default);
     Task<bool> IsGuardianOfAsync(int studentId, int userId, CancellationToken ct = default);
     Task<IReadOnlyList<ChildSummaryDto>> GetChildrenByGuardianUserIdAsync(int userId, CancellationToken ct = default);
+    Task<bool> ExistsByStudentCodeAsync(string studentCode, int? excludeStudentId = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Student>> GetLinkedStudentsByParentUserIdAsync(int parentUserId, CancellationToken cancellationToken = default);
 }
+

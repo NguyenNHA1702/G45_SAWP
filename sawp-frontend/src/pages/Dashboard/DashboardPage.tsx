@@ -3,7 +3,10 @@ import {
   CalendarCheck2,
   CheckCircle2,
   ClipboardList,
+  GraduationCap,
+  HeartHandshake,
   Sparkles,
+  Users,
   UtensilsCrossed,
 } from 'lucide-react';
 import { USER_KEY } from '../../services/apiClient';
@@ -42,8 +45,36 @@ export default function DashboardPage() {
       >
         {roles.includes('Teacher') && (
           <Link
-            to="/teacher/attendance"
+            to="/teacher/roster"
             className="card card--featured card--hover"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'var(--color-accent-soft)',
+                border: 'var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <GraduationCap size={22} color="var(--color-accent)" />
+            </div>
+            <h3>Lớp chủ nhiệm (WF1)</h3>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Xem danh sách chính thức học sinh của lớp, thông tin liên lạc phụ huynh và xuất danh sách.
+            </p>
+            <span className="badge badge--violet">Xem danh sách lớp →</span>
+          </Link>
+        )}
+
+        {roles.includes('Teacher') && (
+          <Link
+            to="/teacher/attendance"
+            className="card card--hover"
             style={{ textDecoration: 'none', color: 'inherit' }}
           >
             <div
@@ -66,6 +97,116 @@ export default function DashboardPage() {
             </p>
             <span className="badge badge--mint">Mở trang điểm danh →</span>
           </Link>
+        )}
+
+        {roles.includes('Parent') && (
+          <Link
+            to="/parent/children"
+            className="card card--featured card--hover"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'var(--color-secondary-soft)',
+                border: 'var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <HeartHandshake size={22} color="var(--color-secondary)" />
+            </div>
+            <h3>Hồ sơ các con (WF1)</h3>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Theo dõi kết quả xếp lớp, thông tin GVCN và gửi yêu cầu liên kết thêm con.
+            </p>
+            <span className="badge badge--pink">Xem hồ sơ con →</span>
+          </Link>
+        )}
+
+        {(roles.includes('OfficeStaff') || roles.includes('Admin')) && (
+          <>
+            <Link
+              to="/students"
+              className="card card--featured card--hover"
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'var(--color-accent-soft)',
+                  border: 'var(--border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <Users size={22} color="var(--color-accent)" />
+              </div>
+              <h3>Hồ sơ học sinh (WF1)</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                Quản lý hồ sơ định danh, nhập Excel hàng loạt, xử lý trùng lặp và kích hoạt hồ sơ.
+              </p>
+              <span className="badge badge--violet">Quản lý hồ sơ →</span>
+            </Link>
+
+            <Link
+              to="/classes"
+              className="card card--hover"
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'var(--color-quaternary-soft)',
+                  border: 'var(--border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <GraduationCap size={22} color="var(--color-quaternary)" />
+              </div>
+              <h3>Lớp học & Phân công</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                Khởi tạo lớp hàng loạt, phân công GVCN (BR-16) và xếp lớp học sinh (BR-15, BR-18).
+              </p>
+              <span className="badge badge--mint">Quản lý lớp học →</span>
+            </Link>
+
+            <Link
+              to="/link-requests"
+              className="card card--hover"
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'var(--color-secondary-soft)',
+                  border: 'var(--border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <HeartHandshake size={22} color="var(--color-secondary)" />
+              </div>
+              <h3>Duyệt liên kết PH (WF1)</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                Xét duyệt và phê duyệt các yêu cầu xin liên kết con của phụ huynh trên cổng trực tuyến.
+              </p>
+              <span className="badge badge--pink">Duyệt yêu cầu →</span>
+            </Link>
+          </>
         )}
 
         {roles.includes('Parent') && (

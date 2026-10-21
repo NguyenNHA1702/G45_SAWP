@@ -27,4 +27,6 @@ public class AdministrativeRequest
     public virtual LeaveRequest? LeaveRequest { get; set; }
     public virtual ClassTransferDetail? ClassTransferDetail { get; set; }
     public virtual DocumentRequestDetail? DocumentRequestDetail { get; set; }
+    public virtual GuardianLinkDetail? GuardianLinkDetail { get; set; }
 }
+
