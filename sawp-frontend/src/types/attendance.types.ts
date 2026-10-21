@@ -15,7 +15,7 @@ export interface TeacherClassOption {
   classId: number;
   className: string;
   grade: number;
-  accessReason: 'Homeroom' | 'FirstPeriod';
+  accessReason: 'Homeroom' | 'FirstPeriod' | 'SchoolAdmin';
   isSubmitted: boolean;
 }
 
