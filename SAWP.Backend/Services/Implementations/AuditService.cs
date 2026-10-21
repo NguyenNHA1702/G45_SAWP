@@ -16,8 +16,20 @@ public class AuditService : IAuditService
 
     public async Task LogActionAsync(int? userId, string action, string entityName, string? entityId, string? oldValues, string? newValues, string? ipAddress, CancellationToken cancellationToken = default)
     {
-        await Task.CompletedTask;
+        var log = new AuditLog
+        {
+            UserId = userId,
+            Action = action,
+            EntityName = entityName,
+            EntityId = entityId,
+            OldValues = oldValues,
+            NewValues = newValues,
+            IpAddress = ipAddress,
+            Timestamp = DateTime.UtcNow
+        };
+        await _unitOfWork.Repository<AuditLog>().AddAsync(log, cancellationToken);
     }
+
 
     public async Task<ApiResponse<PaginatedResult<AuditLog>>> GetAuditLogsPagedAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default)
     {

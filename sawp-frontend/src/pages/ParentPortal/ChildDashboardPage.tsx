@@ -133,7 +133,7 @@ export default function ChildDashboardPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <h3 style={{ margin: 0 }}>{child.fullName}</h3>
-                    <span className="badge badge--pink badge--sm">{child.relationship}</span>
+                    <span className="badge badge--pink badge--sm">{child.relationshipName}</span>
                   </div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
                     Mã định danh: <strong>{child.studentCode}</strong> • Ngày sinh:{' '}
@@ -151,7 +151,7 @@ export default function ChildDashboardPage() {
                   border: '1px solid var(--color-border)',
                 }}
               >
-                {child.isPlacementPublished && child.className ? (
+                {child.isPlacementPublished && child.currentClassName ? (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <span className="badge badge--mint">
@@ -166,7 +166,7 @@ export default function ChildDashboardPage() {
                           Lớp học chính thức
                         </div>
                         <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--color-accent)' }}>
-                          Lớp {child.className}
+                          Lớp {child.currentClassName}
                         </div>
                       </div>
                     </div>

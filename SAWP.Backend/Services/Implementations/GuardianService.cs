@@ -389,6 +389,7 @@ public class GuardianService : IGuardianService
                 CurrentClassId = activeAssignment?.ClassId,
                 CurrentClassName = activeAssignment?.Class?.ClassName,
                 Grade = activeAssignment?.Class?.Grade,
+                IsPlacementPublished = activeAssignment?.Class?.IsPlacementPublished ?? false,
                 RelationshipName = myLink?.Relationship.ToString() ?? "Phụ huynh",
                 IsPrimaryContact = myLink?.IsPrimaryContact ?? false
             };

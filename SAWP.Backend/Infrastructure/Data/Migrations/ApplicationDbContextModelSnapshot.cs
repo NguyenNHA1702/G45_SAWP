@@ -87,18 +87,25 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int>("ClassId")
                         .HasColumnType("int");
 
+                    b.Property<string>("CorrectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("Date")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("date");
+
+                    b.Property<int?>("LeaveRequestId")
+                        .HasColumnType("int");
 
                     b.Property<int>("RecordedByUserId")
                         .HasColumnType("int");
 
                     b.Property<string>("Remarks")
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -106,13 +113,24 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int>("StudentId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("ClassId");
+                    b.HasIndex("LeaveRequestId");
 
                     b.HasIndex("RecordedByUserId");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("ClassId", "Date");
+
+                    b.HasIndex("StudentId", "Date")
+                        .IsUnique();
 
                     b.ToTable("AttendanceRecords");
                 });
@@ -243,6 +261,55 @@ namespace Infrastructure.Data.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("ClassAssignments");
+                });
+
+            modelBuilder.Entity("Core.Entities.ClassSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ClassId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("EffectiveTo")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<byte>("Period")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int>("SchoolYearId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("TeacherStaffId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolYearId");
+
+                    b.HasIndex("TeacherStaffId", "DayOfWeek");
+
+                    b.HasIndex("ClassId", "DayOfWeek", "Period", "EffectiveFrom")
+                        .IsUnique();
+
+                    b.ToTable("ClassSchedules");
                 });
 
             modelBuilder.Entity("Core.Entities.ClassTransferDetail", b =>
@@ -440,11 +507,24 @@ namespace Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int?>("CancellationSource")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CancelledByUserId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("Date")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("date");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -461,7 +541,10 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StudentId");
+                    b.HasIndex("CancelledByUserId");
+
+                    b.HasIndex("StudentId", "Date")
+                        .IsUnique();
 
                     b.ToTable("LunchRegistrations");
                 });
@@ -515,17 +598,30 @@ namespace Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("ReferenceKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int>("UserId")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "IsRead");
+
+                    b.HasIndex("UserId", "ReferenceKey")
+                        .IsUnique()
+                        .HasFilter("[ReferenceKey] IS NOT NULL");
 
                     b.ToTable("Notifications");
                 });
@@ -818,6 +914,11 @@ namespace Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Core.Entities.LeaveRequest", "LeaveRequest")
+                        .WithMany()
+                        .HasForeignKey("LeaveRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Core.Entities.User", "RecordedByUser")
                         .WithMany()
                         .HasForeignKey("RecordedByUserId")
@@ -830,11 +931,20 @@ namespace Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Core.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Class");
+
+                    b.Navigation("LeaveRequest");
 
                     b.Navigation("RecordedByUser");
 
                     b.Navigation("Student");
+
+                    b.Navigation("UpdatedByUser");
                 });
 
             modelBuilder.Entity("Core.Entities.AuditLog", b =>
@@ -882,6 +992,33 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("Class");
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("Core.Entities.ClassSchedule", b =>
+                {
+                    b.HasOne("Core.Entities.Class", "Class")
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.SchoolYear", "SchoolYear")
+                        .WithMany()
+                        .HasForeignKey("SchoolYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.StaffProfile", "TeacherStaff")
+                        .WithMany()
+                        .HasForeignKey("TeacherStaffId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Class");
+
+                    b.Navigation("SchoolYear");
+
+                    b.Navigation("TeacherStaff");
                 });
 
             modelBuilder.Entity("Core.Entities.ClassTransferDetail", b =>
@@ -957,11 +1094,18 @@ namespace Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Core.Entities.LunchRegistration", b =>
                 {
+                    b.HasOne("Core.Entities.User", "CancelledByUser")
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Core.Entities.Student", "Student")
                         .WithMany("LunchRegistrations")
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("CancelledByUser");
 
                     b.Navigation("Student");
                 });

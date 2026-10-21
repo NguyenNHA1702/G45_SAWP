@@ -71,6 +71,7 @@ public class LinkedChildSummaryDto
     public int? CurrentClassId { get; set; }
     public string? CurrentClassName { get; set; }
     public int? Grade { get; set; }
+    public bool IsPlacementPublished { get; set; }
     public string RelationshipName { get; set; } = string.Empty;
     public bool IsPrimaryContact { get; set; }
 }
