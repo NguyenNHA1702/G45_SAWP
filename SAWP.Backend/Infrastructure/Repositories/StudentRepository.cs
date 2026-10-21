@@ -1,4 +1,3 @@
-using Core.DTOs;
 using Core.Entities;
 using Core.Interfaces;
 using Infrastructure.Data;
@@ -84,29 +83,6 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     {
         return await _context.StudentGuardians
             .AnyAsync(sg => sg.StudentId == studentId && sg.Guardian.UserId == userId, ct);
-    }
-
-    public async Task<IReadOnlyList<ChildSummaryDto>> GetChildrenByGuardianUserIdAsync(int userId, CancellationToken ct = default)
-    {
-        var items = await _context.StudentGuardians.AsNoTracking()
-            .Where(sg => sg.Guardian.UserId == userId && sg.Student.Status == "Active")
-            .Select(sg => new ChildSummaryDto
-            {
-                StudentId = sg.Student.Id,
-                StudentCode = sg.Student.StudentCode,
-                FullName = sg.Student.FullName,
-                AvatarUrl = sg.Student.AvatarUrl,
-                Gender = sg.Student.Gender,
-                DateOfBirth = sg.Student.DateOfBirth,
-                ClassId = sg.Student.ClassAssignments.Where(ca => ca.IsActive).Select(ca => ca.ClassId).FirstOrDefault(),
-                ClassName = sg.Student.ClassAssignments.Where(ca => ca.IsActive).Select(ca => ca.Class.ClassName).FirstOrDefault() ?? "Chưa phân lớp",
-                Relationship = sg.Relationship,
-                IsPrimaryContact = sg.IsPrimaryContact
-            })
-            .OrderBy(c => c.FullName)
-            .ToListAsync(ct);
-
-        return items;
     }
 
     public async Task<bool> ExistsByStudentCodeAsync(string studentCode, int? excludeStudentId = null, CancellationToken cancellationToken = default)

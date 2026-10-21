@@ -1,6 +1,3 @@
-using System.Text.Json.Serialization;
-using Core.Enums;
-
 namespace Core.DTOs;
 
 public class GuardianInputDto
@@ -115,21 +112,6 @@ public class ImportStudentRowDto
     public bool IsValid { get; set; } = true;
     public bool IsDuplicate { get; set; } = false;
     public string? ErrorMessage { get; set; }
-}
-
-public class ChildSummaryDto
-{
-    public int StudentId { get; set; }
-    public string StudentCode { get; set; } = string.Empty;
-    public string FullName { get; set; } = string.Empty;
-    public string? AvatarUrl { get; set; }
-    public string Gender { get; set; } = string.Empty;
-    public DateTime DateOfBirth { get; set; }
-    public int ClassId { get; set; }
-    public string ClassName { get; set; } = string.Empty;
-    [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RelationshipTypes Relationship { get; set; }
-    public bool IsPrimaryContact { get; set; }
 }
 
 public class ImportStudentsConfirmDto

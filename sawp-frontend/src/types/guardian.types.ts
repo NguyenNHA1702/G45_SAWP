@@ -45,12 +45,13 @@ export interface LinkedChildSummaryDto {
   fullName: string;
   dateOfBirth: string;
   gender: string;
+  avatarUrl?: string | null;
   status: string;
-  classId?: number;
-  className?: string;
-  grade?: number;
+  currentClassId?: number | null;
+  currentClassName?: string | null;
+  grade?: number | null;
   isPlacementPublished: boolean;
-  relationship: string;
+  relationshipName: string;
   isPrimaryContact: boolean;
 }
 

@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useState, useMemo, type ReactNode } from 'react';
-import type { ChildSummary } from '../types/parent.types';
-import { parentApi } from '../services/implementations/parentApi';
+import type { LinkedChildSummaryDto } from '../types/guardian.types';
+import { guardianApi } from '../services/implementations/guardianApi';
 import { USER_KEY } from '../services/apiClient';
 
 interface ParentChildContextValue {
-  children: ChildSummary[];
-  activeChild: ChildSummary | null;
+  children: LinkedChildSummaryDto[];
+  activeChild: LinkedChildSummaryDto | null;
   activeChildId: number | null;
   selectChild: (studentId: number) => void;
   loading: boolean;
@@ -23,7 +23,7 @@ interface ParentChildProviderProps {
 }
 
 export function ParentChildProvider({ children, userId, userRoles }: ParentChildProviderProps) {
-  const [childrenList, setChildrenList] = useState<ChildSummary[]>([]);
+  const [childrenList, setChildrenList] = useState<LinkedChildSummaryDto[]>([]);
   const [activeChildId, setActiveChildId] = useState<number | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? Number(saved) : null;
@@ -52,8 +52,8 @@ export function ParentChildProvider({ children, userId, userRoles }: ParentChild
     }
     try {
       setLoading(true);
-      const data = await parentApi.getMyChildren();
-      const list = Array.isArray(data) ? data : [];
+      const res = await guardianApi.getMyChildren();
+      const list = res.success && Array.isArray(res.data) ? res.data : [];
       setChildrenList(list);
 
       if (list.length > 0) {

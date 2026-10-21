@@ -28,7 +28,7 @@ export function ChildSelectorPill() {
       >
         {children.map((child) => (
           <option key={child.studentId} value={child.studentId}>
-            {child.fullName} — Lớp {child.className}
+            {child.fullName} — Lớp {child.currentClassName}
           </option>
         ))}
       </select>
