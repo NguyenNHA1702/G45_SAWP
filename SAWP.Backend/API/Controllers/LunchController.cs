@@ -37,7 +37,7 @@ public class LunchController : BaseApiController
     [HttpGet("live-board")]
     public async Task<IActionResult> GetLiveBoard([FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
-        var targetDate = date ?? DateTime.Today;
+        var targetDate = date ?? _clock.Today;
         var result = await _lunchService.GetDailyMealBoardAsync(targetDate, cancellationToken);
         return Ok(result);
     }
@@ -48,13 +48,13 @@ public class LunchController : BaseApiController
     [HttpGet("daily-count")]
     public async Task<IActionResult> GetDailyCount([FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
-        var targetDate = date ?? DateTime.Today;
+        var targetDate = date ?? _clock.Today;
         var result = await _lunchService.GetDailyMealCountAsync(targetDate, cancellationToken);
         return Ok(result);
     }
 
     /// <summary>
-    /// Chốt số lượng suất ăn gửi nhà bếp lúc 08h15
+    /// Chốt số lượng suất ăn gửi nhà bếp (giờ chốt: School:LunchCutoffTime)
     /// </summary>
     [HttpPost("lock-day")]
     public async Task<IActionResult> LockDay([FromBody] LockMealDayRequestDto request, CancellationToken cancellationToken)

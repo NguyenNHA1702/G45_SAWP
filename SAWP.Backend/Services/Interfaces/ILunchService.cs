@@ -9,7 +9,7 @@ public interface ILunchService
     Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Ghi nhận hủy suất ăn trước giờ chốt 08h15 cho ngày áp dụng
+    /// Ghi nhận hủy suất ăn (nguồn: đơn nghỉ) cho ngày áp dụng
     /// </summary>
     Task<ApiResponse<bool>> CancelMealForLeaveAsync(int studentId, DateTime mealDate, string reason, CancellationToken cancellationToken = default);
 
@@ -24,7 +24,7 @@ public interface ILunchService
     Task<ApiResponse<DailyMealBoardDto>> GetDailyMealBoardAsync(DateTime date, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Chốt số lượng suất ăn trong ngày gửi bếp ăn lúc 08h15
+    /// Chốt số lượng suất ăn trong ngày gửi bếp ăn (giờ chốt: School:LunchCutoffTime)
     /// </summary>
     Task<ApiResponse<bool>> LockDailyMealAsync(LockMealDayRequestDto request, CancellationToken cancellationToken = default);
 }

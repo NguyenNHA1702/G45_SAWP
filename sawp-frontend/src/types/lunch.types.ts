@@ -10,7 +10,7 @@ export interface MealHeadcount {
   date: string;
   isServiceDay: boolean;
   isFinalized: boolean;
-  finalizeTime: string; // "10:30:00"
+  finalizeTime: string; // giờ chốt suất ăn, vd "08:30:00"
   totalMeals: number;
   standardLunch: number;
   vegetarianLunch: number;

@@ -53,15 +53,17 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(r => r.StudentId == studentId && r.Date.Date == targetDate, cancellationToken);
 
-        if (reg != null)
+        if (reg != null && reg.IsActive)
         {
             reg.IsActive = false;
-            reg.Remarks = $"Hủy do đơn xin nghỉ / vắng: {reason} (Ghi nhận lúc {DateTime.Now:HH:mm dd/MM/yyyy})";
+            reg.CancellationSource = LunchCancellationSource.Leave;
+            reg.CancelledAt = DateTime.UtcNow;
+            reg.CancellationReason = reason;
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return ApiResponse<bool>.Ok(true, "Đã tự động ghi nhận hủy suất ăn trước giờ chốt");
         }
 
-        return ApiResponse<bool>.Ok(false, "Học sinh không có đăng ký suất ăn nào cho ngày này");
+        return ApiResponse<bool>.Ok(false, "Học sinh không có đăng ký suất ăn còn hiệu lực cho ngày này");
     }
 
     public async Task<ApiResponse<bool>> RestoreMealForStudentAsync(int studentId, DateTime mealDate, string reason, CancellationToken cancellationToken = default)
@@ -71,14 +73,19 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(r => r.StudentId == studentId && r.Date.Date == targetDate, cancellationToken);
 
-        if (reg != null)
+        if (reg != null && !reg.IsActive)
         {
             reg.IsActive = true;
-            reg.Remarks = $"Khôi phục suất ăn: {reason} (Lúc {DateTime.Now:HH:mm dd/MM/yyyy})";
+            reg.CancellationSource = null;
+            reg.CancelledAt = null;
+            reg.CancelledByUserId = null;
+            reg.CancellationReason = null;
+            reg.Remarks = $"Khôi phục suất ăn: {reason} (Lúc {_clock.Now:HH:mm dd/MM/yyyy})";
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return ApiResponse<bool>.Ok(true, "Đã khôi phục suất ăn");
         }
 
-        return ApiResponse<bool>.Ok(false, "Học sinh chưa có bản ghi đăng ký bán trú gốc");
+        return ApiResponse<bool>.Ok(false, "Học sinh chưa có bản ghi đăng ký bán trú bị hủy cho ngày này");
     }
 
     public async Task<ApiResponse<DailyMealBoardDto>> GetDailyMealBoardAsync(DateTime date, CancellationToken cancellationToken = default)
@@ -154,13 +161,15 @@ public class LunchService : ILunchService
             });
         }
 
-        // 4. Danh sách nhật ký biến động suất ăn (Audit Log)
+        // 4. Danh sách nhật ký biến động suất ăn (Audit Log): suất bị hủy + suất được khôi phục
+        var cutoffAt = targetDate.Add(_options.LunchCutoff);
         var logs = new List<MealAuditLogDto>();
-        foreach (var reg in registrations.Where(r => !string.IsNullOrEmpty(r.Remarks)))
+        foreach (var reg in registrations.Where(r => !r.IsActive || !string.IsNullOrEmpty(r.Remarks)))
         {
             var studentClass = reg.Student?.ClassAssignments.FirstOrDefault(ca => ca.IsActive)?.Class?.ClassName ?? "Chưa phân lớp";
             var isAutoCancelled = !reg.IsActive;
             var changeType = isAutoCancelled ? "AutoCancelled" : (reg.Remarks?.Contains("Khôi phục") == true ? "Restored" : "Adjustment");
+            var changedAt = isAutoCancelled && reg.CancelledAt.HasValue ? reg.CancelledAt.Value : reg.CreatedAt;
 
             logs.Add(new MealAuditLogDto
             {
@@ -169,9 +178,9 @@ public class LunchService : ILunchService
                 StudentName = reg.Student?.FullName ?? string.Empty,
                 ClassName = studentClass,
                 ChangeType = changeType,
-                Reason = reg.Remarks ?? string.Empty,
-                Timestamp = reg.CreatedAt,
-                IsBeforeCutoff = true
+                Reason = (isAutoCancelled ? reg.CancellationReason : null) ?? reg.Remarks ?? string.Empty,
+                Timestamp = changedAt,
+                IsBeforeCutoff = _clock.ToSchoolTime(changedAt) <= cutoffAt
             });
         }
 
@@ -190,7 +199,7 @@ public class LunchService : ILunchService
             Date = targetDate,
             IsLocked = isLocked,
             LockedAt = lockedAt,
-            CutoffTime = "08:15",
+            CutoffTime = _options.LunchCutoffTime,
             TotalInitialRegistered = totalInitial,
             TotalAutoCancelled = totalCancelled,
             TotalActiveToCook = totalActive,
@@ -215,7 +224,7 @@ public class LunchService : ILunchService
             {
                 Date = targetDate,
                 IsServing = true,
-                CutoffTime = new TimeSpan(8, 15, 0),
+                CutoffTime = _options.LunchCutoff,
                 IsLocked = true,
                 LockedAt = DateTime.UtcNow,
                 Remarks = request.Notes
@@ -233,7 +242,7 @@ public class LunchService : ILunchService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return ApiResponse<bool>.Ok(true, "Đã chốt danh sách suất ăn gửi nhà bếp thành công lúc 08h15");
+        return ApiResponse<bool>.Ok(true, $"Đã chốt danh sách suất ăn gửi nhà bếp thành công (giờ chốt {_options.LunchCutoffTime})");
     }
 
     public async Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, CancellationToken cancellationToken = default)
@@ -247,7 +256,7 @@ public class LunchService : ILunchService
             ? day.IsServing 
             : (targetDate.DayOfWeek != DayOfWeek.Saturday && targetDate.DayOfWeek != DayOfWeek.Sunday);
 
-        var finalizeTime = TimeSpan.TryParse(_options.KitchenFinalizeTime, out var ft) ? ft : new TimeSpan(10, 30, 0);
+        var finalizeTime = _options.LunchCutoff;
         bool isFinalized = (targetDate < _clock.Today) || (targetDate == _clock.Today && _clock.Now.TimeOfDay >= finalizeTime);
 
         if (!isServiceDay)

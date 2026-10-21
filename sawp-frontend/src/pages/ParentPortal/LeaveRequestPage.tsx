@@ -3,6 +3,7 @@ import { Calendar, AlertCircle, Plus, Send, X, ShieldAlert, CheckCircle2 } from 
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { apiClient } from '../../services/apiClient';
+import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 
 interface LinkedChild {
   studentId: number;
@@ -187,8 +188,8 @@ export default function LeaveRequestPage() {
       >
         <AlertCircle size={22} color="#2563EB" style={{ marginTop: '2px', flexShrink: 0 }} />
         <div style={{ fontSize: '13px', color: '#1E3A8A', lineHeight: 1.6 }}>
-          <strong>Quy tắc bán trú Tân Lập A:</strong> Nhà bếp chốt thực phẩm lúc <strong>08h15</strong> mỗi ngày. 
-          Đơn được duyệt trước 08h15 của ngày áp dụng sẽ được tự động ghi nhận hủy suất ăn trước giờ chốt. 
+          <strong>Quy tắc bán trú Tân Lập A:</strong> Nhà bếp chốt thực phẩm lúc <strong>{LUNCH_CUTOFF_LABEL}</strong> mỗi ngày. 
+          Đơn được duyệt trước {LUNCH_CUTOFF_LABEL} của ngày áp dụng sẽ được tự động ghi nhận hủy suất ăn trước giờ chốt. 
           Nếu con chỉ nghỉ học tiết sáng nhưng trưa vẫn vào trường ăn bán trú để học buổi chiều, vui lòng tích chọn ô <em>"Vẫn giữ suất ăn bán trú"</em>.
         </div>
       </div>
@@ -346,9 +347,9 @@ export default function LeaveRequestPage() {
                   {r.keepLunchService ? (
                     <span style={{ color: '#0284C7', fontWeight: 600 }}>Giữ suất ăn theo yêu cầu</span>
                   ) : r.isLunchCancelled ? (
-                    <span style={{ color: '#16A34A', fontWeight: 600 }}>Tự động ghi nhận hủy trước 08h15</span>
+                    <span style={{ color: '#16A34A', fontWeight: 600 }}>Tự động ghi nhận hủy trước {LUNCH_CUTOFF_LABEL}</span>
                   ) : (
-                    <span style={{ color: '#64748B' }}>Không hủy (sau 08h15 hoặc không ăn bán trú)</span>
+                    <span style={{ color: '#64748B' }}>Không hủy (sau {LUNCH_CUTOFF_LABEL} hoặc không ăn bán trú)</span>
                   )}
                 </div>
               </div>

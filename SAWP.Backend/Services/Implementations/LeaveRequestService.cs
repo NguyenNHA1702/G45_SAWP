@@ -1,9 +1,11 @@
+using Core.Configuration;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
 using Core.Enums;
 using Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Services.Interfaces;
 
 namespace Services.Implementations;
@@ -12,11 +14,19 @@ public class LeaveRequestService : ILeaveRequestService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILunchService _lunchService;
+    private readonly ISchoolClock _clock;
+    private readonly SchoolOptions _options;
 
-    public LeaveRequestService(IUnitOfWork unitOfWork, ILunchService lunchService)
+    public LeaveRequestService(
+        IUnitOfWork unitOfWork,
+        ILunchService lunchService,
+        ISchoolClock clock,
+        IOptions<SchoolOptions> schoolOptions)
     {
         _unitOfWork = unitOfWork;
         _lunchService = lunchService;
+        _clock = clock;
+        _options = schoolOptions.Value;
     }
 
     public async Task<ApiResponse<LeaveRequestItemDto>> SubmitLeaveRequestAsync(int parentUserId, CreateLeaveRequestDto request, CancellationToken cancellationToken = default)
@@ -468,7 +478,7 @@ public class LeaveRequestService : ILeaveRequestService
             }
         }
 
-        // 3. Handshake with Lunch Service: Evaluate 08h15 per APPLICABLE DATE
+        // 3. Handshake with Lunch Service: Evaluate the lunch cutoff (School:LunchCutoffTime) per APPLICABLE DATE
         var cancelledDates = new List<DateTime>();
         var totalDays = (req.LeaveRequest.EndDate.Date - req.LeaveRequest.StartDate.Date).Days;
 
@@ -480,10 +490,9 @@ public class LeaveRequestService : ILeaveRequestService
             for (int i = 0; i <= totalDays; i++)
             {
                 var curDate = req.LeaveRequest.StartDate.Date.AddDays(i);
-                var cutoffTime = curDate.Date.Add(new TimeSpan(8, 15, 0));
-                var now = DateTime.Now;
+                var cutoffTime = curDate.Date.Add(_options.LunchCutoff);
 
-                if (now <= cutoffTime)
+                if (_clock.Now <= cutoffTime)
                 {
                     var cancelRes = await _lunchService.CancelMealForLeaveAsync(
                         req.StudentId.Value,
@@ -519,8 +528,8 @@ public class LeaveRequestService : ILeaveRequestService
             : "Thông báo phê duyệt đơn thông thường";
 
         var mealNote = cancelledDates.Any()
-            ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd/MM")))}) đã được tự động ghi nhận hủy trước 08h15."
-            : (req.LeaveRequest.KeepLunchService ? "Suất ăn bán trú được giữ nguyên theo yêu cầu trên đơn." : "Suất ăn không bị hủy (sau giờ chốt 08h15 hoặc học sinh không đăng ký bán trú).");
+            ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd/MM")))}) đã được tự động ghi nhận hủy trước {_options.LunchCutoffTime}."
+            : (req.LeaveRequest.KeepLunchService ? "Suất ăn bán trú được giữ nguyên theo yêu cầu trên đơn." : $"Suất ăn không bị hủy (sau giờ chốt {_options.LunchCutoffTime} hoặc học sinh không đăng ký bán trú).");
 
         var approveContent = isEscalatedDecision
             ? $"Ban Giám Hiệu đã phê duyệt đơn xin nghỉ {durationDays} ngày của con bạn ({req.Student?.FullName}). {mealNote}"

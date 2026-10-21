@@ -455,13 +455,19 @@ public class AttendanceService : IAttendanceService
 
             // T2: Suất ăn bán trú (LunchAdjust - Chỉ hủy khi VẮNG CÓ PHÉP; Vắng không phép bếp vẫn nấu ăn bình thường)
             // Suất ăn trưa chỉ phụ thuộc điểm danh buổi Sáng
+            // Khôi phục: HS chuyển từ vắng có phép -> đi học/đi muộn, hoặc HS có đơn nghỉ (đã hủy suất) nhưng thực tế đi học
+            // (chỉ xét HS có thay đổi trong lần lưu này)
+            var attendingIds = changes
+                .Where(c => c.NewStatus == AttendanceStatus.Present || c.NewStatus == AttendanceStatus.Late)
+                .Select(c => c.StudentId)
+                .ToList();
             var relevantStudentIds = session == AttendanceSession.Morning
-                ? newlyExcused.Concat(leftExcused).Distinct().ToList()
+                ? newlyExcused.Concat(attendingIds).Distinct().ToList()
                 : new List<int>();
             if (relevantStudentIds.Count > 0)
             {
                 var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(relevantStudentIds, targetDate, track: true, ct);
-                var finalizeTime = TimeSpan.TryParse(_options.KitchenFinalizeTime, out var ft) ? ft : new TimeSpan(10, 30, 0);
+                var cutoff = _options.LunchCutoff;
 
                 // Hủy suất ăn CHỈ cho HS mới chuyển sang vắng có phép
                 foreach (var id in newlyExcused)
@@ -477,12 +483,23 @@ public class AttendanceService : IAttendanceService
                     }
                 }
 
-                // Khôi phục suất ăn cho HS chuyển từ vắng có phép -> đi học/đi muộn
-                foreach (var id in leftExcused)
+                // Khôi phục suất ăn cho HS chuyển từ vắng có phép -> đi học/đi muộn,
+                // hoặc HS có đơn nghỉ đã hủy suất nhưng thực tế vẫn đi học
+                foreach (var id in attendingIds)
                 {
-                    if (lunchRegs.TryGetValue(id, out var r) && !r.IsActive && r.CancellationSource == LunchCancellationSource.Attendance)
+                    if (!lunchRegs.TryGetValue(id, out var r) || r.IsActive) continue;
+
+                    var cancelledByLeftExcused = leftExcused.Contains(id) && r.CancellationSource == LunchCancellationSource.Attendance;
+                    var cancelledByLeave = r.CancellationSource == LunchCancellationSource.Leave;
+                    if (cancelledByLeftExcused || cancelledByLeave)
                     {
-                        if (now.TimeOfDay < finalizeTime)
+                        var studentName = rosterMap.TryGetValue(id, out var st) ? st.FullName : $"HS #{id}";
+                        if (cancelledByLeave)
+                        {
+                            result.Warnings.Add($"{studentName}: có đơn nghỉ đã hủy suất ăn nhưng thực tế đi học.");
+                        }
+
+                        if (now.TimeOfDay < cutoff)
                         {
                             r.IsActive = true;
                             r.CancellationSource = null;
@@ -494,8 +511,7 @@ public class AttendanceService : IAttendanceService
                         else
                         {
                             result.LunchRestoreSkippedCount++;
-                            var studentName = rosterMap.TryGetValue(id, out var st) ? st.FullName : $"HS #{id}";
-                            result.Warnings.Add($"{studentName}: Bếp đã chốt suất lúc {_options.KitchenFinalizeTime}, không khôi phục được suất ăn.");
+                            result.Warnings.Add($"{studentName}: Bếp đã chốt suất lúc {_options.LunchCutoffTime}, không khôi phục được suất ăn.");
                         }
                     }
                 }
@@ -633,7 +649,7 @@ public class AttendanceService : IAttendanceService
             rec.UpdatedByUserId = userId;
 
             // Xử lý suất ăn bán trú (Chỉ hủy khi VẮNG CÓ PHÉP; Vắng không phép bếp vẫn nấu ăn bình thường)
-            var finalizeTime = TimeSpan.TryParse(_options.KitchenFinalizeTime, out var ft) ? ft : new TimeSpan(10, 30, 0);
+            var cutoff = _options.LunchCutoff;
             var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(new[] { rec.StudentId }, rec.Date, track: true, ct);
 
             if (rec.Session == AttendanceSession.Morning && lunchRegs.TryGetValue(rec.StudentId, out var lunch))
@@ -653,7 +669,7 @@ public class AttendanceService : IAttendanceService
                 {
                     if (!lunch.IsActive && (lunch.CancellationSource == LunchCancellationSource.Attendance || lunch.CancellationSource == LunchCancellationSource.Staff))
                     {
-                        if (rec.Date == _clock.Today && _clock.Now.TimeOfDay < finalizeTime)
+                        if (rec.Date == _clock.Today && _clock.Now.TimeOfDay < cutoff)
                         {
                             lunch.IsActive = true;
                             lunch.CancellationSource = null;

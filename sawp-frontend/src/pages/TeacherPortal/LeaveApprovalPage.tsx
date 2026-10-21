@@ -3,6 +3,7 @@ import { Check, X, ShieldAlert, CheckCircle2, UserCheck, MessageSquare, AlertTri
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { USER_KEY } from '../../services/apiClient';
+import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 
 export default function LeaveApprovalPage() {
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
@@ -326,7 +327,7 @@ export default function LeaveApprovalPage() {
                     {r.keepLunchService ? (
                       <strong style={{ color: '#0284C7' }}>Phụ huynh chọn GIỮ SUẤT ĂN</strong>
                     ) : (
-                      <span>Tự động hủy nếu duyệt trước 08h15</span>
+                      <span>Tự động hủy nếu duyệt trước {LUNCH_CUTOFF_LABEL}</span>
                     )}
                   </div>
                 </div>

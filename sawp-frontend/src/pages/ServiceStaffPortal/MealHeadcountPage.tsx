@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { lunchApi } from '../../services/implementations/lunchApi';
 import type { DailyMealBoard } from '../../types/lunch.types';
+import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 
 export default function MealHeadcountPage() {
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -33,7 +34,7 @@ export default function MealHeadcountPage() {
 
   // Modals
   const [showLockModal, setShowLockModal] = useState<boolean>(false);
-  const [lockNotes, setLockNotes] = useState<string>('Đã kiểm tra đối chiếu danh sách điểm danh và đơn nghỉ lúc 08h15');
+  const [lockNotes, setLockNotes] = useState<string>(`Đã kiểm tra đối chiếu danh sách điểm danh và đơn nghỉ lúc ${LUNCH_CUTOFF_LABEL}`);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   const fetchBoard = async (date: string) => {
@@ -60,7 +61,7 @@ export default function MealHeadcountPage() {
         date: selectedDate,
         notes: lockNotes
       });
-      setMessage({ text: 'Đã chốt số liệu suất ăn gửi nhà bếp thành công (Mốc 08h15)!', type: 'success' });
+      setMessage({ text: `Đã chốt số liệu suất ăn gửi nhà bếp thành công (Mốc ${LUNCH_CUTOFF_LABEL})!`, type: 'success' });
       setShowLockModal(false);
       await fetchBoard(selectedDate);
     } catch (err: any) {
@@ -83,7 +84,7 @@ export default function MealHeadcountPage() {
               Bảng Vận Hành <span className="squiggle">Suất Ăn Bán Trú</span>
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: '0.95rem' }}>
-              Giám sát số lượng khẩu phần trực tiếp, tự động trừ suất khi GVCN duyệt đơn nghỉ trước 08h15.
+              Giám sát số lượng khẩu phần trực tiếp, tự động trừ suất khi GVCN duyệt đơn nghỉ trước {LUNCH_CUTOFF_LABEL}.
             </p>
           </div>
 
@@ -171,13 +172,13 @@ export default function MealHeadcountPage() {
                   {board.isLocked ? 'ĐÃ CHỐT SỐ LIỆU SUẤT ĂN GỬI NHÀ BẾP' : 'ĐANG CẬP NHẬT BIẾN ĐỘNG TRỰC TIẾP'}
                 </strong>
                 <span className={`badge ${board.isLocked ? 'badge--emerald' : 'badge--amber'}`} style={{ fontSize: '0.75rem' }}>
-                  {board.isLocked ? 'Đã khóa lúc 08h15' : 'Hạn chốt: 08h15'}
+                  {board.isLocked ? `Đã khóa lúc ${LUNCH_CUTOFF_LABEL}` : `Hạn chốt: ${LUNCH_CUTOFF_LABEL}`}
                 </span>
               </div>
               <div style={{ fontSize: '0.85rem', color: 'var(--color-muted-fg)', marginTop: 2 }}>
                 {board.isLocked 
                   ? `Dữ liệu ngày ${new Date(board.date).toLocaleDateString('vi-VN')} đã được khóa. Mọi phát sinh mới được chuyển sang kho suất ăn dự phòng.`
-                  : `Đơn xin nghỉ học được GVCN phê duyệt trước 08h15 sẽ tự động được hệ thống giảm trừ và không tính phí.`}
+                  : `Đơn xin nghỉ học được GVCN phê duyệt trước ${LUNCH_CUTOFF_LABEL} sẽ tự động được hệ thống giảm trừ và không tính phí.`}
               </div>
             </div>
           </div>
@@ -200,7 +201,7 @@ export default function MealHeadcountPage() {
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', fontWeight: 600 }}
               >
                 <Lock size={16} />
-                Chốt Suất Ăn (Mốc 08h15)
+                Chốt Suất Ăn (Mốc {LUNCH_CUTOFF_LABEL})
               </button>
             )}
           </div>
@@ -237,7 +238,7 @@ export default function MealHeadcountPage() {
           <div className="card" style={{ padding: '20px', borderLeft: '4px solid #ef4444' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-muted-fg)', textTransform: 'uppercase' }}>
-                Hủy tự động trước 08h15
+                Hủy tự động trước {LUNCH_CUTOFF_LABEL}
               </span>
               <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <UserMinus size={18} />
@@ -399,7 +400,7 @@ export default function MealHeadcountPage() {
                       className={`badge ${log.changeType === 'AutoCancelled' ? 'badge--rose' : 'badge--emerald'}`}
                       style={{ fontSize: '0.7rem' }}
                     >
-                      {log.changeType === 'AutoCancelled' ? 'Hủy suất trước 08h15' : 'Khôi phục suất'}
+                      {log.changeType === 'AutoCancelled' ? `Hủy suất trước ${LUNCH_CUTOFF_LABEL}` : 'Khôi phục suất'}
                     </span>
                   </div>
 
@@ -424,7 +425,7 @@ export default function MealHeadcountPage() {
 
       </div>
 
-      {/* MODAL 1: Confirm Lock Headcount at 08:15 */}
+      {/* MODAL 1: Confirm Lock Headcount at the lunch cutoff */}
       {showLockModal && (
         <div className="modal-backdrop">
           <div className="modal card" style={{ maxWidth: 500, padding: 28 }}>
@@ -433,7 +434,7 @@ export default function MealHeadcountPage() {
                 <Lock size={22} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Chốt số liệu Bán trú lúc 08h15</h3>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Chốt số liệu Bán trú lúc {LUNCH_CUTOFF_LABEL}</h3>
                 <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-muted-fg)' }}>Gửi số liệu chuẩn xác sang bếp trưởng</p>
               </div>
             </div>
@@ -450,7 +451,7 @@ export default function MealHeadcountPage() {
             </div>
 
             <p style={{ fontSize: '0.88rem', color: 'var(--color-muted-fg)', marginBottom: 16 }}>
-              Sau khi bấm chốt, hệ thống sẽ <strong>khóa bảng số liệu</strong> ngày hôm nay. Các đơn nghỉ gửi muộn sau 08h15 sẽ không tự động hoàn tiền theo quy định của nhà trường.
+              Sau khi bấm chốt, hệ thống sẽ <strong>khóa bảng số liệu</strong> ngày hôm nay. Các đơn nghỉ gửi muộn sau {LUNCH_CUTOFF_LABEL} sẽ không tự động hoàn tiền theo quy định của nhà trường.
             </p>
 
             <div style={{ marginBottom: 20 }}>
@@ -508,7 +509,7 @@ export default function MealHeadcountPage() {
                 PHIẾU BÀN GIAO SUẤT ĂN BÁN TRÚ CHO NHÀ BẾP
               </h2>
               <div style={{ fontSize: '0.85rem', fontStyle: 'italic' }}>
-                (Thời điểm chốt số liệu: 08h15 sáng | Dữ liệu đồng bộ trực tiếp từ điểm danh & đơn xin nghỉ)
+                (Thời điểm chốt số liệu: {LUNCH_CUTOFF_LABEL} sáng | Dữ liệu đồng bộ trực tiếp từ điểm danh & đơn xin nghỉ)
               </div>
             </div>
 

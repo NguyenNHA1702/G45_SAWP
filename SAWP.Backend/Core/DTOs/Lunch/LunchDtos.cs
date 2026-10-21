@@ -23,7 +23,7 @@ public class MealHeadcountDto
 {
     public DateTime Date { get; set; }
     public bool IsServiceDay { get; set; }
-    public bool IsFinalized { get; set; }                          // Now >= KitchenFinalizeTime
+    public bool IsFinalized { get; set; }                          // Now >= LunchCutoffTime
     public TimeSpan FinalizeTime { get; set; }
     public int TotalMeals { get; set; }
     public int StandardLunch { get; set; }
@@ -70,7 +70,7 @@ public class DailyMealBoardDto
     public DateTime Date { get; set; }
     public bool IsLocked { get; set; }
     public DateTime? LockedAt { get; set; }
-    public string CutoffTime { get; set; } = "08:15";
+    public string CutoffTime { get; set; } = "08:30";
     public int TotalInitialRegistered { get; set; }
     public int TotalAutoCancelled { get; set; }
     public int TotalActiveToCook { get; set; }
