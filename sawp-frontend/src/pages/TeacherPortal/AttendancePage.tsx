@@ -8,7 +8,7 @@ import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
 import { formatViDate, formatViDateTime, todayIso } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
-import type { AttendanceSubmitResult, TeacherClassOption } from '../../types/attendance.types';
+import type { AttendanceSession, AttendanceSubmitResult, TeacherClassOption } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
 import { AttendanceRosterTable } from '../../components/attendance/AttendanceRosterTable';
 import { LockedBanner } from '../../components/attendance/LockedBanner';
@@ -16,19 +16,20 @@ import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 export default function AttendancePage() {
   const [date, setDate] = useState<string>(todayIso());
+  const [session, setSession] = useState<AttendanceSession>('Morning');
   const [classes, setClasses] = useState<TeacherClassOption[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<AttendanceSubmitResult | null>(null);
 
-  const vm = useAttendanceSheet(classId, date);
+  const vm = useAttendanceSheet(classId, date, session);
   useUnsavedChangesWarning(vm.isDirty);
 
-  // Load danh sách lớp GV được điểm danh trong ngày
+  // Load danh sách lớp GV được điểm danh trong ngày / buổi
   useEffect(() => {
     let cancelled = false;
     attendanceApi
-      .getMyClasses(date)
+      .getMyClasses(date, session)
       .then((list) => {
         if (cancelled) return;
         setClasses(list);
@@ -38,7 +39,7 @@ export default function AttendancePage() {
     return () => {
       cancelled = true;
     };
-  }, [date]);
+  }, [date, session]);
 
   const guardDirty = () => !vm.isDirty || window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi?');
 
@@ -79,7 +80,7 @@ export default function AttendancePage() {
         <h1>
           Điểm danh <span className="squiggle">hằng ngày</span>
         </h1>
-        <p>Chọn lớp và trạng thái cho từng học sinh. Vắng không phép sẽ tự trừ suất ăn và gửi thông báo cho phụ huynh.</p>
+        <p>Chọn lớp, buổi và trạng thái cho từng học sinh. Vắng không phép sẽ tự trừ suất ăn và gửi thông báo cho phụ huynh.</p>
       </header>
 
       <section className="toolbar" aria-label="Bộ lọc">
@@ -119,6 +120,22 @@ export default function AttendancePage() {
               if (e.target.value && guardDirty()) setDate(e.target.value);
             }}
           />
+        </div>
+        <div className="field">
+          <label className="label" htmlFor="attendance-session">
+            Buổi
+          </label>
+          <select
+            id="attendance-session"
+            className="select"
+            value={session}
+            onChange={(e) => {
+              if (guardDirty()) setSession(e.target.value as AttendanceSession);
+            }}
+          >
+            <option value="Morning">Buổi sáng</option>
+            <option value="Afternoon">Buổi chiều</option>
+          </select>
         </div>
         <div className="toolbar__spacer" />
         <button
@@ -176,7 +193,7 @@ export default function AttendancePage() {
         <footer className="sticky-footer">
           <span className="sticky-footer__info">
             {vm.isDirty && <span className="dirty-dot" aria-hidden="true" />}
-            {vm.isDirty ? 'Có thay đổi chưa lưu' : 'Không có thay đổi'} · {formatViDate(date)}
+            {vm.isDirty ? 'Có thay đổi chưa lưu' : 'Không có thay đổi'} · {session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} · {formatViDate(date)}
           </span>
           <div style={{ display: 'flex', gap: 12 }}>
             <button

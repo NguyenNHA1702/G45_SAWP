@@ -17,6 +17,7 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
     public async Task<IReadOnlyList<AttendanceRecord>> GetDailyClassAttendanceAsync(
         int classId, 
         DateTime date, 
+        AttendanceSession session,
         bool track = false, 
         CancellationToken cancellationToken = default)
     {
@@ -29,7 +30,7 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
 
         return await query
             .Include(ar => ar.Student)
-            .Where(ar => ar.ClassId == classId && ar.Date == date)
+            .Where(ar => ar.ClassId == classId && ar.Date == date && ar.Session == session)
             .ToListAsync(cancellationToken);
     }
 
@@ -44,9 +45,12 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
     public async Task<Dictionary<int, LeaveIndicatorDto>> GetActiveLeavesCoveringDateAsync(
         IEnumerable<int> studentIds, 
         DateTime date, 
+        AttendanceSession session,
         CancellationToken ct = default)
     {
         var studentIdList = studentIds.ToList();
+        // Đơn nghỉ phủ buổi này: nghỉ cả ngày hoặc đúng buổi Sáng/Chiều
+        var matchingSession = session == AttendanceSession.Morning ? LeaveSession.Morning : LeaveSession.Afternoon;
 
         var leaves = await _context.LeaveRequests
             .AsNoTracking()
@@ -56,7 +60,8 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
                       && (lr.AdministrativeRequest.Status == RequestStatus.Submitted
                           || lr.AdministrativeRequest.Status == RequestStatus.UnderReview
                           || lr.AdministrativeRequest.Status == RequestStatus.Approved)
-                      && lr.StartDate <= date && lr.EndDate >= date)
+                      && lr.StartDate <= date && lr.EndDate >= date
+                      && (lr.Session == LeaveSession.FullDay || lr.Session == matchingSession))
             .Select(lr => new 
             {
                 StudentId = lr.AdministrativeRequest.StudentId!.Value,
@@ -68,6 +73,7 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
                     Status         = lr.AdministrativeRequest.Status,
                     StartDate      = lr.StartDate,
                     EndDate        = lr.EndDate,
+                    Session        = lr.Session,
                     Reason         = lr.Reason
                 }
             })
@@ -120,13 +126,14 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
     public async Task<HashSet<int>> GetSubmittedClassIdsAsync(
         IEnumerable<int> classIds, 
         DateTime date, 
+        AttendanceSession session,
         CancellationToken ct = default)
     {
         var classIdList = classIds.ToList();
 
         var submittedIds = await _context.AttendanceRecords
             .AsNoTracking()
-            .Where(ar => classIdList.Contains(ar.ClassId) && ar.Date == date)
+            .Where(ar => classIdList.Contains(ar.ClassId) && ar.Date == date && ar.Session == session)
             .Select(ar => ar.ClassId)
             .Distinct()
             .ToListAsync(ct);
@@ -144,6 +151,7 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             .AsNoTracking()
             .Where(ar => ar.StudentId == studentId && ar.Date >= fromDate && ar.Date <= toDate)
             .OrderByDescending(ar => ar.Date)
+            .ThenBy(ar => ar.Session)
             .ToListAsync(cancellationToken);
     }
 }

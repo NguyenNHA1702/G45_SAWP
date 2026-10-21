@@ -8,6 +8,8 @@ export const AttendanceStatus = {
 export type AttendanceStatus = (typeof AttendanceStatus)[keyof typeof AttendanceStatus];
 
 export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled';
+export type AttendanceSession = 'Morning' | 'Afternoon';
+export type LeaveSession = 'Morning' | 'Afternoon' | 'FullDay';
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff';
 export type SheetLockReason = 'PastDay' | 'NotAssigned' | 'NonSchoolDay' | 'Future';
 
@@ -25,6 +27,7 @@ export interface LeaveIndicator {
   status: RequestStatus;
   startDate: string;
   endDate: string;
+  session: LeaveSession;
   reason: string;
 }
 
@@ -55,6 +58,7 @@ export interface AttendanceSheet {
   classId: number;
   className: string;
   date: string;
+  session: AttendanceSession;
   isSchoolDay: boolean;
   canEdit: boolean;
   lockReason: SheetLockReason | null;
@@ -73,6 +77,7 @@ export interface DailyAttendanceEntry {
 
 export interface SubmitAttendanceSheetPayload {
   date: string; // yyyy-MM-dd
+  session: AttendanceSession;
   entries: DailyAttendanceEntry[];
 }
 
@@ -93,6 +98,7 @@ export interface AttendanceSubmitResult {
 
 export interface AttendanceDay {
   date: string;
+  session: AttendanceSession;
   status: AttendanceStatus;
   remarks: string | null;
   leaveRequestNumber: string | null;

@@ -3,11 +3,11 @@ import { unwrap, unwrapData } from '../../utils/apiError';
 import type { IAttendanceApi } from '../contracts/IAttendanceApi';
 
 export const attendanceApi: IAttendanceApi = {
-  getMyClasses: (date) =>
-    unwrapData(apiClient.get('/attendance/my-classes', { params: { date } })),
+  getMyClasses: (date, session) =>
+    unwrapData(apiClient.get('/attendance/my-classes', { params: { date, session } })),
 
-  getSheet: (classId, date) =>
-    unwrapData(apiClient.get(`/attendance/classes/${classId}/sheet`, { params: { date } })),
+  getSheet: (classId, date, session) =>
+    unwrapData(apiClient.get(`/attendance/classes/${classId}/sheet`, { params: { date, session } })),
 
   submitSheet: (classId, payload) =>
     unwrap(apiClient.put(`/attendance/classes/${classId}/sheet`, payload)),

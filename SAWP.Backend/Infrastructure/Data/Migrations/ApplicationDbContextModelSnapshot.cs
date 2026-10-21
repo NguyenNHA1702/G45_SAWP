@@ -132,7 +132,7 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasIndex("ClassId", "Date");
 
-                    b.HasIndex("StudentId", "Date")
+                    b.HasIndex("StudentId", "Date", "Session")
                         .IsUnique();
 
                     b.ToTable("AttendanceRecords");

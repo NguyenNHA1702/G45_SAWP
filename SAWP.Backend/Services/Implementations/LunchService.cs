@@ -263,7 +263,7 @@ public class LunchService : ILunchService
 
         var rows = await _unitOfWork.Lunch.GetHeadcountRowsAsync(targetDate, cancellationToken);
         var allClassIds = rows.Select(r => r.ClassId).Distinct().ToList();
-        var submittedClassIds = await _unitOfWork.Attendance.GetSubmittedClassIdsAsync(allClassIds, targetDate, cancellationToken);
+        var submittedClassIds = await _unitOfWork.Attendance.GetSubmittedClassIdsAsync(allClassIds, targetDate, AttendanceSession.Morning, cancellationToken);
 
         var activeRows = rows.Where(r => r.IsActive).ToList();
         var dto = new MealHeadcountDto

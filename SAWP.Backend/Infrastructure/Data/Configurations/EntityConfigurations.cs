@@ -181,8 +181,8 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
         builder.Property(ar => ar.CorrectionReason).HasMaxLength(500);
         // 1. Chỉ lưu phần Ngày (loại bỏ giờ phút giây ở SQL)
         builder.Property(ar => ar.Date).HasColumnType("date");
-        // 2. Index chống trùng: 1 học sinh chỉ có 1 bản ghi điểm danh / ngày (BR-20)
-        builder.HasIndex(ar => new { ar.StudentId, ar.Date }).IsUnique();
+        // 2. Index chống trùng: 1 học sinh chỉ có 1 bản ghi điểm danh / buổi (Sáng/Chiều) / ngày (BR-20)
+        builder.HasIndex(ar => new { ar.StudentId, ar.Date, ar.Session }).IsUnique();
         // 3. Index hỗ trợ truy vấn nhanh cả lớp theo ngày
         builder.HasIndex(ar => new { ar.ClassId, ar.Date });
         // FK cũ

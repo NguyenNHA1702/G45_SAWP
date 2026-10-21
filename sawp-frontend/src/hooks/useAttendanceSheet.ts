@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { attendanceApi } from '../services/implementations/attendanceApi';
 import { ApiError, asApiError } from '../utils/apiError';
-import type { AttendanceSheet, AttendanceStatus, AttendanceSummary } from '../types/attendance.types';
+import type { AttendanceSession, AttendanceSheet, AttendanceStatus, AttendanceSummary } from '../types/attendance.types';
 
 export interface DraftRow {
   status: AttendanceStatus | null;
@@ -15,7 +15,7 @@ const buildDraft = (sheet: AttendanceSheet): DraftMap => {
   return map;
 };
 
-export function useAttendanceSheet(classId: number | null, date: string) {
+export function useAttendanceSheet(classId: number | null, date: string, session: AttendanceSession) {
   const [sheet, setSheet] = useState<AttendanceSheet | null>(null);
   const [draft, setDraft] = useState<DraftMap>({});
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export function useAttendanceSheet(classId: number | null, date: string) {
   const [error, setError] = useState<ApiError | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // 1. Load bảng điểm danh mỗi khi đổi lớp / ngày / reload
+  // 1. Load bảng điểm danh mỗi khi đổi lớp / ngày / buổi / reload
   useEffect(() => {
     if (classId === null) {
       setSheet(null);
@@ -34,7 +34,7 @@ export function useAttendanceSheet(classId: number | null, date: string) {
     setLoading(true);
     setError(null);
     attendanceApi
-      .getSheet(classId, date)
+      .getSheet(classId, date, session)
       .then((s) => {
         if (cancelled) return;
         setSheet(s);
@@ -51,7 +51,7 @@ export function useAttendanceSheet(classId: number | null, date: string) {
     return () => {
       cancelled = true;
     };
-  }, [classId, date, reloadKey]);
+  }, [classId, date, session, reloadKey]);
 
   // 2. Thao tác sửa draft
   const setStatus = useCallback((studentId: number, status: AttendanceStatus) => {
@@ -130,13 +130,13 @@ export function useAttendanceSheet(classId: number | null, date: string) {
     });
     setSaving(true);
     try {
-      const res = await attendanceApi.submitSheet(classId, { date, entries });
+      const res = await attendanceApi.submitSheet(classId, { date, session, entries });
       setReloadKey((k) => k + 1);
       return res;
     } finally {
       setSaving(false);
     }
-  }, [sheet, classId, date, draft]);
+  }, [sheet, classId, date, session, draft]);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 

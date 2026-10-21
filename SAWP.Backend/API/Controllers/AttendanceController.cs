@@ -1,5 +1,6 @@
 using API.Extensions;
 using Core.DTOs;
+using Core.Enums;
 using Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,31 +27,38 @@ public class AttendanceController : BaseApiController
     [HttpGet("my-classes")]
     [HttpGet("classes")]
     [Authorize(Roles = "Teacher,OfficeStaff,Admin,SchoolBoard")]
-    public async Task<IActionResult> GetMyClasses([FromQuery] DateTime? date, CancellationToken ct)
+    public async Task<IActionResult> GetMyClasses(
+        [FromQuery] DateTime? date,
+        [FromQuery] AttendanceSession session = AttendanceSession.Morning,
+        CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
         var roles = User.GetRoles();
-        var result = await _attendanceService.GetMyClassesAsync(userId, roles, date, ct);
+        var result = await _attendanceService.GetMyClassesAsync(userId, roles, date, session, ct);
         return ToActionResult(result);
     }
 
     /// <summary>
-    /// API-2: Tải bảng điểm danh chi tiết của lớp theo ngày
+    /// API-2: Tải bảng điểm danh chi tiết của lớp theo ngày và buổi (Sáng/Chiều)
     /// </summary>
     [HttpGet("classes/{classId}/sheet")]
     [HttpGet("classes/{classId}")]
     [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
-    public async Task<IActionResult> GetAttendanceSheet(int classId, [FromQuery] DateTime? date, CancellationToken ct)
+    public async Task<IActionResult> GetAttendanceSheet(
+        int classId,
+        [FromQuery] DateTime? date,
+        [FromQuery] AttendanceSession session = AttendanceSession.Morning,
+        CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
         var roles = User.GetRoles();
         var targetDate = date ?? _clock.Today;
-        var result = await _attendanceService.GetAttendanceSheetAsync(classId, targetDate, userId, roles, ct);
+        var result = await _attendanceService.GetAttendanceSheetAsync(classId, targetDate, session, userId, roles, ct);
         return ToActionResult(result);
     }
 
     /// <summary>
-    /// API-3: Nộp / Lưu điểm danh lớp trong ngày (Idempotent)
+    /// API-3: Nộp / Lưu điểm danh lớp theo ngày và buổi (Idempotent)
     /// </summary>
     [HttpPut("classes/{classId}/sheet")]
     [HttpPut("classes/{classId}")]

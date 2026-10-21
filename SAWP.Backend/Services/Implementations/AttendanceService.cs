@@ -35,6 +35,7 @@ public class AttendanceService : IAttendanceService
         int userId, 
         IReadOnlyList<UserRoles> roles,
         DateTime? date, 
+        AttendanceSession session,
         CancellationToken ct = default)
     {
         var targetDate = (date ?? _clock.Today).Date;
@@ -46,7 +47,7 @@ public class AttendanceService : IAttendanceService
                 .FindAsync(c => c.Status == "Active", ct);
 
             var submittedIds = await _unitOfWork.Attendance
-                .GetSubmittedClassIdsAsync(allClasses.Select(c => c.Id), targetDate, ct);
+                .GetSubmittedClassIdsAsync(allClasses.Select(c => c.Id), targetDate, session, ct);
 
             var list = allClasses
                 .Select(c => new TeacherClassOptionDto
@@ -112,7 +113,7 @@ public class AttendanceService : IAttendanceService
 
         // Check đã nộp điểm danh ngày đó chưa
         var submittedClassIds = await _unitOfWork.Attendance
-            .GetSubmittedClassIdsAsync(classDict.Keys, targetDate, ct);
+            .GetSubmittedClassIdsAsync(classDict.Keys, targetDate, session, ct);
 
         foreach (var option in classDict.Values)
         {
@@ -132,6 +133,7 @@ public class AttendanceService : IAttendanceService
     public async Task<ApiResponse<AttendanceSheetDto>> GetAttendanceSheetAsync(
         int classId, 
         DateTime date, 
+        AttendanceSession session,
         int userId, 
         IReadOnlyList<UserRoles> roles, 
         CancellationToken ct = default)
@@ -160,11 +162,11 @@ public class AttendanceService : IAttendanceService
         var studentIds = roster.Select(s => s.Id).ToList();
 
         var existingRecords = (await _unitOfWork.Attendance
-            .GetDailyClassAttendanceAsync(classId, targetDate, track: false, ct))
+            .GetDailyClassAttendanceAsync(classId, targetDate, session, track: false, ct))
             .ToDictionary(r => r.StudentId);
 
         var leaves = await _unitOfWork.Attendance
-            .GetActiveLeavesCoveringDateAsync(studentIds, targetDate, ct);
+            .GetActiveLeavesCoveringDateAsync(studentIds, targetDate, session, ct);
 
         var lunches = await _unitOfWork.Lunch
             .GetRegistrationsForStudentsAsync(studentIds, targetDate, track: false, ct);
@@ -273,6 +275,7 @@ public class AttendanceService : IAttendanceService
             ClassId = classId,
             ClassName = cls.ClassName,
             Date = targetDate,
+            Session = session,
             IsSchoolDay = isSchoolDay,
             CanEdit = canEdit,
             LockReason = lockReason,
@@ -296,6 +299,7 @@ public class AttendanceService : IAttendanceService
         CancellationToken ct = default)
     {
         var targetDate = dto.Date.Date;
+        var session = dto.Session;
         var now = _clock.Now;
         var isAdminOrOffice = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff);
 
@@ -307,6 +311,11 @@ public class AttendanceService : IAttendanceService
         if (targetDate > _clock.Today)
         {
             return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Không thể điểm danh cho ngày tương lai." });
+        }
+
+        if (!Enum.IsDefined(typeof(AttendanceSession), session))
+        {
+            return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Buổi điểm danh không hợp lệ." });
         }
 
         // V2: Validate ngày học
@@ -369,7 +378,7 @@ public class AttendanceService : IAttendanceService
         }
 
         // V6: Validate ExcusedAbsence phải có đơn Approved
-        var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(rosterIds, targetDate, ct);
+        var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(rosterIds, targetDate, session, ct);
         foreach (var entry in dto.Entries)
         {
             if (entry.Status == AttendanceStatus.ExcusedAbsence)
@@ -384,7 +393,7 @@ public class AttendanceService : IAttendanceService
 
         // DIFF: So khớp thay đổi
         var existingRecords = (await _unitOfWork.Attendance
-            .GetDailyClassAttendanceAsync(classId, targetDate, track: true, ct))
+            .GetDailyClassAttendanceAsync(classId, targetDate, session, track: true, ct))
             .ToDictionary(r => r.StudentId);
 
         var changes = new List<(int StudentId, AttendanceStatus? OldStatus, AttendanceStatus NewStatus, bool RemarksChanged)>();
@@ -433,6 +442,7 @@ public class AttendanceService : IAttendanceService
                         StudentId = entry.StudentId,
                         ClassId = classId,
                         Date = targetDate,
+                        Session = session,
                         Status = entry.Status,
                         Remarks = entry.Remarks,
                         RecordedByUserId = userId,
@@ -444,7 +454,10 @@ public class AttendanceService : IAttendanceService
             }
 
             // T2: Suất ăn bán trú (LunchAdjust - Chỉ hủy khi VẮNG CÓ PHÉP; Vắng không phép bếp vẫn nấu ăn bình thường)
-            var relevantStudentIds = newlyExcused.Concat(leftExcused).Distinct().ToList();
+            // Suất ăn trưa chỉ phụ thuộc điểm danh buổi Sáng
+            var relevantStudentIds = session == AttendanceSession.Morning
+                ? newlyExcused.Concat(leftExcused).Distinct().ToList()
+                : new List<int>();
             if (relevantStudentIds.Count > 0)
             {
                 var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(relevantStudentIds, targetDate, track: true, ct);
@@ -537,7 +550,7 @@ public class AttendanceService : IAttendanceService
                 var action = existingRecords.Count == 0 ? "ATTENDANCE_SUBMIT" : "ATTENDANCE_UPDATE";
                 var oldValuesJson = JsonSerializer.Serialize(changes.Select(c => new { c.StudentId, Status = c.OldStatus?.ToString() }));
                 var newValuesJson = JsonSerializer.Serialize(changes.Select(c => new { c.StudentId, Status = c.NewStatus.ToString() }));
-                await _auditService.LogActionAsync(userId, action, "AttendanceRecord", $"{classId}:{targetDate:yyyy-MM-dd}", oldValuesJson, newValuesJson, null, ct);
+                await _auditService.LogActionAsync(userId, action, "AttendanceRecord", $"{classId}:{targetDate:yyyy-MM-dd}:{session}", oldValuesJson, newValuesJson, null, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
@@ -585,7 +598,7 @@ public class AttendanceService : IAttendanceService
 
         if (dto.Status == AttendanceStatus.ExcusedAbsence)
         {
-            var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, ct);
+            var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
             if (!leaves.TryGetValue(rec.StudentId, out var leave) || leave.Status != RequestStatus.Approved)
             {
                 return ApiResponse<AttendanceSheetEntryDto>.Fail(SystemMessages.MSG01, new List<string> { "Vắng có phép cần đơn nghỉ phép đã được phê duyệt." });
@@ -608,7 +621,7 @@ public class AttendanceService : IAttendanceService
             int? newLeaveId = null;
             if (dto.Status == AttendanceStatus.ExcusedAbsence)
             {
-                var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, ct);
+                var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
                 if (leaves.TryGetValue(rec.StudentId, out var lv)) newLeaveId = lv.LeaveRequestId;
             }
 
@@ -623,7 +636,7 @@ public class AttendanceService : IAttendanceService
             var finalizeTime = TimeSpan.TryParse(_options.KitchenFinalizeTime, out var ft) ? ft : new TimeSpan(10, 30, 0);
             var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(new[] { rec.StudentId }, rec.Date, track: true, ct);
 
-            if (lunchRegs.TryGetValue(rec.StudentId, out var lunch))
+            if (rec.Session == AttendanceSession.Morning && lunchRegs.TryGetValue(rec.StudentId, out var lunch))
             {
                 if (dto.Status == AttendanceStatus.ExcusedAbsence)
                 {
@@ -829,6 +842,7 @@ public class AttendanceService : IAttendanceService
         var days = records.Select(r => new AttendanceDayDto
         {
             Date = r.Date,
+            Session = r.Session,
             Status = r.Status,
             Remarks = isParent ? null : r.Remarks, // BR-51: không để lộ ghi chú nội bộ cho phụ huynh
             LeaveRequestNumber = r.LeaveRequest?.AdministrativeRequest?.RequestNumber
