@@ -184,6 +184,9 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int?>("HomeroomTeacherId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsPlacementPublished")
+                        .HasColumnType("bit");
+
                     b.Property<string>("RoomNumber")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -344,6 +347,55 @@ namespace Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Guardians");
+                });
+
+            modelBuilder.Entity("Core.Entities.GuardianLinkDetail", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdministrativeRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("AutoVerificationPassed")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("GuardianIdentityCard")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("GuardianPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ProofDocumentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Relationship")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StudentCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("StudentDateOfBirth")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("VerificationDetails")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdministrativeRequestId")
+                        .IsUnique();
+
+                    b.ToTable("GuardianLinkDetails");
                 });
 
             modelBuilder.Entity("Core.Entities.LeaveRequest", b =>
@@ -881,6 +933,17 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Core.Entities.GuardianLinkDetail", b =>
+                {
+                    b.HasOne("Core.Entities.AdministrativeRequest", "AdministrativeRequest")
+                        .WithOne("GuardianLinkDetail")
+                        .HasForeignKey("Core.Entities.GuardianLinkDetail", "AdministrativeRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AdministrativeRequest");
+                });
+
             modelBuilder.Entity("Core.Entities.LeaveRequest", b =>
                 {
                     b.HasOne("Core.Entities.AdministrativeRequest", "AdministrativeRequest")
@@ -979,6 +1042,8 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("ClassTransferDetail");
 
                     b.Navigation("DocumentRequestDetail");
+
+                    b.Navigation("GuardianLinkDetail");
 
                     b.Navigation("LeaveRequest");
                 });

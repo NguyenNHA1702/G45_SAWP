@@ -13,6 +13,7 @@ public class UnitOfWork : IUnitOfWork
 
     public IUserRepository Users { get; }
     public IStudentRepository Students { get; }
+    public IClassRepository Classes { get; }
     public IAttendanceRepository Attendance { get; }
     public ILunchRepository Lunch { get; }
 
@@ -20,15 +21,18 @@ public class UnitOfWork : IUnitOfWork
         ApplicationDbContext context,
         IUserRepository users,
         IStudentRepository students,
+        IClassRepository classes,
         IAttendanceRepository attendance,
         ILunchRepository lunch)
     {
         _context = context;
         Users = users;
         Students = students;
+        Classes = classes;
         Attendance = attendance;
         Lunch = lunch;
     }
+
 
     public IRepository<T> Repository<T>() where T : class
     {
