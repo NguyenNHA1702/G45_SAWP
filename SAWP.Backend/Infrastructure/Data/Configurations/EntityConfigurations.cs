@@ -177,21 +177,35 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
     public void Configure(EntityTypeBuilder<AttendanceRecord> builder)
     {
         builder.HasKey(ar => ar.Id);
-        builder.Property(ar => ar.Remarks).HasMaxLength(250);
-
+        builder.Property(ar => ar.Remarks).HasMaxLength(500);
+        builder.Property(ar => ar.CorrectionReason).HasMaxLength(500);
+        // 1. Chỉ lưu phần Ngày (loại bỏ giờ phút giây ở SQL)
+        builder.Property(ar => ar.Date).HasColumnType("date");
+        // 2. Index chống trùng: 1 học sinh chỉ có 1 bản ghi điểm danh / ngày (BR-20)
+        builder.HasIndex(ar => new { ar.StudentId, ar.Date }).IsUnique();
+        // 3. Index hỗ trợ truy vấn nhanh cả lớp theo ngày
+        builder.HasIndex(ar => new { ar.ClassId, ar.Date });
+        // FK cũ
         builder.HasOne(ar => ar.Student)
                .WithMany(s => s.AttendanceRecords)
                .HasForeignKey(ar => ar.StudentId)
                .OnDelete(DeleteBehavior.Cascade);
-
         builder.HasOne(ar => ar.Class)
                .WithMany(c => c.AttendanceRecords)
                .HasForeignKey(ar => ar.ClassId)
                .OnDelete(DeleteBehavior.Restrict);
-
         builder.HasOne(ar => ar.RecordedByUser)
                .WithMany()
                .HasForeignKey(ar => ar.RecordedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+        // ---- THÊM MỚI CHO WF 2 ----
+        builder.HasOne(ar => ar.UpdatedByUser)
+               .WithMany()
+               .HasForeignKey(ar => ar.UpdatedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(ar => ar.LeaveRequest)
+               .WithMany()
+               .HasForeignKey(ar => ar.LeaveRequestId)
                .OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -225,12 +239,49 @@ public class LunchRegistrationConfiguration : IEntityTypeConfiguration<LunchRegi
     public void Configure(EntityTypeBuilder<LunchRegistration> builder)
     {
         builder.HasKey(lr => lr.Id);
+        builder.Property(lr => lr.Date).HasColumnType("date");
+        builder.HasIndex(lr => new { lr.StudentId, lr.Date }).IsUnique();
         builder.Property(lr => lr.Remarks).HasMaxLength(250);
+        builder.Property(lr => lr.CancellationReason).HasMaxLength(300);
 
         builder.HasOne(lr => lr.Student)
                .WithMany(s => s.LunchRegistrations)
                .HasForeignKey(lr => lr.StudentId)
                .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(lr => lr.CancelledByUser)
+               .WithMany()
+               .HasForeignKey(lr => lr.CancelledByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class ClassScheduleConfiguration : IEntityTypeConfiguration<ClassSchedule>
+{
+    public void Configure(EntityTypeBuilder<ClassSchedule> builder)
+    {
+        builder.HasKey(cs => cs.Id);
+        builder.Property(cs => cs.Subject).HasMaxLength(100).IsRequired();
+        builder.Property(cs => cs.EffectiveFrom).HasColumnType("date");
+        builder.Property(cs => cs.EffectiveTo).HasColumnType("date");
+
+        builder.HasIndex(cs => new { cs.ClassId, cs.DayOfWeek, cs.Period, cs.EffectiveFrom }).IsUnique();
+        builder.HasIndex(cs => new { cs.TeacherStaffId, cs.DayOfWeek });
+
+        builder.HasOne(cs => cs.Class)
+               .WithMany()
+               .HasForeignKey(cs => cs.ClassId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(cs => cs.SchoolYear)
+               .WithMany()
+               .HasForeignKey(cs => cs.SchoolYearId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(cs => cs.TeacherStaff)
+               .WithMany()
+               .HasForeignKey(cs => cs.TeacherStaffId)
+               .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -308,6 +359,13 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
         builder.Property(n => n.Title).HasMaxLength(200).IsRequired();
         builder.Property(n => n.Content).HasMaxLength(1000).IsRequired();
         builder.Property(n => n.LinkUrl).HasMaxLength(500);
+        builder.Property(n => n.Type).HasMaxLength(50).IsRequired();
+        builder.Property(n => n.ReferenceKey).HasMaxLength(100);
+
+        builder.HasIndex(n => new { n.UserId, n.IsRead });
+        builder.HasIndex(n => new { n.UserId, n.ReferenceKey })
+               .IsUnique()
+               .HasFilter("[ReferenceKey] IS NOT NULL");
 
         builder.HasOne(n => n.User)
                .WithMany(u => u.Notifications)

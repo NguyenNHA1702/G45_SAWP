@@ -20,6 +20,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<SchoolYear> SchoolYears => Set<SchoolYear>();
     public DbSet<SchoolCalendarDay> SchoolCalendarDays => Set<SchoolCalendarDay>();
     public DbSet<Class> Classes => Set<Class>();
+    public DbSet<ClassSchedule> ClassSchedules => Set<ClassSchedule>();
     public DbSet<ClassAssignment> ClassAssignments => Set<ClassAssignment>();
     public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();

@@ -4,10 +4,11 @@ export const TOKEN_KEY = 'sawp_token';
 export const USER_KEY = 'sawp_user';
 
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5299/api',
+  baseURL: import.meta.env.VITE_API_URL ?? '/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
+
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);

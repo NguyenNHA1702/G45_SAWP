@@ -90,6 +90,61 @@
 .badge--pink   { background: var(--color-secondary-soft); }
 .badge--muted  { border-color: var(--color-border); color: var(--color-muted-fg); }
 
+/* ================= SUMMARY BAR & CHIP ================= */
+.summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 14px 6px 8px;
+  border: var(--border);
+  border-radius: var(--radius-full);
+  background: var(--color-card);
+  box-shadow: 3px 3px 0 0 var(--color-fg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-fg);
+  transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 150ms ease;
+  user-select: none;
+}
+.chip:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-pop);
+}
+.chip__value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-muted);
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: var(--fs-sm);
+  border: 1.5px solid var(--color-fg);
+}
+.chip__label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chip--present { background: var(--status-present-soft); }
+.chip--present .chip__value { background: var(--status-present); color: var(--color-fg); }
+.chip--late { background: var(--status-late-soft); }
+.chip--late .chip__value { background: var(--status-late); color: var(--color-fg); }
+.chip--excused { background: var(--status-excused-soft); }
+.chip--excused .chip__value { background: var(--status-excused); color: #fff; }
+.chip--unexcused { background: var(--status-unexcused-soft); }
+.chip--unexcused .chip__value { background: var(--status-unexcused); color: #fff; }
+
 /* ================= BANNER ================= */
 .banner {
   display: flex; align-items: flex-start; gap: var(--space-3);

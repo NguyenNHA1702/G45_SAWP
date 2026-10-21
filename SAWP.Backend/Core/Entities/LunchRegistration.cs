@@ -13,4 +13,11 @@ public class LunchRegistration
     public bool IsActive { get; set; } = true;
     public string? Remarks { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // ---- thêm mới cho WF 2 ----
+    public LunchCancellationSource? CancellationSource { get; set; }
+    public DateTime? CancelledAt { get; set; }          // UTC
+    public int? CancelledByUserId { get; set; }
+    public virtual User? CancelledByUser { get; set; }
+    public string? CancellationReason { get; set; }     // max 300
 }

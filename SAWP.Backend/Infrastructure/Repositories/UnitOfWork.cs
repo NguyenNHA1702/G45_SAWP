@@ -15,20 +15,27 @@ public class UnitOfWork : IUnitOfWork
     public IStudentRepository Students { get; }
     public IAttendanceRepository Attendance { get; }
     public ILunchRepository Lunch { get; }
+    public IClassScheduleRepository Schedules { get; }
+    public INotificationRepository Notifications { get; }
 
     public UnitOfWork(
         ApplicationDbContext context,
         IUserRepository users,
         IStudentRepository students,
         IAttendanceRepository attendance,
-        ILunchRepository lunch)
+        ILunchRepository lunch,
+        IClassScheduleRepository schedules,
+        INotificationRepository notifications)
     {
         _context = context;
         Users = users;
         Students = students;
         Attendance = attendance;
         Lunch = lunch;
+        Schedules = schedules;
+        Notifications = notifications;
     }
+
 
     public IRepository<T> Repository<T>() where T : class
     {

@@ -1,6 +1,8 @@
 using System.Text;
 using API.Middlewares;
+using Core.Configuration;
 using Core.Interfaces;
+using Infrastructure.Common;
 using Infrastructure.Data;
 using Infrastructure.ExternalServices;
 using Infrastructure.Repositories;
@@ -24,6 +26,11 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IStudentRepository, StudentRepository>();
 builder.Services.AddScoped<IAttendanceRepository, AttendanceRepository>();
 builder.Services.AddScoped<ILunchRepository, LunchRepository>();
+builder.Services.AddScoped<IClassScheduleRepository, ClassScheduleRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.Configure<SchoolOptions>(builder.Configuration.GetSection(SchoolOptions.SectionName));
+
+builder.Services.AddSingleton<ISchoolClock, SchoolClock>();
 
 // 3. Business Logic Services (Services -> Services Interfaces)
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -69,8 +76,13 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // 6. API Controllers & Swagger with JWT support
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "SAWP API", Version = "v1" });
@@ -122,8 +134,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 
 // Auto seed demo data if needed
 using (var scope = app.Services.CreateScope())
