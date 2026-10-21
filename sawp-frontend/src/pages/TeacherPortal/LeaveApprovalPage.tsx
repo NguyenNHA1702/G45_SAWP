@@ -232,7 +232,7 @@ export default function LeaveApprovalPage() {
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: '14px',
-                  border: r.status === 2 ? '1px solid #C084FC' : '1px solid #E2E8F0',
+                  border: r.status === 'UnderReview' ? '1px solid #C084FC' : '1px solid #E2E8F0',
                   padding: '20px',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
                   display: 'flex',
@@ -265,22 +265,22 @@ export default function LeaveApprovalPage() {
                   </div>
 
                   <div>
-                    {r.status === 1 && (
+                    {r.status === 'Submitted' && (
                       <span style={{ backgroundColor: '#FEF3C7', color: '#B45309', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px' }}>
                         {isEscalated ? 'Chờ GV chuyển BGH' : 'Chờ GVCN duyệt'}
                       </span>
                     )}
-                    {r.status === 2 && (
+                    {r.status === 'UnderReview' && (
                       <span style={{ backgroundColor: '#FAF5FF', color: '#7E22CE', border: '1px solid #E9D5FF', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px' }}>
                         Chờ BGH duyệt
                       </span>
                     )}
-                    {r.status === 3 && (
+                    {r.status === 'Approved' && (
                       <span style={{ backgroundColor: '#DCFCE7', color: '#15803D', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <CheckCircle2 size={14} /> Đã phê duyệt
                       </span>
                     )}
-                    {r.status === 4 && (
+                    {r.status === 'Rejected' && (
                       <span style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <ShieldAlert size={14} /> Đã từ chối
                       </span>
@@ -289,14 +289,14 @@ export default function LeaveApprovalPage() {
                 </div>
 
                 {/* Routing Banner on Card */}
-                {r.status === 1 && isEscalated && (
+                {r.status === 'Submitted' && isEscalated && (
                   <div style={{ backgroundColor: '#FAF5FF', border: '1px solid #E9D5FF', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#6B21A8', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <ShieldAlert size={16} />
                     <span>Đơn xin nghỉ <strong>{r.totalDays} ngày</strong> (từ 3 ngày trở lên) - GVCN cần xác nhận yêu cầu và chuyển tiếp lên Ban Giám Hiệu.</span>
                   </div>
                 )}
 
-                {r.status === 2 && (
+                {r.status === 'UnderReview' && (
                   <div style={{ backgroundColor: '#F3E8FF', border: '1px solid #D8B4FE', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#581C87', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <FileText size={16} />
                     <span>Đơn nghỉ chuyển cấp <strong>{r.totalDays} ngày</strong> đã được GVCN xác nhận và đang chờ Ban Giám Hiệu xem xét quyết định.</span>
@@ -343,7 +343,7 @@ export default function LeaveApprovalPage() {
                     </div>
                   )}
                   {r.reviewerNotes && (
-                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #CBD5E1', color: r.status === 4 ? '#B91C1C' : '#0369A1' }}>
+                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #CBD5E1', color: r.status === 'Rejected' ? '#B91C1C' : '#0369A1' }}>
                       <strong>Nhật ký xử lý: </strong>
                       <span>{r.reviewerNotes}</span>
                     </div>
@@ -352,7 +352,7 @@ export default function LeaveApprovalPage() {
 
                 {/* ACTION BUTTONS */}
                 {/* 1. Branch: Dưới 3 ngày (GVCN xem xét đơn nghỉ thông thường) */}
-                {r.status === 1 && !isEscalated && (
+                {r.status === 'Submitted' && !isEscalated && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px' }}>
                     <button
                       disabled={processing}
@@ -398,7 +398,7 @@ export default function LeaveApprovalPage() {
                 )}
 
                 {/* 2. Branch: Từ 3 ngày trở lên (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu) */}
-                {r.status === 1 && isEscalated && (
+                {r.status === 'Submitted' && isEscalated && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px' }}>
                     <button
                       disabled={processing}
@@ -447,7 +447,7 @@ export default function LeaveApprovalPage() {
                 )}
 
                 {/* 3. Branch: Đơn tại Ban Giám Hiệu (Status == UnderReview) */}
-                {r.status === 2 && (
+                {r.status === 'UnderReview' && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px' }}>
                     {isSchoolBoard || isAdmin ? (
                       <>

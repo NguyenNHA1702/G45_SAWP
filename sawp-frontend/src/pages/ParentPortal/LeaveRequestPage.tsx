@@ -8,7 +8,7 @@ interface LinkedChild {
   studentId: number;
   fullName: string;
   studentCode: string;
-  className?: string;
+  currentClassName?: string | null;
 }
 
 export default function LeaveRequestPage() {
@@ -247,7 +247,7 @@ export default function LeaveRequestPage() {
                   {r.className && <span style={{ color: '#64748B', fontSize: '14px' }}>({r.className})</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {r.status === 1 && (
+                  {r.status === 'Submitted' && (
                     <span
                       style={{
                         backgroundColor: '#FEF3C7',
@@ -261,7 +261,7 @@ export default function LeaveRequestPage() {
                       {(r.totalDays || 1) >= 3 ? 'Chờ GV chuyển BGH' : 'Chờ GVCN duyệt'}
                     </span>
                   )}
-                  {r.status === 2 && (
+                  {r.status === 'UnderReview' && (
                     <span
                       style={{
                         backgroundColor: '#FAF5FF',
@@ -276,7 +276,7 @@ export default function LeaveRequestPage() {
                       Chờ BGH duyệt
                     </span>
                   )}
-                  {r.status === 3 && (
+                  {r.status === 'Approved' && (
                     <span
                       style={{
                         backgroundColor: '#DCFCE7',
@@ -293,7 +293,7 @@ export default function LeaveRequestPage() {
                       <CheckCircle2 size={14} /> Đã phê duyệt
                     </span>
                   )}
-                  {r.status === 4 && (
+                  {r.status === 'Rejected' && (
                     <span
                       style={{
                         backgroundColor: '#FEE2E2',
@@ -310,7 +310,7 @@ export default function LeaveRequestPage() {
                       <ShieldAlert size={14} /> Đã từ chối
                     </span>
                   )}
-                  {r.status === 5 && (
+                  {r.status === 'Cancelled' && (
                     <span
                       style={{
                         backgroundColor: '#F1F5F9',
@@ -362,14 +362,14 @@ export default function LeaveRequestPage() {
                   </div>
                 )}
                 {r.reviewerNotes && (
-                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #CBD5E1', color: r.status === 4 ? '#B91C1C' : '#0369A1' }}>
+                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #CBD5E1', color: r.status === 'Rejected' ? '#B91C1C' : '#0369A1' }}>
                     <strong>Ý kiến xử lý: </strong>
                     <span>{r.reviewerNotes}</span>
                   </div>
                 )}
               </div>
 
-              {r.status === 1 && (
+              {r.status === 'Submitted' && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px' }}>
                   <button
                     onClick={() => handleCancel(r.id)}
@@ -445,7 +445,7 @@ export default function LeaveRequestPage() {
                   >
                     {children.map((c) => (
                       <option key={c.studentId} value={c.studentId}>
-                        {c.fullName} ({c.studentCode}) {c.className ? `- ${c.className}` : ''}
+                        {c.fullName} ({c.studentCode}) {c.currentClassName ? `- ${c.currentClassName}` : ''}
                       </option>
                     ))}
                   </select>

@@ -1,4 +1,5 @@
 import { apiClient } from '../apiClient';
+import type { LeaveSession, RequestStatus } from '../../types/attendance.types';
 
 export interface CreateLeaveRequestPayload {
   studentId: number;
@@ -23,7 +24,7 @@ export interface LeaveRequestItem {
   requesterPhone?: string;
   startDate: string;
   endDate: string;
-  session: number;
+  session: LeaveSession;
   sessionName: string;
   keepLunchService: boolean;
   isLunchCancelled: boolean;
@@ -31,7 +32,7 @@ export interface LeaveRequestItem {
   doctorNoteAttachmentUrl?: string;
   totalDays: number;
   isEscalated: boolean;
-  status: number;
+  status: RequestStatus;
   statusName: string;
   submissionDate: string;
   reviewerUserId?: number;
@@ -48,7 +49,7 @@ export interface ReviewLeaveRequestPayload {
 
 export interface SyncLeaveResult {
   requestId: number;
-  status: number;
+  status: RequestStatus;
   isAttendanceSyncSuggested: boolean;
   cancelledMealDates: string[];
   mealSyncMessage: string;

@@ -58,7 +58,7 @@ public class LeaveRequestService : ILeaveRequestService
         var duplicate = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
             .Include(ar => ar.LeaveRequest)
-            .Where(ar => ar.StudentId == request.StudentId && ar.RequestType == "LeaveRequest")
+            .Where(ar => ar.StudentId == request.StudentId && ar.RequestType == RequestTypes.Leave)
             .Where(ar => ar.Status == RequestStatus.Submitted || ar.Status == RequestStatus.Approved || ar.Status == RequestStatus.UnderReview)
             .AnyAsync(ar => ar.LeaveRequest != null &&
                             ar.LeaveRequest.StartDate.Date <= request.EndDate.Date &&
@@ -76,7 +76,7 @@ public class LeaveRequestService : ILeaveRequestService
             RequestNumber = requestNumber,
             RequesterUserId = parentUserId,
             StudentId = request.StudentId,
-            RequestType = "LeaveRequest",
+            RequestType = RequestTypes.Leave,
             Status = RequestStatus.Submitted,
             SubmissionDate = DateTime.UtcNow
         };
@@ -133,7 +133,7 @@ public class LeaveRequestService : ILeaveRequestService
             .Include(ar => ar.RequesterUser)
             .Include(ar => ar.ReviewerUser)
             .Include(ar => ar.LeaveRequest)
-            .Where(ar => ar.RequesterUserId == parentUserId && ar.RequestType == "LeaveRequest")
+            .Where(ar => ar.RequesterUserId == parentUserId && ar.RequestType == RequestTypes.Leave)
             .OrderByDescending(ar => ar.SubmissionDate)
             .ToListAsync(cancellationToken);
 
@@ -227,7 +227,7 @@ public class LeaveRequestService : ILeaveRequestService
             .Include(ar => ar.RequesterUser)
             .Include(ar => ar.ReviewerUser)
             .Include(ar => ar.LeaveRequest)
-            .Where(ar => ar.RequestType == "LeaveRequest" && ar.StudentId.HasValue && activeStudentIds.Contains(ar.StudentId.Value));
+            .Where(ar => ar.RequestType == RequestTypes.Leave && ar.StudentId.HasValue && activeStudentIds.Contains(ar.StudentId.Value));
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<RequestStatus>(status, true, out var parsedStatus))
         {
@@ -300,7 +300,7 @@ public class LeaveRequestService : ILeaveRequestService
             .Query()
             .Include(ar => ar.LeaveRequest)
             .Include(ar => ar.Student)
-            .FirstOrDefaultAsync(ar => ar.Id == requestId && ar.RequestType == "LeaveRequest", cancellationToken);
+            .FirstOrDefaultAsync(ar => ar.Id == requestId && ar.RequestType == RequestTypes.Leave, cancellationToken);
 
         if (req == null || req.LeaveRequest == null)
         {
@@ -444,20 +444,27 @@ public class LeaveRequestService : ILeaveRequestService
         syncResult.Status = RequestStatus.Approved;
         syncResult.IsAttendanceSyncSuggested = true;
 
-        // Đánh dấu học sinh Vắng có phép trong danh sách điểm danh (nếu bản ghi ngày đó đã được lưu trước đó)
+        // Đánh dấu học sinh Vắng có phép trong danh sách điểm danh (nếu bản ghi buổi đó đã được lưu trước đó)
         if (req.StudentId.HasValue)
         {
+            var leaveSession = req.LeaveRequest.Session;
             var existingAttendanceRecords = await _unitOfWork.Repository<AttendanceRecord>()
                 .Query()
                 .Where(ar => ar.StudentId == req.StudentId.Value &&
                              ar.Date >= req.LeaveRequest.StartDate.Date &&
                              ar.Date <= req.LeaveRequest.EndDate.Date)
+                .Where(ar => leaveSession == LeaveSession.FullDay ||
+                             (leaveSession == LeaveSession.Morning && ar.Session == AttendanceSession.Morning) ||
+                             (leaveSession == LeaveSession.Afternoon && ar.Session == AttendanceSession.Afternoon))
                 .ToListAsync(cancellationToken);
 
             foreach (var att in existingAttendanceRecords)
             {
                 att.Status = AttendanceStatus.ExcusedAbsence;
                 att.Remarks = $"Vắng có phép theo đơn {req.RequestNumber}";
+                att.LeaveRequestId = req.LeaveRequest.Id;
+                att.UpdatedAt = DateTime.UtcNow;
+                att.UpdatedByUserId = reviewerUserId;
             }
         }
 
