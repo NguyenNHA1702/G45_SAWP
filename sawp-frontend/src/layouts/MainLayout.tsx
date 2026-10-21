@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ClipboardList,
   GraduationCap,
+  HeartHandshake,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -35,6 +36,13 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
+  // --- WF1: Lớp chủ nhiệm & Học sinh (Chỉ Teacher) ---
+  {
+    label: 'Lớp chủ nhiệm (WF1)',
+    path: '/teacher/roster',
+    icon: GraduationCap,
+    roles: ['Teacher'],
+  },
   // --- WF2: Điểm danh (Chỉ Teacher) ---
   {
     label: 'Điểm danh lớp (WF2)',
@@ -42,6 +50,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: CalendarCheck2,
     roles: ['Teacher'],
     badge: 'Mới',
+  },
+  // --- WF1: Cổng phụ huynh theo dõi con ---
+  {
+    label: 'Hồ sơ các con (WF1)',
+    path: '/parent/children',
+    icon: HeartHandshake,
+    roles: ['Parent'],
   },
   // --- Phụ huynh theo dõi chuyên cần (Chỉ Parent) ---
   {
@@ -59,7 +74,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {
-    label: 'Hồ sơ học sinh',
+    label: 'Hồ sơ học sinh (WF1)',
     path: '/students',
     icon: Users,
     roles: ['OfficeStaff', 'Admin'],
@@ -68,6 +83,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Lớp học & Phân công',
     path: '/classes',
     icon: GraduationCap,
+    roles: ['OfficeStaff', 'Admin'],
+  },
+  {
+    label: 'Duyệt liên kết PH (WF1)',
+    path: '/link-requests',
+    icon: HeartHandshake,
     roles: ['OfficeStaff', 'Admin'],
   },
 ];

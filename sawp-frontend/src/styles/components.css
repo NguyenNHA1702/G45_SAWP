@@ -123,3 +123,176 @@
 .decor--circle   { width: 180px; height: 180px; border-radius: 50%; background: var(--color-tertiary); }
 .decor--triangle { width: 0; height: 0; border-left: 28px solid transparent; border-right: 28px solid transparent; border-bottom: 48px solid var(--color-secondary); }
 .decor--square   { width: 36px; height: 36px; background: var(--color-quaternary); border: var(--border); transform: rotate(15deg); }
+
+/* ================= DATA TABLE ================= */
+.data-table-wrapper {
+  overflow-x: auto;
+  border: var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  background: var(--color-card);
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.data-table th {
+  background: var(--color-muted);
+  padding: 12px 16px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  border-bottom: var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-fg);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--fs-sm);
+  color: var(--color-fg);
+  vertical-align: middle;
+}
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.data-table tbody tr:hover td {
+  background-color: #fffdf5;
+}
+
+/* ================= MODAL / OVERLAY ================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(30 41 59 / 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+.modal-box {
+  background: var(--color-card);
+  border: var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 8px 8px 0 0 var(--color-fg);
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--space-6);
+  animation: pop-in 300ms var(--ease-bounce);
+  position: relative;
+}
+.modal-box--lg {
+  max-width: 860px;
+}
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+  gap: var(--space-3);
+}
+.modal-title {
+  font-size: var(--fs-lg);
+  margin: 0;
+}
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--color-muted-fg);
+  transition: transform var(--dur) var(--ease-bounce), color 200ms;
+}
+.modal-close-btn:hover {
+  transform: scale(1.15) rotate(90deg);
+  color: var(--color-secondary);
+}
+
+/* ================= PILL TABS ================= */
+.pill-tabs {
+  display: inline-flex;
+  background: var(--color-muted);
+  border: var(--border);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  gap: 4px;
+}
+.pill-tab {
+  border: none;
+  background: transparent;
+  padding: 6px 18px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all 200ms var(--ease-bounce);
+  color: var(--color-muted-fg);
+}
+.pill-tab:hover:not(.pill-tab--active) {
+  color: var(--color-fg);
+}
+.pill-tab--active {
+  background: var(--color-accent);
+  color: #ffffff;
+  box-shadow: 2px 2px 0 0 var(--color-fg);
+}
+
+/* ================= PROGRESS BAR ================= */
+.progress-track {
+  height: 12px;
+  background: var(--color-muted);
+  border: var(--border-w) solid var(--color-fg);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--color-quaternary);
+  border-right: 1px solid var(--color-fg);
+  transition: width 300ms var(--ease-bounce);
+}
+.progress-fill--warning {
+  background: var(--color-tertiary);
+}
+.progress-fill--danger {
+  background: var(--color-secondary);
+}
+
+/* ================= STAT CARD ================= */
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--color-card);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4) var(--space-5);
+  transition: transform var(--dur) var(--ease-bounce);
+}
+.stat-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-pop);
+}
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: var(--border);
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow-pop-active);
+  flex-shrink: 0;
+}
+

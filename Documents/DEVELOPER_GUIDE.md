@@ -725,3 +725,76 @@ No blur. Solid offset colors.
 - **Focus**: The focus state is high-contrast (thick colored border + hard shadow).
 </design-system>
 ```
+
+---
+
+## 4. Frontend Developer Guide - Workflow 1: Student Profile & Class Placement
+
+### 4.1. Overview & Architecture
+The frontend application (`sawp-frontend`) is built with React 19 + TypeScript + Vite, strictly following the **Playful Geometric Design System** ("Stable Grid, Wild Decoration").
+
+```
+sawp-frontend/src/
+├── components/
+│   ├── auth/                     # Authentication modals (ChangePassword)
+│   ├── common/                   # Reusable GeometricModal (pop-in, floating icon, pill badges)
+│   ├── students/                 # Student Profile modals (Create, DuplicateResolve, ExcelImport, StudentDetail)
+│   ├── classes/                  # Class Placement modals (BatchInit, AssignTeacher, AssignStudents, ClassDetail)
+│   └── parent/                   # Parent modals (LinkChildModal)
+├── pages/
+│   ├── Auth/LoginPage.tsx        # Login page with demo role pills
+│   ├── Dashboard/DashboardPage.tsx # Overview dashboard with role-based action cards
+│   ├── OfficeStaffPortal/
+│   │   ├── StudentsPage.tsx      # UC-08 & UC-09 Student master profile CRUD & Excel bulk import
+│   │   ├── ClassesPage.tsx       # UC-13 to UC-16 Class management, homeroom & student placement
+│   │   └── LinkRequestsPage.tsx  # Step 8 & 9 Parent-child linkage verification queue
+│   ├── TeacherPortal/
+│   │   └── HomeroomRosterPage.tsx # UC-17 Official homeroom class roster (BR-07, BR-20)
+│   └── ParentPortal/
+│       └── ChildDashboardPage.tsx # Step 10 Linked children dashboard & placement result
+├── services/
+│   ├── apiClient.ts              # Axios instance configured to port 5299 with JWT interceptors
+│   └── implementations/
+│       ├── authApi.ts            # Authentication API client
+│       ├── studentApi.ts         # Student profiles, duplicate check/resolve & Excel import
+│       ├── classApi.ts           # Academic years, classes, teacher assignment & placements
+│       └── guardianApi.ts        # Child linkage requests, review & parent dashboard
+├── styles/
+│   ├── tokens.css                # Playful Geometric design tokens (HSL tailored, hard shadows)
+│   ├── base.css                  # Typography (Outfit, Plus Jakarta Sans), dot grid, squiggles
+│   └── components.css            # Candy buttons, sticker cards, data tables, modal popups, pill tabs
+└── types/                        # Strongly-typed TypeScript DTOs matching backend C# models
+```
+
+### 4.2. Playful Geometric Design System Integration
+- **Color Palette:**
+  - Background: `#FFFDF5` (Warm Cream / Paper feel with 22px dot-grid pattern).
+  - Neutrals: `#1E293B` (Slate 800) for chunky 2px borders, text, and hard shadows.
+  - Accent (Primary): `#8B5CF6` (Vivid Violet) for primary candy buttons and active tabs.
+  - Secondary: `#F472B6` (Hot Pink) for duplicate alerts, parent badges, and featured shadows.
+  - Tertiary: `#FBBF24` (Amber) for school year badges, warning banners, and floating icons.
+  - Quaternary: `#34D399` (Mint) for active status chips, verified badges, and capacity bars.
+- **Hard Pop Shadows:**
+  - Button/Card: `box-shadow: 4px 4px 0px 0px #1E293B;`
+  - Featured / Hover: `box-shadow: 6px 6px 0px 0px #1E293B; transform: translate(-2px, -2px);`
+  - Active Press: `box-shadow: 2px 2px 0px 0px #1E293B; transform: translate(2px, 2px);`
+- **Typography:**
+  - Headings: `"Outfit", system-ui, sans-serif` (Weights: 700, 800).
+  - Body: `"Plus Jakarta Sans", system-ui, sans-serif` (Weights: 400, 500, 600, 700).
+
+### 4.3. Role & Page Matrix
+| Portal / Role | Page Path | Component | Business Capabilities |
+|---|---|---|---|
+| **Giáo vụ (OfficeStaff)** | `/students` | `StudentsPage.tsx` | - Xem danh sách học sinh toàn trường kèm bộ lọc khối/lớp/trạng thái.<br>- Thêm mới hồ sơ (kiểm tra trùng lặp trên blur).<br>- Tải tệp Excel mẫu và nhập hàng loạt (ClosedXML) có xem trước.<br>- Giải quyết trùng mã (Hợp nhất, Ghi đè, Đổi mã mới).<br>- Kích hoạt hồ sơ học sinh (Active). |
+| **Giáo vụ (OfficeStaff)** | `/classes` | `ClassesPage.tsx` | - Chọn và chuyển đổi linh hoạt giữa các năm học.<br>- Khởi tạo nhanh danh sách lớp (1A, 1B, 1C) theo khối và sức chứa.<br>- Phân công Giáo viên chủ nhiệm theo quy tắc BR-16.<br>- Xếp học sinh vào lớp kiểm tra sức chứa thời gian thực (BR-15, BR-18).<br>- Xem danh sách lớp và gỡ học sinh khỏi lớp.<br>- Công bố kết quả xếp lớp toàn trường tới Phụ huynh & GV. |
+| **Giáo vụ (OfficeStaff)** | `/link-requests` | `LinkRequestsPage.tsx` | - Hàng đợi duyệt yêu cầu liên kết của phụ huynh.<br>- Nhận diện đối chiếu tự động (Khớp ngày sinh & SĐT phụ huynh).<br>- Phê duyệt hoặc từ chối kèm lý do phản hồi. |
+| **Giáo viên (Teacher)** | `/teacher/roster` | `HomeroomRosterPage.tsx` | - Chỉ truy xuất danh sách của lớp mà mình làm chủ nhiệm (BR-07, BR-20).<br>- Hiển thị tỉ lệ Nam/Nữ, SĐT liên hệ của phụ huynh chính và số khẩn cấp.<br>- Hỗ trợ chế độ In danh sách / Xuất báo cáo. |
+| **Phụ huynh (Parent)** | `/parent/children` | `ChildDashboardPage.tsx` | - Hiển thị sticker card từng con đã liên kết.<br>- Xem kết quả xếp lớp chính thức khi nhà trường đã công bố.<br>- Bấm nút "Liên kết thêm con" gửi yêu cầu tự động đối chiếu. |
+
+### 4.4. Hướng dẫn kiểm thử giao diện Frontend
+1. Mở trình duyệt truy cập: **`http://localhost:5173/login`**.
+2. **Đăng nhập bằng tài khoản mẫu:**
+   - Bấm nút chip **"Giáo vụ"** (office1 / Password@123) ➜ Vào `/students` kiểm tra CRUD, nhập Excel; vào `/classes` khởi tạo lớp và phân công; vào `/link-requests` duyệt yêu cầu.
+   - Bấm nút chip **"Giáo viên"** (teacher1 / Password@123) ➜ Vào menu **"Lớp chủ nhiệm (WF1)"** xem danh sách lớp 1A.
+   - Bấm nút chip **"Phụ huynh"** (parent1 / Password@123) ➜ Vào menu **"Hồ sơ các con (WF1)"** xem kết quả xếp lớp của con và gửi yêu cầu liên kết.
+
