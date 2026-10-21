@@ -5,13 +5,21 @@ namespace Services.Interfaces;
 
 public interface IAttendanceService
 {
-    /// <summary>
-    /// Lấy danh sách điểm danh của lớp theo ngày và buổi (Sáng/Chiều), tự động tích hợp dữ liệu đơn nghỉ đã duyệt
-    /// </summary>
-    Task<ApiResponse<ClassDailySheetDto>> GetClassDailySheetAsync(int classId, DateTime date, AttendanceSession session, int requestingUserId, CancellationToken cancellationToken = default);
+    // API-1: GET /api/attendance/classes?date=
+    Task<ApiResponse<List<TeacherClassOptionDto>>> GetMyClassesAsync(int userId, IReadOnlyList<UserRoles> roles, DateTime? date, CancellationToken ct = default);
 
-    /// <summary>
-    /// GVCN lưu điểm danh thực tế theo buổi, kiểm tra xung đột với đơn nghỉ và kích hoạt hủy suất ăn nếu vắng trước 08h15
-    /// </summary>
-    Task<ApiResponse<AttendanceSaveResultDto>> SaveClassAttendanceAsync(SaveClassAttendanceDto request, int teacherUserId, CancellationToken cancellationToken = default);
+    // API-2: GET /api/attendance/classes/{classId}?date=
+    Task<ApiResponse<AttendanceSheetDto>> GetAttendanceSheetAsync(int classId, DateTime date, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // API-3: POST /api/attendance/classes/{classId}
+    Task<ApiResponse<AttendanceSubmitResultDto>> RecordDailyAttendanceAsync(int classId, SubmitAttendanceSheetDto dto, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // API-4: PUT /api/attendance/records/{recordId}
+    Task<ApiResponse<AttendanceSheetEntryDto>> CorrectAttendanceAsync(int recordId, CorrectAttendanceDto dto, int userId, CancellationToken ct = default);
+
+    // API-5: GET /api/attendance/classes/{classId}/summary?from=&to=
+    Task<ApiResponse<ClassAttendanceSummaryDto>> GetClassSummaryAsync(int classId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // API-6: GET /api/attendance/students/{studentId}/history?from=&to=
+    Task<ApiResponse<StudentAttendanceHistoryDto>> GetStudentHistoryAsync(int studentId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
 }

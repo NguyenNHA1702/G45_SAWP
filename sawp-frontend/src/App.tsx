@@ -9,6 +9,9 @@ import StudentsPage from './pages/OfficeStaffPortal/StudentsPage';
 import ClassesPage from './pages/OfficeStaffPortal/ClassesPage';
 import LeaveRequestPage from './pages/ParentPortal/LeaveRequestPage';
 import LeaveApprovalPage from './pages/TeacherPortal/LeaveApprovalPage';
+import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
+import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
+import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -54,6 +57,9 @@ export default function App() {
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />
+          <Route path="/link-requests" element={<LinkRequestsPage />} />
+          <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
+          <Route path="/parent/children" element={<ChildDashboardPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

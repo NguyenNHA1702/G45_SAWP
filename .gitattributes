@@ -1,7 +1,32 @@
 ###############################################################################
 # Set default behavior to automatically normalize line endings.
+# Text files are stored and checked out with LF on every OS, regardless of
+# each developer's core.autocrlf setting.
 ###############################################################################
-* text=auto
+* text=auto eol=lf
+
+###############################################################################
+# Binary files: never normalize line endings or show text diffs.
+###############################################################################
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.pdf    binary
+*.doc    binary
+*.docx   binary
+*.xls    binary
+*.xlsx   binary
+*.ppt    binary
+*.pptx   binary
+*.zip    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.dll    binary
+*.exe    binary
 
 ###############################################################################
 # Set default behavior for command prompt diff.

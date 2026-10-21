@@ -1,62 +1,23 @@
 import { apiClient } from '../apiClient';
+import { unwrap, unwrapData } from '../../utils/apiError';
+import type { IAttendanceApi } from '../contracts/IAttendanceApi';
 
-export interface AttendanceRow {
-  studentId: number;
-  studentCode: string;
-  fullName: string;
-  gender: string;
-  currentStatus: number; // 1: Present, 2: ExcusedAbsence, 3: UnexcusedAbsence, 4: Late
-  hasApprovedLeave: boolean;
-  leaveReason?: string;
-  isPreFilled: boolean;
-  remarks?: string;
-}
+export const attendanceApi: IAttendanceApi = {
+  getMyClasses: (date) =>
+    unwrapData(apiClient.get('/attendance/my-classes', { params: { date } })),
 
-export interface ClassDailySheet {
-  classId: number;
-  className: string;
-  date: string;
-  session: number; // 1: Morning, 2: Afternoon
-  sessionName: string;
-  isSaved: boolean;
-  savedAt?: string;
-  savedByName?: string;
-  totalStudents: number;
-  presentCount: number;
-  excusedAbsenceCount: number;
-  unexcusedAbsenceCount: number;
-  lateCount: number;
-  students: AttendanceRow[];
-}
+  getSheet: (classId, date) =>
+    unwrapData(apiClient.get(`/attendance/classes/${classId}/sheet`, { params: { date } })),
 
-export interface SaveClassAttendancePayload {
-  classId: number;
-  date: string;
-  session: number;
-  entries: {
-    studentId: number;
-    status: number;
-    remarks?: string;
-  }[];
-}
+  submitSheet: (classId, payload) =>
+    unwrap(apiClient.put(`/attendance/classes/${classId}/sheet`, payload)),
 
-export interface AttendanceSaveResult {
-  success: boolean;
-  message: string;
-  savedCount: number;
-  mealAlerts: string[];
-}
+  correctRecord: (recordId, payload) =>
+    unwrap(apiClient.patch(`/attendance/records/${recordId}/correction`, payload)),
 
-export const attendanceApi = {
-  getClassDailySheet: async (classId: number, date?: string, session: number = 1) => {
-    const res = await apiClient.get<{ success: boolean; data: ClassDailySheet; message: string }>(`/attendance/class/${classId}/sheet`, {
-      params: { date, session },
-    });
-    return res.data;
-  },
+  getClassSummary: (classId, from, to) =>
+    unwrapData(apiClient.get(`/attendance/classes/${classId}/summary`, { params: { from, to } })),
 
-  saveAttendance: async (payload: SaveClassAttendancePayload) => {
-    const res = await apiClient.post<{ success: boolean; data: AttendanceSaveResult; message: string }>('/attendance/class/save', payload);
-    return res.data;
-  },
+  getStudentHistory: (studentId, from, to) =>
+    unwrapData(apiClient.get(`/attendance/students/${studentId}/history`, { params: { from, to } })),
 };

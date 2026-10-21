@@ -49,5 +49,9 @@ public class Repository<T> : IRepository<T> where T : class
         return Task.CompletedTask;
     }
 
-    public virtual IQueryable<T> Query() => _dbSet.AsQueryable();
+    public virtual IQueryable<T> Query()
+    {
+        return _dbSet.AsQueryable();
+    }
 }
+

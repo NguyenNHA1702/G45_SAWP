@@ -16,7 +16,7 @@ import {
   X
 } from 'lucide-react';
 import { lunchApi } from '../../services/implementations/lunchApi';
-import type { DailyMealBoard } from '../../services/implementations/lunchApi';
+import type { DailyMealBoard } from '../../types/lunch.types';
 
 export default function MealHeadcountPage() {
   const [selectedDate, setSelectedDate] = useState<string>(() => {

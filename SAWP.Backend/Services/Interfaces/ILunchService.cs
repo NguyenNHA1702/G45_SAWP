@@ -6,6 +6,7 @@ public interface ILunchService
 {
     Task<ApiResponse<bool>> RegisterLunchAsync(LunchRegistrationDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<DailyMealCountReportDto>> GetDailyMealCountAsync(DateTime date, CancellationToken cancellationToken = default);
+    Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Ghi nhận hủy suất ăn trước giờ chốt 08h15 cho ngày áp dụng
