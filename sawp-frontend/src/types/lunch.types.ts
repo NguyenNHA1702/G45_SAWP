@@ -10,7 +10,7 @@ export interface MealHeadcount {
   date: string;
   isServiceDay: boolean;
   isFinalized: boolean;
-  finalizeTime: string; // "10:30:00"
+  finalizeTime: string; // giờ chốt suất ăn, vd "08:30:00"
   totalMeals: number;
   standardLunch: number;
   vegetarianLunch: number;
@@ -18,4 +18,48 @@ export interface MealHeadcount {
   deductedByAttendance: number;
   deductedByLeave: number;
   classes: ClassHeadcount[];
+}
+
+export interface ClassMealSummary {
+  classId: number;
+  className: string;
+  grade: number;
+  initialRegistered: number;
+  cancelledCount: number;
+  actualCount: number;
+}
+
+export interface MealAuditLog {
+  studentId: number;
+  studentCode: string;
+  studentName: string;
+  className: string;
+  changeType: 'AutoCancelled' | 'Restored' | 'LateAdded' | string;
+  reason: string;
+  timestamp: string;
+  isBeforeCutoff: boolean;
+}
+
+export interface DailyMealBoard {
+  date: string;
+  isLocked: boolean;
+  lockedAt?: string;
+  cutoffTime: string;
+  totalInitialRegistered: number;
+  totalAutoCancelled: number;
+  totalActiveToCook: number;
+  totalAnomalies: number;
+  classBreakdowns: ClassMealSummary[];
+  mealChangeLogs: MealAuditLog[];
+}
+
+export interface LockMealDayPayload {
+  date: string;
+  notes?: string;
+}
+
+export interface RestoreMealPayload {
+  studentId: number;
+  date: string;
+  reason: string;
 }

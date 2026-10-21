@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   Bell,
   CalendarCheck2,
   ChevronRight,
   ClipboardList,
+  FileCheck,
+  FileText,
   GraduationCap,
   HeartHandshake,
   KeyRound,
@@ -18,10 +20,12 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
+import { notificationApi } from '../services/implementations/notificationApi';
 import { SYSTEM_MESSAGES } from '../constants/messages';
 import { ChangePasswordModal } from '../components/auth/ChangePasswordModal';
 import { ParentChildProvider } from '../contexts/ParentChildContext';
 import { ChildSelectorPill } from '../components/parent/ChildSelectorPill';
+import type { AppNotification } from '../types/notification.types';
 import './MainLayout.css';
 
 interface NavItem {
@@ -45,13 +49,18 @@ const NAV_ITEMS: NavItem[] = [
     icon: GraduationCap,
     roles: ['Teacher'],
   },
-  // --- WF2: Điểm danh (Teacher, OfficeStaff, Admin) ---
+  // --- Điểm danh (Teacher, OfficeStaff, Admin) ---
   {
-    label: 'Điểm danh lớp (WF2)',
+    label: 'Điểm danh lớp',
     path: '/teacher/attendance',
     icon: CalendarCheck2,
     roles: ['Teacher', 'OfficeStaff', 'Admin'],
-    badge: 'Mới',
+  },
+  {
+    label: 'Duyệt đơn xin nghỉ',
+    path: '/teacher/leave-requests',
+    icon: FileCheck,
+    roles: ['Teacher', 'SchoolBoard', 'Admin'],
   },
   // --- WF1: Cổng phụ huynh theo dõi con ---
   {
@@ -62,17 +71,23 @@ const NAV_ITEMS: NavItem[] = [
   },
   // --- Phụ huynh theo dõi chuyên cần (Chỉ Parent) ---
   {
+    label: 'Đơn xin nghỉ học',
+    path: '/parent/leave-requests',
+    icon: FileText,
+    roles: ['Parent'],
+  },
+  {
     label: 'Chuyên cần của con',
     path: '/parent/attendance',
     icon: ClipboardList,
     roles: ['Parent'],
   },
-  // --- Bếp ăn bán trú (Chỉ ServiceStaff) ---
+  // --- Bếp ăn bán trú (ServiceStaff, Teacher, Admin) ---
   {
     label: 'Báo cáo suất ăn Bếp',
     path: '/service/headcount',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff'],
+    roles: ['ServiceStaff', 'Teacher', 'Admin'],
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {
@@ -99,11 +114,53 @@ export function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   // Lấy thông tin user hiện tại từ localStorage
   const userJson = localStorage.getItem(USER_KEY);
   const currentUser = userJson ? JSON.parse(userJson) : null;
   const userRoles: string[] = currentUser?.roles ?? [];
+
+  const fetchNotifications = async () => {
+    try {
+      const page = await notificationApi.getPaged(1, 20);
+      setNotifications(page.items);
+    } catch {
+      // silent
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Close notifications on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setShowNotifs(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const handleOpenNotification = async (item: AppNotification) => {
+    if (!item.isRead) {
+      await notificationApi.markRead(item.id).catch(() => null);
+      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)));
+    }
+    setShowNotifs(false);
+    if (item.linkUrl) {
+      navigate(item.linkUrl);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem(TOKEN_KEY);
@@ -205,15 +262,115 @@ export function MainLayout() {
             </div>
 
             <div className="header-right">
-              <button
-                type="button"
-                className="header-btn"
-                onClick={() => toast('Chức năng thông báo đang kết nối')}
-                title="Thông báo"
-              >
-                <Bell size={18} />
-                <span className="header-badge-dot" />
-              </button>
+              {/* NOTIFICATION BUTTON & POPUP */}
+              <div style={{ position: 'relative' }} ref={notifRef}>
+                <button
+                  type="button"
+                  className="header-btn"
+                  onClick={() => {
+                    setShowNotifs(!showNotifs);
+                    if (!showNotifs) fetchNotifications();
+                  }}
+                  title="Thông báo hệ thống"
+                  style={{ position: 'relative' }}
+                >
+                  <Bell size={18} />
+                  {unreadCount > 0 ? (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        right: '2px',
+                        backgroundColor: '#EF4444',
+                        color: '#FFFFFF',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        borderRadius: '10px',
+                        padding: '1px 5px',
+                        lineHeight: '1.2',
+                      }}
+                    >
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  ) : (
+                    <span className="header-badge-dot" />
+                  )}
+                </button>
+
+                {showNotifs && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '46px',
+                      right: 0,
+                      width: '360px',
+                      maxHeight: '440px',
+                      overflowY: 'auto',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: '16px',
+                      boxShadow: '0 12px 30px rgba(0, 0, 0, 0.15)',
+                      border: '1px solid #E2E8F0',
+                      zIndex: 9999,
+                      padding: '16px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px',
+                        paddingBottom: '8px',
+                        borderBottom: '1px solid #F1F5F9',
+                      }}
+                    >
+                      <strong style={{ fontSize: '15px', color: '#0F172A' }}>Thông báo hệ thống</strong>
+                      <span style={{ fontSize: '12px', color: '#64748B' }}>
+                        {unreadCount} chưa đọc
+                      </span>
+                    </div>
+
+                    {notifications.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '24px 8px', color: '#94A3B8', fontSize: '13px' }}>
+                        Không có thông báo nào
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {notifications.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => handleOpenNotification(item)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: '10px',
+                              backgroundColor: item.isRead ? '#F8FAFC' : '#EFF6FF',
+                              border: item.isRead ? '1px solid #F1F5F9' : '1px solid #BFDBFE',
+                              cursor: 'pointer',
+                              transition: 'background-color 0.15s ease',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <strong style={{ fontSize: '13px', color: item.isRead ? '#334155' : '#1D4ED8' }}>
+                                {item.title}
+                              </strong>
+                              {!item.isRead && (
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2563EB', display: 'inline-block' }} />
+                              )}
+                            </div>
+                            <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                              {item.content}
+                            </p>
+                            <small style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px', display: 'block' }}>
+                              {new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}{' '}
+                              {new Date(item.createdAt).toLocaleDateString('vi-VN')}
+                            </small>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className="header-user">
                 <span className="user-greeting">

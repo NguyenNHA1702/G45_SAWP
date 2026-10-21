@@ -5,7 +5,7 @@ import { attendanceApi } from '../../services/implementations/attendanceApi';
 import { asApiError } from '../../utils/apiError';
 import { monthRange, toIsoDate } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
-import type { AttendanceStatus, StudentAttendanceHistory } from '../../types/attendance.types';
+import type { AttendanceDay, AttendanceStatus, StudentAttendanceHistory } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
 import { useParentChild } from '../../contexts/ParentChildContext';
 
@@ -15,6 +15,16 @@ const TONE: Record<AttendanceStatus, string> = {
   ExcusedAbsence: 'var(--status-excused)',
   UnexcusedAbsence: 'var(--status-unexcused)',
 };
+
+// Mỗi ngày có thể có 2 buổi (Sáng/Chiều): ô lịch tô theo trạng thái "nặng" nhất trong ngày
+const SEVERITY: Record<AttendanceStatus, number> = {
+  Present: 0,
+  Late: 1,
+  ExcusedAbsence: 2,
+  UnexcusedAbsence: 3,
+};
+
+const SESSION_LABEL = { Morning: 'Sáng', Afternoon: 'Chiều' } as const;
 
 export default function ChildAttendancePage() {
   const { activeChildId } = useParentChild();
@@ -41,7 +51,14 @@ export default function ChildAttendancePage() {
       .catch((e: unknown) => toast.error(asApiError(e).message));
   }, [studentId, month]);
 
-  const byDate = useMemo(() => new Map(data?.days.map((d) => [d.date.slice(0, 10), d]) ?? []), [data]);
+  const byDate = useMemo(() => {
+    const map = new Map<string, AttendanceDay[]>();
+    for (const d of data?.days ?? []) {
+      const key = d.date.slice(0, 10);
+      map.set(key, [...(map.get(key) ?? []), d]);
+    }
+    return map;
+  }, [data]);
 
   const [y, m] = month.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -88,12 +105,18 @@ export default function ChildAttendancePage() {
           ))}
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const iso = `${month}-${String(i + 1).padStart(2, '0')}`;
-            const rec = byDate.get(iso);
+            const sessions = byDate.get(iso) ?? [];
+            const rec = sessions.reduce<AttendanceDay | undefined>(
+              (worst, d) => (!worst || SEVERITY[d.status] > SEVERITY[worst.status] ? d : worst),
+              undefined,
+            );
             const isDarkBg = rec && (rec.status === 'ExcusedAbsence' || rec.status === 'UnexcusedAbsence');
             return (
               <div
                 key={iso}
-                title={rec ? `${rec.status}${rec.remarks ? ' – ' + rec.remarks : ''}` : ''}
+                title={sessions
+                  .map((d) => `${SESSION_LABEL[d.session]}: ${d.status}${d.remarks ? ' – ' + d.remarks : ''}`)
+                  .join('\n')}
                 style={{
                   aspectRatio: '1',
                   display: 'grid',

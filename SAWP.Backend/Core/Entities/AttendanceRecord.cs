@@ -12,6 +12,7 @@ public class AttendanceRecord
     public virtual Class Class { get; set; } = null!;
 
     public DateTime Date { get; set; }                 // CHỈ phần ngày (00:00), theo giờ trường
+    public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
     public AttendanceStatus Status { get; set; }
     public string? Remarks { get; set; }               // max 500
 

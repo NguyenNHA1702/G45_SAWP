@@ -13,6 +13,7 @@ public class DailyAttendanceEntryDto
 public class SubmitAttendanceSheetDto
 {
     public DateTime Date { get; set; }                    // yyyy-MM-dd
+    public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
     public List<DailyAttendanceEntryDto> Entries { get; set; } = new();
 }
 
@@ -40,6 +41,7 @@ public class LeaveIndicatorDto
     public RequestStatus Status { get; set; }                      // Submitted | UnderReview | Approved
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
+    public LeaveSession Session { get; set; }                      // Morning | Afternoon | FullDay
     public string Reason { get; set; } = string.Empty;
 }
 
@@ -73,6 +75,7 @@ public class AttendanceSheetDto
     public int ClassId { get; set; }
     public string ClassName { get; set; } = string.Empty;
     public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; }
     public bool IsSchoolDay { get; set; }
     public bool CanEdit { get; set; }                              // tính theo user + ngày
     public string? LockReason { get; set; }                        // "PastDay" | "NotAssigned" | "NonSchoolDay" | "Future"
@@ -96,6 +99,7 @@ public class AttendanceSubmitResultDto
 public class AttendanceDayDto
 {
     public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; }
     public AttendanceStatus Status { get; set; }
     public string? Remarks { get; set; }
     public string? LeaveRequestNumber { get; set; }
@@ -133,13 +137,4 @@ public class StudentAttendanceRowDto
     public int Late { get; set; }
     public int ExcusedAbsence { get; set; }
     public int UnexcusedAbsence { get; set; }
-}
-
-public class LeaveRequestSubmitDto
-{
-    public int StudentId { get; set; }
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-    public string Reason { get; set; } = string.Empty;
-    public string? DoctorNoteAttachmentUrl { get; set; }
 }
