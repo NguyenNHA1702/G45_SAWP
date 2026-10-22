@@ -368,3 +368,6 @@ docs/superpowers/
 
 # Word files (keep local, do not push)
 *.docx
+
+# User uploaded storage
+**/Storage/
