@@ -11,7 +11,12 @@ export type DraftMap = Record<number, DraftRow>;
 
 const buildDraft = (sheet: AttendanceSheet): DraftMap => {
   const map: DraftMap = {};
-  for (const e of sheet.entries) map[e.studentId] = { status: e.status, remarks: e.remarks ?? '' };
+  for (const e of sheet.entries) {
+    const isApprovedLeave = e.leave?.status === 'Approved' || e.suggestedStatus === 'ExcusedAbsence';
+    const status = e.status ?? (isApprovedLeave ? 'ExcusedAbsence' : null);
+    const remarks = e.remarks || (isApprovedLeave ? `Vắng có phép (Đơn ${e.leave?.requestNumber ?? ''})`.trim() : '');
+    map[e.studentId] = { status, remarks };
+  }
   return map;
 };
 

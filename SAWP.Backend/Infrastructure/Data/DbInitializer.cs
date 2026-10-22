@@ -193,7 +193,7 @@ public static class DbInitializer
         // ====================================================================
         // 3. SCHOOL YEAR & CALENDAR
         // ====================================================================
-        var schoolYear = await context.SchoolYears.FirstOrDefaultAsync(sy => sy.YearName == "2026-2027");
+        var schoolYear = await context.SchoolYears.FirstOrDefaultAsync(sy => sy.YearName == "2026-2027" || sy.YearName == "Năm học 2026-2027" || sy.IsActive);
         if (schoolYear == null)
         {
             schoolYear = new SchoolYear
@@ -204,6 +204,11 @@ public static class DbInitializer
                 IsActive = true
             };
             context.SchoolYears.Add(schoolYear);
+            await context.SaveChangesAsync();
+        }
+        else if (schoolYear.YearName != "2026-2027" && !schoolYear.YearName.Contains("2026-2027"))
+        {
+            schoolYear.YearName = "2026-2027";
             await context.SaveChangesAsync();
         }
 
@@ -317,6 +322,11 @@ public static class DbInitializer
                 context.Students.Add(student);
                 await context.SaveChangesAsync();
             }
+            else if (student.Status != "Active")
+            {
+                student.Status = "Active";
+                await context.SaveChangesAsync();
+            }
             studentEntities.Add(student);
 
             // Gán vào lớp 1A
@@ -410,8 +420,9 @@ public static class DbInitializer
         }
 
         // ====================================================================
-        // 7. MẪU ĐƠN NGHỈ PHÉP (Cho HS002 Nguyễn An Nhiên - Có phép Approved)
+        // 7. MẪU ĐƠN NGHỈ PHÉP (Đã tắt để người dùng tự tạo đơn từ đầu)
         // ====================================================================
+        /*
         var student2 = studentEntities.FirstOrDefault(s => s.StudentCode == "HS002");
         if (student2 != null && !await context.AdministrativeRequests.AnyAsync(ar => ar.StudentId == student2.Id && ar.RequestType == RequestTypes.Leave))
         {
@@ -441,6 +452,7 @@ public static class DbInitializer
             context.LeaveRequests.Add(leaveReq);
             await context.SaveChangesAsync();
         }
+        */
 
         // ====================================================================
         // 8. LỊCH SỬ ĐIỂM DANH MẪU (Cho HS001 để Phụ huynh xem lịch tháng)

@@ -237,9 +237,13 @@ public class AttendanceService : IAttendanceService
             leaves.TryGetValue(s.Id, out var leave);
             lunches.TryGetValue(s.Id, out var lunch);
 
-            var suggestedStatus = (leave?.Status == RequestStatus.Approved)
+            var isApprovedLeave = leave?.Status == RequestStatus.Approved;
+            var suggestedStatus = isApprovedLeave
                 ? AttendanceStatus.ExcusedAbsence
                 : AttendanceStatus.Present;
+
+            var effectiveStatus = rec?.Status ?? (isApprovedLeave ? AttendanceStatus.ExcusedAbsence : (AttendanceStatus?)null);
+            var effectiveRemarks = rec?.Remarks ?? (isApprovedLeave ? $"Vắng có phép theo đơn {leave!.RequestNumber}" : null);
 
             entries.Add(new AttendanceSheetEntryDto
             {
@@ -248,9 +252,9 @@ public class AttendanceService : IAttendanceService
                 FullName = s.FullName,
                 AvatarUrl = null,
                 RecordId = rec?.Id,
-                Status = rec?.Status,
+                Status = effectiveStatus,
                 SuggestedStatus = suggestedStatus,
-                Remarks = rec?.Remarks,
+                Remarks = effectiveRemarks,
                 Leave = leave,
                 HasLunch = lunch != null && lunch.IsActive,
                 LunchCancelledBy = (lunch != null && !lunch.IsActive) ? lunch.CancellationSource : null
