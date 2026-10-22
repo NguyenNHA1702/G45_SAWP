@@ -1,9 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Check, X, ShieldAlert, CheckCircle2, UserCheck, MessageSquare, AlertTriangle, Send, FileText } from 'lucide-react';
+import {
+  Check,
+  X,
+  ShieldAlert,
+  CheckCircle2,
+  UserCheck,
+  MessageSquare,
+  AlertTriangle,
+  Send,
+  FileText,
+  Sparkles,
+  UtensilsCrossed,
+  Paperclip,
+  ExternalLink,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { USER_KEY } from '../../services/apiClient';
 import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
+import { GeometricModal } from '../../components/common/GeometricModal';
 
 export default function LeaveApprovalPage() {
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
@@ -179,87 +194,88 @@ export default function LeaveApprovalPage() {
       ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
-          {isSchoolBoard ? 'Ban Giám Hiệu - Duyệt đơn xin nghỉ học dài ngày' : 'Tiếp nhận & Duyệt đơn xin nghỉ học'}
-        </h1>
-        <p style={{ color: '#64748B', marginTop: '4px', fontSize: '14px' }}>
-          {isSchoolBoard
-            ? 'Phê duyệt các đơn xin nghỉ từ 3 ngày trở lên do Giáo viên chủ nhiệm chuyển tiếp. Tự động đồng bộ điểm danh và suất ăn bán trú.'
-            : 'Đơn dưới 3 ngày do GVCN duyệt trực tiếp. Đơn từ 3 ngày trở lên GVCN xác nhận và chuyển Ban Giám Hiệu phê duyệt.'}
-        </p>
-      </div>
+    <div className="container pop-in">
+      {/* Decorative Memphis elements */}
+      <span className="decor decor--circle" style={{ top: -20, right: 30 }} aria-hidden="true" />
+      <span className="decor decor--triangle" style={{ bottom: 30, left: 10 }} aria-hidden="true" />
+      <span className="decor decor--square" style={{ top: 140, right: -15 }} aria-hidden="true" />
 
-      {/* Filter Tabs */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #E2E8F0', paddingBottom: '8px', flexWrap: 'wrap' }}>
-        {filterTabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setStatusFilter(tab.key)}
-            style={{
-              padding: '8px 18px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: statusFilter === tab.key ? '#2563EB' : 'transparent',
-              color: statusFilter === tab.key ? '#FFFFFF' : '#475569',
-              fontWeight: 700,
-              fontSize: '14px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Page Header */}
+      <header className="page-header" style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <span className={`badge ${isSchoolBoard ? 'badge--violet' : 'badge--pink'}`} style={{ marginBottom: 8 }}>
+              <Sparkles size={14} /> {isSchoolBoard ? 'Ban Giám Hiệu' : 'Cổng Giáo Viên'}
+            </span>
+            <h1 style={{ margin: '4px 0 8px' }}>
+              Duyệt đơn xin <span className="squiggle">nghỉ học</span>
+            </h1>
+            <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)' }}>
+              {isSchoolBoard
+                ? 'Phê duyệt các đơn xin nghỉ từ 3 ngày trở lên do Giáo viên chủ nhiệm chuyển tiếp. Tự động đồng bộ điểm danh và suất ăn bán trú.'
+                : 'Đơn dưới 3 ngày do GVCN duyệt trực tiếp. Đơn từ 3 ngày trở lên GVCN xác nhận và chuyển Ban Giám Hiệu phê duyệt.'}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      {/* Filter Tabs as Playful Pills */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+        {filterTabs.map((tab) => {
+          const isActive = statusFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              className={isActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+              onClick={() => setStatusFilter(tab.key)}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* List */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#64748B' }}>Đang tải danh sách đơn...</div>
+        <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <p style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-base)', margin: 0 }}>Đang tải danh sách đơn xin nghỉ...</p>
+        </div>
       ) : requests.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#F8FAFC', borderRadius: '16px' }}>
-          <UserCheck size={48} color="#94A3B8" style={{ marginBottom: '12px' }} />
-          <h3 style={{ margin: 0, color: '#334155' }}>Không có đơn xin nghỉ nào trong mục này</h3>
+        <div className="card empty-state">
+          <UserCheck size={48} color="var(--color-muted-fg)" style={{ marginBottom: 12 }} />
+          <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)' }}>Không có đơn xin nghỉ nào trong mục này</h3>
+          <p style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)', marginTop: 6 }}>
+            Các đơn mới từ phụ huynh sẽ tự động xuất hiện tại đây khi được gửi.
+          </p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '16px' }}>
+        <div style={{ display: 'grid', gap: 18 }}>
           {requests.map((r) => {
             const isEscalated = (r.totalDays || 1) >= 3;
             return (
               <div
                 key={r.id}
+                className="card card--hover"
                 style={{
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: '14px',
-                  border: r.status === 'UnderReview' ? '1px solid #C084FC' : '1px solid #E2E8F0',
-                  padding: '20px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
+                  border: isEscalated ? '2px solid var(--color-accent)' : 'var(--border)',
+                  boxShadow: isEscalated ? '8px 8px 0 0 var(--color-accent-soft)' : 'var(--shadow-card)',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span
-                      style={{
-                        fontFamily: 'monospace',
-                        fontWeight: 700,
-                        backgroundColor: '#F1F5F9',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                        color: '#475569',
-                        fontSize: '13px',
-                      }}
-                    >
+                {/* Header card */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span className="badge badge--muted" style={{ fontFamily: 'monospace', fontWeight: 700 }}>
                       {r.requestNumber}
                     </span>
-                    <strong style={{ fontSize: '17px', color: '#0F172A' }}>{r.studentName}</strong>
-                    <span style={{ color: '#475569', fontSize: '13px' }}>Mã: {r.studentCode}</span>
+                    <strong style={{ fontSize: 'var(--fs-md)', color: 'var(--color-fg)', fontFamily: 'var(--font-heading)' }}>
+                      {r.studentName}
+                    </strong>
+                    <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
+                      Mã: {r.studentCode}
+                    </span>
                     {r.className && (
-                      <span style={{ backgroundColor: '#EEF2FF', color: '#4338CA', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 }}>
+                      <span className="badge badge--mint">
                         Lớp {r.className}
                       </span>
                     )}
@@ -267,23 +283,28 @@ export default function LeaveApprovalPage() {
 
                   <div>
                     {r.status === 'Submitted' && (
-                      <span style={{ backgroundColor: '#FEF3C7', color: '#B45309', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px' }}>
-                        {isEscalated ? 'Chờ GV chuyển BGH' : 'Chờ GVCN duyệt'}
+                      <span className="badge badge--amber">
+                        {isEscalated ? 'Chờ GVCN chuyển BGH' : 'Chờ GVCN duyệt'}
                       </span>
                     )}
                     {r.status === 'UnderReview' && (
-                      <span style={{ backgroundColor: '#FAF5FF', color: '#7E22CE', border: '1px solid #E9D5FF', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px' }}>
+                      <span className="badge badge--violet">
                         Chờ BGH duyệt
                       </span>
                     )}
                     {r.status === 'Approved' && (
-                      <span style={{ backgroundColor: '#DCFCE7', color: '#15803D', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className="badge badge--mint">
                         <CheckCircle2 size={14} /> Đã phê duyệt
                       </span>
                     )}
                     {r.status === 'Rejected' && (
-                      <span style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', padding: '4px 12px', borderRadius: '20px', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className="badge badge--pink">
                         <ShieldAlert size={14} /> Đã từ chối
+                      </span>
+                    )}
+                    {r.status === 'Cancelled' && (
+                      <span className="badge badge--muted">
+                        Đã hủy
                       </span>
                     )}
                   </div>
@@ -291,41 +312,83 @@ export default function LeaveApprovalPage() {
 
                 {/* Routing Banner on Card */}
                 {r.status === 'Submitted' && isEscalated && (
-                  <div style={{ backgroundColor: '#FAF5FF', border: '1px solid #E9D5FF', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#6B21A8', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldAlert size={16} />
-                    <span>Đơn xin nghỉ <strong>{r.totalDays} ngày</strong> (từ 3 ngày trở lên) - GVCN cần xác nhận yêu cầu và chuyển tiếp lên Ban Giám Hiệu.</span>
+                  <div
+                    className="card"
+                    style={{
+                      background: 'var(--color-accent-soft)',
+                      borderColor: 'var(--color-accent)',
+                      padding: '10px 14px',
+                      marginBottom: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 'var(--fs-sm)',
+                    }}
+                  >
+                    <ShieldAlert size={18} color="var(--color-accent)" style={{ flexShrink: 0 }} />
+                    <span>
+                      Đơn xin nghỉ <strong>{r.totalDays} ngày</strong> (từ 3 ngày trở lên) — GVCN cần xác nhận thông tin và chuyển tiếp lên Ban Giám Hiệu.
+                    </span>
                   </div>
                 )}
 
                 {r.status === 'UnderReview' && (
-                  <div style={{ backgroundColor: '#F3E8FF', border: '1px solid #D8B4FE', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', color: '#581C87', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <FileText size={16} />
-                    <span>Đơn nghỉ chuyển cấp <strong>{r.totalDays} ngày</strong> đã được GVCN xác nhận và đang chờ Ban Giám Hiệu xem xét quyết định.</span>
+                  <div
+                    className="card"
+                    style={{
+                      background: 'var(--color-accent-soft)',
+                      borderColor: 'var(--color-accent)',
+                      padding: '10px 14px',
+                      marginBottom: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 'var(--fs-sm)',
+                    }}
+                  >
+                    <FileText size={18} color="var(--color-accent)" style={{ flexShrink: 0 }} />
+                    <span>
+                      Đơn nghỉ chuyển cấp <strong>{r.totalDays} ngày</strong> đã được GVCN xác nhận và đang chờ Ban Giám Hiệu phê duyệt.
+                    </span>
                   </div>
                 )}
 
                 {/* Information Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', fontSize: '14px', color: '#334155' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: 12,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '12px 16px',
+                    background: 'var(--color-muted)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--color-border)',
+                  }}
+                >
                   <div>
-                    <span style={{ color: '#64748B' }}>Phụ huynh gửi:</span>{' '}
-                    <strong>{r.requesterName}</strong> {r.requesterPhone && <small>({r.requesterPhone})</small>}
+                    <span style={{ color: 'var(--color-muted-fg)' }}>Phụ huynh gửi:</span>{' '}
+                    <strong>{r.requesterName}</strong> {r.requesterPhone && <small style={{ color: 'var(--color-muted-fg)' }}>({r.requesterPhone})</small>}
                   </div>
                   <div>
-                    <span style={{ color: '#64748B' }}>Thời gian:</span>{' '}
+                    <span style={{ color: 'var(--color-muted-fg)' }}>Thời gian:</span>{' '}
                     <strong>
                       {new Date(r.startDate).toLocaleDateString('vi-VN')} {r.startDate !== r.endDate && `→ ${new Date(r.endDate).toLocaleDateString('vi-VN')}`}
                     </strong>{' '}
-                    <span style={{ fontSize: '12px', color: '#64748B' }}>
-                      ({r.totalDays || 1} ngày - {isEscalated ? 'Chuyển cấp BGH' : 'Thông thường'})
+                    <span className={`badge ${isEscalated ? 'badge--violet' : 'badge--mint'}`} style={{ fontSize: 'var(--fs-xs)', marginLeft: 4 }}>
+                      {r.totalDays || 1} ngày
                     </span>
                   </div>
                   <div>
-                    <span style={{ color: '#64748B' }}>Buổi:</span> <strong>{r.sessionName}</strong>
+                    <span style={{ color: 'var(--color-muted-fg)' }}>Buổi:</span> <strong>{r.sessionName}</strong>
                   </div>
                   <div>
-                    <span style={{ color: '#64748B' }}>Suất ăn trưa:</span>{' '}
+                    <span style={{ color: 'var(--color-muted-fg)' }}>Bán trú:</span>{' '}
                     {r.keepLunchService ? (
-                      <strong style={{ color: '#0284C7' }}>Phụ huynh chọn GIỮ SUẤT ĂN</strong>
+                      <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>
+                        <UtensilsCrossed size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                        Phụ huynh chọn GIỮ SUẤT ĂN
+                      </span>
                     ) : (
                       <span>Tự động hủy nếu duyệt trước {LUNCH_CUTOFF_LABEL}</span>
                     )}
@@ -333,20 +396,50 @@ export default function LeaveApprovalPage() {
                 </div>
 
                 {/* Reason & Attachments */}
-                <div style={{ backgroundColor: '#F8FAFC', padding: '12px 16px', borderRadius: '8px', fontSize: '14px' }}>
-                  <div>
-                    <span style={{ color: '#64748B', fontWeight: 600 }}>Lý do phụ huynh trình bày: </span>
-                    <span style={{ color: '#0F172A' }}>{r.reason}</span>
-                  </div>
+                <div style={{ marginTop: 12, fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
+                  <p style={{ margin: 0 }}>
+                    <strong style={{ color: 'var(--color-muted-fg)' }}>Lý do phụ huynh trình bày:</strong>{' '}
+                    <span style={{ color: 'var(--color-fg)' }}>{r.reason}</span>
+                  </p>
                   {r.doctorNoteAttachmentUrl && (
-                    <div style={{ marginTop: '6px', fontSize: '13px', color: '#0284C7' }}>
-                      📎 <strong>Tài liệu đính kèm:</strong> {r.doctorNoteAttachmentUrl}
+                    <div style={{ marginTop: 8 }}>
+                      {r.doctorNoteAttachmentUrl.startsWith('/') || r.doctorNoteAttachmentUrl.startsWith('http') ? (
+                        <a
+                          href={r.doctorNoteAttachmentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn--secondary btn--sm"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            textDecoration: 'none',
+                            color: 'var(--color-accent)',
+                            borderColor: 'var(--color-accent)',
+                          }}
+                        >
+                          <Paperclip size={14} />
+                          <span>Xem minh chứng của phụ huynh</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      ) : (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
+                          <Paperclip size={14} />
+                          <strong>Minh chứng:</strong> {r.doctorNoteAttachmentUrl}
+                        </div>
+                      )}
                     </div>
                   )}
                   {r.reviewerNotes && (
-                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #CBD5E1', color: r.status === 'Rejected' ? '#B91C1C' : '#0369A1' }}>
-                      <strong>Nhật ký xử lý: </strong>
-                      <span>{r.reviewerNotes}</span>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTop: '1px dashed var(--color-border)',
+                        color: r.status === 'Rejected' ? 'var(--color-secondary)' : 'var(--color-accent)',
+                      }}
+                    >
+                      <strong>Nhật ký xử lý:</strong> {r.reviewerNotes}
                     </div>
                   )}
                 </div>
@@ -354,147 +447,89 @@ export default function LeaveApprovalPage() {
                 {/* ACTION BUTTONS */}
                 {/* 1. Branch: Dưới 3 ngày (GVCN xem xét đơn nghỉ thông thường) */}
                 {r.status === 'Submitted' && !isEscalated && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     <button
+                      type="button"
                       disabled={processing}
+                      className="btn btn--secondary btn--sm"
+                      style={{ color: '#e11d48', borderColor: '#fda4af' }}
                       onClick={() => {
                         setRejectingItem(r);
                         setRejectReason('');
                       }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        backgroundColor: '#FFFFFF',
-                        color: '#DC2626',
-                        border: '1px solid #FCA5A5',
-                        padding: '8px 16px',
-                        borderRadius: '8px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
                     >
-                      <X size={16} /> Từ chối
+                      <X size={15} /> Từ chối
                     </button>
                     <button
+                      type="button"
                       disabled={processing}
+                      className="btn btn--primary btn--sm"
+                      style={{ background: 'var(--color-quaternary)', color: 'var(--color-fg)' }}
                       onClick={() => handleApprove(r)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        backgroundColor: '#16A34A',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        padding: '8px 20px',
-                        borderRadius: '8px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
-                      }}
                     >
-                      <Check size={16} /> Phê duyệt đơn
+                      <Check size={15} /> Phê duyệt đơn
                     </button>
                   </div>
                 )}
 
                 {/* 2. Branch: Từ 3 ngày trở lên (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu) */}
                 {r.status === 'Submitted' && isEscalated && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     <button
+                      type="button"
                       disabled={processing}
+                      className="btn btn--secondary btn--sm"
+                      style={{ color: '#e11d48', borderColor: '#fda4af' }}
                       onClick={() => {
                         setRejectingItem(r);
                         setRejectReason('');
                       }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        backgroundColor: '#FFFFFF',
-                        color: '#DC2626',
-                        border: '1px solid #FCA5A5',
-                        padding: '8px 16px',
-                        borderRadius: '8px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
                     >
-                      <X size={16} /> Từ chối
+                      <X size={15} /> Từ chối
                     </button>
                     <button
+                      type="button"
                       disabled={processing}
+                      className="btn btn--primary btn--sm"
                       onClick={() => {
                         setForwardingItem(r);
                         setForwardNotes(`Kính chuyển Ban Giám Hiệu xem xét phê duyệt đơn xin nghỉ ${r.totalDays} ngày cho học sinh ${r.studentName}.`);
                       }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        backgroundColor: '#7E22CE',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        padding: '8px 20px',
-                        borderRadius: '8px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 6px rgba(126, 34, 206, 0.25)',
-                      }}
                     >
-                      <Send size={16} /> Xác nhận & Chuyển Ban Giám Hiệu
+                      <Send size={15} /> Xác nhận & Chuyển Ban Giám Hiệu
                     </button>
                   </div>
                 )}
 
                 {/* 3. Branch: Đơn tại Ban Giám Hiệu (Status == UnderReview) */}
                 {r.status === 'UnderReview' && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     {isSchoolBoard || isAdmin ? (
                       <>
                         <button
+                          type="button"
                           disabled={processing}
+                          className="btn btn--secondary btn--sm"
+                          style={{ color: '#e11d48', borderColor: '#fda4af' }}
                           onClick={() => {
                             setRejectingItem(r);
                             setRejectReason('');
                           }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            backgroundColor: '#FFFFFF',
-                            color: '#DC2626',
-                            border: '1px solid #FCA5A5',
-                            padding: '8px 16px',
-                            borderRadius: '8px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
                         >
-                          <X size={16} /> BGH Từ chối
+                          <X size={15} /> BGH Từ chối
                         </button>
                         <button
+                          type="button"
                           disabled={processing}
+                          className="btn btn--primary btn--sm"
+                          style={{ background: 'var(--color-quaternary)', color: 'var(--color-fg)' }}
                           onClick={() => handleBghApprove(r)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            backgroundColor: '#16A34A',
-                            color: '#FFFFFF',
-                            border: 'none',
-                            padding: '8px 20px',
-                            borderRadius: '8px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
-                          }}
                         >
-                          <Check size={16} /> BGH Phê duyệt
+                          <Check size={15} /> BGH Phê duyệt
                         </button>
                       </>
                     ) : (
-                      <span style={{ fontSize: '13px', color: '#7E22CE', fontStyle: 'italic' }}>
+                      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-accent)', fontStyle: 'italic' }}>
                         ⏳ Đơn đã được chuyển lên Ban Giám Hiệu. Đang chờ Ban Giám Hiệu quyết định.
                       </span>
                     )}
@@ -506,173 +541,108 @@ export default function LeaveApprovalPage() {
         </div>
       )}
 
-      {/* REJECT MODAL */}
-      {rejectingItem && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: '16px',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '24px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#DC2626', marginBottom: '12px' }}>
-              <AlertTriangle size={24} />
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
-                {isSchoolBoard ? 'Ban Giám Hiệu từ chối đơn xin nghỉ' : 'Từ chối đơn xin nghỉ học'}
-              </h3>
-            </div>
-            <p style={{ fontSize: '14px', color: '#475569', marginBottom: '16px' }}>
-              Học sinh: <strong>{rejectingItem.studentName}</strong>. Vui lòng nhập lý do từ chối để hệ thống lưu nhật ký và gửi thông báo đến phụ huynh:
-            </p>
+      {/* REJECT MODAL (GeometricModal) */}
+      <GeometricModal
+        open={!!rejectingItem}
+        onClose={() => setRejectingItem(null)}
+        title={isSchoolBoard ? 'Ban Giám Hiệu từ chối đơn' : 'Từ chối đơn xin nghỉ học'}
+        badgeText="Xác nhận từ chối"
+        badgeColor="pink"
+        icon={<AlertTriangle size={24} color="#1E293B" />}
+        iconBg="var(--color-secondary-soft)"
+        maxWidth="md"
+      >
+        <div>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginBottom: 14 }}>
+            Học sinh: <strong>{rejectingItem?.studentName}</strong>. Vui lòng nhập lý do từ chối để hệ thống lưu nhật ký và gửi thông báo tới phụ huynh:
+          </p>
 
+          <div className="field" style={{ marginBottom: 16 }}>
+            <label className="label" htmlFor="reject-reason">Lý do từ chối *</label>
             <textarea
+              id="reject-reason"
+              className="input"
               rows={3}
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="Ví dụ: Tuần này có bài kiểm tra khảo sát chất lượng, phụ huynh vui lòng cho con đi học đầy đủ..."
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1',
-                fontSize: '14px',
-                marginBottom: '16px',
-                outline: 'none',
-              }}
+              style={{ minHeight: 80, resize: 'vertical' }}
               required
             />
+          </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setRejectingItem(null)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#F8FAFC', cursor: 'pointer', fontWeight: 600 }}
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={processing}
-                onClick={handleConfirmReject}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 18px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  backgroundColor: '#DC2626',
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                <MessageSquare size={16} /> Xác nhận từ chối
-              </button>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setRejectingItem(null)}
+            >
+              Hủy bỏ
+            </button>
+            <button
+              type="button"
+              disabled={processing}
+              className="btn btn--primary"
+              style={{ background: 'var(--color-secondary)' }}
+              onClick={handleConfirmReject}
+            >
+              <MessageSquare size={16} /> {processing ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+            </button>
           </div>
         </div>
-      )}
+      </GeometricModal>
 
-      {/* FORWARD TO SCHOOL BOARD MODAL */}
-      {forwardingItem && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: '16px',
-              maxWidth: '520px',
-              width: '100%',
-              padding: '24px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#7E22CE', marginBottom: '12px' }}>
-              <Send size={24} />
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
-                Xác nhận & Chuyển Ban Giám Hiệu
-              </h3>
-            </div>
-            <p style={{ fontSize: '14px', color: '#475569', marginBottom: '12px' }}>
-              Học sinh: <strong>{forwardingItem.studentName}</strong> (Nghỉ <strong>{forwardingItem.totalDays} ngày</strong>).
-            </p>
-            <p style={{ fontSize: '13px', color: '#64748B', marginBottom: '14px' }}>
-              Theo quy định, đơn xin nghỉ từ 3 ngày trở lên sẽ do Ban Giám Hiệu phê duyệt. Vui lòng ghi ý kiến xác nhận của GVCN để chuyển lên BGH:
-            </p>
+      {/* FORWARD TO SCHOOL BOARD MODAL (GeometricModal) */}
+      <GeometricModal
+        open={!!forwardingItem}
+        onClose={() => setForwardingItem(null)}
+        title="Xác nhận & Chuyển Ban Giám Hiệu"
+        badgeText="Đơn dài ngày (≥ 3 ngày)"
+        badgeColor="violet"
+        icon={<Send size={24} color="#1E293B" />}
+        iconBg="var(--color-accent-soft)"
+        maxWidth="md"
+      >
+        <div>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginBottom: 8 }}>
+            Học sinh: <strong>{forwardingItem?.studentName}</strong> (Nghỉ <strong>{forwardingItem?.totalDays} ngày</strong>).
+          </p>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginBottom: 14 }}>
+            Theo quy định, đơn xin nghỉ từ 3 ngày trở lên sẽ do Ban Giám Hiệu phê duyệt. Vui lòng ghi ý kiến xác nhận của GVCN để chuyển lên BGH:
+          </p>
 
+          <div className="field" style={{ marginBottom: 16 }}>
+            <label className="label" htmlFor="forward-notes">Ý kiến của GVCN</label>
             <textarea
+              id="forward-notes"
+              className="input"
               rows={3}
               value={forwardNotes}
               onChange={(e) => setForwardNotes(e.target.value)}
               placeholder="Nhập ý kiến GVCN (Ví dụ: Đã liên hệ phụ huynh xác nhận học sinh bị ốm điều trị tại viện, kính chuyển BGH phê duyệt)..."
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1',
-                fontSize: '14px',
-                marginBottom: '16px',
-                outline: 'none',
-              }}
+              style={{ minHeight: 80, resize: 'vertical' }}
             />
+          </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                type="button"
-                onClick={() => setForwardingItem(null)}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#F8FAFC', cursor: 'pointer', fontWeight: 600 }}
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={processing}
-                onClick={handleConfirmForward}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 18px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  backgroundColor: '#7E22CE',
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                <Send size={16} /> Chuyển Ban Giám Hiệu
-              </button>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setForwardingItem(null)}
+            >
+              Hủy bỏ
+            </button>
+            <button
+              type="button"
+              disabled={processing}
+              className="btn btn--primary"
+              onClick={handleConfirmForward}
+            >
+              <Send size={16} /> {processing ? 'Đang chuyển...' : 'Chuyển Ban Giám Hiệu'}
+            </button>
           </div>
         </div>
-      )}
+      </GeometricModal>
     </div>
   );
 }
