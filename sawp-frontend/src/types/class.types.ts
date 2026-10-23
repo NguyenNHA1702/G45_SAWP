@@ -20,7 +20,9 @@ export interface ClassSummaryDto {
   grade: number;
   capacity: number;
   enrolledStudentsCount: number;
+  enrolledCount?: number;
   availableCapacity: number;
+  roomNumber?: string;
   status: string;
   isPlacementPublished: boolean;
   schoolYearId: number;

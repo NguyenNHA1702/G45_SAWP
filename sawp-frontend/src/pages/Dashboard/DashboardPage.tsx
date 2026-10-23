@@ -63,7 +63,7 @@ export default function DashboardPage() {
             >
               <GraduationCap size={22} color="var(--color-accent)" />
             </div>
-            <h3>Lớp chủ nhiệm (WF1)</h3>
+            <h3>Lớp chủ nhiệm</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
               Xem danh sách chính thức học sinh của lớp, thông tin liên lạc phụ huynh và xuất danh sách.
             </p>
@@ -119,7 +119,7 @@ export default function DashboardPage() {
             >
               <HeartHandshake size={22} color="var(--color-secondary)" />
             </div>
-            <h3>Hồ sơ các con (WF1)</h3>
+            <h3>Hồ sơ các con</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
               Theo dõi kết quả xếp lớp, thông tin GVCN và gửi yêu cầu liên kết thêm con.
             </p>
@@ -148,7 +148,7 @@ export default function DashboardPage() {
               >
                 <Users size={22} color="var(--color-accent)" />
               </div>
-              <h3>Hồ sơ học sinh (WF1)</h3>
+              <h3>Hồ sơ học sinh</h3>
               <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
                 Quản lý hồ sơ định danh, nhập Excel hàng loạt, xử lý trùng lặp và kích hoạt hồ sơ.
               </p>
@@ -176,7 +176,7 @@ export default function DashboardPage() {
               </div>
               <h3>Lớp học & Phân công</h3>
               <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-                Khởi tạo lớp hàng loạt, phân công GVCN (BR-16) và xếp lớp học sinh (BR-15, BR-18).
+                Khởi tạo lớp hàng loạt, phân công giáo viên chủ nhiệm và xếp lớp học sinh.
               </p>
               <span className="badge badge--mint">Quản lý lớp học →</span>
             </Link>
@@ -200,7 +200,7 @@ export default function DashboardPage() {
               >
                 <HeartHandshake size={22} color="var(--color-secondary)" />
               </div>
-              <h3>Duyệt liên kết PH (WF1)</h3>
+              <h3>Duyệt liên kết phụ huynh</h3>
               <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
                 Xét duyệt và phê duyệt các yêu cầu xin liên kết con của phụ huynh trên cổng trực tuyến.
               </p>

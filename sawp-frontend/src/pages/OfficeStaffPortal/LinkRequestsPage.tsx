@@ -82,7 +82,7 @@ export default function LinkRequestsPage() {
       {/* Page Header */}
       <header className="page-header" style={{ marginBottom: 24 }}>
         <span className="badge badge--pink" style={{ marginBottom: 8 }}>
-          <Sparkles size={14} /> Duyệt hồ sơ Phụ huynh (Workflow 1)
+          <Sparkles size={14} /> Duyệt hồ sơ Phụ huynh
         </span>
         <h1 style={{ margin: '4px 0 8px' }}>
           Yêu cầu <span className="squiggle">liên kết con</span>

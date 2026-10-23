@@ -92,6 +92,9 @@ public class RosterStudentItemDto
     public string Gender { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
     public string? AvatarUrl { get; set; }
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; }
+    public string? SpecialNeedsNotes { get; set; }
     public DateTime EnrolledDate { get; set; }
     public string? PrimaryGuardianName { get; set; }
     public string? PrimaryGuardianPhone { get; set; }

@@ -45,6 +45,7 @@ builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IStudentImporter, StudentImporter>();
 builder.Services.AddScoped<IStaffImporter, StaffImporter>();
+builder.Services.AddScoped<IPlacementPlanService, PlacementPlanService>();
 
 // 4. External Services (Infrastructure ExternalServices -> Interfaces)
 builder.Services.AddTransient<IEmailService, EmailService>();
@@ -149,10 +150,11 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseCors("AllowAll");
 
-// Auto seed demo data if needed
+// Auto apply pending migrations and seed demo data if needed
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
     await DbInitializer.SeedAsync(dbContext);
 }
 

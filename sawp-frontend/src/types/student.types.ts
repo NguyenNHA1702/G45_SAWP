@@ -5,6 +5,9 @@ export interface StudentProfileDto {
   dateOfBirth: string;
   gender: string;
   address?: string;
+  residentialArea?: string;
+  isSpecialNeeds?: boolean;
+  specialNeedsNotes?: string;
   avatarUrl?: string;
   status: string;
   enrollmentDate: string;
@@ -22,6 +25,9 @@ export interface CreateStudentDto {
   dateOfBirth: string;
   gender: string;
   address?: string;
+  residentialArea?: string;
+  isSpecialNeeds?: boolean;
+  specialNeedsNotes?: string;
   classId?: number;
   parentFullName?: string;
   parentPhone?: string;
@@ -34,6 +40,9 @@ export interface UpdateStudentDto {
   dateOfBirth: string;
   gender: string;
   address?: string;
+  residentialArea?: string;
+  isSpecialNeeds?: boolean;
+  specialNeedsNotes?: string;
   avatarUrl?: string;
   status?: string;
   parentFullName?: string;

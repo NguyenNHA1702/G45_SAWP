@@ -291,16 +291,24 @@ public static class DbInitializer
         // ====================================================================
         var studentsData = new[]
         {
-            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15)),
-            ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20)),
-            ("HS003", "Lê Quang Minh", "Nam", new DateTime(2020, 8, 10)),
-            ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14)),
-            ("HS005", "Hoàng Đức Anh", "Nam", new DateTime(2020, 11, 25)),
-            ("HS006", "Vũ Mai Phương", "Nữ", new DateTime(2020, 7, 8))
+            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15), "Phường Bến Nghé", false, (string?)null),
+            ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20), "Phường Bến Nghé", false, (string?)null),
+            ("HS003", "Lê Quang Minh", "Nam", new DateTime(2020, 8, 10), "Phường Đa Kao", true, "Hòa nhập khiếm thính nhẹ"),
+            ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14), "Phường Đa Kao", false, (string?)null),
+            ("HS005", "Hoàng Đức Anh", "Nam", new DateTime(2020, 11, 25), "Phường Tân Định", false, (string?)null),
+            ("HS006", "Vũ Mai Phương", "Nữ", new DateTime(2020, 7, 8), "Phường Tân Định", false, (string?)null),
+            ("HS007", "Trần Gia Bảo", "Nam", new DateTime(2020, 9, 12), "Phường Bến Nghé", false, (string?)null), // Trùng họ tên hoàn toàn với HS001
+            ("HS008", "Đỗ Bảo Trâm", "Nữ", new DateTime(2020, 4, 18), "Phường Đa Kao", false, (string?)null),
+            ("HS009", "Phan Gia Huy", "Nam", new DateTime(2020, 6, 22), "Phường Tân Định", false, (string?)null),
+            ("HS010", "Nguyễn Minh Khang", "Nam", new DateTime(2020, 1, 30), "Phường Bến Nghé", true, "Hòa nhập vận động nhẹ"),
+            ("HS011", "Trịnh Thảo My", "Nữ", new DateTime(2020, 10, 5), "Phường Bến Nghé", false, (string?)null),
+            ("HS012", "Lý Tuấn Kiệt", "Nam", new DateTime(2020, 12, 14), "Phường Đa Kao", false, (string?)null),
+            ("HS013", "Bùi Khánh Linh", "Nữ", new DateTime(2020, 3, 28), "Phường Tân Định", false, (string?)null),
+            ("HS014", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 8, 19), "Phường Tân Định", false, (string?)null), // Trùng họ tên hoàn toàn với HS002
         };
 
         var studentEntities = new List<Student>();
-        foreach (var (code, name, gender, dob) in studentsData)
+        foreach (var (code, name, gender, dob, area, isSpecial, specialNotes) in studentsData)
         {
             var student = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == code);
             if (student == null)
@@ -312,24 +320,38 @@ public static class DbInitializer
                     Gender = gender,
                     DateOfBirth = dob,
                     Status = "Active",
+                    ResidentialArea = area,
+                    IsSpecialNeeds = isSpecial,
+                    SpecialNeedsNotes = specialNotes,
                     EnrollmentDate = new DateTime(2026, 9, 1)
                 };
                 context.Students.Add(student);
                 await context.SaveChangesAsync();
             }
+            else
+            {
+                // Update residential area and special needs if missing
+                student.ResidentialArea = area;
+                student.IsSpecialNeeds = isSpecial;
+                student.SpecialNeedsNotes = specialNotes;
+                await context.SaveChangesAsync();
+            }
             studentEntities.Add(student);
 
-            // Gán vào lớp 1A
-            if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == class1A.Id && ca.StudentId == student.Id))
+            // Gán 6 học sinh đầu vào lớp 1A mặc định ban đầu nếu chưa có
+            if (code is "HS001" or "HS002" or "HS003" or "HS004" or "HS005" or "HS006")
             {
-                context.ClassAssignments.Add(new ClassAssignment
+                if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == class1A.Id && ca.StudentId == student.Id))
                 {
-                    ClassId = class1A.Id,
-                    StudentId = student.Id,
-                    AcademicYear = "2026-2027",
-                    StartDate = new DateTime(2026, 9, 1),
-                    IsActive = true
-                });
+                    context.ClassAssignments.Add(new ClassAssignment
+                    {
+                        ClassId = class1A.Id,
+                        StudentId = student.Id,
+                        AcademicYear = "2026-2027",
+                        StartDate = new DateTime(2026, 9, 1),
+                        IsActive = true
+                    });
+                }
             }
 
             // Đăng ký suất ăn bán trú trong ngày

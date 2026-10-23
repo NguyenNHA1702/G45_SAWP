@@ -128,7 +128,7 @@ export default function StudentsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <span className="badge badge--mint" style={{ marginBottom: 8 }}>
-              <Sparkles size={14} /> Quản lý Giáo vụ (Workflow 1)
+              <Sparkles size={14} /> Quản trị Giáo vụ
             </span>
             <h1 style={{ margin: '4px 0 8px' }}>
               Hồ sơ <span className="squiggle">học sinh</span>

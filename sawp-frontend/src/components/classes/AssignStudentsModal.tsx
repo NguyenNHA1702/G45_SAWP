@@ -121,7 +121,7 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
             <>
               <AlertCircle size={18} color="var(--color-secondary)" />
               <div>
-                <strong>Cảnh báo (BR-15):</strong> Đã chọn {selectedIds.length} học sinh, vượt quá sức
+                <strong>Cảnh báo:</strong> Đã chọn {selectedIds.length} học sinh, vượt quá sức
                 chứa còn lại ({availableSpots} chỗ). Vui lòng bỏ bớt học sinh trước khi lưu.
               </div>
             </>

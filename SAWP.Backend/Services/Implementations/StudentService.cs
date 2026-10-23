@@ -144,6 +144,9 @@ public class StudentService : IStudentService
             EnrollmentDate = DateTime.UtcNow,
             Status = string.IsNullOrWhiteSpace(request.Status) ? "Active" : request.Status,
             AvatarUrl = request.AvatarUrl,
+            ResidentialArea = request.ResidentialArea?.Trim(),
+            IsSpecialNeeds = request.IsSpecialNeeds,
+            SpecialNeedsNotes = request.SpecialNeedsNotes?.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -212,6 +215,9 @@ public class StudentService : IStudentService
         student.DateOfBirth = request.DateOfBirth;
         student.Gender = request.Gender.Trim();
         student.Status = request.Status;
+        student.ResidentialArea = request.ResidentialArea?.Trim();
+        student.IsSpecialNeeds = request.IsSpecialNeeds;
+        student.SpecialNeedsNotes = request.SpecialNeedsNotes?.Trim();
         if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
         {
             student.AvatarUrl = request.AvatarUrl;
@@ -550,6 +556,9 @@ public class StudentService : IStudentService
             EnrollmentDate = student.EnrollmentDate,
             Status = student.Status,
             AvatarUrl = student.AvatarUrl,
+            ResidentialArea = student.ResidentialArea,
+            IsSpecialNeeds = student.IsSpecialNeeds,
+            SpecialNeedsNotes = student.SpecialNeedsNotes,
             CurrentClassId = activeClass?.Id,
             CurrentClassName = activeClass?.ClassName,
             CurrentGrade = activeClass?.Grade,

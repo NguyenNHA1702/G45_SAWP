@@ -88,6 +88,8 @@ public class StudentConfiguration : IEntityTypeConfiguration<Student>
         builder.Property(s => s.FullName).HasMaxLength(150).IsRequired();
         builder.Property(s => s.Gender).HasMaxLength(10);
         builder.Property(s => s.Status).HasMaxLength(50);
+        builder.Property(s => s.ResidentialArea).HasMaxLength(200);
+        builder.Property(s => s.SpecialNeedsNotes).HasMaxLength(250);
     }
 }
 
@@ -406,6 +408,56 @@ public class GuardianLinkDetailConfiguration : IEntityTypeConfiguration<Guardian
                .WithOne(ar => ar.GuardianLinkDetail)
                .HasForeignKey<GuardianLinkDetail>(gld => gld.AdministrativeRequestId)
                .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class PlacementPlanConfiguration : IEntityTypeConfiguration<PlacementPlan>
+{
+    public void Configure(EntityTypeBuilder<PlacementPlan> builder)
+    {
+        builder.HasKey(p => p.Id);
+        builder.Property(p => p.PlanName).HasMaxLength(150).IsRequired();
+        builder.Property(p => p.Status).HasMaxLength(50).IsRequired();
+        builder.Property(p => p.ReviewNotes).HasMaxLength(1000);
+
+        builder.HasOne(p => p.SchoolYear)
+               .WithMany()
+               .HasForeignKey(p => p.SchoolYearId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(p => p.CreatedByUser)
+               .WithMany()
+               .HasForeignKey(p => p.CreatedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(p => p.ReviewedByUser)
+               .WithMany()
+               .HasForeignKey(p => p.ReviewedByUserId)
+               .OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public class PlacementPlanItemConfiguration : IEntityTypeConfiguration<PlacementPlanItem>
+{
+    public void Configure(EntityTypeBuilder<PlacementPlanItem> builder)
+    {
+        builder.HasKey(pi => pi.Id);
+        builder.Property(pi => pi.Notes).HasMaxLength(250);
+
+        builder.HasOne(pi => pi.PlacementPlan)
+               .WithMany(p => p.Items)
+               .HasForeignKey(pi => pi.PlacementPlanId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(pi => pi.Class)
+               .WithMany(c => c.PlacementPlanItems)
+               .HasForeignKey(pi => pi.ClassId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(pi => pi.Student)
+               .WithMany(s => s.PlacementPlanItems)
+               .HasForeignKey(pi => pi.StudentId)
+               .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

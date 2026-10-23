@@ -50,7 +50,7 @@ export default function ChildDashboardPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <span className="badge badge--pink" style={{ marginBottom: 8 }}>
-              <Sparkles size={14} /> Cổng Phụ Huynh (Workflow 1 & 2)
+              <Sparkles size={14} /> Cổng Phụ Huynh
             </span>
             <h1 style={{ margin: '4px 0 8px' }}>
               Thông tin <span className="squiggle">các con</span>

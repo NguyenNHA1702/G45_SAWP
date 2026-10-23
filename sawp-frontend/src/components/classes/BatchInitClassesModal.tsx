@@ -63,7 +63,7 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
       open={open}
       onClose={onClose}
       title="Khởi tạo danh sách lớp hàng loạt"
-      badgeText="Quy trình xếp lớp (Workflow 1)"
+      badgeText="Khởi tạo lớp hàng loạt"
       badgeColor="violet"
       icon={<Layers size={24} color="#1E293B" strokeWidth={2.5} />}
       iconBg="var(--color-accent-soft)"

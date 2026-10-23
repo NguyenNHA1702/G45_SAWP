@@ -23,15 +23,31 @@ public class ClassService : IClassService
 
     public async Task<ApiResponse<SchoolYearDto>> CreateSchoolYearAsync(CreateSchoolYearDto request, int? actorUserId = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.YearName) || request.StartDate >= request.EndDate)
+        if (string.IsNullOrWhiteSpace(request.YearName))
         {
-            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên năm học không được trống và ngày bắt đầu phải trước ngày kết thúc (BR-14)." });
+            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên năm học không được để trống." });
+        }
+
+        if (request.StartDate >= request.EndDate)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày bắt đầu phải trước ngày kết thúc năm học (BR-14)." });
+        }
+
+        var durationDays = (request.EndDate - request.StartDate).TotalDays;
+        if (durationDays < 60)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { "Thời lượng năm học quá ngắn (tối thiểu 60 ngày). Vui lòng kiểm tra lại khoảng thời gian." });
+        }
+
+        if (durationDays > 450)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { "Thời lượng năm học không được vượt quá 15 tháng (tối đa 450 ngày). Vui lòng kiểm tra lại năm bắt đầu và kết thúc." });
         }
 
         var existingYears = await _unitOfWork.Classes.GetAllSchoolYearsAsync(cancellationToken);
-        if (existingYears.Any(y => y.YearName.Equals(request.YearName, StringComparison.OrdinalIgnoreCase)))
+        if (existingYears.Any(y => y.YearName.Trim().Equals(request.YearName.Trim(), StringComparison.OrdinalIgnoreCase)))
         {
-            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { $"Năm học {request.YearName} đã tồn tại trong hệ thống." });
+            return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { $"Năm học '{request.YearName.Trim()}' đã tồn tại trong hệ thống." });
         }
 
         // BR-14: Exactly one school year may be designated as the current active school year at a time
@@ -149,7 +165,7 @@ public class ClassService : IClassService
     {
         if (string.IsNullOrWhiteSpace(request.ClassName) || request.Grade < 1 || request.Grade > 5 || request.Capacity <= 0)
         {
-            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5 và sĩ số tối đa phải lớn hơn 0 (BR-15)." });
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5 và sĩ số tối đa phải lớn hơn 0." });
         }
 
         var schoolYear = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(request.SchoolYearId, cancellationToken);
@@ -463,7 +479,7 @@ public class ClassService : IClassService
 
         if (hasConflict)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Giáo viên này đã được phân công chủ nhiệm cho một lớp khác trong cùng năm học (BR-16)." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Giáo viên này đã được phân công chủ nhiệm cho một lớp khác trong cùng năm học." });
         }
 
         var priorTeacherId = targetClass.HomeroomTeacherId;
@@ -526,6 +542,9 @@ public class ClassService : IClassService
                 Gender = s.Gender,
                 Status = s.Status,
                 AvatarUrl = s.AvatarUrl,
+                ResidentialArea = s.ResidentialArea,
+                IsSpecialNeeds = s.IsSpecialNeeds,
+                SpecialNeedsNotes = s.SpecialNeedsNotes,
                 EnrolledDate = s.EnrollmentDate,
                 PrimaryGuardianName = primaryGuardian?.User?.FullName,
                 PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
@@ -562,7 +581,7 @@ public class ClassService : IClassService
 
         if (activeAssignmentsInYear.Any())
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG15, new List<string> { "Một hoặc nhiều học sinh đã được phân vào lớp khác trong năm học này (BR-17)." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG15, new List<string> { "Một hoặc nhiều học sinh đã được phân vào lớp khác trong năm học này." });
         }
 
         var academicYearName = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString();
@@ -638,13 +657,20 @@ public class ClassService : IClassService
             return ApiResponse<PublishPlacementResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
         }
 
+        var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
+        if (enrolledCount == 0)
+        {
+            return ApiResponse<PublishPlacementResultDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Lớp {targetClass.ClassName} chưa có học sinh nào. Vui lòng lập và duyệt phương án xếp lớp trước khi công bố." }
+            );
+        }
+
         targetClass.IsPlacementPublished = true;
         targetClass.Status = "Active";
 
         await _unitOfWork.Classes.UpdateAsync(targetClass, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
 
         // Notify homeroom teacher if designated (BR-42)
         if (targetClass.HomeroomTeacher != null)
@@ -688,9 +714,19 @@ public class ClassService : IClassService
     public async Task<ApiResponse<List<PublishPlacementResultDto>>> PublishAllPlacementsAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var classes = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(schoolYearId, null, null, cancellationToken);
+        var eligibleClasses = classes.Where(c => (c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0) > 0).ToList();
+
+        if (!eligibleClasses.Any())
+        {
+            return ApiResponse<List<PublishPlacementResultDto>>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Chưa có lớp nào có học sinh để công bố. Vui lòng lập và duyệt phương án xếp lớp trước khi công bố toàn trường." }
+            );
+        }
+
         var results = new List<PublishPlacementResultDto>();
 
-        foreach (var c in classes)
+        foreach (var c in eligibleClasses)
         {
             c.IsPlacementPublished = true;
             c.Status = "Active";
@@ -731,7 +767,7 @@ public class ClassService : IClassService
             nameof(SchoolYear),
             schoolYearId.ToString(),
             null,
-            $"Published all {classes.Count} class placements for SchoolYearId {schoolYearId}",
+            $"Published {results.Count} class placements for SchoolYearId {schoolYearId}",
             null,
             cancellationToken);
 
@@ -787,6 +823,9 @@ public class ClassService : IClassService
                     Gender = s.Gender,
                     Status = s.Status,
                     AvatarUrl = s.AvatarUrl,
+                    ResidentialArea = s.ResidentialArea,
+                    IsSpecialNeeds = s.IsSpecialNeeds,
+                    SpecialNeedsNotes = s.SpecialNeedsNotes,
                     EnrolledDate = s.EnrollmentDate,
                     PrimaryGuardianName = primaryGuardian?.User?.FullName,
                     PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,

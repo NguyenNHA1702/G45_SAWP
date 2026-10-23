@@ -193,6 +193,9 @@ public class StudentImporter : IStudentImporter
                     Gender = string.IsNullOrWhiteSpace(row.Gender) ? "Nam" : row.Gender.Trim(),
                     EnrollmentDate = DateTime.UtcNow,
                     Status = "Active", // Workflow step: Save Profiles & Set Student Status = 'Active'
+                    ResidentialArea = row.ResidentialArea?.Trim(),
+                    IsSpecialNeeds = row.IsSpecialNeeds,
+                    SpecialNeedsNotes = row.SpecialNeedsNotes?.Trim(),
                     CreatedAt = DateTime.UtcNow
                 };
 
