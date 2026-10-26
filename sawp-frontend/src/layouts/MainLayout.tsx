@@ -17,6 +17,7 @@ import {
   User,
   Users,
   UtensilsCrossed,
+  ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
@@ -119,6 +120,12 @@ const NAV_ITEMS: NavItem[] = [
     path: '/office/requests',
     icon: FileCheck,
     roles: ['OfficeStaff', 'Admin'],
+  },
+  {
+    label: 'Phê duyệt đơn hành chính',
+    path: '/board/requests',
+    icon: ShieldCheck,
+    roles: ['SchoolBoard', 'Admin'],
   },
 ];
 
