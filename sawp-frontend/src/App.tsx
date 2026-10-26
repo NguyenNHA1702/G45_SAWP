@@ -13,6 +13,7 @@ import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
 import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
 import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
 import AdministrativeRequestsPage from './pages/ParentPortal/AdministrativeRequestsPage';
+import AdminRequestsManagementPage from './pages/OfficeStaffPortal/AdminRequestsManagementPage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -60,6 +61,7 @@ export default function App() {
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />
           <Route path="/link-requests" element={<LinkRequestsPage />} />
+          <Route path="/office/requests" element={<AdminRequestsManagementPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
           <Route path="/parent/children" element={<ChildDashboardPage />} />
         </Route>

@@ -114,6 +114,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: HeartHandshake,
     roles: ['OfficeStaff', 'Admin'],
   },
+  {
+    label: 'Xử lý đơn hành chính',
+    path: '/office/requests',
+    icon: FileCheck,
+    roles: ['OfficeStaff', 'Admin'],
+  },
 ];
 
 export function MainLayout() {
