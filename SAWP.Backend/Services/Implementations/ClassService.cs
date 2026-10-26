@@ -221,56 +221,121 @@ public class ClassService : IClassService
 
     public async Task<ApiResponse<List<ClassSummaryDto>>> InitializeBatchClassesAsync(InitializeBatchClassesDto request, int? actorUserId = null, CancellationToken cancellationToken = default)
     {
-        var schoolYear = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(request.SchoolYearId, cancellationToken);
+        SchoolYear? schoolYear = null;
+        if (request.SchoolYearId > 0)
+        {
+            schoolYear = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(request.SchoolYearId, cancellationToken);
+        }
         if (schoolYear == null)
         {
-            return ApiResponse<List<ClassSummaryDto>>.Fail(SystemMessages.MSG01, new List<string> { "Năm học không hợp lệ." });
+            schoolYear = await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
+        }
+        if (schoolYear == null)
+        {
+            return ApiResponse<List<ClassSummaryDto>>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy năm học hợp lệ." });
         }
 
-        var existingClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(request.SchoolYearId, null, null, cancellationToken);
-        var existingNames = new HashSet<string>(existingClasses.Select(c => c.ClassName), StringComparer.OrdinalIgnoreCase);
+        var targetSchoolYearId = schoolYear.Id;
+        var existingClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(targetSchoolYearId, null, null, cancellationToken);
+        var existingDict = existingClasses.ToDictionary(c => c.ClassName, StringComparer.OrdinalIgnoreCase);
 
-        var createdClasses = new List<ClassSummaryDto>();
-        var grades = request.Grades ?? new List<int> { 1, 2, 3, 4, 5 };
-        var suffixes = request.SectionSuffixes ?? new List<string> { "A", "B", "C" };
-        var capacity = request.DefaultCapacity > 0 ? request.DefaultCapacity : 35;
+        // Resolve grades: Nếu có TargetGrade thì chỉ tạo/cập nhật cho khối đó
+        List<int> grades;
+        if (request.TargetGrade.HasValue && request.TargetGrade.Value >= 1 && request.TargetGrade.Value <= 5)
+        {
+            grades = new List<int> { request.TargetGrade.Value };
+        }
+        else if (request.Grades != null && request.Grades.Count > 0)
+        {
+            grades = request.Grades.Where(g => g >= 1 && g <= 5).Distinct().ToList();
+        }
+        else
+        {
+            grades = new List<int> { 1, 2, 3, 4, 5 };
+        }
+
+        // Resolve section suffixes (phân lớp: A, B, C, D, E...)
+        var rawSuffixes = (request.SectionNames != null && request.SectionNames.Count > 0)
+            ? request.SectionNames
+            : (request.SectionSuffixes != null && request.SectionSuffixes.Count > 0 ? request.SectionSuffixes : new List<string> { "A", "B", "C" });
+
+        var suffixes = rawSuffixes
+            .Select(s => s.Trim().ToUpperInvariant())
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Distinct()
+            .ToList();
+
+        // Resolve capacity (Sĩ số tối đa)
+        var capacity = request.CapacityPerClass ?? (request.DefaultCapacity > 0 ? request.DefaultCapacity : 35);
+
+        var affectedClasses = new List<ClassSummaryDto>();
+        int createdCount = 0;
+        int updatedCount = 0;
 
         foreach (var grade in grades)
         {
-            if (grade < 1 || grade > 5) continue;
-
             foreach (var suffix in suffixes)
             {
-                var className = $"{grade}{suffix.Trim().ToUpperInvariant()}";
-                if (existingNames.Contains(className)) continue;
+                var className = $"{grade}{suffix}";
 
-                var newClass = new Class
+                if (existingDict.TryGetValue(className, out var existingClass))
                 {
-                    SchoolYearId = request.SchoolYearId,
-                    ClassName = className,
-                    Grade = grade,
-                    RoomNumber = $"Phòng {grade}0{suffix.ToUpperInvariant()}",
-                    Capacity = capacity,
-                    Status = "Active",
-                    IsPlacementPublished = false
-                };
+                    // Lớp đã tồn tại: Cập nhật sĩ số tối đa (Capacity) nếu có thay đổi
+                    if (existingClass.Capacity != capacity)
+                    {
+                        existingClass.Capacity = capacity;
+                        await _unitOfWork.Classes.UpdateAsync(existingClass, cancellationToken);
+                        updatedCount++;
+                    }
 
-                await _unitOfWork.Classes.AddAsync(newClass, cancellationToken);
-                existingNames.Add(className);
-
-                createdClasses.Add(new ClassSummaryDto
+                    affectedClasses.Add(new ClassSummaryDto
+                    {
+                        Id = existingClass.Id,
+                        SchoolYearId = existingClass.SchoolYearId,
+                        SchoolYearName = schoolYear.YearName,
+                        ClassName = existingClass.ClassName,
+                        Grade = existingClass.Grade,
+                        RoomNumber = existingClass.RoomNumber,
+                        Capacity = existingClass.Capacity,
+                        EnrolledCount = existingClass.ClassAssignments?.Count(a => a.IsActive) ?? 0,
+                        Status = existingClass.Status,
+                        HomeroomTeacherId = existingClass.HomeroomTeacherId,
+                        HomeroomTeacherName = existingClass.HomeroomTeacher?.User?.FullName,
+                        HomeroomTeacherStaffCode = existingClass.HomeroomTeacher?.StaffCode
+                    });
+                }
+                else
                 {
-                    Id = newClass.Id,
-                    SchoolYearId = newClass.SchoolYearId,
-                    SchoolYearName = schoolYear.YearName,
-                    ClassName = newClass.ClassName,
-                    Grade = newClass.Grade,
-                    RoomNumber = newClass.RoomNumber,
-                    Capacity = newClass.Capacity,
-                    EnrolledCount = 0,
-                    Status = newClass.Status,
-                    IsPlacementPublished = newClass.IsPlacementPublished
-                });
+                    // Lớp chưa tồn tại: Tạo mới vào danh sách lớp mục tiêu
+                    var newClass = new Class
+                    {
+                        SchoolYearId = targetSchoolYearId,
+                        ClassName = className,
+                        Grade = grade,
+                        RoomNumber = $"Phòng {grade}0{suffix}",
+                        Capacity = capacity,
+                        Status = "Active",
+                        IsPlacementPublished = false
+                    };
+
+                    await _unitOfWork.Classes.AddAsync(newClass, cancellationToken);
+                    existingDict[className] = newClass;
+                    createdCount++;
+
+                    affectedClasses.Add(new ClassSummaryDto
+                    {
+                        Id = newClass.Id,
+                        SchoolYearId = newClass.SchoolYearId,
+                        SchoolYearName = schoolYear.YearName,
+                        ClassName = newClass.ClassName,
+                        Grade = newClass.Grade,
+                        RoomNumber = newClass.RoomNumber,
+                        Capacity = newClass.Capacity,
+                        EnrolledCount = 0,
+                        Status = newClass.Status,
+                        IsPlacementPublished = newClass.IsPlacementPublished
+                    });
+                }
             }
         }
 
@@ -282,11 +347,15 @@ public class ClassService : IClassService
             nameof(Class),
             null,
             null,
-            $"Created {createdClasses.Count} target classes for year {schoolYear.YearName}",
+            $"Khởi tạo/cập nhật {affectedClasses.Count} lớp (Tạo mới: {createdCount}, Cập nhật: {updatedCount}) cho năm học {schoolYear.YearName}",
             null,
             cancellationToken);
 
-        return ApiResponse<List<ClassSummaryDto>>.Ok(createdClasses, SystemMessages.MSG08);
+        var message = createdCount > 0 || updatedCount > 0
+            ? $"Đã xử lý danh mục lớp học: Tạo mới {createdCount} lớp, Cập nhật sĩ số {updatedCount} lớp."
+            : "Danh mục lớp học đã được đồng bộ đầy đủ.";
+
+        return ApiResponse<List<ClassSummaryDto>>.Ok(affectedClasses, message);
     }
 
     public async Task<ApiResponse<List<ClassSummaryDto>>> GetClassesAsync(int? schoolYearId = null, int? grade = null, string? status = null, CancellationToken cancellationToken = default)

@@ -44,9 +44,12 @@ export interface CreateClassDto {
 
 export interface InitializeBatchClassesDto {
   schoolYearId?: number;
-  targetGrade: number;
-  sectionNames: string[];
-  capacityPerClass: number;
+  targetGrade?: number;
+  grades?: number[];
+  sectionNames?: string[];
+  sectionSuffixes?: string[];
+  capacityPerClass?: number;
+  defaultCapacity?: number;
 }
 
 export interface UpdateClassDto {

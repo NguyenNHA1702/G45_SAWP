@@ -56,8 +56,11 @@ public class ClassSummaryDto
 public class InitializeBatchClassesDto
 {
     public int SchoolYearId { get; set; }
-    public List<int> Grades { get; set; } = new() { 1, 2, 3, 4, 5 };
-    public List<string> SectionSuffixes { get; set; } = new() { "A", "B", "C" };
+    public int? TargetGrade { get; set; }
+    public List<int>? Grades { get; set; }
+    public List<string>? SectionNames { get; set; }
+    public List<string>? SectionSuffixes { get; set; }
+    public int? CapacityPerClass { get; set; }
     public int DefaultCapacity { get; set; } = 35;
 }
 
