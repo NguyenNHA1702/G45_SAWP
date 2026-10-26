@@ -85,4 +85,17 @@ export const leaveRequestApi = {
     const res = await apiClient.post<{ success: boolean; message: string }>(`/leaverequests/${id}/cancel`);
     return res.data;
   },
+
+  uploadAttachment: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post<{
+      success: boolean;
+      data: { url: string; fileName: string; fileSize: number; savedPath: string };
+      message: string;
+    }>('/leaverequests/upload-attachment', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
 };

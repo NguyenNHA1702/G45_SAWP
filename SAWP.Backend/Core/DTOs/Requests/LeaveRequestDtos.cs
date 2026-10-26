@@ -81,3 +81,12 @@ public class SyncLeaveResultDto
     public List<DateTime> CancelledMealDates { get; set; } = new();
     public string MealSyncMessage { get; set; } = string.Empty;
 }
+
+public class AttachmentUploadResultDto
+{
+    public string Url { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public string SavedPath { get; set; } = string.Empty;
+}
+

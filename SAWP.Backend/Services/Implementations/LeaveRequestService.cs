@@ -454,27 +454,61 @@ public class LeaveRequestService : ILeaveRequestService
         syncResult.Status = RequestStatus.Approved;
         syncResult.IsAttendanceSyncSuggested = true;
 
-        // Đánh dấu học sinh Vắng có phép trong danh sách điểm danh (nếu bản ghi buổi đó đã được lưu trước đó)
+        // Đánh dấu học sinh Vắng có phép trong danh sách điểm danh
         if (req.StudentId.HasValue)
         {
             var leaveSession = req.LeaveRequest.Session;
-            var existingAttendanceRecords = await _unitOfWork.Repository<AttendanceRecord>()
+            var currentAssignment = await _unitOfWork.Repository<ClassAssignment>()
                 .Query()
-                .Where(ar => ar.StudentId == req.StudentId.Value &&
-                             ar.Date >= req.LeaveRequest.StartDate.Date &&
-                             ar.Date <= req.LeaveRequest.EndDate.Date)
-                .Where(ar => leaveSession == LeaveSession.FullDay ||
-                             (leaveSession == LeaveSession.Morning && ar.Session == AttendanceSession.Morning) ||
-                             (leaveSession == LeaveSession.Afternoon && ar.Session == AttendanceSession.Afternoon))
-                .ToListAsync(cancellationToken);
+                .FirstOrDefaultAsync(ca => ca.StudentId == req.StudentId.Value && ca.IsActive, cancellationToken);
 
-            foreach (var att in existingAttendanceRecords)
+            var startD = req.LeaveRequest.StartDate.Date;
+            var endD = req.LeaveRequest.EndDate.Date;
+            var daysCount = (endD - startD).Days;
+
+            for (int d = 0; d <= daysCount; d++)
             {
-                att.Status = AttendanceStatus.ExcusedAbsence;
-                att.Remarks = $"Vắng có phép theo đơn {req.RequestNumber}";
-                att.LeaveRequestId = req.LeaveRequest.Id;
-                att.UpdatedAt = DateTime.UtcNow;
-                att.UpdatedByUserId = reviewerUserId;
+                var curDate = startD.AddDays(d);
+                var sessionsToMark = leaveSession switch
+                {
+                    LeaveSession.Morning => new[] { AttendanceSession.Morning },
+                    LeaveSession.Afternoon => new[] { AttendanceSession.Afternoon },
+                    _ => new[] { AttendanceSession.Morning, AttendanceSession.Afternoon }
+                };
+
+                foreach (var ses in sessionsToMark)
+                {
+                    var existingAtt = await _unitOfWork.Repository<AttendanceRecord>()
+                        .Query()
+                        .FirstOrDefaultAsync(ar => ar.StudentId == req.StudentId.Value &&
+                                                   ar.Date == curDate &&
+                                                   ar.Session == ses, cancellationToken);
+
+                    if (existingAtt != null)
+                    {
+                        existingAtt.Status = AttendanceStatus.ExcusedAbsence;
+                        existingAtt.Remarks = $"Vắng có phép theo đơn {req.RequestNumber}";
+                        existingAtt.LeaveRequestId = req.LeaveRequest.Id;
+                        existingAtt.UpdatedAt = DateTime.UtcNow;
+                        existingAtt.UpdatedByUserId = reviewerUserId;
+                    }
+                    else if (currentAssignment != null)
+                    {
+                        var newAtt = new AttendanceRecord
+                        {
+                            StudentId = req.StudentId.Value,
+                            ClassId = currentAssignment.ClassId,
+                            Date = curDate,
+                            Session = ses,
+                            Status = AttendanceStatus.ExcusedAbsence,
+                            Remarks = $"Vắng có phép theo đơn {req.RequestNumber}",
+                            LeaveRequestId = req.LeaveRequest.Id,
+                            CreatedAt = DateTime.UtcNow,
+                            RecordedByUserId = reviewerUserId
+                        };
+                        await _unitOfWork.Repository<AttendanceRecord>().AddAsync(newAtt, cancellationToken);
+                    }
+                }
             }
         }
 

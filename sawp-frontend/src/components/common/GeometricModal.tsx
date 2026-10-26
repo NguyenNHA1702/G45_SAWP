@@ -56,6 +56,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
           maxWidth: maxWidthPx,
           position: 'relative',
           paddingTop: icon ? 36 : undefined,
+          overflow: 'visible',
         }}
       >
         {/* Floating Circle Icon */}
@@ -73,6 +74,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
               boxShadow: 'var(--shadow-pop-active)',
               display: 'grid',
               placeItems: 'center',
+              zIndex: 10,
             }}
           >
             {icon}

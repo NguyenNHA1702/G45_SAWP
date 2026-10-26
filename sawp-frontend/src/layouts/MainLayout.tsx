@@ -49,18 +49,18 @@ const NAV_ITEMS: NavItem[] = [
     icon: GraduationCap,
     roles: ['Teacher'],
   },
-  // --- Điểm danh (Teacher, OfficeStaff, Admin) ---
+  // --- Điểm danh (Chỉ Teacher) ---
   {
     label: 'Điểm danh lớp',
     path: '/teacher/attendance',
     icon: CalendarCheck2,
-    roles: ['Teacher', 'OfficeStaff', 'Admin'],
+    roles: ['Teacher'],
   },
   {
     label: 'Duyệt đơn xin nghỉ',
     path: '/teacher/leave-requests',
     icon: FileCheck,
-    roles: ['Teacher', 'SchoolBoard', 'Admin'],
+    roles: ['Teacher', 'SchoolBoard'],
   },
   // --- Cổng phụ huynh theo dõi con ---
   {
@@ -82,12 +82,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     roles: ['Parent'],
   },
-  // --- Bếp ăn bán trú (ServiceStaff, Teacher, Admin) ---
+  // --- Bếp ăn bán trú (Chỉ ServiceStaff) ---
   {
     label: 'Báo cáo suất ăn Bếp',
     path: '/service/headcount',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff', 'Teacher', 'Admin'],
+    roles: ['ServiceStaff'],
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {
