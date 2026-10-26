@@ -12,6 +12,7 @@ import LeaveApprovalPage from './pages/TeacherPortal/LeaveApprovalPage';
 import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
 import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
 import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
+import AdministrativeRequestsPage from './pages/ParentPortal/AdministrativeRequestsPage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="/teacher/leave-requests" element={<LeaveApprovalPage />} />
           <Route path="/parent/attendance" element={<ChildAttendancePage />} />
           <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
+          <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />

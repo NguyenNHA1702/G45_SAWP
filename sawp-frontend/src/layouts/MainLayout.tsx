@@ -82,6 +82,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     roles: ['Parent'],
   },
+  {
+    label: 'Đơn hành chính & Giấy tờ',
+    path: '/parent/requests',
+    icon: FileCheck,
+    roles: ['Parent'],
+  },
   // --- Bếp ăn bán trú (Chỉ ServiceStaff) ---
   {
     label: 'Báo cáo suất ăn Bếp',
