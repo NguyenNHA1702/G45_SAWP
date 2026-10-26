@@ -59,7 +59,7 @@ export default function HomeroomRosterPage() {
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
               <span className="badge badge--violet">
-                <Sparkles size={14} /> Cổng Giáo Viên (Workflow 1)
+                <Sparkles size={14} /> Cổng Giáo Viên
               </span>
               {roster && (
                 <span className="badge badge--amber">
@@ -102,7 +102,7 @@ export default function HomeroomRosterPage() {
           <GraduationCap size={48} color="var(--color-muted-fg)" style={{ margin: '0 auto 12px' }} />
           <h3>Bạn chưa được phân công làm Chủ nhiệm lớp nào</h3>
           <p style={{ color: 'var(--color-muted-fg)', maxWidth: 460, margin: '0 auto 16px' }}>
-            Theo quy tắc BR-07 & BR-20, giáo viên chỉ có quyền truy xuất danh sách của lớp mà mình được phân công chủ nhiệm. Vui lòng liên hệ Ban Giáo vụ để được phân công lớp.
+            Giáo viên chỉ có quyền truy xuất danh sách của lớp mà mình được phân công chủ nhiệm. Vui lòng liên hệ Ban Giáo vụ để được phân công lớp.
           </p>
           <button type="button" className="btn btn--secondary btn--sm" onClick={loadMyClass}>
             <RefreshCw size={15} /> Kiểm tra lại

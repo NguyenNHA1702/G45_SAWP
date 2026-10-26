@@ -74,7 +74,7 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
       open={open}
       onClose={onClose}
       title={`Phân công GVCN: Lớp ${targetClass.className}`}
-      badgeText="Quy tắc nghiệp vụ BR-16"
+      badgeText="Phân công GVCN"
       badgeColor="mint"
       icon={<GraduationCap size={24} color="#1E293B" strokeWidth={2.5} />}
       iconBg="var(--color-quaternary)"
@@ -82,7 +82,7 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-          Theo quy tắc BR-16: Mỗi lớp học chỉ có 01 Giáo viên chủ nhiệm chính thức, và một giáo viên
+          Lưu ý: Mỗi lớp học chỉ có 01 Giáo viên chủ nhiệm chính thức, và một giáo viên
           chỉ làm chủ nhiệm tối đa 01 lớp trong cùng năm học.
         </p>
 

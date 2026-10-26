@@ -56,8 +56,11 @@ public class ClassSummaryDto
 public class InitializeBatchClassesDto
 {
     public int SchoolYearId { get; set; }
-    public List<int> Grades { get; set; } = new() { 1, 2, 3, 4, 5 };
-    public List<string> SectionSuffixes { get; set; } = new() { "A", "B", "C" };
+    public int? TargetGrade { get; set; }
+    public List<int>? Grades { get; set; }
+    public List<string>? SectionNames { get; set; }
+    public List<string>? SectionSuffixes { get; set; }
+    public int? CapacityPerClass { get; set; }
     public int DefaultCapacity { get; set; } = 35;
 }
 
@@ -92,6 +95,9 @@ public class RosterStudentItemDto
     public string Gender { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
     public string? AvatarUrl { get; set; }
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; }
+    public string? SpecialNeedsNotes { get; set; }
     public DateTime EnrolledDate { get; set; }
     public string? PrimaryGuardianName { get; set; }
     public string? PrimaryGuardianPhone { get; set; }

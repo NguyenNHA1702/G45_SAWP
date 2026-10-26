@@ -18,4 +18,5 @@ public class Class
 
     public virtual ICollection<ClassAssignment> ClassAssignments { get; set; } = new List<ClassAssignment>();
     public virtual ICollection<AttendanceRecord> AttendanceRecords { get; set; } = new List<AttendanceRecord>();
+    public virtual ICollection<PlacementPlanItem> PlacementPlanItems { get; set; } = new List<PlacementPlanItem>();
 }

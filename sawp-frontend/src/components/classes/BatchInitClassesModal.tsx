@@ -40,12 +40,15 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
       const res = await classApi.initializeBatch({
         schoolYearId: activeSchoolYear?.id,
         targetGrade,
+        grades: [targetGrade],
         sectionNames,
+        sectionSuffixes: sectionNames,
         capacityPerClass: capacity,
+        defaultCapacity: capacity,
       });
 
       if (res.success && res.data) {
-        toast.success(`Đã khởi tạo ${res.data.length} lớp học thành công!`);
+        toast.success(res.message || `Đã khởi tạo danh sách lớp thành công!`);
         onClassesCreated(res.data);
         onClose();
       } else {
@@ -63,7 +66,7 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
       open={open}
       onClose={onClose}
       title="Khởi tạo danh sách lớp hàng loạt"
-      badgeText="Quy trình xếp lớp (Workflow 1)"
+      badgeText="Khởi tạo lớp hàng loạt"
       badgeColor="violet"
       icon={<Layers size={24} color="#1E293B" strokeWidth={2.5} />}
       iconBg="var(--color-accent-soft)"

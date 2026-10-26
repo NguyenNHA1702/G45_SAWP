@@ -10,4 +10,11 @@ public class DocumentRequestDetail
     public int NumberOfCopies { get; set; } = 1;
     public string Purpose { get; set; } = string.Empty;
     public DateTime? IssuedDate { get; set; }
+
+    // Workflow draft, endorsement & issuance
+    public string? StaffEndorsement { get; set; }
+    public string? DocumentContentDraft { get; set; }
+    public string? IssuedDocumentUrl { get; set; }
+    public string? CertificateNumber { get; set; }
+    public string? DigitalSignatureInfo { get; set; }
 }

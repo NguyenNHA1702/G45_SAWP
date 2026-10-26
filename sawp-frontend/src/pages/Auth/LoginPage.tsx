@@ -206,7 +206,7 @@ export default function LoginPage() {
 
         <footer className="login-footer">
           <p className="login-note">
-            Quên mật khẩu? Vui lòng liên hệ <strong>Quản trị viên nhà trường</strong> (SRS BR-46) để được cấp lại mật khẩu.
+            Quên mật khẩu? Vui lòng liên hệ <strong>Quản trị viên nhà trường</strong> để được cấp lại mật khẩu.
           </p>
         </footer>
       </div>

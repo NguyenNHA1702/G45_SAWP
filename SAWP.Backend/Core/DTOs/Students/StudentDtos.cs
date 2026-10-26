@@ -20,6 +20,9 @@ public class CreateStudentDto
     public int? InitialClassId { get; set; }
     public string? AvatarUrl { get; set; }
     public string? Status { get; set; } = "Active";
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; } = false;
+    public string? SpecialNeedsNotes { get; set; }
     public GuardianInputDto? InitialGuardian { get; set; }
 }
 
@@ -30,6 +33,9 @@ public class UpdateStudentDto
     public string Gender { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
     public string? AvatarUrl { get; set; }
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; } = false;
+    public string? SpecialNeedsNotes { get; set; }
     public int? CurrentClassId { get; set; }
 }
 
@@ -58,6 +64,9 @@ public class StudentProfileDto
     public DateTime EnrollmentDate { get; set; }
     public string Status { get; set; } = "Active";
     public string? AvatarUrl { get; set; }
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; }
+    public string? SpecialNeedsNotes { get; set; }
     public int? CurrentClassId { get; set; }
     public string? CurrentClassName { get; set; }
     public int? CurrentGrade { get; set; }
@@ -105,6 +114,9 @@ public class ImportStudentRowDto
     public string DateOfBirth { get; set; } = string.Empty;
     public string Gender { get; set; } = string.Empty;
     public string ClassName { get; set; } = string.Empty;
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; } = false;
+    public string? SpecialNeedsNotes { get; set; }
     public string GuardianName { get; set; } = string.Empty;
     public string GuardianPhone { get; set; } = string.Empty;
     public string GuardianIdentityCard { get; set; } = string.Empty;

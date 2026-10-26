@@ -24,6 +24,13 @@ public class AdministrativeRequest
 
     public string? ReviewerNotes { get; set; }
 
+    // Workflow fields
+    public string? AttachmentUrl { get; set; }
+    public bool RequiresAmendment { get; set; }
+    public string? AmendmentNotes { get; set; }
+    public string? SchoolBoardNotes { get; set; }
+    public DateTime? SchoolBoardApprovedAt { get; set; }
+
     public virtual LeaveRequest? LeaveRequest { get; set; }
     public virtual ClassTransferDetail? ClassTransferDetail { get; set; }
     public virtual DocumentRequestDetail? DocumentRequestDetail { get; set; }

@@ -52,7 +52,7 @@ export function ChangePasswordModal({ open, onClose }: Props) {
         Đổi mật khẩu
       </h2>
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-        Mật khẩu mới phải có tối thiểu 8 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt (BR-02).
+        Mật khẩu mới phải có tối thiểu 8 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt.
       </p>
 
       <form onSubmit={handleSubmit} className="dialog__body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

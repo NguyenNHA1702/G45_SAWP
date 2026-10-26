@@ -10,6 +10,9 @@ public class Student
     public DateTime EnrollmentDate { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Active";
     public string? AvatarUrl { get; set; }
+    public string? ResidentialArea { get; set; }
+    public bool IsSpecialNeeds { get; set; } = false;
+    public string? SpecialNeedsNotes { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public virtual ICollection<StudentGuardian> StudentGuardians { get; set; } = new List<StudentGuardian>();
@@ -17,4 +20,5 @@ public class Student
     public virtual ICollection<AttendanceRecord> AttendanceRecords { get; set; } = new List<AttendanceRecord>();
     public virtual ICollection<LunchRegistration> LunchRegistrations { get; set; } = new List<LunchRegistration>();
     public virtual ICollection<AdministrativeRequest> AdministrativeRequests { get; set; } = new List<AdministrativeRequest>();
+    public virtual ICollection<PlacementPlanItem> PlacementPlanItems { get; set; } = new List<PlacementPlanItem>();
 }

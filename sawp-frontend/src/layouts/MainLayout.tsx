@@ -17,6 +17,7 @@ import {
   User,
   Users,
   UtensilsCrossed,
+  ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
@@ -42,9 +43,9 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- WF1: Lớp chủ nhiệm & Học sinh (Chỉ Teacher) ---
+  // --- Lớp chủ nhiệm & Học sinh (Chỉ Teacher) ---
   {
-    label: 'Lớp chủ nhiệm (WF1)',
+    label: 'Lớp chủ nhiệm',
     path: '/teacher/roster',
     icon: GraduationCap,
     roles: ['Teacher'],
@@ -62,9 +63,9 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileCheck,
     roles: ['Teacher', 'SchoolBoard'],
   },
-  // --- WF1: Cổng phụ huynh theo dõi con ---
+  // --- Cổng phụ huynh theo dõi con ---
   {
-    label: 'Hồ sơ các con (WF1)',
+    label: 'Hồ sơ các con',
     path: '/parent/children',
     icon: HeartHandshake,
     roles: ['Parent'],
@@ -82,6 +83,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     roles: ['Parent'],
   },
+  {
+    label: 'Đơn hành chính & Giấy tờ',
+    path: '/parent/requests',
+    icon: FileCheck,
+    roles: ['Parent'],
+  },
   // --- Bếp ăn bán trú (Chỉ ServiceStaff) ---
   {
     label: 'Báo cáo suất ăn Bếp',
@@ -91,22 +98,34 @@ const NAV_ITEMS: NavItem[] = [
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {
-    label: 'Hồ sơ học sinh (WF1)',
+    label: 'Hồ sơ học sinh',
     path: '/students',
     icon: Users,
     roles: ['OfficeStaff', 'Admin'],
   },
   {
-    label: 'Lớp học & Phân công',
+    label: 'Lớp học & Xếp lớp',
     path: '/classes',
     icon: GraduationCap,
-    roles: ['OfficeStaff', 'Admin'],
+    roles: ['OfficeStaff', 'SchoolBoard', 'Admin'],
   },
   {
-    label: 'Duyệt liên kết PH (WF1)',
+    label: 'Duyệt liên kết phụ huynh',
     path: '/link-requests',
     icon: HeartHandshake,
     roles: ['OfficeStaff', 'Admin'],
+  },
+  {
+    label: 'Xử lý đơn hành chính',
+    path: '/office/requests',
+    icon: FileCheck,
+    roles: ['OfficeStaff', 'Admin'],
+  },
+  {
+    label: 'Phê duyệt đơn hành chính',
+    path: '/board/requests',
+    icon: ShieldCheck,
+    roles: ['SchoolBoard', 'Admin'],
   },
 ];
 

@@ -296,16 +296,24 @@ public static class DbInitializer
         // ====================================================================
         var studentsData = new[]
         {
-            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15)),
-            ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20)),
-            ("HS003", "Lê Quang Minh", "Nam", new DateTime(2020, 8, 10)),
-            ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14)),
-            ("HS005", "Hoàng Đức Anh", "Nam", new DateTime(2020, 11, 25)),
-            ("HS006", "Vũ Mai Phương", "Nữ", new DateTime(2020, 7, 8))
+            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15), "Phường Bến Nghé", false, (string?)null),
+            ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20), "Phường Bến Nghé", false, (string?)null),
+            ("HS003", "Lê Quang Minh", "Nam", new DateTime(2020, 8, 10), "Phường Đa Kao", true, "Hòa nhập khiếm thính nhẹ"),
+            ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14), "Phường Đa Kao", false, (string?)null),
+            ("HS005", "Hoàng Đức Anh", "Nam", new DateTime(2020, 11, 25), "Phường Tân Định", false, (string?)null),
+            ("HS006", "Vũ Mai Phương", "Nữ", new DateTime(2020, 7, 8), "Phường Tân Định", false, (string?)null),
+            ("HS007", "Trần Gia Bảo", "Nam", new DateTime(2020, 9, 12), "Phường Bến Nghé", false, (string?)null), // Trùng họ tên hoàn toàn với HS001
+            ("HS008", "Đỗ Bảo Trâm", "Nữ", new DateTime(2020, 4, 18), "Phường Đa Kao", false, (string?)null),
+            ("HS009", "Phan Gia Huy", "Nam", new DateTime(2020, 6, 22), "Phường Tân Định", false, (string?)null),
+            ("HS010", "Nguyễn Minh Khang", "Nam", new DateTime(2020, 1, 30), "Phường Bến Nghé", true, "Hòa nhập vận động nhẹ"),
+            ("HS011", "Trịnh Thảo My", "Nữ", new DateTime(2020, 10, 5), "Phường Bến Nghé", false, (string?)null),
+            ("HS012", "Lý Tuấn Kiệt", "Nam", new DateTime(2020, 12, 14), "Phường Đa Kao", false, (string?)null),
+            ("HS013", "Bùi Khánh Linh", "Nữ", new DateTime(2020, 3, 28), "Phường Tân Định", false, (string?)null),
+            ("HS014", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 8, 19), "Phường Tân Định", false, (string?)null), // Trùng họ tên hoàn toàn với HS002
         };
 
         var studentEntities = new List<Student>();
-        foreach (var (code, name, gender, dob) in studentsData)
+        foreach (var (code, name, gender, dob, area, isSpecial, specialNotes) in studentsData)
         {
             var student = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == code);
             if (student == null)
@@ -317,29 +325,44 @@ public static class DbInitializer
                     Gender = gender,
                     DateOfBirth = dob,
                     Status = "Active",
+                    ResidentialArea = area,
+                    IsSpecialNeeds = isSpecial,
+                    SpecialNeedsNotes = specialNotes,
                     EnrollmentDate = new DateTime(2026, 9, 1)
                 };
                 context.Students.Add(student);
                 await context.SaveChangesAsync();
             }
-            else if (student.Status != "Active")
+            else
             {
-                student.Status = "Active";
+                // Ensure status is active
+                if (student.Status != "Active")
+                {
+                    student.Status = "Active";
+                }
+
+                // Update residential area and special needs if missing
+                student.ResidentialArea = area;
+                student.IsSpecialNeeds = isSpecial;
+                student.SpecialNeedsNotes = specialNotes;
                 await context.SaveChangesAsync();
             }
             studentEntities.Add(student);
 
-            // Gán vào lớp 1A
-            if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == class1A.Id && ca.StudentId == student.Id))
+            // Gán 6 học sinh đầu vào lớp 1A mặc định ban đầu nếu chưa có
+            if (code is "HS001" or "HS002" or "HS003" or "HS004" or "HS005" or "HS006")
             {
-                context.ClassAssignments.Add(new ClassAssignment
+                if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == class1A.Id && ca.StudentId == student.Id))
                 {
-                    ClassId = class1A.Id,
-                    StudentId = student.Id,
-                    AcademicYear = "2026-2027",
-                    StartDate = new DateTime(2026, 9, 1),
-                    IsActive = true
-                });
+                    context.ClassAssignments.Add(new ClassAssignment
+                    {
+                        ClassId = class1A.Id,
+                        StudentId = student.Id,
+                        AcademicYear = "2026-2027",
+                        StartDate = new DateTime(2026, 9, 1),
+                        IsActive = true
+                    });
+                }
             }
 
             // Đăng ký suất ăn bán trú trong ngày
@@ -501,6 +524,132 @@ public static class DbInitializer
                 Remarks = "Phục vụ bán trú bình thường"
             });
             await context.SaveChangesAsync();
+        }
+
+        // ====================================================================
+        // 10. ADMINISTRATIVE REQUESTS SAMPLE SEED (Class Transfer & Documents)
+        // ====================================================================
+        if (student1 != null && parentUser != null)
+        {
+            // Sample 1: Đơn xin chuyển lớp cho HS007 (Trần Bảo Ngọc) từ 1B -> 1A (Mới nộp - Submitted)
+            var student7Obj = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == "HS007");
+            if (student7Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-001"))
+            {
+                var ctReq1 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-CT-SAMPLE-001",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student7Obj.Id,
+                    RequestType = RequestTypes.ClassTransfer,
+                    Status = RequestStatus.Submitted,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-1),
+                    AttachmentUrl = "https://example.com/don-chuyen-lop-gia-dinh.pdf"
+                };
+                context.AdministrativeRequests.Add(ctReq1);
+                await context.SaveChangesAsync();
+
+                context.ClassTransferDetails.Add(new ClassTransferDetail
+                {
+                    AdministrativeRequestId = ctReq1.Id,
+                    FromClassId = class1B.Id,
+                    ToClassId = class1A.Id,
+                    TransferReason = "Gia đình có nguyện vọng chuyển cháu về lớp 1A để học cùng khối với anh trai HS001 tiện việc đưa đón.",
+                    IsExecuted = false
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Sample 2: Đơn xin cấp Giấy xác nhận cho HS001 (Yêu cầu bổ sung thông tin - Amendment)
+            if (!await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-DOC-SAMPLE-002"))
+            {
+                var docReq2 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-DOC-SAMPLE-002",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student1.Id,
+                    RequestType = RequestTypes.Document,
+                    Status = RequestStatus.Submitted,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-2),
+                    RequiresAmendment = true,
+                    AmendmentNotes = "Vui lòng ghi rõ mục đích nộp cơ quan nào (Bảo hiểm hay cơ quan công tác của phụ huynh) để nhà trường cấp đúng mẫu quy định.",
+                    ReviewerUserId = officeUser.Id
+                };
+                context.AdministrativeRequests.Add(docReq2);
+                await context.SaveChangesAsync();
+
+                context.DocumentRequestDetails.Add(new DocumentRequestDetail
+                {
+                    AdministrativeRequestId = docReq2.Id,
+                    DocumentType = "Giấy xác nhận học sinh đang theo học",
+                    NumberOfCopies = 2,
+                    Purpose = "Bổ sung hồ sơ cơ quan phụ huynh"
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Sample 3: Đơn xin chuyển lớp đã qua Giáo vụ thẩm định, đang trình BGH (UnderReview)
+            if (student7Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-003"))
+            {
+                var ctReq3 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-CT-SAMPLE-003",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student7Obj.Id,
+                    RequestType = RequestTypes.ClassTransfer,
+                    Status = RequestStatus.UnderReview,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-3),
+                    ReviewerUserId = officeUser.Id
+                };
+                context.AdministrativeRequests.Add(ctReq3);
+                await context.SaveChangesAsync();
+
+                context.ClassTransferDetails.Add(new ClassTransferDetail
+                {
+                    AdministrativeRequestId = ctReq3.Id,
+                    FromClassId = class1A.Id,
+                    ToClassId = class1B.Id,
+                    TransferReason = "Cháu đổi chỗ ở sang gần khu vực của các bạn lớp 1B, xin chuyển để thuận tiện đi lại.",
+                    StaffRecommendation = "Đã kiểm tra sĩ số lớp 1B hiện tại còn 4 chỗ, đủ điều kiện tiếp nhận. Đề xuất BGH xem xét phê duyệt.",
+                    TargetClassCapacitySnapshot = 28,
+                    IsExecuted = false
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Sample 4: Đơn giấy tờ đã được BGH duyệt và cấp phát hành chính thức (Approved)
+            if (!await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-DOC-SAMPLE-004"))
+            {
+                var docReq4 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-DOC-SAMPLE-004",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student1.Id,
+                    RequestType = RequestTypes.Document,
+                    Status = RequestStatus.Approved,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-5),
+                    ProcessedDate = DateTime.UtcNow.AddDays(-4),
+                    ReviewerUserId = boardUser.Id,
+                    SchoolBoardApprovedAt = DateTime.UtcNow.AddDays(-4),
+                    SchoolBoardNotes = "Đồng ý cấp theo đề xuất của bộ phận Giáo vụ."
+                };
+                context.AdministrativeRequests.Add(docReq4);
+                await context.SaveChangesAsync();
+
+                context.DocumentRequestDetails.Add(new DocumentRequestDetail
+                {
+                    AdministrativeRequestId = docReq4.Id,
+                    DocumentType = "Giấy xác nhận học sinh đang theo học",
+                    NumberOfCopies = 1,
+                    Purpose = "Làm thủ tục xin trợ cấp phúc lợi gia đình",
+                    StaffEndorsement = "Hồ sơ đầy đủ, học sinh có hạnh kiểm Tốt.",
+                    DocumentContentDraft = $"Trường Tiểu học SAWP xác nhận học sinh Trần Gia Bảo (Mã: HS001) hiện đang học tại Lớp 1A năm học 2026-2027.",
+                    CertificateNumber = "SAWP-2026-XN089",
+                    DigitalSignatureInfo = "Ký số điện tử bởi Ban Giám Hiệu ngày 22/10/2026",
+                    IssuedDate = DateTime.UtcNow.AddDays(-4),
+                    IssuedDocumentUrl = $"/api/requests/{docReq4.Id}/download-document"
+                });
+                await context.SaveChangesAsync();
+            }
         }
     }
 }
