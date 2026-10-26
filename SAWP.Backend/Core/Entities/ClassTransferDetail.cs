@@ -13,4 +13,10 @@ public class ClassTransferDetail
     public virtual Class ToClass { get; set; } = null!;
 
     public string TransferReason { get; set; } = string.Empty;
+
+    // Workflow recommendation & execution
+    public string? StaffRecommendation { get; set; }
+    public int? TargetClassCapacitySnapshot { get; set; }
+    public bool IsExecuted { get; set; }
+    public DateTime? ExecutedAt { get; set; }
 }

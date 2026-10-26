@@ -525,5 +525,132 @@ public static class DbInitializer
             });
             await context.SaveChangesAsync();
         }
+
+        // ====================================================================
+        // 10. ADMINISTRATIVE REQUESTS SAMPLE SEED (Class Transfer & Documents)
+        // ====================================================================
+        if (student1 != null && parentUser != null)
+        {
+            // Sample 1: Đơn xin chuyển lớp cho HS007 (Trần Bảo Ngọc) từ 1B -> 1A (Mới nộp - Submitted)
+            var student7Obj = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == "HS007");
+            if (student7Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-001"))
+            {
+                var ctReq1 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-CT-SAMPLE-001",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student7Obj.Id,
+                    RequestType = RequestTypes.ClassTransfer,
+                    Status = RequestStatus.Submitted,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-1),
+                    AttachmentUrl = "https://example.com/don-chuyen-lop-gia-dinh.pdf"
+                };
+                context.AdministrativeRequests.Add(ctReq1);
+                await context.SaveChangesAsync();
+
+                context.ClassTransferDetails.Add(new ClassTransferDetail
+                {
+                    AdministrativeRequestId = ctReq1.Id,
+                    FromClassId = class1B.Id,
+                    ToClassId = class1A.Id,
+                    TransferReason = "Gia đình có nguyện vọng chuyển cháu về lớp 1A để học cùng khối với anh trai HS001 tiện việc đưa đón.",
+                    IsExecuted = false
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Sample 2: Đơn xin cấp Giấy xác nhận cho HS001 (Yêu cầu bổ sung thông tin - Amendment)
+            if (!await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-DOC-SAMPLE-002"))
+            {
+                var docReq2 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-DOC-SAMPLE-002",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student1.Id,
+                    RequestType = RequestTypes.Document,
+                    Status = RequestStatus.Submitted,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-2),
+                    RequiresAmendment = true,
+                    AmendmentNotes = "Vui lòng ghi rõ mục đích nộp cơ quan nào (Bảo hiểm hay cơ quan công tác của phụ huynh) để nhà trường cấp đúng mẫu quy định.",
+                    ReviewerUserId = officeUser.Id
+                };
+                context.AdministrativeRequests.Add(docReq2);
+                await context.SaveChangesAsync();
+
+                context.DocumentRequestDetails.Add(new DocumentRequestDetail
+                {
+                    AdministrativeRequestId = docReq2.Id,
+                    DocumentType = "Giấy xác nhận học sinh đang theo học",
+                    NumberOfCopies = 2,
+                    Purpose = "Bổ sung hồ sơ cơ quan phụ huynh"
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Sample 3: Đơn xin chuyển lớp đã qua Giáo vụ thẩm định, đang trình BGH (UnderReview)
+            var student3Obj = studentEntities.FirstOrDefault(s => s.StudentCode == "HS003");
+            if (student3Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-003"))
+            {
+                var ctReq3 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-CT-SAMPLE-003",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student3Obj.Id,
+                    RequestType = RequestTypes.ClassTransfer,
+                    Status = RequestStatus.UnderReview,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-3),
+                    ReviewerUserId = officeUser.Id
+                };
+                context.AdministrativeRequests.Add(ctReq3);
+                await context.SaveChangesAsync();
+
+                context.ClassTransferDetails.Add(new ClassTransferDetail
+                {
+                    AdministrativeRequestId = ctReq3.Id,
+                    FromClassId = class1A.Id,
+                    ToClassId = class1B.Id,
+                    TransferReason = "Cháu đổi chỗ ở sang gần khu vực của các bạn lớp 1B, xin chuyển để thuận tiện đi lại.",
+                    StaffRecommendation = "Đã kiểm tra sĩ số lớp 1B hiện tại còn 4 chỗ, đủ điều kiện tiếp nhận. Đề xuất BGH xem xét phê duyệt.",
+                    TargetClassCapacitySnapshot = 28,
+                    IsExecuted = false
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Sample 4: Đơn giấy tờ đã được BGH duyệt và cấp phát hành chính thức (Approved)
+            if (!await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-DOC-SAMPLE-004"))
+            {
+                var docReq4 = new AdministrativeRequest
+                {
+                    RequestNumber = "REQ-DOC-SAMPLE-004",
+                    RequesterUserId = parentUser.Id,
+                    StudentId = student1.Id,
+                    RequestType = RequestTypes.Document,
+                    Status = RequestStatus.Approved,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-5),
+                    ProcessedDate = DateTime.UtcNow.AddDays(-4),
+                    ReviewerUserId = boardUser.Id,
+                    SchoolBoardApprovedAt = DateTime.UtcNow.AddDays(-4),
+                    SchoolBoardNotes = "Đồng ý cấp theo đề xuất của bộ phận Giáo vụ."
+                };
+                context.AdministrativeRequests.Add(docReq4);
+                await context.SaveChangesAsync();
+
+                context.DocumentRequestDetails.Add(new DocumentRequestDetail
+                {
+                    AdministrativeRequestId = docReq4.Id,
+                    DocumentType = "Giấy xác nhận học sinh đang theo học",
+                    NumberOfCopies = 1,
+                    Purpose = "Làm thủ tục xin trợ cấp phúc lợi gia đình",
+                    StaffEndorsement = "Hồ sơ đầy đủ, học sinh có hạnh kiểm Tốt.",
+                    DocumentContentDraft = $"Trường Tiểu học SAWP xác nhận học sinh Trần Gia Bảo (Mã: HS001) hiện đang học tại Lớp 1A năm học 2026-2027.",
+                    CertificateNumber = "SAWP-2026-XN089",
+                    DigitalSignatureInfo = "Ký số điện tử bởi Ban Giám Hiệu ngày 22/10/2026",
+                    IssuedDate = DateTime.UtcNow.AddDays(-4),
+                    IssuedDocumentUrl = $"/api/requests/{docReq4.Id}/download-document"
+                });
+                await context.SaveChangesAsync();
+            }
+        }
     }
 }

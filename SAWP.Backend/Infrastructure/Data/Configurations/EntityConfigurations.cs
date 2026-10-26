@@ -295,7 +295,10 @@ public class AdministrativeRequestConfiguration : IEntityTypeConfiguration<Admin
         builder.Property(ar => ar.RequestNumber).HasMaxLength(50).IsRequired();
         builder.HasIndex(ar => ar.RequestNumber).IsUnique();
         builder.Property(ar => ar.RequestType).HasMaxLength(100).IsRequired();
-        builder.Property(ar => ar.ReviewerNotes).HasMaxLength(500);
+        builder.Property(ar => ar.ReviewerNotes).HasMaxLength(1000);
+        builder.Property(ar => ar.AttachmentUrl).HasMaxLength(500);
+        builder.Property(ar => ar.AmendmentNotes).HasMaxLength(1000);
+        builder.Property(ar => ar.SchoolBoardNotes).HasMaxLength(1000);
 
         builder.HasOne(ar => ar.RequesterUser)
                .WithMany()
@@ -319,7 +322,8 @@ public class ClassTransferDetailConfiguration : IEntityTypeConfiguration<ClassTr
     public void Configure(EntityTypeBuilder<ClassTransferDetail> builder)
     {
         builder.HasKey(ct => ct.Id);
-        builder.Property(ct => ct.TransferReason).HasMaxLength(500).IsRequired();
+        builder.Property(ct => ct.TransferReason).HasMaxLength(1000).IsRequired();
+        builder.Property(ct => ct.StaffRecommendation).HasMaxLength(1000);
 
         builder.HasOne(ct => ct.AdministrativeRequest)
                .WithOne(ar => ar.ClassTransferDetail)
@@ -344,7 +348,11 @@ public class DocumentRequestDetailConfiguration : IEntityTypeConfiguration<Docum
     {
         builder.HasKey(dr => dr.Id);
         builder.Property(dr => dr.DocumentType).HasMaxLength(150).IsRequired();
-        builder.Property(dr => dr.Purpose).HasMaxLength(500).IsRequired();
+        builder.Property(dr => dr.Purpose).HasMaxLength(1000).IsRequired();
+        builder.Property(dr => dr.StaffEndorsement).HasMaxLength(1000);
+        builder.Property(dr => dr.IssuedDocumentUrl).HasMaxLength(500);
+        builder.Property(dr => dr.CertificateNumber).HasMaxLength(100);
+        builder.Property(dr => dr.DigitalSignatureInfo).HasMaxLength(500);
 
         builder.HasOne(dr => dr.AdministrativeRequest)
                .WithOne(ar => ar.DocumentRequestDetail)

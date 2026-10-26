@@ -30,6 +30,14 @@ namespace Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AmendmentNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("AttachmentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime?>("ProcessedDate")
                         .HasColumnType("datetime2");
 
@@ -46,12 +54,22 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int>("RequesterUserId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("RequiresAmendment")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ReviewerNotes")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<int?>("ReviewerUserId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("SchoolBoardApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SchoolBoardNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -326,7 +344,20 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int>("AdministrativeRequestId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("ExecutedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("FromClassId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsExecuted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("StaffRecommendation")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("TargetClassCapacitySnapshot")
                         .HasColumnType("int");
 
                     b.Property<int>("ToClassId")
@@ -334,8 +365,8 @@ namespace Infrastructure.Data.Migrations
 
                     b.Property<string>("TransferReason")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.HasKey("Id");
 
@@ -360,6 +391,17 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int>("AdministrativeRequestId")
                         .HasColumnType("int");
 
+                    b.Property<string>("CertificateNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("DigitalSignatureInfo")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("DocumentContentDraft")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("DocumentType")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -368,13 +410,21 @@ namespace Infrastructure.Data.Migrations
                     b.Property<DateTime?>("IssuedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("IssuedDocumentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int>("NumberOfCopies")
                         .HasColumnType("int");
 
                     b.Property<string>("Purpose")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("StaffEndorsement")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.HasKey("Id");
 
