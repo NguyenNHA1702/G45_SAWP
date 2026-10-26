@@ -45,14 +45,30 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
     const res = await apiClient.get(`/requests/${id}/download-document`, {
       responseType: 'blob',
     });
-    const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/plain;charset=utf-8' }));
+    const blobType = typeof res.headers?.['content-type'] === 'string' ? res.headers['content-type'] : 'application/msword';
+    const url = window.URL.createObjectURL(new Blob([res.data], { type: blobType }));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', fileName);
+    // Đảm bảo đuôi file là .doc thay vì .txt
+    const safeFileName = fileName.endsWith('.doc') ? fileName : fileName.replace(/\.txt$/, '') + '.doc';
+    link.setAttribute('download', safeFileName);
     document.body.appendChild(link);
     link.click();
     link.parentNode?.removeChild(link);
     window.URL.revokeObjectURL(url);
+  }
+
+  async uploadAttachment(file: File): Promise<ApiResponse<{ url: string; fileName: string; fileSize: number }>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post<ApiResponse<{ url: string; fileName: string; fileSize: number }>>(
+      '/requests/upload-attachment',
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+    return res.data;
   }
 
   // Office Staff operations

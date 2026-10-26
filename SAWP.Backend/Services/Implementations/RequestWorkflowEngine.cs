@@ -70,6 +70,14 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Lớp muốn chuyển tới không tồn tại." });
         }
 
+        // Validate same grade transfer rule
+        if (currentAssignment.Class != null && currentAssignment.Class.Grade != targetClass.Grade)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { 
+                $"Chỉ được xin chuyển lớp trong cùng khối (Khối {currentAssignment.Class.Grade}). Lớp đích '{targetClass.ClassName}' thuộc Khối {targetClass.Grade}." 
+            });
+        }
+
         var reqNumber = $"REQ-CT-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
         var adminRequest = new AdministrativeRequest
@@ -322,11 +330,22 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
+            .Include(r => r.Student)
             .FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken);
 
         if (req == null)
         {
             return ApiResponse<bool>.Fail("Không tìm thấy yêu cầu.");
+        }
+
+        if (req.Status != RequestStatus.Submitted)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể yêu cầu bổ sung hồ sơ khi đơn đang ở trạng thái 'Chờ thẩm định'." });
+        }
+
+        if (req.RequiresAmendment)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn này đã được gửi yêu cầu bổ sung trước đó. Vui lòng đợi phụ huynh hoàn tất và nộp lại hồ sơ." });
         }
 
         req.RequiresAmendment = true;
@@ -335,16 +354,15 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
 
-        // Send Notification to Parent
-        var notif = new Notification
-        {
-            UserId = req.RequesterUserId,
-            Title = $"Yêu cầu bổ sung thông tin đơn {req.RequestNumber}",
-            Content = $"Giáo vụ đã gửi yêu cầu bổ sung hồ sơ: {request.AmendmentNotes.Trim()}",
-            Type = "AMENDMENT_REQUIRED",
-            LinkUrl = "/parent/requests"
-        };
-        await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
+        // Send Notification to Parent / Guardians
+        await NotifyGuardiansOfStudentAsync(
+            req.StudentId,
+            req.RequesterUserId,
+            $"Yêu cầu bổ sung thông tin đơn {req.RequestNumber}",
+            $"Giáo vụ đã gửi yêu cầu bổ sung hồ sơ cho học sinh {req.Student?.FullName}: {request.AmendmentNotes.Trim()}",
+            "AMENDMENT_REQUIRED",
+            "/parent/requests",
+            cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
@@ -365,6 +383,23 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (req == null || req.ClassTransferDetail == null)
         {
             return ApiResponse<bool>.Fail("Không tìm thấy đơn xin chuyển lớp.");
+        }
+
+        if (req.RequiresAmendment)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { 
+                "Hồ sơ đang ở trạng thái chờ phụ huynh bổ sung thông tin/giấy tờ. Giáo vụ chỉ có thể trình Ban Giám Hiệu sau khi phụ huynh đã hoàn tất bổ sung." 
+            });
+        }
+
+        if (req.Status == RequestStatus.UnderReview)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn chuyển lớp này đã được trình Ban Giám Hiệu xem xét, không thể gửi lặp lại." });
+        }
+
+        if (req.Status == RequestStatus.Approved || req.Status == RequestStatus.Rejected)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn này đã được hoàn tất xử lý, không thể gửi lại đề xuất." });
         }
 
         // Capacity check
@@ -412,6 +447,23 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (req == null || req.DocumentRequestDetail == null)
         {
             return ApiResponse<bool>.Fail("Không tìm thấy đơn xin cấp giấy tờ.");
+        }
+
+        if (req.RequiresAmendment)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { 
+                "Hồ sơ đang ở trạng thái chờ phụ huynh bổ sung thông tin/giấy tờ. Giáo vụ chỉ có thể trình Ban Giám Hiệu sau khi phụ huynh đã hoàn tất bổ sung." 
+            });
+        }
+
+        if (req.Status == RequestStatus.UnderReview)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn này đã được trình Ban Giám Hiệu xem xét, không thể gửi lặp lại." });
+        }
+
+        if (req.Status == RequestStatus.Approved || req.Status == RequestStatus.Rejected)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn này đã được hoàn tất xử lý, không thể gửi lại đề xuất." });
         }
 
         req.DocumentRequestDetail.StaffEndorsement = request.StaffEndorsement.Trim();
@@ -496,16 +548,15 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
 
-        // 4. Send notification with new class details to Parent
-        var notif = new Notification
-        {
-            UserId = req.RequesterUserId,
-            Title = "Đã cập nhật chuyển lớp thành công",
-            Content = $"Học sinh {req.Student?.FullName} đã được chuyển sang lớp {req.ClassTransferDetail.ToClass?.ClassName} thành công. Vui lòng kiểm tra thời khóa biểu mới của con.",
-            Type = "CLASS_TRANSFER_COMPLETED",
-            LinkUrl = "/parent/children"
-        };
-        await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
+        // 4. Send notification with new class details to Parent / Guardians
+        await NotifyGuardiansOfStudentAsync(
+            req.StudentId,
+            req.RequesterUserId,
+            "Đã cập nhật chuyển lớp thành công",
+            $"Học sinh {req.Student?.FullName} đã được chuyển sang lớp {req.ClassTransferDetail.ToClass?.ClassName} thành công. Vui lòng kiểm tra thời khóa biểu mới của con.",
+            "CLASS_TRANSFER_COMPLETED",
+            "/parent/children",
+            cancellationToken);
 
         // 5. Audit Log
         await _auditService.LogActionAsync(
@@ -604,15 +655,14 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                 req.ProcessedDate = DateTime.UtcNow;
 
                 // Send notification to Parent with download link
-                var notif = new Notification
-                {
-                    UserId = req.RequesterUserId,
-                    Title = "Tài liệu / Giấy xác nhận đã được phát hành",
-                    Content = $"Văn bản {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} đã được Ban Giám Hiệu ký duyệt và phát hành chính thức.",
-                    Type = "DOCUMENT_ISSUED",
-                    LinkUrl = req.DocumentRequestDetail.IssuedDocumentUrl
-                };
-                await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
+                await NotifyGuardiansOfStudentAsync(
+                    req.StudentId,
+                    req.RequesterUserId,
+                    "Tài liệu / Giấy xác nhận đã được phát hành",
+                    $"Văn bản {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} đã được Ban Giám Hiệu ký duyệt và phát hành chính thức.",
+                    "DOCUMENT_ISSUED",
+                    req.DocumentRequestDetail.IssuedDocumentUrl,
+                    cancellationToken);
             }
 
             await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
@@ -646,15 +696,14 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                 cancellationToken);
 
             // Notify Parent
-            var notif = new Notification
-            {
-                UserId = req.RequesterUserId,
-                Title = "Yêu cầu hành chính không được phê duyệt",
-                Content = $"Yêu cầu {req.RequestNumber} ({req.RequestType}) không được BGH phê duyệt. Lý do: {request.DecisionNotes.Trim()}",
-                Type = "REQUEST_REJECTED",
-                LinkUrl = "/parent/requests"
-            };
-            await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
+            await NotifyGuardiansOfStudentAsync(
+                req.StudentId,
+                req.RequesterUserId,
+                "Yêu cầu hành chính không được phê duyệt",
+                $"Yêu cầu {req.RequestNumber} ({req.RequestType}) cho học sinh {req.Student?.FullName} không được BGH phê duyệt. Lý do: {request.DecisionNotes.Trim()}",
+                "REQUEST_REJECTED",
+                "/parent/requests",
+                cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return ApiResponse<bool>.Ok(true, SystemMessages.MSG32);
@@ -789,6 +838,53 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                 Content = content,
                 Type = "ADMIN_REQUEST",
                 LinkUrl = linkUrl
+            }, ct);
+        }
+    }
+
+    private async Task NotifyGuardiansOfStudentAsync(
+        int? studentId,
+        int fallbackRequesterUserId,
+        string title,
+        string content,
+        string type,
+        string linkUrl,
+        CancellationToken ct)
+    {
+        var targetUserIds = new HashSet<int>();
+
+        if (studentId.HasValue && studentId.Value > 0)
+        {
+            var guardianUserIds = await _unitOfWork.Repository<StudentGuardian>()
+                .Query()
+                .Include(sg => sg.Guardian)
+                .Where(sg => sg.StudentId == studentId.Value && sg.Guardian != null)
+                .Select(sg => sg.Guardian.UserId)
+                .Distinct()
+                .ToListAsync(ct);
+
+            foreach (var gId in guardianUserIds)
+            {
+                if (gId > 0) targetUserIds.Add(gId);
+            }
+        }
+
+        if (targetUserIds.Count == 0 && fallbackRequesterUserId > 0)
+        {
+            targetUserIds.Add(fallbackRequesterUserId);
+        }
+
+        foreach (var uId in targetUserIds)
+        {
+            await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+            {
+                UserId = uId,
+                Title = title,
+                Content = content,
+                Type = type,
+                LinkUrl = linkUrl,
+                CreatedAt = DateTime.UtcNow,
+                IsRead = false
             }, ct);
         }
     }

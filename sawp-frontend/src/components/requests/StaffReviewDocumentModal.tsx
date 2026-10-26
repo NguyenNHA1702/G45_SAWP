@@ -32,6 +32,12 @@ export function StaffReviewDocumentModal({
       );
       setAmendmentNotes(request.amendmentNotes || '');
 
+      if (request.requiresAmendment) {
+        setActiveAction('amendment');
+      } else {
+        setActiveAction('endorse');
+      }
+
       // Tự động sinh nội dung dự thảo ban đầu nếu chưa có
       if (request.documentRequest.documentContentDraft) {
         setDraftContent(request.documentRequest.documentContentDraft);
@@ -43,12 +49,16 @@ export function StaffReviewDocumentModal({
 
   const applyTemplate = (docType: string, studentName: string, studentCode: string, purpose: string) => {
     let content = '';
-    if (docType.includes('đang theo học') || docType.includes('xác nhận')) {
-      content = `CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\nĐộc lập - Tự do - Hạnh phúc\n------------------------\nGIẤY XÁC NHẬN HỌC SINH\n\nHiệu trưởng Trường Tiểu học SAWP trân trọng xác nhận:\n- Em: ${studentName}\n- Mã học sinh: ${studentCode}\n- Hiện đang là học sinh lớp ${request?.currentClassName || 'chính khóa'} tại Trường Tiểu học SAWP năm học 2026 - 2027.\n- Hạnh kiểm: Đạt tiêu chuẩn rèn luyện Tốt.\n\nGiấy này được cấp theo đề nghị của phụ huynh nhằm mục đích: ${purpose}.`;
-    } else if (docType.includes('Bảng điểm') || docType.includes('rèn luyện')) {
-      content = `PHIẾU ĐÁNH GIÁ KẾT QUẢ RÈN LUYỆN & HỌC TẬP\n\nHọc sinh: ${studentName} - Mã số: ${studentCode}\nLớp: ${request?.currentClassName || '1A'}\n- Môn Toán: Hoàn thành Tốt\n- Môn Tiếng Việt: Hoàn thành Tốt\n- Năng lực phẩm chất: Tích cực, gương mẫu trong học tập.\n\nMục đích sử dụng: ${purpose}.`;
+    const lowerType = (docType || '').toLowerCase();
+
+    if (lowerType.includes('chuyển trường')) {
+      content = `Ban Giám Hiệu Trường Tiểu học SAWP đồng ý cho em ${studentName} (Mã định danh: ${studentCode}), hiện là học sinh lớp ${request?.currentClassName || 'chính khóa'} năm học 2026 - 2027, được giải quyết thủ tục chuyển trường theo nguyện vọng của gia đình.\n\nLý do chuyển trường: ${purpose || 'Chuyển nơi cư trú / nguyện vọng của gia đình'}.\n\nNhà trường xác nhận: Học sinh hoàn thành tốt nhiệm vụ học tập và rèn luyện, hồ sơ học bạ đầy đủ, hợp lệ theo quy định. Kính đề nghị Ban Giám Hiệu trường chuyển đến tạo điều kiện tiếp nhận học sinh theo quy định của Bộ Giáo dục và Đào tạo.`;
+    } else if (lowerType.includes('bảng điểm') || lowerType.includes('rèn luyện')) {
+      content = `Chứng nhận kết quả học tập và rèn luyện của học sinh ${studentName} (Mã định danh: ${studentCode}) - Lớp ${request?.currentClassName || 'chính khóa'}:\n- Đánh giá định kỳ các môn học: Môn Tiếng Việt (Hoàn thành Tốt), Môn Toán (Hoàn thành Tốt), Môn Ngoại ngữ (Hoàn thành Tốt), các môn học và hoạt động giáo dục khác (Hoàn thành).\n- Đánh giá sự hình thành và phát triển năng lực, phẩm chất: Tự phục vụ, tự quản tốt; Hợp tác tốt; Chăm chỉ, trung thực, có tinh thần trách nhiệm.\n- Đánh giá chung: Hoàn thành xuất sắc nhiệm vụ năm học 2026 - 2027.\n\nMục đích cấp giấy: ${purpose || 'Bổ sung hồ sơ học sinh'}.`;
+    } else if (lowerType.includes('hoàn thành chương trình')) {
+      content = `Xác nhận học sinh ${studentName} (Mã định danh: ${studentCode}), học sinh lớp ${request?.currentClassName || 'chính khóa'} tại Trường Tiểu học SAWP, đã hoàn thành đầy đủ chương trình các môn học và hoạt động giáo dục theo quy định của Bộ Giáo dục và Đào tạo trong năm học 2026 - 2027, đủ điều kiện xét công nhận hoàn thành chương trình lớp học / cấp học.\n\nMục đích cấp: ${purpose || 'Bổ sung hồ sơ học tập'}.`;
     } else {
-      content = `GIẤY GIỚI THIỆU CHUYỂN TRƯỜNG\n\nBan Giám Hiệu Trường Tiểu học SAWP trân trọng giới thiệu:\nEm ${studentName} (Mã: ${studentCode}) đang học tại trường.\nLý do: ${purpose}.\nĐề nghị Quý trường tạo điều kiện tiếp nhận.`;
+      content = `Xác nhận em ${studentName} (Mã định danh: ${studentCode}) hiện đang là học sinh chính khóa lớp ${request?.currentClassName || 'chính khóa'} tại Trường Tiểu học SAWP trong năm học 2026 - 2027.\n\nTrong thời gian theo học tại trường, học sinh luôn chấp hành tốt nội quy nhà trường, có phẩm chất đạo đức tốt và tham gia đầy đủ các hoạt động giáo dục toàn diện.\n\nGiấy này được cấp theo đề nghị của phụ huynh nhằm mục đích: ${purpose || 'Bổ sung hồ sơ theo quy định'}.`;
     }
     setDraftContent(content);
   };
@@ -57,10 +67,26 @@ export function StaffReviewDocumentModal({
     return null;
   }
 
+  const isAwaitingParent = !!request.requiresAmendment;
+  const isAlreadyUnderReview = request.status === 'UnderReview';
+  const isClosed = request.status === 'Approved' || request.status === 'Rejected';
+
   const doc = request.documentRequest;
 
   const handleEndorse = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAwaitingParent) {
+      toast.error('Hồ sơ đang chờ phụ huynh bổ sung. Chưa thể trình Ban Giám Hiệu.');
+      return;
+    }
+    if (isAlreadyUnderReview) {
+      toast.error('Hồ sơ này đã được trình Ban Giám Hiệu xem xét.');
+      return;
+    }
+    if (isClosed) {
+      toast.error('Hồ sơ này đã hoàn tất xử lý.');
+      return;
+    }
     if (!endorsement.trim()) {
       toast.error('Vui lòng nhập ý kiến xác thực của giáo vụ.');
       return;
@@ -173,17 +199,45 @@ export function StaffReviewDocumentModal({
           </div>
         </div>
 
+        {/* Cảnh báo trạng thái bổ sung hồ sơ */}
+        {isAwaitingParent && (
+          <div
+            style={{
+              backgroundColor: '#FFFBEB',
+              border: '2px solid #F59E0B',
+              borderRadius: 12,
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <AlertCircle size={22} color="#D97706" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 800, color: '#B45309', fontSize: 13 }}>
+                HỒ SƠ ĐANG CHỜ PHỤ HUYNH BỔ SUNG
+              </div>
+              <div style={{ fontSize: 13, color: '#92400E', marginTop: 2 }}>
+                Giáo vụ đã gửi yêu cầu bổ sung thông tin. Phụ huynh chưa nộp lại nên bạn <strong>không thể gửi lên Ban Giám Hiệu</strong> lúc này để tránh ghi đè quy trình.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Segmented Buttons chọn hành động */}
         <div style={{ display: 'flex', gap: 10, borderBottom: '2px solid #E2E8F0', paddingBottom: 12 }}>
           <button
             type="button"
+            disabled={isAwaitingParent || isAlreadyUnderReview || isClosed}
             onClick={() => setActiveAction('endorse')}
+            title={isAwaitingParent ? 'Hồ sơ đang chờ phụ huynh bổ sung, chưa thể trình BGH' : undefined}
             style={{
               padding: '8px 16px',
               borderRadius: 10,
               fontWeight: 700,
               fontSize: 13,
-              cursor: 'pointer',
+              cursor: isAwaitingParent || isAlreadyUnderReview || isClosed ? 'not-allowed' : 'pointer',
+              opacity: isAwaitingParent || isAlreadyUnderReview || isClosed ? 0.5 : 1,
               border: activeAction === 'endorse' ? '2px solid #1E293B' : '2px solid transparent',
               backgroundColor: activeAction === 'endorse' ? '#FCE7F3' : '#F1F5F9',
               color: activeAction === 'endorse' ? '#9D174D' : '#64748B',
@@ -198,13 +252,15 @@ export function StaffReviewDocumentModal({
 
           <button
             type="button"
+            disabled={isAlreadyUnderReview || isClosed}
             onClick={() => setActiveAction('amendment')}
             style={{
               padding: '8px 16px',
               borderRadius: 10,
               fontWeight: 700,
               fontSize: 13,
-              cursor: 'pointer',
+              cursor: isAlreadyUnderReview || isClosed ? 'not-allowed' : 'pointer',
+              opacity: isAlreadyUnderReview || isClosed ? 0.5 : 1,
               border: activeAction === 'amendment' ? '2px solid #1E293B' : '2px solid transparent',
               backgroundColor: activeAction === 'amendment' ? '#FEF3C7' : '#F1F5F9',
               color: activeAction === 'amendment' ? '#92400E' : '#64748B',
@@ -214,7 +270,7 @@ export function StaffReviewDocumentModal({
               gap: 6,
             }}
           >
-            <AlertCircle size={16} /> Yêu cầu phụ huynh bổ sung
+            <AlertCircle size={16} /> {isAwaitingParent ? 'Xem / Cập nhật yêu cầu bổ sung' : 'Yêu cầu phụ huynh bổ sung'}
           </button>
         </div>
 
@@ -223,9 +279,14 @@ export function StaffReviewDocumentModal({
           <form onSubmit={handleEndorse} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label style={{ fontWeight: 700, fontSize: 13 }}>
-                  Nội dung dự thảo văn bản chính thức: <span style={{ color: '#EF4444' }}>*</span>
-                </label>
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: 13, display: 'block' }}>
+                    Nội dung dự thảo văn bản chính thức: <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <span style={{ fontSize: 11, color: '#64748B' }}>
+                    (Ý kiến xác nhận & phê duyệt của Ban Giám Hiệu được in vào văn bản chính thức)
+                  </span>
+                </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     type="button"

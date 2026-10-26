@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, FileUp, Send, X } from 'lucide-react';
+import { AlertCircle, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
+import { DirectFileUploader } from '../common/DirectFileUploader';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 interface ResubmitModalProps {
@@ -127,25 +128,12 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
             </div>
           )}
 
-          <div>
-            <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-              Liên kết tệp đính kèm bổ sung (Ảnh/File Drive/Minh chứng):
-            </label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="text"
-                className="input"
-                style={{ width: '100%', borderRadius: 10, padding: '10px 12px 10px 38px' }}
-                value={attachmentUrl}
-                onChange={(e) => setAttachmentUrl(e.target.value)}
-                placeholder="https://drive.google.com/file/... hoặc link ảnh tài liệu"
-              />
-              <FileUp size={18} color="#64748B" style={{ position: 'absolute', left: 12, top: 12 }} />
-            </div>
-            <span style={{ fontSize: 12, color: '#64748B', marginTop: 4, display: 'block' }}>
-              💡 Phụ huynh có thể upload tài liệu lên Google Drive/Dropbox và dán link chia sẻ vào đây.
-            </span>
-          </div>
+          <DirectFileUploader
+            value={attachmentUrl}
+            onChange={setAttachmentUrl}
+            label="Tệp đính kèm bổ sung (Hình ảnh hoặc PDF, Word):"
+            hint="Tải trực tiếp tài liệu bổ sung theo yêu cầu của Giáo vụ."
+          />
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
             <button

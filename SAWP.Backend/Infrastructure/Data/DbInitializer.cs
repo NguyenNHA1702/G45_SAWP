@@ -588,14 +588,13 @@ public static class DbInitializer
             }
 
             // Sample 3: Đơn xin chuyển lớp đã qua Giáo vụ thẩm định, đang trình BGH (UnderReview)
-            var student3Obj = studentEntities.FirstOrDefault(s => s.StudentCode == "HS003");
-            if (student3Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-003"))
+            if (student7Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-003"))
             {
                 var ctReq3 = new AdministrativeRequest
                 {
                     RequestNumber = "REQ-CT-SAMPLE-003",
                     RequesterUserId = parentUser.Id,
-                    StudentId = student3Obj.Id,
+                    StudentId = student7Obj.Id,
                     RequestType = RequestTypes.ClassTransfer,
                     Status = RequestStatus.UnderReview,
                     SubmissionDate = DateTime.UtcNow.AddDays(-3),

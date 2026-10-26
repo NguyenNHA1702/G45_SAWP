@@ -30,12 +30,21 @@ export function StaffReviewTransferModal({
           `Đã rà soát học bạ và sĩ số lớp ${request.classTransfer.toClassName}. Đề xuất Ban Giám Hiệu xem xét phê duyệt điều chuyển lớp cho học sinh.`
       );
       setAmendmentNotes(request.amendmentNotes || '');
+      if (request.requiresAmendment) {
+        setActiveAction('amendment');
+      } else {
+        setActiveAction('endorse');
+      }
     }
   }, [request]);
 
   if (!request || request.requestType !== 'ClassTransfer' || !request.classTransfer) {
     return null;
   }
+
+  const isAwaitingParent = !!request.requiresAmendment;
+  const isAlreadyUnderReview = request.status === 'UnderReview';
+  const isClosed = request.status === 'Approved' || request.status === 'Rejected';
 
   const transfer = request.classTransfer;
   const currentCap = transfer.targetClassCapacity ?? 0;
@@ -44,6 +53,18 @@ export function StaffReviewTransferModal({
 
   const handleEndorse = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAwaitingParent) {
+      toast.error('Đơn đang chờ phụ huynh bổ sung hồ sơ. Chưa thể trình Ban Giám Hiệu.');
+      return;
+    }
+    if (isAlreadyUnderReview) {
+      toast.error('Đơn này đã được trình Ban Giám Hiệu xem xét.');
+      return;
+    }
+    if (isClosed) {
+      toast.error('Đơn này đã hoàn tất xử lý.');
+      return;
+    }
     if (!recommendation.trim()) {
       toast.error('Vui lòng nhập ý kiến đề xuất chuyên môn của giáo vụ.');
       return;
@@ -213,17 +234,45 @@ export function StaffReviewTransferModal({
           )}
         </div>
 
+        {/* Cảnh báo trạng thái bổ sung hồ sơ */}
+        {isAwaitingParent && (
+          <div
+            style={{
+              backgroundColor: '#FFFBEB',
+              border: '2px solid #F59E0B',
+              borderRadius: 12,
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <AlertCircle size={22} color="#D97706" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 800, color: '#B45309', fontSize: 13 }}>
+                HỒ SƠ ĐANG CHỜ PHỤ HUYNH BỔ SUNG
+              </div>
+              <div style={{ fontSize: 13, color: '#92400E', marginTop: 2 }}>
+                Giáo vụ đã gửi yêu cầu bổ sung thông tin. Phụ huynh chưa nộp lại nên bạn <strong>không thể gửi lên Ban Giám Hiệu</strong> lúc này để tránh ghi đè quy trình.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Segmented Buttons chọn hành động: Đề xuất BGH vs Yêu cầu bổ sung */}
         <div style={{ display: 'flex', gap: 10, borderBottom: '2px solid #E2E8F0', paddingBottom: 12 }}>
           <button
             type="button"
+            disabled={isAwaitingParent || isAlreadyUnderReview || isClosed}
             onClick={() => setActiveAction('endorse')}
+            title={isAwaitingParent ? 'Hồ sơ đang chờ phụ huynh bổ sung, chưa thể trình BGH' : undefined}
             style={{
               padding: '8px 16px',
               borderRadius: 10,
               fontWeight: 700,
               fontSize: 13,
-              cursor: 'pointer',
+              cursor: isAwaitingParent || isAlreadyUnderReview || isClosed ? 'not-allowed' : 'pointer',
+              opacity: isAwaitingParent || isAlreadyUnderReview || isClosed ? 0.5 : 1,
               border: activeAction === 'endorse' ? '2px solid #1E293B' : '2px solid transparent',
               backgroundColor: activeAction === 'endorse' ? '#DCFCE7' : '#F1F5F9',
               color: activeAction === 'endorse' ? '#14532D' : '#64748B',
@@ -238,13 +287,15 @@ export function StaffReviewTransferModal({
 
           <button
             type="button"
+            disabled={isAlreadyUnderReview || isClosed}
             onClick={() => setActiveAction('amendment')}
             style={{
               padding: '8px 16px',
               borderRadius: 10,
               fontWeight: 700,
               fontSize: 13,
-              cursor: 'pointer',
+              cursor: isAlreadyUnderReview || isClosed ? 'not-allowed' : 'pointer',
+              opacity: isAlreadyUnderReview || isClosed ? 0.5 : 1,
               border: activeAction === 'amendment' ? '2px solid #1E293B' : '2px solid transparent',
               backgroundColor: activeAction === 'amendment' ? '#FEF3C7' : '#F1F5F9',
               color: activeAction === 'amendment' ? '#92400E' : '#64748B',
@@ -254,7 +305,7 @@ export function StaffReviewTransferModal({
               gap: 6,
             }}
           >
-            <AlertCircle size={16} /> Hồ sơ chưa đủ / Yêu cầu bổ sung
+            <AlertCircle size={16} /> {isAwaitingParent ? 'Xem / Cập nhật yêu cầu bổ sung' : 'Hồ sơ chưa đủ / Yêu cầu bổ sung'}
           </button>
         </div>
 

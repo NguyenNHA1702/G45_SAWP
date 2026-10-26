@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -6,7 +6,6 @@ import {
   Clock,
   Download,
   FileText,
-  FileUp,
   GraduationCap,
   History,
   Info,
@@ -20,6 +19,7 @@ import { ChildSelectorPill } from '../../components/parent/ChildSelectorPill';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { classApi } from '../../services/implementations/classApi';
 import { ResubmitModal } from '../../components/requests/ResubmitModal';
+import { DirectFileUploader } from '../../components/common/DirectFileUploader';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
@@ -172,10 +172,24 @@ export default function AdministrativeRequestsPage() {
     }
   };
 
-  // Lọc các lớp đích phù hợp (khác lớp hiện tại của con)
-  const availableTargetClasses = classes.filter(
-    (c) => c.className !== activeChild?.currentClassName && c.status === 'Active'
-  );
+  // Xác định khối hiện tại của học sinh đang chọn
+  const currentChildGrade = useMemo(() => {
+    if (activeChild?.grade) return activeChild.grade;
+    const matchClass = classes.find(
+      (c) => c.className === activeChild?.currentClassName || (activeChild?.currentClassId && c.id === activeChild.currentClassId)
+    );
+    return matchClass?.grade ?? null;
+  }, [activeChild, classes]);
+
+  // Lọc các lớp đích phù hợp (CHỈ TRONG CÙNG KHỐI và khác lớp hiện tại của con)
+  const availableTargetClasses = useMemo(() => {
+    return classes.filter((c) => {
+      const isNotCurrent = c.className !== activeChild?.currentClassName && (activeChild?.currentClassId ? c.id !== activeChild.currentClassId : true);
+      const isActive = c.status === 'Active';
+      const isSameGrade = currentChildGrade != null ? c.grade === currentChildGrade : true;
+      return isNotCurrent && isActive && isSameGrade;
+    });
+  }, [classes, activeChild, currentChildGrade]);
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 20px 48px' }}>
@@ -803,16 +817,24 @@ export default function AdministrativeRequestsPage() {
                 onChange={(e) => setTargetClassId(Number(e.target.value))}
                 required
               >
-                <option value="">-- Chọn lớp mục tiêu --</option>
+                <option value="">-- Chọn lớp mục tiêu (Cùng Khối) --</option>
                 {availableTargetClasses.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.className} — Khối {c.grade} (Sức chứa tối đa: {c.capacity} học sinh)
                   </option>
                 ))}
               </select>
-              <span style={{ fontSize: 12, color: '#64748B', marginTop: 4, display: 'block' }}>
-                💡 Hệ thống sẽ tự động rà soát sĩ số lớp đích để đảm bảo không vượt quá định mức cho phép.
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#0369A1' }}>
+                <span>ℹ️</span>
+                <span>
+                  Quy định chuyển lớp: <strong>Chỉ chuyển trong cùng khối {currentChildGrade ? `(Khối ${currentChildGrade})` : ''}</strong>. Hệ thống đã tự động lọc các lớp phù hợp và sẽ kiểm tra sĩ số lớp tiếp nhận.
+                </span>
+              </div>
+              {availableTargetClasses.length === 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#B91C1C', fontWeight: 600 }}>
+                  ⚠️ Hiện không có lớp học nào khác cùng Khối {currentChildGrade ?? ''} để tiếp nhận chuyển lớp.
+                </div>
+              )}
             </div>
 
             <div>
@@ -829,22 +851,12 @@ export default function AdministrativeRequestsPage() {
               />
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
-                Tệp minh chứng đính kèm (Liên kết ảnh/PDF nếu có):
-              </label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  className="input"
-                  style={{ width: '100%', borderRadius: 10, padding: '10px 14px 10px 38px' }}
-                  value={transferAttachment}
-                  onChange={(e) => setTransferAttachment(e.target.value)}
-                  placeholder="Dán đường dẫn ảnh giấy tờ minh chứng hoặc file Drive..."
-                />
-                <FileUp size={18} color="#64748B" style={{ position: 'absolute', left: 12, top: 12 }} />
-              </div>
-            </div>
+            <DirectFileUploader
+              value={transferAttachment}
+              onChange={setTransferAttachment}
+              label="Tệp minh chứng đính kèm (Hình ảnh hoặc PDF, Word nếu có):"
+              hint="Tải ảnh giấy xác nhận nơi cư trú, đơn viết tay hoặc giấy tờ minh chứng để Giáo vụ thẩm định nhanh hơn."
+            />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 10 }}>
               <button
@@ -937,7 +949,7 @@ export default function AdministrativeRequestsPage() {
                 >
                   <option value="Giấy xác nhận học sinh đang theo học">Giấy xác nhận học sinh đang theo học</option>
                   <option value="Bảng điểm rèn luyện & học tập">Bảng điểm rèn luyện & học tập</option>
-                  <option value="Giấy giới thiệu chuyển trường">Giấy giới thiệu chuyển trường</option>
+                  <option value="Đơn xin chuyển trường">Đơn xin chuyển trường</option>
                   <option value="Giấy xác nhận hoàn thành chương trình">Giấy xác nhận hoàn thành chương trình</option>
                 </select>
               </div>
@@ -973,22 +985,12 @@ export default function AdministrativeRequestsPage() {
               />
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
-                Tệp đính kèm liên quan (Ảnh/Tài liệu tham chiếu nếu có):
-              </label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  className="input"
-                  style={{ width: '100%', borderRadius: 10, padding: '10px 14px 10px 38px' }}
-                  value={documentAttachment}
-                  onChange={(e) => setDocumentAttachment(e.target.value)}
-                  placeholder="Dán đường dẫn ảnh giấy tờ hoặc tệp minh chứng..."
-                />
-                <FileUp size={18} color="#64748B" style={{ position: 'absolute', left: 12, top: 12 }} />
-              </div>
-            </div>
+            <DirectFileUploader
+              value={documentAttachment}
+              onChange={setDocumentAttachment}
+              label="Tệp đính kèm liên quan (Ảnh mẫu giấy tờ/Tài liệu tham chiếu nếu có):"
+              hint="Tải biểu mẫu yêu cầu của cơ quan công tác hoặc tài liệu cần nhà trường xác nhận đóng dấu."
+            />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 10 }}>
               <button

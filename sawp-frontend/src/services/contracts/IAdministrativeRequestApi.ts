@@ -18,6 +18,7 @@ export interface IAdministrativeRequestApi {
   getRequestDetail(id: number): Promise<ApiResponse<AdministrativeRequestSummary>>;
   resubmitRequest(id: number, req: ResubmitRequest): Promise<ApiResponse<boolean>>;
   downloadIssuedDocument(id: number, fileName: string): Promise<void>;
+  uploadAttachment(file: File): Promise<ApiResponse<{ url: string; fileName: string; fileSize: number }>>;
 
   // Office Staff
   getOfficeRequests(requestType?: string, status?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>>;

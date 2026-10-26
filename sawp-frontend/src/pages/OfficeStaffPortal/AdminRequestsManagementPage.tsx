@@ -572,7 +572,33 @@ export default function AdminRequestsManagementPage() {
                             <UserCheck size={14} />
                             {executingId === req.id ? 'Đang thực thi...' : 'Áp dụng chuyển lớp ngay'}
                           </button>
-                        ) : req.status === 'Submitted' || req.requiresAmendment ? (
+                        ) : req.requiresAmendment ? (
+                          <button
+                            type="button"
+                            className="btn btn--outline"
+                            onClick={() => {
+                              if (isTransfer) {
+                                setSelectedTransferReq(req);
+                                setTransferModalOpen(true);
+                              } else {
+                                setSelectedDocReq(req);
+                                setDocModalOpen(true);
+                              }
+                            }}
+                            style={{
+                              fontSize: 12,
+                              padding: '6px 12px',
+                              borderColor: '#F59E0B',
+                              backgroundColor: '#FFFBEB',
+                              color: '#B45309',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                            }}
+                          >
+                            <AlertCircle size={14} color="#D97706" /> Chờ bổ sung
+                          </button>
+                        ) : req.status === 'Submitted' ? (
                           <button
                             type="button"
                             className="btn btn--primary"
