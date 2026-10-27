@@ -33,6 +33,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    // Contact Book (Sổ liên lạc điện tử)
+    public DbSet<ClassPost> ClassPosts => Set<ClassPost>();
+    public DbSet<PostAttachment> PostAttachments => Set<PostAttachment>();
+    public DbSet<PostComment> PostComments => Set<PostComment>();
+    public DbSet<PostReaction> PostReactions => Set<PostReaction>();
+    public DbSet<StudentEvaluation> StudentEvaluations => Set<StudentEvaluation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

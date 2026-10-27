@@ -12,6 +12,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Newspaper,
   School,
   Sparkles,
   User,
@@ -62,11 +63,23 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileCheck,
     roles: ['Teacher', 'SchoolBoard', 'Admin'],
   },
+  {
+    label: 'Sổ liên lạc lớp (WF6)',
+    path: '/teacher/contact-book',
+    icon: Newspaper,
+    roles: ['Teacher'],
+  },
   // --- WF1: Cổng phụ huynh theo dõi con ---
   {
     label: 'Hồ sơ các con (WF1)',
     path: '/parent/children',
     icon: HeartHandshake,
+    roles: ['Parent'],
+  },
+  {
+    label: 'Sổ liên lạc điện tử (WF6)',
+    path: '/parent/contact-book',
+    icon: Newspaper,
     roles: ['Parent'],
   },
   // --- Phụ huynh theo dõi chuyên cần (Chỉ Parent) ---

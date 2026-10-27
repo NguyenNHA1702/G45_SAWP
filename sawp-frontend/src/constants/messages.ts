@@ -308,6 +308,30 @@ export const SYSTEM_MESSAGES = {
     context: "Unexpected system error",
     content: "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.",
   },
+  MSG51: {
+    code: "MSG51",
+    messageType: "Toast (Success)",
+    context: "Class post published",
+    content: "Bài viết lớp học đã được đăng tải thành công.",
+  },
+  MSG52: {
+    code: "MSG52",
+    messageType: "Toast (Success)",
+    context: "Student evaluation submitted",
+    content: "Đã lưu và gửi phiếu nhận xét rèn luyện của học sinh.",
+  },
+  MSG53: {
+    code: "MSG53",
+    messageType: "Toast (Success)",
+    context: "Evaluation acknowledged",
+    content: "Đã xác nhận tiếp nhận thông tin và gửi phản hồi thành công.",
+  },
+  MSG54: {
+    code: "MSG54",
+    messageType: "Toast (Info)",
+    context: "Comments disabled",
+    content: "Bài viết này hiện đã tắt tính năng bình luận.",
+  },
 } as const;
 
 export type SystemMessageCode = keyof typeof SYSTEM_MESSAGES;
