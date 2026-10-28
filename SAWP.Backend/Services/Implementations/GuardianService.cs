@@ -491,7 +491,7 @@ public class GuardianService : IGuardianService
             IsServiceAvailable = lunchServiceDay != null && lunchServiceDay.IsServing,
             IsRegistered = lunchReg != null && lunchReg.IsActive,
             MealType = lunchReg?.MealType.ToString(),
-            CutoffTimeMessage = lunchServiceDay != null ? $"Hạn đăng ký/hủy: {lunchServiceDay.CutoffTime:HH:mm}" : "Không có lịch phục vụ"
+            CutoffTimeMessage = lunchServiceDay != null ? $"Hạn đăng ký/hủy: {lunchServiceDay.CutoffTime:hh\\:mm}" : "Không có lịch phục vụ"
         };
 
         var studentProfileDto = new StudentProfileDto

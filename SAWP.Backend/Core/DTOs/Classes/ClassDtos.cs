@@ -67,6 +67,7 @@ public class InitializeBatchClassesDto
 public class AssignTeacherDto
 {
     public int StaffProfileId { get; set; }
+    public int? TeacherUserId { get; set; }
     public DateTime? EffectiveDate { get; set; }
 }
 

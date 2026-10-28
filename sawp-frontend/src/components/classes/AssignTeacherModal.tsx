@@ -52,16 +52,20 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
 
     setSubmitting(true);
     try {
-      const res = await classApi.assignHomeroomTeacher(targetClass.id, selectedUserId);
+      const selectedTeacher = teachers.find((t) => t.userId === selectedUserId);
+      const staffProfileId = selectedTeacher?.staffProfileId || selectedTeacher?.staffId;
+      const res = await classApi.assignHomeroomTeacher(targetClass.id, selectedUserId, staffProfileId);
       if (res.success) {
         toast.success(`Phân công GVCN cho lớp ${targetClass.className} thành công!`);
         onAssigned();
         onClose();
       } else {
-        toast.error(res.message || 'Phân công thất bại.');
+        const errorMsg = res.errors?.[0] || res.message || 'Phân công thất bại.';
+        toast.error(errorMsg);
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi phân công giáo viên chủ nhiệm.');
+      const serverError = err.response?.data?.errors?.[0] || err.response?.data?.message || 'Lỗi khi phân công giáo viên chủ nhiệm.';
+      toast.error(serverError);
     } finally {
       setSubmitting(false);
     }
@@ -97,14 +101,17 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
               onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : undefined)}
             >
               <option value="">-- Chọn giáo viên --</option>
-              {teachers.map((t) => (
-                <option key={t.userId} value={t.userId}>
-                  {t.fullName} ({t.email})
-                  {t.currentAssignedClass
-                    ? ` - Đang CN lớp: ${t.currentAssignedClass}`
-                    : ' - Chưa chủ nhiệm lớp nào'}
-                </option>
-              ))}
+              {teachers.map((t) => {
+                const assignedClass = t.currentHomeroomClassName || t.currentAssignedClass;
+                return (
+                  <option key={t.userId} value={t.userId}>
+                    {t.fullName} ({t.email})
+                    {assignedClass
+                      ? ` - Đang CN lớp: ${assignedClass}`
+                      : ' - Chưa chủ nhiệm lớp nào'}
+                  </option>
+                );
+              })}
             </select>
           </div>
         )}
