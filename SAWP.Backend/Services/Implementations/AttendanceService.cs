@@ -471,12 +471,14 @@ public class AttendanceService : IAttendanceService
             if (relevantStudentIds.Count > 0)
             {
                 var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(relevantStudentIds, targetDate, track: true, ct);
-                var cutoff = _options.LunchCutoff;
+                var serviceDay = (await _unitOfWork.Repository<LunchServiceDay>().FindAsync(d => d.Date == targetDate, ct)).FirstOrDefault();
+                var cutoff = (serviceDay != null && serviceDay.CutoffTime != TimeSpan.Zero) ? serviceDay.CutoffTime : _options.LunchCutoff;
+                var isMealLocked = serviceDay?.IsLocked ?? false;
 
-                // Hủy suất ăn CHỈ cho HS mới chuyển sang vắng có phép
+                // Hủy suất ăn CHỈ cho HS mới chuyển sang vắng có phép (nếu trước giờ chốt và chưa khóa sổ bếp)
                 foreach (var id in newlyExcused)
                 {
-                    if (lunchRegs.TryGetValue(id, out var r) && r.IsActive)
+                    if (lunchRegs.TryGetValue(id, out var r) && r.IsActive && !isMealLocked && now <= targetDate.Add(cutoff))
                     {
                         r.IsActive = false;
                         r.CancellationSource = LunchCancellationSource.Attendance;
@@ -503,7 +505,7 @@ public class AttendanceService : IAttendanceService
                             result.Warnings.Add($"{studentName}: có đơn nghỉ đã hủy suất ăn nhưng thực tế đi học.");
                         }
 
-                        if (now.TimeOfDay < cutoff)
+                        if (!isMealLocked && now.TimeOfDay < cutoff)
                         {
                             r.IsActive = true;
                             r.CancellationSource = null;
@@ -515,7 +517,7 @@ public class AttendanceService : IAttendanceService
                         else
                         {
                             result.LunchRestoreSkippedCount++;
-                            result.Warnings.Add($"{studentName}: Bếp đã chốt suất lúc {_options.LunchCutoffTime}, không khôi phục được suất ăn.");
+                            result.Warnings.Add($"{studentName}: Bếp đã chốt suất lúc {cutoff:hh\\:mm}, không khôi phục được suất ăn.");
                         }
                     }
                 }
