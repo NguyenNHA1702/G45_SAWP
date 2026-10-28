@@ -60,16 +60,21 @@ export interface UpdateClassDto {
 
 export interface TeacherOptionDto {
   userId: number;
-  staffId: number;
+  staffProfileId?: number;
+  staffId?: number;
   fullName: string;
   email: string;
   phone?: string;
+  currentHomeroomClassName?: string;
   currentAssignedClass?: string;
-  isAvailable: boolean;
+  hasActiveHomeroom?: boolean;
+  isAvailable?: boolean;
 }
 
 export interface AssignTeacherDto {
-  teacherUserId: number;
+  staffProfileId?: number;
+  teacherUserId?: number;
+  effectiveDate?: string;
 }
 
 export interface AssignStudentsDto {

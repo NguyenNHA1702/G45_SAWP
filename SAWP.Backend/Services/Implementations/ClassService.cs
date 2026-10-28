@@ -532,7 +532,17 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
         }
 
-        var teacherProfile = await _unitOfWork.Repository<StaffProfile>().GetByIdAsync(request.StaffProfileId, cancellationToken);
+        int targetStaffProfileId = request.StaffProfileId;
+        if (targetStaffProfileId <= 0 && request.TeacherUserId.HasValue)
+        {
+            var staffByUserId = (await _unitOfWork.Repository<StaffProfile>().FindAsync(s => s.UserId == request.TeacherUserId.Value, cancellationToken)).FirstOrDefault();
+            if (staffByUserId != null)
+            {
+                targetStaffProfileId = staffByUserId.Id;
+            }
+        }
+
+        var teacherProfile = await _unitOfWork.Repository<StaffProfile>().GetByIdAsync(targetStaffProfileId, cancellationToken);
         if (teacherProfile == null)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy hồ sơ giáo viên." });
@@ -541,7 +551,7 @@ public class ClassService : IClassService
         // BR-16: A class may have at most one active primary Teacher assignment for the same effective period.
         // Check if this teacher is already assigned to another class in this school year
         var hasConflict = await _unitOfWork.Classes.IsTeacherAssignedToActiveHomeroomAsync(
-            request.StaffProfileId,
+            targetStaffProfileId,
             targetClass.SchoolYearId,
             classId,
             cancellationToken);
@@ -552,7 +562,7 @@ public class ClassService : IClassService
         }
 
         var priorTeacherId = targetClass.HomeroomTeacherId;
-        targetClass.HomeroomTeacherId = request.StaffProfileId;
+        targetClass.HomeroomTeacherId = targetStaffProfileId;
         teacherProfile.IsHomeroomTeacher = true;
 
         await _unitOfWork.Classes.UpdateAsync(targetClass, cancellationToken);

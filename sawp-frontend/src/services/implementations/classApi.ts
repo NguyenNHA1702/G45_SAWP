@@ -77,8 +77,11 @@ export const classApi = {
     return res.data;
   },
 
-  async assignHomeroomTeacher(classId: number, teacherUserId: number): Promise<ApiResponse<boolean>> {
-    const payload: AssignTeacherDto = { teacherUserId };
+  async assignHomeroomTeacher(classId: number, teacherUserId: number, staffProfileId?: number): Promise<ApiResponse<boolean>> {
+    const payload: AssignTeacherDto = { 
+      teacherUserId,
+      staffProfileId: staffProfileId ?? teacherUserId
+    };
     const res = await apiClient.post<ApiResponse<boolean>>(`/classes/${classId}/assign-homeroom-teacher`, payload);
     return res.data;
   },
