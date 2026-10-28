@@ -70,7 +70,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: HeartHandshake,
     roles: ['Parent'],
   },
-  // --- Phụ huynh theo dõi chuyên cần (Chỉ Parent) ---
+  // --- Phụ huynh theo dõi chuyên cần & bán trú (Chỉ Parent) ---
+  {
+    label: 'Đăng ký bán trú',
+    path: '/parent/lunch',
+    icon: UtensilsCrossed,
+    roles: ['Parent'],
+  },
   {
     label: 'Đơn xin nghỉ học',
     path: '/parent/leave-requests',
@@ -89,12 +95,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileCheck,
     roles: ['Parent'],
   },
-  // --- Bếp ăn bán trú (Chỉ ServiceStaff) ---
+  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard xem theo quyền) ---
   {
     label: 'Báo cáo suất ăn Bếp',
     path: '/service/headcount',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff'],
+    roles: ['ServiceStaff', 'OfficeStaff', 'SchoolBoard', 'Admin'],
   },
   // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
   {
