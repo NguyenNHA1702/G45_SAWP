@@ -195,8 +195,8 @@ public class AuthService : IAuthService
     {
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-            .Include(u => u.StaffProfile).ThenInclude(sp => sp.HomeroomClasses)
-            .Include(u => u.Guardian).ThenInclude(g => g.StudentGuardians).ThenInclude(sg => sg.Student).ThenInclude(s => s.ClassAssignments).ThenInclude(ca => ca.Class)
+            .Include(u => u.StaffProfile)!.ThenInclude(sp => sp!.HomeroomClasses)
+            .Include(u => u.Guardian)!.ThenInclude(g => g!.StudentGuardians).ThenInclude(sg => sg.Student).ThenInclude(s => s.ClassAssignments).ThenInclude(ca => ca.Class)
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
 
         if (user == null)

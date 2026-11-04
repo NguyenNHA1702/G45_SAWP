@@ -14,6 +14,7 @@ import {
   LogOut,
   School,
   Sparkles,
+  User,
   Users,
   UtensilsCrossed,
   ShieldCheck,
@@ -221,9 +222,21 @@ export function MainLayout() {
     'kitchen-reports': true,
   });
 
-  // Lấy thông tin user hiện tại từ localStorage
-  const userJson = localStorage.getItem(USER_KEY);
-  const currentUser = userJson ? JSON.parse(userJson) : null;
+  // Lấy thông tin user hiện tại từ localStorage và phản hồi khi cập nhật hồ sơ
+  const [currentUser, setCurrentUser] = useState(() => {
+    const userJson = localStorage.getItem(USER_KEY);
+    return userJson ? JSON.parse(userJson) : null;
+  });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const userJson = localStorage.getItem(USER_KEY);
+      setCurrentUser(userJson ? JSON.parse(userJson) : null);
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const userRoles: string[] = currentUser?.roles ?? [];
 
   const isChildActive = (targetPathWithQuery: string) => {
@@ -406,7 +419,12 @@ export function MainLayout() {
           </nav>
 
           <div className="sidebar-footer">
-            <div className="user-card card">
+            <div
+              className="user-card card"
+              onClick={() => navigate('/profile')}
+              style={{ cursor: 'pointer' }}
+              title="Xem và chỉnh sửa hồ sơ cá nhân"
+            >
               <div className="user-avatar" aria-hidden="true">
                 {currentUser?.fullName?.[0]?.toUpperCase() ?? 'U'}
               </div>
@@ -423,6 +441,15 @@ export function MainLayout() {
             </div>
 
             <div className="sidebar-actions">
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => navigate('/profile')}
+                title="Quản lý hồ sơ cá nhân"
+              >
+                <User size={14} />
+                <span>Hồ sơ cá nhân</span>
+              </button>
               <button
                 type="button"
                 className="btn btn--secondary btn--sm"
@@ -570,7 +597,12 @@ export function MainLayout() {
               </div>
 
               {/* User greeting */}
-              <div className="header-user">
+              <div
+                className="header-user"
+                onClick={() => navigate('/profile')}
+                style={{ cursor: 'pointer' }}
+                title="Xem và chỉnh sửa hồ sơ cá nhân"
+              >
                 <div className="header-avatar" aria-hidden="true">
                   {currentUser?.fullName?.[0]?.toUpperCase() ?? 'U'}
                 </div>
