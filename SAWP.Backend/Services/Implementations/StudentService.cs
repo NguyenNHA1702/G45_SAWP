@@ -545,6 +545,8 @@ public class StudentService : IStudentService
     {
         var activeAssignment = student.ClassAssignments.FirstOrDefault(ca => ca.IsActive);
         var activeClass = activeAssignment?.Class;
+        var primaryGuardian = student.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Guardian
+                              ?? student.StudentGuardians.FirstOrDefault()?.Guardian;
 
         return new StudentProfileDto
         {
@@ -556,6 +558,7 @@ public class StudentService : IStudentService
             EnrollmentDate = student.EnrollmentDate,
             Status = student.Status,
             AvatarUrl = student.AvatarUrl,
+            Address = student.ResidentialArea ?? primaryGuardian?.Address,
             ResidentialArea = student.ResidentialArea,
             IsSpecialNeeds = student.IsSpecialNeeds,
             SpecialNeedsNotes = student.SpecialNeedsNotes,
@@ -564,6 +567,9 @@ public class StudentService : IStudentService
             CurrentGrade = activeClass?.Grade,
             CurrentRoomNumber = activeClass?.RoomNumber,
             HomeroomTeacherName = activeClass?.HomeroomTeacher?.User?.FullName,
+            PrimaryGuardianName = primaryGuardian?.User?.FullName,
+            PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
+            GuardiansCount = student.StudentGuardians.Count,
             CreatedAt = student.CreatedAt,
             Guardians = student.StudentGuardians.Select(sg => new StudentGuardianItemDto
             {

@@ -608,6 +608,124 @@ public static class DbInitializer
         }
 
         // ====================================================================
+        // 6.1 TỰ ĐỘNG KHỞI TẠO PHỤ HUYNH & SĐT LIÊN HỆ CHO TẤT CẢ HỌC SINH
+        // ====================================================================
+        var allStudents = await context.Students.Include(s => s.StudentGuardians).ToListAsync();
+        var parentRoleId = rolesMap[UserRoles.Parent.ToString()];
+
+        var fatherNamesList = new[] { "Văn Hùng", "Quốc Tuấn", "Minh Trí", "Đức Thắng", "Hoàng Long", "Thanh Hải", "Tiến Đạt", "Gia Huy", "Thành Nam", "Văn Minh" };
+        var motherNamesList = new[] { "Nguyễn Thị Mai", "Trần Thị Lan", "Lê Thị Hương", "Phạm Mỹ Hạnh", "Hoàng Thúy Nga", "Vũ Ngọc Bích", "Đỗ Thanh Thảo", "Bùi Kim Ngân", "Phan Cẩm Tú", "Dương Thảo Trang" };
+        var occupations1 = new[] { "Kỹ sư phần mềm", "Bác sĩ đa khoa", "Giáo viên", "Kinh doanh tự do", "Kế toán trưởng", "Kiến trúc sư", "Chuyên viên ngân hàng", "Công chức nhà nước" };
+        var occupations2 = new[] { "Giáo viên", "Dược sĩ", "Kế toán viên", "Nhân viên văn phòng", "Bác sĩ nha khoa", "Quản lý nhân sự", "Chuyên viên tư vấn", "Kinh doanh" };
+
+        for (int idx = 0; idx < allStudents.Count; idx++)
+        {
+            var st = allStudents[idx];
+            var codeLower = st.StudentCode.ToLowerInvariant();
+            var surname = st.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Nguyễn";
+
+            // 1. Phụ huynh chính (Bố/Mẹ)
+            if (!st.StudentGuardians.Any(sg => sg.IsPrimaryContact))
+            {
+                var username = $"ph_{codeLower}";
+                var email = $"parent_{codeLower}@sawp.edu.vn";
+                var fatherFullName = $"{surname} {fatherNamesList[idx % fatherNamesList.Length]}";
+                var phone = $"09{(10 + (idx % 70)):D2}{(123450 + idx * 77):D6}";
+                var cccd = $"001090{(100000 + idx * 2):D6}";
+                var occ = occupations1[idx % occupations1.Length];
+                var addr = $"{12 + idx} Đường số {1 + (idx % 12)}, {st.ResidentialArea ?? "Phường Bến Nghé"}, TP. Hồ Chí Minh";
+
+                var user = await context.Users.FirstOrDefaultAsync(u => u.Username == username);
+                if (user == null)
+                {
+                    user = new User
+                    {
+                        Username = username,
+                        Email = email,
+                        PasswordHash = defaultPasswordHash,
+                        FullName = fatherFullName,
+                        PhoneNumber = phone,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.Users.Add(user);
+                    await context.SaveChangesAsync();
+
+                    context.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = parentRoleId, AssignedAt = DateTime.UtcNow });
+                    var guardian = new Guardian
+                    {
+                        UserId = user.Id,
+                        IdentityCardNumber = cccd,
+                        Occupation = occ,
+                        Address = addr,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.Guardians.Add(guardian);
+                    await context.SaveChangesAsync();
+
+                    context.StudentGuardians.Add(new StudentGuardian
+                    {
+                        StudentId = st.Id,
+                        GuardianId = guardian.Id,
+                        Relationship = RelationshipTypes.Father,
+                        IsPrimaryContact = true
+                    });
+                    await context.SaveChangesAsync();
+                }
+            }
+
+            // 2. Phụ huynh liên hệ khẩn cấp (Mẹ/Bố)
+            if (!st.StudentGuardians.Any(sg => !sg.IsPrimaryContact))
+            {
+                var username2 = $"ph2_{codeLower}";
+                var email2 = $"emergency_{codeLower}@sawp.edu.vn";
+                var motherFullName = motherNamesList[idx % motherNamesList.Length];
+                var phone2 = $"098{(234500 + idx * 89):D7}";
+                var cccd2 = $"001090{(100001 + idx * 2):D6}";
+                var occ2 = occupations2[(idx + 3) % occupations2.Length];
+                var addr = $"{12 + idx} Đường số {1 + (idx % 12)}, {st.ResidentialArea ?? "Phường Bến Nghé"}, TP. Hồ Chí Minh";
+
+                var user2 = await context.Users.FirstOrDefaultAsync(u => u.Username == username2);
+                if (user2 == null)
+                {
+                    user2 = new User
+                    {
+                        Username = username2,
+                        Email = email2,
+                        PasswordHash = defaultPasswordHash,
+                        FullName = motherFullName,
+                        PhoneNumber = phone2,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.Users.Add(user2);
+                    await context.SaveChangesAsync();
+
+                    context.UserRoles.Add(new UserRole { UserId = user2.Id, RoleId = parentRoleId, AssignedAt = DateTime.UtcNow });
+                    var guardian2 = new Guardian
+                    {
+                        UserId = user2.Id,
+                        IdentityCardNumber = cccd2,
+                        Occupation = occ2,
+                        Address = addr,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.Guardians.Add(guardian2);
+                    await context.SaveChangesAsync();
+
+                    context.StudentGuardians.Add(new StudentGuardian
+                    {
+                        StudentId = st.Id,
+                        GuardianId = guardian2.Id,
+                        Relationship = RelationshipTypes.Mother,
+                        IsPrimaryContact = false
+                    });
+                    await context.SaveChangesAsync();
+                }
+            }
+        }
+
+        // ====================================================================
         // 7. MẪU ĐƠN NGHỈ PHÉP (Đã tắt để người dùng tự tạo đơn từ đầu)
         // ====================================================================
         /*
