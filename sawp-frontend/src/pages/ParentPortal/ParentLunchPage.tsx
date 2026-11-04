@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  GraduationCap,
   Info,
   PlusCircle,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   Soup,
   Sparkles,
   Trash2,
+  Users,
   UtensilsCrossed,
   XCircle,
 } from 'lucide-react';
@@ -45,6 +47,18 @@ const SOURCE_LABELS: Record<string, string> = {
 
 function toDateKey(isoOrDate: string): string {
   return isoOrDate.slice(0, 10);
+}
+
+function cleanText(text?: string | null): string {
+  if (!text) return '';
+  return text
+    .replace(/Thá»±c Ä‘Æ¡n/g, 'Thực đơn')
+    .replace(/CÆ¡m sÆ°á»\s*n/g, 'Cơm sườn')
+    .replace(/Trá»©ng/g, 'Trứng')
+    .replace(/cuá»™n/g, 'cuộn')
+    .replace(/ngÅ© sáº¯c/g, 'ngũ sắc')
+    .replace(/bÃ\s*sÆ°á»\s*n/g, 'bí sườn')
+    .replace(/Chuá»‘i tiÃªu/g, 'Chuối tiêu');
 }
 
 export default function ParentLunchPage() {
@@ -232,9 +246,19 @@ export default function ParentLunchPage() {
       <header className="page-header" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <span className="badge badge--pink" style={{ marginBottom: 8 }}>
-              <Sparkles size={14} /> Cổng Phụ Huynh — Bán Trú RP3
-            </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+              <span
+                className="badge badge--mint"
+                style={{
+                  border: '2px solid var(--color-fg)',
+                  padding: '5px 14px',
+                  fontWeight: 800,
+                  borderRadius: 'var(--radius-full)',
+                }}
+              >
+                <Sparkles size={14} /> Cổng Phụ Huynh Bán Trú
+              </span>
+            </div>
             <h1 style={{ margin: '4px 0 8px' }}>
               Lịch & Đăng Ký <span className="squiggle">Bán Trú Của Con</span>
             </h1>
@@ -243,19 +267,42 @@ export default function ParentLunchPage() {
             </p>
           </div>
 
-          {/* Controls: Child selector + Month picker + Refresh */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+          {/* Controls: Capsule Child selector + Month picker + Refresh Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {children.length > 1 && (
-              <div className="field" style={{ minWidth: 200 }}>
-                <label className="label" htmlFor="parent-lunch-child">Học sinh</label>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: '#FFFFFF',
+                  border: '2px solid var(--color-fg)',
+                  borderRadius: 'var(--radius-full)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  padding: '6px 14px 6px 16px',
+                  height: 42,
+                  boxSizing: 'border-box',
+                }}
+              >
+                <Users size={16} color="var(--color-accent)" style={{ flexShrink: 0 }} />
                 <select
                   id="parent-lunch-child"
-                  className="select"
                   value={studentId}
                   onChange={(e) => {
                     const nextId = Number(e.target.value);
                     selectChild(nextId);
                     setParams({ studentId: String(nextId), month });
+                  }}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    color: 'var(--color-fg)',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    padding: 0,
                   }}
                 >
                   {children.map((c) => (
@@ -267,29 +314,67 @@ export default function ParentLunchPage() {
               </div>
             )}
 
-            <div className="field" style={{ minWidth: 165 }}>
-              <label className="label" htmlFor="parent-lunch-month">Tháng phục vụ</label>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                background: '#FFFFFF',
+                border: '2px solid var(--color-fg)',
+                borderRadius: 'var(--radius-full)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                padding: '6px 14px 6px 16px',
+                height: 42,
+                boxSizing: 'border-box',
+              }}
+            >
+              <Calendar size={16} color="var(--color-accent)" style={{ flexShrink: 0 }} />
               <input
                 id="parent-lunch-month"
                 type="month"
-                className="input"
                 value={month}
                 onChange={(e) => {
                   setMonth(e.target.value);
                   setParams({ studentId: String(studentId), month: e.target.value });
                 }}
-                style={{ fontWeight: 700 }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  fontWeight: 800,
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--color-fg)',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  padding: 0,
+                }}
               />
             </div>
 
             <button
               type="button"
-              className="btn btn--secondary"
+              className="btn"
               onClick={fetchSchedule}
               disabled={loading}
               title="Làm mới lịch bán trú"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                background: '#FFFFFF',
+                color: 'var(--color-fg)',
+                fontWeight: 800,
+                fontSize: 'var(--fs-sm)',
+                padding: '0 18px',
+                height: 42,
+                boxSizing: 'border-box',
+                cursor: loading ? 'not-allowed' : 'pointer',
+              }}
             >
-              <RefreshCw size={16} className={loading ? 'spin' : ''} />
+              <RefreshCw size={15} className={loading ? 'spin' : ''} />
               Làm mới
             </button>
           </div>
@@ -298,11 +383,14 @@ export default function ParentLunchPage() {
 
       {/* Banner Quy tắc Địa phương Tân Lập A */}
       <div
-        className="card card--featured"
+        className="card"
         style={{
           marginBottom: 28,
-          padding: '16px 22px',
-          background: 'var(--color-tertiary-soft)',
+          padding: '18px 24px',
+          background: '#FFFDF5',
+          border: '2px solid var(--color-fg)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '4px 4px 0 0 var(--color-fg)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -317,8 +405,8 @@ export default function ParentLunchPage() {
               height: 44,
               borderRadius: '50%',
               background: 'var(--color-tertiary)',
-              border: 'var(--border)',
-              boxShadow: 'var(--shadow-pop-active)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '2px 2px 0 0 var(--color-fg)',
               display: 'grid',
               placeItems: 'center',
               flexShrink: 0,
@@ -331,7 +419,16 @@ export default function ParentLunchPage() {
               <strong style={{ fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)' }}>
                 Quy định Chốt suất ăn Bán trú — Trường Tiểu học Tân Lập A
               </strong>
-              <span className="badge badge--amber">Mốc chốt: {LUNCH_CUTOFF_LABEL} mỗi ngày</span>
+              <span
+                className="badge badge--amber"
+                style={{
+                  border: '1.5px solid var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '3px 10px',
+                }}
+              >
+                Mốc chốt: {LUNCH_CUTOFF_LABEL} mỗi ngày
+              </span>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
               • Đăng ký mới (UC-29) hoặc hủy trực tiếp (UC-30) cần thực hiện trước <strong>{LUNCH_CUTOFF_LABEL}</strong> của ngày phục vụ.<br />
@@ -343,17 +440,45 @@ export default function ParentLunchPage() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
-            className="btn btn--secondary btn--sm"
+            className="btn"
             onClick={handleSelectAllOpen}
             disabled={openSelectableDates.length === 0}
+            style={{
+              borderRadius: 'var(--radius-full)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '2.5px 2.5px 0 0 var(--color-fg)',
+              background: '#FFFFFF',
+              color: 'var(--color-fg)',
+              fontWeight: 800,
+              fontSize: 'var(--fs-sm)',
+              padding: '8px 18px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              cursor: openSelectableDates.length === 0 ? 'not-allowed' : 'pointer',
+            }}
           >
             <Check size={15} /> Chọn tất cả ngày còn mở ({openSelectableDates.length})
           </button>
           {selectedDates.length > 0 && (
             <button
               type="button"
-              className="btn btn--primary btn--sm"
+              className="btn"
               onClick={() => setShowRegisterModal(true)}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                fontWeight: 800,
+                fontSize: 'var(--fs-sm)',
+                padding: '8px 20px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+              }}
             >
               <PlusCircle size={15} /> Đăng ký ngay ({selectedDates.length} ngày)
             </button>
@@ -372,7 +497,17 @@ export default function ParentLunchPage() {
             paddingTop: 12,
           }}
         >
-          <div className="card card--hover" style={{ position: 'relative', paddingTop: 26 }}>
+          <div
+            className="card"
+            style={{
+              position: 'relative',
+              paddingTop: 28,
+              background: '#FFFFFF',
+              border: '2px solid var(--color-fg)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '4px 4px 0 0 var(--color-fg)',
+            }}
+          >
             <div
               style={{
                 position: 'absolute',
@@ -382,24 +517,34 @@ export default function ParentLunchPage() {
                 height: 38,
                 borderRadius: '50%',
                 background: 'var(--color-tertiary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
                 display: 'grid',
                 placeItems: 'center',
               }}
             >
-              <Calendar size={18} color="var(--color-fg)" />
+              <GraduationCap size={18} color="var(--color-fg)" />
             </div>
-            <div className="label">Học sinh đang xem</div>
-            <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, fontFamily: 'var(--font-heading)', marginTop: 4 }}>
+            <div className="label" style={{ fontWeight: 800 }}>HỌC SINH ĐANG XEM</div>
+            <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 900, fontFamily: 'var(--font-heading)', marginTop: 4 }}>
               {schedule.studentName}
             </div>
-            <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
               Mã HS: <strong>{schedule.studentCode}</strong> — Lớp: <strong>{schedule.className}</strong>
             </p>
           </div>
 
-          <div className="card card--hover" style={{ position: 'relative', paddingTop: 26 }}>
+          <div
+            className="card"
+            style={{
+              position: 'relative',
+              paddingTop: 28,
+              background: '#FFFFFF',
+              border: '2px solid var(--color-fg)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '4px 4px 0 0 var(--color-fg)',
+            }}
+          >
             <div
               style={{
                 position: 'absolute',
@@ -409,27 +554,34 @@ export default function ParentLunchPage() {
                 height: 38,
                 borderRadius: '50%',
                 background: 'var(--color-accent)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
                 display: 'grid',
                 placeItems: 'center',
               }}
             >
               <UtensilsCrossed size={18} color="#FFFFFF" />
             </div>
-            <div className="label">Ngày nhà trường phục vụ</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>
+            <div className="label" style={{ fontWeight: 800 }}>NGÀY NHÀ TRƯỜNG PHỤC VỤ</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>
               {schedule.totalServingDays}{' '}
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>ngày</span>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--color-muted-fg)' }}>ngày</span>
             </div>
-            <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-              Còn {openSelectableDates.length} ngày đang mở đăng ký
+            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+              Còn <strong>{openSelectableDates.length}</strong> ngày đang mở đăng ký
             </p>
           </div>
 
           <div
-            className="card card--featured card--hover"
-            style={{ position: 'relative', paddingTop: 26, background: 'var(--color-quaternary-soft)' }}
+            className="card"
+            style={{
+              position: 'relative',
+              paddingTop: 28,
+              background: '#ECFDF5',
+              border: '2px solid var(--color-fg)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '4px 4px 0 0 var(--color-fg)',
+            }}
           >
             <div
               style={{
@@ -440,25 +592,35 @@ export default function ParentLunchPage() {
                 height: 38,
                 borderRadius: '50%',
                 background: 'var(--color-quaternary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
                 display: 'grid',
                 placeItems: 'center',
               }}
             >
               <Soup size={18} color="var(--color-fg)" />
             </div>
-            <div className="label" style={{ color: '#047857' }}>Đã đăng ký còn hiệu lực</div>
+            <div className="label" style={{ color: '#047857', fontWeight: 800 }}>ĐÃ ĐĂNG KÝ CÒN HIỆU LỰC</div>
             <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, color: '#065f46', fontFamily: 'var(--font-heading)' }}>
               {schedule.totalRegisteredDays}{' '}
               <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: '#047857' }}>suất ăn</span>
             </div>
-            <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 600 }}>
+            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 600 }}>
               Mỗi ngày là 1 bản ghi đăng ký độc lập
             </p>
           </div>
 
-          <div className="card card--hover" style={{ position: 'relative', paddingTop: 26 }}>
+          <div
+            className="card"
+            style={{
+              position: 'relative',
+              paddingTop: 28,
+              background: '#FFF1F2',
+              border: '2px solid var(--color-fg)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '4px 4px 0 0 var(--color-fg)',
+            }}
+          >
             <div
               style={{
                 position: 'absolute',
@@ -468,20 +630,20 @@ export default function ParentLunchPage() {
                 height: 38,
                 borderRadius: '50%',
                 background: 'var(--color-secondary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
                 display: 'grid',
                 placeItems: 'center',
               }}
             >
               <XCircle size={18} color="#FFFFFF" />
             </div>
-            <div className="label">Suất đã hủy trong tháng</div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: '#e11d48', fontFamily: 'var(--font-heading)' }}>
+            <div className="label" style={{ color: '#E11D48', fontWeight: 800 }}>SUẤT ĐÃ HỦY TRONG THÁNG</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, color: '#e11d48', fontFamily: 'var(--font-heading)' }}>
               {schedule.totalCancelledDays}{' '}
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>ngày</span>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--color-muted-fg)' }}>ngày</span>
             </div>
-            <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
               Gồm PH hủy trực tiếp & tự hủy từ đơn nghỉ
             </p>
           </div>
@@ -491,22 +653,34 @@ export default function ParentLunchPage() {
       {/* Selection Bar when dates are picked */}
       {selectedDates.length > 0 && (
         <div
-          className="card"
+          className="card pop-in"
           style={{
             marginBottom: 24,
-            padding: '14px 20px',
-            background: '#F5F3FF',
-            borderColor: 'var(--color-accent)',
+            padding: '16px 24px',
+            background: '#FAF5FF',
+            border: '2px solid var(--color-accent)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: '4px 4px 0 0 var(--color-fg)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: 12,
+            gap: 16,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span className="badge badge--violet">Đang chọn {selectedDates.length} ngày</span>
-            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span
+              className="badge badge--violet"
+              style={{
+                border: '1.5px solid var(--color-fg)',
+                fontWeight: 800,
+                padding: '4px 12px',
+                fontSize: 'var(--fs-sm)',
+              }}
+            >
+              Đang chọn {selectedDates.length} ngày
+            </span>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--color-fg)' }}>
               {selectedDates
                 .slice(0, 6)
                 .map((d) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }))
@@ -516,52 +690,119 @@ export default function ParentLunchPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" className="btn btn--secondary btn--sm" onClick={handleClearSelection}>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleClearSelection}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                fontWeight: 700,
+                fontSize: 'var(--fs-sm)',
+                padding: '8px 18px',
+                background: '#FFFFFF',
+                color: 'var(--color-fg)',
+                cursor: 'pointer',
+              }}
+            >
               Bỏ chọn
             </button>
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => setShowRegisterModal(true)}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowRegisterModal(true)}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                fontWeight: 800,
+                fontSize: 'var(--fs-sm)',
+                padding: '8px 22px',
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+              }}
+            >
               <CheckCircle2 size={16} /> Xác nhận đăng ký ({selectedDates.length} ngày)
             </button>
           </div>
         </div>
       )}
 
-      {/* Calendar Grid (UC-29, UC-30, UC-31) */}
-      <div className="card" style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+      {/* Calendar Grid (UC-29, UC-30, UC-31) - Refactored for clean scannability */}
+      <div
+        className="card"
+        style={{
+          marginBottom: 28,
+          border: '2px solid var(--color-fg)',
+          boxShadow: '4px 4px 0 0 var(--color-fg)',
+          borderRadius: 'var(--radius-lg)',
+          background: '#FFFFFF',
+          padding: '24px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
           <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: 'var(--fs-lg)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Calendar size={20} color="var(--color-accent)" />
+            <Calendar size={22} color="var(--color-accent)" />
             Lịch Phục Vụ Bán Trú Tháng {month}
           </h3>
 
-          {/* Legend */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 'var(--fs-xs)' }}>
-            <span className="badge badge--mint">Đã đăng ký</span>
-            <span className="badge badge--violet">Đang chọn đăng ký</span>
-            <span className="badge badge--amber">Còn mở (bấm để chọn)</span>
-            <span className="badge badge--pink">Đã hủy</span>
-            <span className="badge badge--muted">Nghỉ / Đã chốt {LUNCH_CUTOFF_LABEL}</span>
+          {/* Legend with crisp Neo-Brutalist borders */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 'var(--fs-xs)' }}>
+            <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+              ✓ Đã đăng ký
+            </span>
+            <span className="badge badge--violet" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+              Đang chọn
+            </span>
+            <span
+              className="badge"
+              style={{
+                border: '1.5px solid var(--color-fg)',
+                background: '#FAF5FF',
+                color: 'var(--color-accent)',
+                fontWeight: 800,
+              }}
+            >
+              + Còn mở
+            </span>
+            <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+              Đã hủy
+            </span>
+            <span className="badge badge--muted" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+              Nghỉ / Đã chốt {LUNCH_CUTOFF_LABEL}
+            </span>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10 }}>
-          {['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'].map((dow) => (
+        {/* Day of Week Headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
+          {['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'].map((dow, i) => (
             <div
               key={dow}
               style={{
                 textAlign: 'center',
                 fontWeight: 800,
-                padding: '8px 4px',
-                background: 'var(--color-muted)',
+                padding: '10px 4px',
+                background: i >= 5 ? '#F1F5F9' : '#FFFDF5',
                 borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-border)',
+                border: '1.5px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
                 fontSize: 'var(--fs-xs)',
+                color: i >= 5 ? 'var(--color-muted-fg)' : 'var(--color-fg)',
               }}
             >
               {dow}
             </div>
           ))}
+        </div>
 
+        {/* Calendar Cells Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10 }}>
           {Array.from({ length: firstDayOffset }).map((_, idx) => (
             <div key={`empty-${idx}`} />
           ))}
@@ -573,23 +814,37 @@ export default function ParentLunchPage() {
             const isCancelled = !day.isRegistered && day.cancellationSource != null;
             const canSelectToRegister = day.isServing && !day.isCutoffPassed && !day.isRegistered;
             const canCancel = day.isRegistered && !day.isCutoffPassed;
+            const cleanedRemarks = cleanText(day.serviceRemarks);
 
             let bg = '#FFFFFF';
-            let borderColor = 'var(--color-border)';
+            let borderColor = 'var(--color-fg)';
+            let shadow = '2px 2px 0 0 var(--color-fg)';
+
             if (!day.isServing) {
               bg = '#F8FAFC';
+              borderColor = '#CBD5E1';
+              shadow = 'none';
             } else if (isSelected) {
               bg = '#EDE9FE';
-              borderColor = 'var(--color-accent)';
+              borderColor = 'var(--color-fg)';
+              shadow = '4px 4px 0 0 var(--color-accent)';
             } else if (day.isRegistered) {
-              bg = 'var(--color-quaternary-soft)';
-              borderColor = '#10B981';
+              bg = '#ECFDF5';
+              borderColor = 'var(--color-fg)';
+              shadow = '3px 3px 0 0 #10B981';
             } else if (isCancelled) {
-              bg = 'var(--color-secondary-soft)';
+              bg = '#FFF1F2';
               borderColor = 'var(--color-secondary)';
-            } else if (!day.isCutoffPassed) {
-              bg = '#FFFBEB';
-              borderColor = '#F59E0B';
+              shadow = '2px 2px 0 0 var(--color-secondary)';
+            } else if (day.isCutoffPassed) {
+              bg = '#F8FAFC';
+              borderColor = '#CBD5E1';
+              shadow = 'none';
+            } else {
+              // Open for registration
+              bg = '#FFFFFF';
+              borderColor = 'var(--color-fg)';
+              shadow = '2px 2px 0 0 var(--color-fg)';
             }
 
             return (
@@ -597,79 +852,146 @@ export default function ParentLunchPage() {
                 key={dKey}
                 onClick={() => toggleSelectDate(day)}
                 style={{
-                  minHeight: 118,
-                  padding: '10px',
-                  borderRadius: 'var(--radius-sm)',
+                  minHeight: 112,
+                  padding: '9px 10px',
+                  borderRadius: 'var(--radius-md)',
                   border: `2px solid ${borderColor}`,
                   background: bg,
-                  boxShadow: isSelected || day.isRegistered ? 'var(--shadow-pop-active)' : 'none',
-                  cursor: day.isServing ? 'pointer' : 'not-allowed',
+                  boxShadow: shadow,
+                  cursor: canSelectToRegister ? 'pointer' : 'default',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  transition: 'transform 0.15s ease',
-                  opacity: !day.isServing ? 0.65 : 1,
+                  transition: 'all 0.15s ease',
+                  opacity: !day.isServing ? 0.6 : 1,
+                  position: 'relative',
                 }}
               >
-                {/* Top row: Date number + Cutoff/Check */}
+                {/* Top row: Date number + Cutoff badge */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-base)', fontFamily: 'var(--font-heading)' }}>
+                  <span
+                    style={{
+                      fontWeight: 900,
+                      fontSize: 'var(--fs-base)',
+                      fontFamily: 'var(--font-heading)',
+                      color: !day.isServing ? 'var(--color-muted-fg)' : 'var(--color-fg)',
+                    }}
+                  >
                     {dayNum}
                   </span>
 
                   {day.isServing && (
-                    <span style={{ fontSize: '10px', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
-                      Chốt {day.cutoffTime}
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: day.isCutoffPassed ? 'var(--color-muted-fg)' : '#B45309',
+                        background: day.isCutoffPassed ? 'transparent' : '#FEF3C7',
+                        padding: day.isCutoffPassed ? '0' : '1px 6px',
+                        borderRadius: 'var(--radius-full)',
+                      }}
+                    >
+                      {day.cutoffTime}
                     </span>
                   )}
                 </div>
 
-                {/* Middle: Status badge + Menu snippet */}
-                <div style={{ margin: '6px 0' }}>
+                {/* Middle: Clean Status Badge */}
+                <div style={{ margin: '4px 0' }}>
                   {!day.isServing ? (
-                    <span className="badge badge--muted" style={{ fontSize: '10px' }}>Không phục vụ</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>
+                      Nghỉ
+                    </span>
                   ) : isSelected ? (
-                    <span className="badge badge--violet" style={{ fontSize: '10px' }}>
-                      <Check size={11} /> Đã chọn đăng ký
+                    <span
+                      className="badge badge--violet"
+                      style={{
+                        fontSize: '10px',
+                        border: '1.5px solid var(--color-fg)',
+                        fontWeight: 800,
+                        padding: '2px 8px',
+                      }}
+                    >
+                      <Check size={11} /> Đã chọn
                     </span>
                   ) : day.isRegistered ? (
-                    <span className="badge badge--mint" style={{ fontSize: '10px' }}>
-                      ✓ Đã đăng ký ăn
+                    <span
+                      className="badge badge--mint"
+                      style={{
+                        fontSize: '10px',
+                        border: '1.5px solid var(--color-fg)',
+                        fontWeight: 800,
+                        padding: '2px 8px',
+                      }}
+                    >
+                      ✓ Đã đăng ký
                     </span>
                   ) : isCancelled ? (
-                    <span className="badge badge--pink" style={{ fontSize: '10px' }}>
+                    <span
+                      className="badge badge--pink"
+                      style={{
+                        fontSize: '10px',
+                        border: '1.5px solid var(--color-fg)',
+                        fontWeight: 800,
+                        padding: '2px 8px',
+                      }}
+                    >
                       {day.cancellationSource === 'Leave' || day.cancellationSource === 2
                         ? 'Đã hủy (Đơn nghỉ)'
-                        : 'Đã hủy suất'}
+                        : 'Đã hủy'}
                     </span>
                   ) : day.isCutoffPassed ? (
-                    <span className="badge badge--muted" style={{ fontSize: '10px' }}>Đã khóa sổ</span>
+                    <span
+                      className="badge badge--muted"
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                      }}
+                    >
+                      Đã khóa
+                    </span>
                   ) : (
-                    <span className="badge badge--amber" style={{ fontSize: '10px' }}>+ Bấm để chọn</span>
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: '1.5px dashed var(--color-accent)',
+                        borderRadius: 'var(--radius-full)',
+                        padding: '2px 8px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        color: 'var(--color-accent)',
+                        background: '#FAF5FF',
+                      }}
+                    >
+                      + Đăng ký
+                    </div>
                   )}
 
-                  {day.isServing && day.serviceRemarks && (
-                    <p
+                  {/* Menu preview (single concise line with tooltip) */}
+                  {day.isServing && cleanedRemarks && (
+                    <div
                       style={{
-                        margin: '5px 0 0',
-                        fontSize: '11px',
+                        margin: '4px 0 0',
+                        fontSize: '10.5px',
                         color: 'var(--color-muted-fg)',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
+                        whiteSpace: 'nowrap',
                         overflow: 'hidden',
-                        lineHeight: 1.3,
+                        textOverflow: 'ellipsis',
+                        lineHeight: 1.2,
                       }}
-                      title={day.serviceRemarks}
+                      title={cleanedRemarks}
                     >
-                      🍴 {day.serviceRemarks}
-                    </p>
+                      🍴 {cleanedRemarks.replace(/^Thực đơn:\s*/i, '').replace(/^Thực đơn Tân Lập A:\s*/i, '')}
+                    </div>
                   )}
                 </div>
 
-                {/* Bottom row: Action button or info */}
+                {/* Bottom row: Info link & Cancel pill */}
                 <div
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, marginTop: 4 }}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   {day.isServing && (
@@ -680,16 +1002,17 @@ export default function ParentLunchPage() {
                         background: 'transparent',
                         border: 'none',
                         padding: 0,
-                        fontSize: '11px',
+                        fontSize: '10.5px',
                         color: 'var(--color-accent)',
-                        fontWeight: 700,
+                        fontWeight: 800,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 3,
+                        gap: 2,
                       }}
+                      title="Xem thực đơn chi tiết"
                     >
-                      <Info size={12} /> Thực đơn
+                      <Info size={11} /> Chi tiết
                     </button>
                   )}
 
@@ -702,21 +1025,18 @@ export default function ParentLunchPage() {
                       }}
                       style={{
                         background: '#FFE4E6',
-                        border: '1px solid #F43F5E',
-                        borderRadius: 999,
+                        border: '1.5px solid #F43F5E',
+                        borderRadius: 'var(--radius-full)',
+                        boxShadow: '1px 1px 0 0 var(--color-fg)',
                         padding: '2px 8px',
                         fontSize: '10px',
-                        fontWeight: 700,
+                        fontWeight: 800,
                         color: '#E11D48',
                         cursor: 'pointer',
                       }}
                     >
-                      Hủy suất
+                      Hủy
                     </button>
-                  )}
-
-                  {canSelectToRegister && !isSelected && (
-                    <span style={{ fontSize: '10px', color: '#B45309', fontWeight: 700 }}>Còn hạn</span>
                   )}
                 </div>
               </div>
@@ -726,38 +1046,49 @@ export default function ParentLunchPage() {
       </div>
 
       {/* Detailed Registration & Cancellation History Table (UC-31 & UC-30) */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div
+        className="card"
+        style={{
+          border: '2px solid var(--color-fg)',
+          boxShadow: '4px 4px 0 0 var(--color-fg)',
+          borderRadius: 'var(--radius-lg)',
+          background: '#FFFFFF',
+          padding: '24px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: 'var(--fs-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Soup size={18} color="var(--color-accent)" />
+            <Soup size={20} color="var(--color-accent)" />
             Danh sách các ngày Đã đăng ký & Biến động trong tháng ({registeredOrCancelledDays.length} ngày)
           </h3>
         </div>
 
         {registeredOrCancelledDays.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '28px 16px', color: 'var(--color-muted-fg)' }}>
+          <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--color-muted-fg)', background: '#FFFDF5', borderRadius: 'var(--radius-md)', border: '1.5px dashed var(--color-fg)' }}>
             Chưa có bản ghi đăng ký bán trú nào trong tháng {month}. Phụ huynh hãy tích chọn các ngày còn mở trên lịch để đăng ký cho con.
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
-                <tr style={{ borderBottom: 'var(--border)', background: 'var(--color-muted)' }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Ngày phục vụ</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Loại suất</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Thực đơn / Ghi chú ngày</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Hạn chốt</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Trạng thái</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Thao tác (UC-30)</th>
+                <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#FFFDF5' }}>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Ngày phục vụ</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Loại suất</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Thực đơn / Ghi chú ngày</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Hạn chốt</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Trạng thái</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 800 }}>Thao tác (UC-30)</th>
                 </tr>
               </thead>
               <tbody>
                 {registeredOrCancelledDays.map((day) => {
                   const dKey = toDateKey(day.date);
                   const canCancel = day.isRegistered && !day.isCutoffPassed;
+                  const cleanedRemarks = cleanText(day.serviceRemarks);
+
                   return (
                     <tr key={dKey} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '12px', fontWeight: 700 }}>
+                      <td style={{ padding: '14px', fontWeight: 800 }}>
                         {new Date(day.date).toLocaleDateString('vi-VN', {
                           weekday: 'short',
                           day: '2-digit',
@@ -765,43 +1096,82 @@ export default function ParentLunchPage() {
                           year: 'numeric',
                         })}
                       </td>
-                      <td style={{ padding: '12px' }}>
-                        {day.mealType ? MEAL_TYPE_LABELS[String(day.mealType)] ?? 'Suất tiêu chuẩn' : 'Suất tiêu chuẩn'}
+                      <td style={{ padding: '14px' }}>
+                        <span
+                          className="badge"
+                          style={{
+                            border: '1.5px solid var(--color-fg)',
+                            fontWeight: 700,
+                            background: '#F1F5F9',
+                          }}
+                        >
+                          {day.mealType ? MEAL_TYPE_LABELS[String(day.mealType)] ?? 'Suất tiêu chuẩn' : 'Suất tiêu chuẩn'}
+                        </span>
                       </td>
-                      <td style={{ padding: '12px', color: 'var(--color-muted-fg)', maxWidth: 320 }}>
-                        <div>{day.serviceRemarks || 'Thực đơn tiêu chuẩn nhà bếp'}</div>
+                      <td style={{ padding: '14px', color: 'var(--color-fg)', maxWidth: 360 }}>
+                        <div style={{ fontWeight: 600 }}>{cleanedRemarks || 'Thực đơn tiêu chuẩn nhà bếp'}</div>
                         {day.cancellationReason && (
-                          <div style={{ fontSize: 'var(--fs-xs)', color: '#E11D48', marginTop: 2 }}>
+                          <div style={{ fontSize: 'var(--fs-xs)', color: '#E11D48', marginTop: 4, fontWeight: 700 }}>
                             Lý do hủy: {day.cancellationReason}
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>
+                      <td style={{ padding: '14px', textAlign: 'center', fontWeight: 700 }}>
                         {day.cutoffTime}
                       </td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <td style={{ padding: '14px', textAlign: 'center' }}>
                         {day.isRegistered ? (
-                          <span className="badge badge--mint">Còn hiệu lực</span>
+                          <span
+                            className="badge badge--mint"
+                            style={{
+                              border: '1.5px solid var(--color-fg)',
+                              fontWeight: 800,
+                              padding: '3px 10px',
+                            }}
+                          >
+                            ✓ Còn hiệu lực
+                          </span>
                         ) : (
-                          <span className="badge badge--pink">
+                          <span
+                            className="badge badge--pink"
+                            style={{
+                              border: '1.5px solid var(--color-fg)',
+                              fontWeight: 800,
+                              padding: '3px 10px',
+                            }}
+                          >
                             {SOURCE_LABELS[String(day.cancellationSource)] ?? 'Đã hủy'}
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: '12px', textAlign: 'right' }}>
+                      <td style={{ padding: '14px', textAlign: 'right' }}>
                         {canCancel ? (
                           <button
                             type="button"
-                            className="btn btn--secondary btn--sm"
+                            className="btn btn--sm"
                             onClick={() => {
                               setCancelTargetDay(day);
                               setCancelReason('');
                             }}
+                            style={{
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid #F43F5E',
+                              boxShadow: '2px 2px 0 0 var(--color-fg)',
+                              background: '#FFE4E6',
+                              color: '#E11D48',
+                              fontWeight: 800,
+                              fontSize: 'var(--fs-xs)',
+                              padding: '6px 14px',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
                           >
-                            <Trash2 size={14} /> Hủy đăng ký
+                            <Trash2 size={13} /> Hủy đăng ký
                           </button>
                         ) : day.isRegistered ? (
-                          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
                             Đã qua hạn {day.cutoffTime}
                           </span>
                         ) : !day.isCutoffPassed && day.isServing ? (
@@ -811,6 +1181,14 @@ export default function ParentLunchPage() {
                             onClick={() => {
                               setSelectedDates([dKey]);
                               setShowRegisterModal(true);
+                            }}
+                            style={{
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid var(--color-fg)',
+                              boxShadow: '2px 2px 0 0 var(--color-fg)',
+                              fontWeight: 800,
+                              padding: '6px 14px',
+                              cursor: 'pointer',
                             }}
                           >
                             Đăng ký lại
@@ -848,7 +1226,10 @@ export default function ParentLunchPage() {
           <div
             className="card"
             style={{
-              background: 'var(--color-muted)',
+              background: '#FFFDF5',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '2px 2px 0 0 var(--color-fg)',
+              borderRadius: 'var(--radius-md)',
               padding: '12px 14px',
               marginBottom: 16,
               maxHeight: 130,
@@ -859,19 +1240,34 @@ export default function ParentLunchPage() {
             }}
           >
             {selectedDates.map((d) => (
-              <span key={d} className="badge badge--violet">
+              <span
+                key={d}
+                className="badge badge--violet"
+                style={{
+                  border: '1.5px solid var(--color-fg)',
+                  fontWeight: 800,
+                }}
+              >
                 {new Date(d).toLocaleDateString('vi-VN')}
               </span>
             ))}
           </div>
 
           <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="register-meal-type">Chế độ suất ăn</label>
+            <label className="label" htmlFor="register-meal-type" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+              CHẾ ĐỘ SUẤT ĂN
+            </label>
             <select
               id="register-meal-type"
               className="select"
               value={mealType}
               onChange={(e) => setMealType(Number(e.target.value))}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                fontWeight: 700,
+                padding: '8px 16px',
+              }}
             >
               <option value={1}>Suất tiêu chuẩn (Mặn)</option>
               <option value={2}>Suất ăn chay</option>
@@ -880,7 +1276,9 @@ export default function ParentLunchPage() {
           </div>
 
           <div className="field" style={{ marginBottom: 20 }}>
-            <label className="label" htmlFor="register-remarks">Ghi chú cho bộ phận bán trú (nếu có)</label>
+            <label className="label" htmlFor="register-remarks" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+              GHI CHÚ CHO BỘ PHẬN BÁN TRÚ (NẾU CÓ)
+            </label>
             <input
               id="register-remarks"
               type="text"
@@ -888,6 +1286,12 @@ export default function ParentLunchPage() {
               placeholder="VD: Bé dị ứng tôm/đậu phộng, nhờ cô lưu ý..."
               value={studentRemarks}
               onChange={(e) => setStudentRemarks(e.target.value)}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                fontWeight: 700,
+                padding: '8px 16px',
+              }}
             />
           </div>
 
@@ -897,6 +1301,13 @@ export default function ParentLunchPage() {
               className="btn btn--secondary"
               onClick={() => setShowRegisterModal(false)}
               disabled={submittingRegister}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                fontWeight: 700,
+                padding: '10px 20px',
+              }}
             >
               Đóng
             </button>
@@ -905,6 +1316,18 @@ export default function ParentLunchPage() {
               className="btn btn--primary"
               onClick={handleConfirmRegister}
               disabled={submittingRegister}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '4px 4px 0 0 var(--color-fg)',
+                fontWeight: 800,
+                padding: '10px 24px',
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
               <CheckCircle2 size={16} />
               {submittingRegister ? 'Đang xử lý...' : `Xác nhận đăng ký (${selectedDates.length} ngày)`}
@@ -933,7 +1356,9 @@ export default function ParentLunchPage() {
             </p>
 
             <div className="field" style={{ marginBottom: 20 }}>
-              <label className="label" htmlFor="cancel-lunch-reason">Lý do hủy suất ăn (tùy chọn)</label>
+              <label className="label" htmlFor="cancel-lunch-reason" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+                LÝ DO HỦY SUẤT ĂN (TÙY CHỌN)
+              </label>
               <input
                 id="cancel-lunch-reason"
                 type="text"
@@ -941,6 +1366,12 @@ export default function ParentLunchPage() {
                 placeholder="VD: Gia đình đón bé về ăn trưa tại nhà..."
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
               />
             </div>
 
@@ -950,13 +1381,31 @@ export default function ParentLunchPage() {
                 className="btn btn--secondary"
                 onClick={() => setCancelTargetDay(null)}
                 disabled={submittingCancel}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '10px 20px',
+                }}
               >
                 Giữ lại suất ăn
               </button>
               <button
                 type="button"
                 className="btn btn--primary"
-                style={{ background: '#E11D48' }}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '10px 24px',
+                  background: '#E11D48',
+                  color: '#FFFFFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
                 onClick={handleConfirmCancel}
                 disabled={submittingCancel}
               >
@@ -981,25 +1430,51 @@ export default function ParentLunchPage() {
       >
         {detailDay && (
           <div>
-            <div className="card" style={{ background: 'var(--color-muted)', padding: '14px', marginBottom: 16 }}>
-              <div style={{ marginBottom: 8 }}>
-                <span className="label">Trạng thái phục vụ:</span>{' '}
-                <strong>{detailDay.isServing ? 'Có phục vụ ăn bán trú' : 'Không phục vụ'}</strong>
+            <div
+              className="card"
+              style={{
+                background: '#FFFDF5',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                padding: '16px 18px',
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="label" style={{ fontWeight: 800 }}>Trạng thái phục vụ:</span>{' '}
+                <span
+                  className={detailDay.isServing ? 'badge badge--mint' : 'badge badge--pink'}
+                  style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}
+                >
+                  {detailDay.isServing ? 'Có phục vụ bán trú' : 'Không phục vụ'}
+                </span>
               </div>
-              <div style={{ marginBottom: 8 }}>
-                <span className="label">Hạn đăng ký / hủy (UC-32):</span>{' '}
-                <strong>{detailDay.cutoffTime} sáng</strong>
+              <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="label" style={{ fontWeight: 800 }}>Hạn chốt ngày:</span>{' '}
+                <strong style={{ color: '#B45309' }}>{detailDay.cutoffTime} sáng</strong>
               </div>
-              <div>
-                <span className="label">Thực đơn / Ghi chú:</span>
-                <p style={{ margin: '4px 0 0', fontWeight: 600 }}>
-                  {detailDay.serviceRemarks || 'Thực đơn tiêu chuẩn theo tuần của nhà bếp.'}
+              <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10, marginTop: 10 }}>
+                <span className="label" style={{ fontWeight: 800, marginBottom: 4, display: 'block' }}>Thực đơn dinh dưỡng:</span>
+                <p style={{ margin: '4px 0 0', fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', lineHeight: 1.5 }}>
+                  🍴 {cleanText(detailDay.serviceRemarks) || 'Thực đơn tiêu chuẩn theo tuần của nhà bếp.'}
                 </p>
               </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn--secondary" onClick={() => setDetailDay(null)}>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setDetailDay(null)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 20px',
+                }}
+              >
                 Đóng
               </button>
             </div>
