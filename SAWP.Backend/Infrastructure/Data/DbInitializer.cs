@@ -263,11 +263,35 @@ public static class DbInitializer
                 Grade = 1,
                 RoomNumber = "P102",
                 Capacity = 35,
-                Status = "Active"
+                Status = "Active",
+                IsPlacementPublished = true
             };
             context.Classes.Add(class1B);
             await context.SaveChangesAsync();
         }
+
+        var class1C = await context.Classes.FirstOrDefaultAsync(c => c.ClassName == "1C" && c.SchoolYearId == schoolYear.Id);
+        if (class1C == null)
+        {
+            class1C = new Class
+            {
+                SchoolYearId = schoolYear.Id,
+                HomeroomTeacherId = null,
+                ClassName = "1C",
+                Grade = 1,
+                RoomNumber = "P103",
+                Capacity = 35,
+                Status = "Active",
+                IsPlacementPublished = true
+            };
+            context.Classes.Add(class1C);
+            await context.SaveChangesAsync();
+        }
+
+        class1A.IsPlacementPublished = true;
+        class1B.IsPlacementPublished = true;
+        class1C.IsPlacementPublished = true;
+        await context.SaveChangesAsync();
 
         // ====================================================================
         // 5. CLASS SCHEDULES (Phân công thời khóa biểu tiết 1 cho teacher1)
@@ -292,24 +316,101 @@ public static class DbInitializer
         }
 
         // ====================================================================
-        // 6. STUDENTS & GUARDIAN LINK & CLASS ASSIGNMENT
+        // 6. STUDENTS & GUARDIAN LINK & CLASS ASSIGNMENT (30 em 1A, 28 em 1B, 28 em 1C)
         // ====================================================================
-        var studentsData = new[]
+        var studentsData = new (string Code, string Name, string Gender, DateTime Dob, string Area, bool IsSpecial, string? SpecialNotes)[]
         {
-            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15), "Phường Bến Nghé", false, (string?)null),
-            ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20), "Phường Bến Nghé", false, (string?)null),
+            // ---- LỚP 1A (30 HỌC SINH: HS001 -> HS030) ----
+            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15), "Phường Bến Nghé", false, null),
+            ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20), "Phường Bến Nghé", false, null),
             ("HS003", "Lê Quang Minh", "Nam", new DateTime(2020, 8, 10), "Phường Đa Kao", true, "Hòa nhập khiếm thính nhẹ"),
-            ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14), "Phường Đa Kao", false, (string?)null),
-            ("HS005", "Hoàng Đức Anh", "Nam", new DateTime(2020, 11, 25), "Phường Tân Định", false, (string?)null),
-            ("HS006", "Vũ Mai Phương", "Nữ", new DateTime(2020, 7, 8), "Phường Tân Định", false, (string?)null),
-            ("HS007", "Trần Gia Bảo", "Nam", new DateTime(2020, 9, 12), "Phường Bến Nghé", false, (string?)null), // Trùng họ tên hoàn toàn với HS001
-            ("HS008", "Đỗ Bảo Trâm", "Nữ", new DateTime(2020, 4, 18), "Phường Đa Kao", false, (string?)null),
-            ("HS009", "Phan Gia Huy", "Nam", new DateTime(2020, 6, 22), "Phường Tân Định", false, (string?)null),
-            ("HS010", "Nguyễn Minh Khang", "Nam", new DateTime(2020, 1, 30), "Phường Bến Nghé", true, "Hòa nhập vận động nhẹ"),
-            ("HS011", "Trịnh Thảo My", "Nữ", new DateTime(2020, 10, 5), "Phường Bến Nghé", false, (string?)null),
-            ("HS012", "Lý Tuấn Kiệt", "Nam", new DateTime(2020, 12, 14), "Phường Đa Kao", false, (string?)null),
-            ("HS013", "Bùi Khánh Linh", "Nữ", new DateTime(2020, 3, 28), "Phường Tân Định", false, (string?)null),
-            ("HS014", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 8, 19), "Phường Tân Định", false, (string?)null), // Trùng họ tên hoàn toàn với HS002
+            ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14), "Phường Đa Kao", false, null),
+            ("HS005", "Hoàng Đức Anh", "Nam", new DateTime(2020, 11, 25), "Phường Tân Định", false, null),
+            ("HS006", "Vũ Mai Phương", "Nữ", new DateTime(2020, 7, 8), "Phường Tân Định", false, null),
+            ("HS007", "Đỗ Tuấn Kiệt", "Nam", new DateTime(2020, 1, 12), "Phường Bến Nghé", false, null),
+            ("HS008", "Bùi Khánh Linh", "Nữ", new DateTime(2020, 4, 18), "Phường Đa Kao", false, null),
+            ("HS009", "Phan Gia Huy", "Nam", new DateTime(2020, 6, 22), "Phường Tân Định", false, null),
+            ("HS010", "Trịnh Thảo My", "Nữ", new DateTime(2020, 9, 5), "Phường Bến Nghé", false, null),
+            ("HS011", "Đặng Tiến Đạt", "Nam", new DateTime(2020, 10, 14), "Phường Đa Kao", false, null),
+            ("HS012", "Dương Diệu Linh", "Nữ", new DateTime(2020, 12, 3), "Phường Tân Định", false, null),
+            ("HS013", "Ngô Quốc Anh", "Nam", new DateTime(2020, 2, 28), "Phường Bến Nghé", false, null),
+            ("HS014", "Lý Bảo Trâm", "Nữ", new DateTime(2020, 8, 19), "Phường Đa Kao", false, null),
+            ("HS015", "Trương Minh Khang", "Nam", new DateTime(2020, 7, 11), "Phường Tân Định", true, "Hòa nhập vận động nhẹ"),
+            ("HS016", "Đoàn Phương Thảo", "Nữ", new DateTime(2020, 3, 24), "Phường Bến Nghé", false, null),
+            ("HS017", "Mai Nhật Nam", "Nam", new DateTime(2020, 5, 9), "Phường Đa Kao", false, null),
+            ("HS018", "Cao Ngọc Ánh", "Nữ", new DateTime(2020, 11, 17), "Phường Tân Định", false, null),
+            ("HS019", "Đinh Hữu Phước", "Nam", new DateTime(2020, 4, 2), "Phường Bến Nghé", false, null),
+            ("HS020", "Tạ Quỳnh Anh", "Nữ", new DateTime(2020, 10, 21), "Phường Đa Kao", false, null),
+            ("HS021", "Lương Minh Quân", "Nam", new DateTime(2020, 6, 30), "Phường Tân Định", false, null),
+            ("HS022", "Hà Kim Ngân", "Nữ", new DateTime(2020, 1, 15), "Phường Bến Nghé", false, null),
+            ("HS023", "Chu Đức Thắng", "Nam", new DateTime(2020, 8, 27), "Phường Đa Kao", false, null),
+            ("HS024", "Lâm Mỹ Duyên", "Nữ", new DateTime(2020, 12, 19), "Phường Tân Định", false, null),
+            ("HS025", "Võ Minh Trí", "Nam", new DateTime(2020, 3, 8), "Phường Bến Nghé", false, null),
+            ("HS026", "Diệp Thục Quyên", "Nữ", new DateTime(2020, 9, 14), "Phường Đa Kao", false, null),
+            ("HS027", "Quách Hải Đăng", "Nam", new DateTime(2020, 5, 26), "Phường Tân Định", false, null),
+            ("HS028", "Nghiêm Bảo Châu", "Nữ", new DateTime(2020, 7, 2), "Phường Bến Nghé", false, null),
+            ("HS029", "Tôn Thất Khoa", "Nam", new DateTime(2020, 11, 4), "Phường Đa Kao", false, null),
+            ("HS030", "Vương Yến Nhi", "Nữ", new DateTime(2020, 2, 18), "Phường Tân Định", false, null),
+
+            // ---- LỚP 1B (28 HỌC SINH: HS031 -> HS058) ----
+            ("HS031", "Trần Bảo Ngọc", "Nữ", new DateTime(2020, 5, 15), "Phường Bến Nghé", false, null),
+            ("HS032", "Lê Hữu Đạt", "Nam", new DateTime(2020, 4, 10), "Phường Đa Kao", false, null),
+            ("HS033", "Nguyễn Hà My", "Nữ", new DateTime(2020, 7, 22), "Phường Tân Định", false, null),
+            ("HS034", "Phạm Gia Hưng", "Nam", new DateTime(2020, 9, 18), "Phường Bến Nghé", false, null),
+            ("HS035", "Vũ Thùy Chi", "Nữ", new DateTime(2020, 1, 25), "Phường Đa Kao", false, null),
+            ("HS036", "Hoàng Minh Triết", "Nam", new DateTime(2020, 11, 12), "Phường Tân Định", false, null),
+            ("HS037", "Đặng Lan Hương", "Nữ", new DateTime(2020, 3, 5), "Phường Bến Nghé", false, null),
+            ("HS038", "Bùi Quang Hải", "Nam", new DateTime(2020, 6, 14), "Phường Đa Kao", false, null),
+            ("HS039", "Đỗ Ngọc Hân", "Nữ", new DateTime(2020, 8, 30), "Phường Tân Định", false, null),
+            ("HS040", "Ngô Tuấn Anh", "Nam", new DateTime(2020, 12, 21), "Phường Bến Nghé", true, "Hòa nhập ngôn ngữ nhẹ"),
+            ("HS041", "Trịnh Kim Oanh", "Nữ", new DateTime(2020, 2, 9), "Phường Đa Kao", false, null),
+            ("HS042", "Lý Hoàng Long", "Nam", new DateTime(2020, 5, 17), "Phường Tân Định", false, null),
+            ("HS043", "Dương Thảo Nguyên", "Nữ", new DateTime(2020, 10, 28), "Phường Bến Nghé", false, null),
+            ("HS044", "Mai Văn Quyết", "Nam", new DateTime(2020, 4, 3), "Phường Đa Kao", false, null),
+            ("HS045", "Cao Thị Cẩm Tú", "Nữ", new DateTime(2020, 8, 16), "Phường Tân Định", false, null),
+            ("HS046", "Trương Quốc Bảo", "Nam", new DateTime(2020, 1, 29), "Phường Bến Nghé", false, null),
+            ("HS047", "Đoàn Như Quỳnh", "Nữ", new DateTime(2020, 6, 7), "Phường Đa Kao", false, null),
+            ("HS048", "Đinh Thế Vinh", "Nam", new DateTime(2020, 9, 24), "Phường Tân Định", false, null),
+            ("HS049", "Tạ Thùy Dung", "Nữ", new DateTime(2020, 11, 8), "Phường Bến Nghé", false, null),
+            ("HS050", "Lương Gia Phúc", "Nam", new DateTime(2020, 3, 19), "Phường Đa Kao", false, null),
+            ("HS051", "Hà Cát Tường", "Nữ", new DateTime(2020, 7, 13), "Phường Tân Định", false, null),
+            ("HS052", "Chu Thành Long", "Nam", new DateTime(2020, 12, 5), "Phường Bến Nghé", false, null),
+            ("HS053", "Lâm Minh Thư", "Nữ", new DateTime(2020, 2, 23), "Phường Đa Kao", false, null),
+            ("HS054", "Võ Thành Đạt", "Nam", new DateTime(2020, 5, 31), "Phường Tân Định", false, null),
+            ("HS055", "Diệp Hoàng Lan", "Nữ", new DateTime(2020, 10, 12), "Phường Bến Nghé", false, null),
+            ("HS056", "Quách Trọng Tấn", "Nam", new DateTime(2020, 4, 26), "Phường Đa Kao", false, null),
+            ("HS057", "Nghiêm Thúy Vy", "Nữ", new DateTime(2020, 8, 4), "Phường Tân Định", false, null),
+            ("HS058", "Tôn Nữ Bích Trâm", "Nữ", new DateTime(2020, 1, 18), "Phường Bến Nghé", false, null),
+
+            // ---- LỚP 1C (28 HỌC SINH: HS059 -> HS086) ----
+            ("HS059", "Nguyễn Tấn Phát", "Nam", new DateTime(2020, 3, 21), "Cụm 1 Tân Lập", false, null),
+            ("HS060", "Trần Quỳnh Chi", "Nữ", new DateTime(2020, 6, 15), "Cụm 1 Tân Lập", false, null),
+            ("HS061", "Lê Đăng Khoa", "Nam", new DateTime(2020, 9, 2), "Cụm 2 Tân Lập", false, null),
+            ("HS062", "Phạm Ngọc Mai", "Nữ", new DateTime(2020, 11, 19), "Cụm 2 Tân Lập", false, null),
+            ("HS063", "Hoàng Bá Thịnh", "Nam", new DateTime(2020, 1, 8), "Xã Tân Lập", false, null),
+            ("HS064", "Vũ Thảo Nhi", "Nữ", new DateTime(2020, 4, 27), "Xã Tân Lập", false, null),
+            ("HS065", "Đỗ Gia Khiêm", "Nam", new DateTime(2020, 7, 14), "Cụm 1 Tân Lập", false, null),
+            ("HS066", "Bùi Minh Hạnh", "Nữ", new DateTime(2020, 10, 31), "Cụm 1 Tân Lập", false, null),
+            ("HS067", "Phan Nhật Minh", "Nam", new DateTime(2020, 2, 12), "Cụm 2 Tân Lập", false, null),
+            ("HS068", "Trịnh Phương Linh", "Nữ", new DateTime(2020, 5, 25), "Cụm 2 Tân Lập", false, null),
+            ("HS069", "Đặng Quang Huy", "Nam", new DateTime(2020, 8, 18), "Xã Tân Lập", false, null),
+            ("HS070", "Dương Tú Uyên", "Nữ", new DateTime(2020, 12, 7), "Xã Tân Lập", false, null),
+            ("HS071", "Ngô Bảo Lâm", "Nam", new DateTime(2020, 3, 14), "Cụm 1 Tân Lập", false, null),
+            ("HS072", "Lý Kiều Oanh", "Nữ", new DateTime(2020, 6, 29), "Cụm 1 Tân Lập", false, null),
+            ("HS073", "Mai Trọng Nghĩa", "Nam", new DateTime(2020, 9, 11), "Cụm 2 Tân Lập", false, null),
+            ("HS074", "Cao Diệu My", "Nữ", new DateTime(2020, 11, 23), "Cụm 2 Tân Lập", false, null),
+            ("HS075", "Trương Vĩnh Phúc", "Nam", new DateTime(2020, 1, 30), "Xã Tân Lập", true, "Hòa nhập khiếm thị nhẹ"),
+            ("HS076", "Đoàn Khánh Thi", "Nữ", new DateTime(2020, 4, 16), "Xã Tân Lập", false, null),
+            ("HS077", "Đinh Hoàng Bách", "Nam", new DateTime(2020, 7, 9), "Cụm 1 Tân Lập", false, null),
+            ("HS078", "Tạ Hải Yến", "Nữ", new DateTime(2020, 10, 4), "Cụm 1 Tân Lập", false, null),
+            ("HS079", "Lương Anh Khoa", "Nam", new DateTime(2020, 2, 21), "Cụm 2 Tân Lập", false, null),
+            ("HS080", "Hà Phương Vy", "Nữ", new DateTime(2020, 5, 13), "Cụm 2 Tân Lập", false, null),
+            ("HS081", "Chu Thế Anh", "Nam", new DateTime(2020, 8, 6), "Xã Tân Lập", false, null),
+            ("HS082", "Lâm Cẩm Ly", "Nữ", new DateTime(2020, 11, 28), "Xã Tân Lập", false, null),
+            ("HS083", "Võ Hoàng Nam", "Nam", new DateTime(2020, 3, 17), "Cụm 1 Tân Lập", false, null),
+            ("HS084", "Diệp Trúc Mai", "Nữ", new DateTime(2020, 6, 24), "Cụm 1 Tân Lập", false, null),
+            ("HS085", "Quách Minh Khôi", "Nam", new DateTime(2020, 9, 15), "Cụm 2 Tân Lập", false, null),
+            ("HS086", "Nghiêm Tuệ Mẫn", "Nữ", new DateTime(2020, 12, 10), "Xã Tân Lập", false, null)
         };
 
         var studentEntities = new List<Student>();
@@ -335,13 +436,10 @@ public static class DbInitializer
             }
             else
             {
-                // Ensure status is active
-                if (student.Status != "Active")
-                {
-                    student.Status = "Active";
-                }
-
-                // Update residential area and special needs if missing
+                student.FullName = name;
+                student.Gender = gender;
+                student.DateOfBirth = dob;
+                student.Status = "Active";
                 student.ResidentialArea = area;
                 student.IsSpecialNeeds = isSpecial;
                 student.SpecialNeedsNotes = specialNotes;
@@ -349,32 +447,83 @@ public static class DbInitializer
             }
             studentEntities.Add(student);
 
-            // Gán 6 học sinh đầu vào lớp 1A mặc định ban đầu nếu chưa có
-            if (code is "HS001" or "HS002" or "HS003" or "HS004" or "HS005" or "HS006")
+            // Xác định lớp gán (1A: 1-30, 1B: 31-58, 1C: 59-86)
+            int targetClassId = class1A.Id;
+            if (int.TryParse(code.Replace("HS", ""), out int num))
             {
-                if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == class1A.Id && ca.StudentId == student.Id))
-                {
-                    context.ClassAssignments.Add(new ClassAssignment
-                    {
-                        ClassId = class1A.Id,
-                        StudentId = student.Id,
-                        AcademicYear = "2026-2027",
-                        StartDate = new DateTime(2026, 9, 1),
-                        IsActive = true
-                    });
-                }
+                if (num >= 59) targetClassId = class1C.Id;
+                else if (num >= 31) targetClassId = class1B.Id;
+                else targetClassId = class1A.Id;
             }
 
-            // Đăng ký suất ăn bán trú trong ngày
-            if (!await context.LunchRegistrations.AnyAsync(lr => lr.StudentId == student.Id && lr.Date == today))
+            if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == targetClassId && ca.StudentId == student.Id))
             {
+                // Ngừng kích hoạt các phân lớp cũ nếu có
+                var oldAssignments = await context.ClassAssignments.Where(ca => ca.StudentId == student.Id && ca.ClassId != targetClassId).ToListAsync();
+                foreach (var oa in oldAssignments) oa.IsActive = false;
+
+                context.ClassAssignments.Add(new ClassAssignment
+                {
+                    ClassId = targetClassId,
+                    StudentId = student.Id,
+                    AcademicYear = "2026-2027",
+                    StartDate = new DateTime(2026, 9, 1),
+                    IsActive = true
+                });
+                await context.SaveChangesAsync();
+            }
+
+            // Đăng ký suất ăn bán trú trong ngày (UC-29)
+            var existingLunch = await context.LunchRegistrations.FirstOrDefaultAsync(lr => lr.StudentId == student.Id && lr.Date == today);
+            if (existingLunch == null)
+            {
+                bool isVegetarian = code is "HS004" or "HS017" or "HS035" or "HS062";
+                bool isSpecialDiet = code is "HS006" or "HS040";
+                bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
+
                 context.LunchRegistrations.Add(new LunchRegistration
                 {
                     StudentId = student.Id,
                     Date = today,
-                    MealType = code == "HS004" ? MealType.VegetarianLunch : MealType.StandardLunch,
-                    IsActive = true,
-                    Remarks = "Suất ăn bán trú tiêu chuẩn"
+                    MealType = isVegetarian ? MealType.VegetarianLunch : isSpecialDiet ? MealType.SpecialDiet : MealType.StandardLunch,
+                    IsActive = !isCancelled,
+                    Remarks = isVegetarian ? "Suất ăn chay dinh dưỡng" : isSpecialDiet ? "Thực đơn dinh dưỡng đặc biệt" : "Suất ăn bán trú tiêu chuẩn",
+                    CancelledAt = isCancelled ? today.AddHours(7).AddMinutes(45) : null,
+                    CancellationReason = isCancelled ? (code is "HS005" or "HS038" ? "Đơn xin nghỉ ốm đã được GVCN duyệt trước 08h15" : "Phụ huynh hủy trực tiếp trên cổng trước 08h15 (UC-30)") : null
+                });
+            }
+        }
+        await context.SaveChangesAsync();
+
+        // Điểm danh ca sáng hôm nay cho toàn bộ học sinh lớp 1A (teacher1)
+        var studentsIn1A = studentEntities.Where(s => int.TryParse(s.StudentCode.Replace("HS", ""), out int n) && n <= 30).ToList();
+        foreach (var s in studentsIn1A)
+        {
+            if (!await context.AttendanceRecords.AnyAsync(ar => ar.StudentId == s.Id && ar.Date == today && ar.Session == AttendanceSession.Morning))
+            {
+                var attStatus = AttendanceStatus.Present;
+                string? attRem = null;
+                if (s.StudentCode == "HS005")
+                {
+                    attStatus = AttendanceStatus.ExcusedAbsence;
+                    attRem = "Nghỉ ốm có đơn xin phép";
+                }
+                else if (s.StudentCode == "HS011")
+                {
+                    attStatus = AttendanceStatus.Late;
+                    attRem = "Đến muộn 15 phút do thời tiết";
+                }
+
+                context.AttendanceRecords.Add(new AttendanceRecord
+                {
+                    StudentId = s.Id,
+                    ClassId = class1A.Id,
+                    Date = today,
+                    Session = AttendanceSession.Morning,
+                    Status = attStatus,
+                    Remarks = attRem,
+                    RecordedByUserId = teacherUser.Id,
+                    CreatedAt = DateTime.UtcNow
                 });
             }
         }
@@ -397,43 +546,15 @@ public static class DbInitializer
             }
         }
 
-        // Liên kết con thứ 2 của phụ huynh `parent1`: HS007 (Trần Bảo Ngọc - Lớp 1B)
-        if (guardianObj != null)
+        // Liên kết con thứ 2 của phụ huynh `parent1`: HS031 (Trần Bảo Ngọc - Lớp 1B)
+        var student31 = studentEntities.FirstOrDefault(s => s.StudentCode == "HS031");
+        if (student31 != null && guardianObj != null)
         {
-            var student7 = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == "HS007");
-            if (student7 == null)
-            {
-                student7 = new Student
-                {
-                    StudentCode = "HS007",
-                    FullName = "Trần Bảo Ngọc",
-                    Gender = "Female",
-                    DateOfBirth = new DateTime(2020, 5, 15),
-                    Status = "Active",
-                    EnrollmentDate = new DateTime(2026, 9, 1)
-                };
-                context.Students.Add(student7);
-                await context.SaveChangesAsync();
-
-                if (!await context.ClassAssignments.AnyAsync(ca => ca.ClassId == class1B.Id && ca.StudentId == student7.Id))
-                {
-                    context.ClassAssignments.Add(new ClassAssignment
-                    {
-                        ClassId = class1B.Id,
-                        StudentId = student7.Id,
-                        AcademicYear = "2026-2027",
-                        StartDate = new DateTime(2026, 9, 1),
-                        IsActive = true
-                    });
-                    await context.SaveChangesAsync();
-                }
-            }
-
-            if (!await context.StudentGuardians.AnyAsync(sg => sg.StudentId == student7.Id && sg.GuardianId == guardianObj.Id))
+            if (!await context.StudentGuardians.AnyAsync(sg => sg.StudentId == student31.Id && sg.GuardianId == guardianObj.Id))
             {
                 context.StudentGuardians.Add(new StudentGuardian
                 {
-                    StudentId = student7.Id,
+                    StudentId = student31.Id,
                     GuardianId = guardianObj.Id,
                     Relationship = RelationshipTypes.Father,
                     IsPrimaryContact = false
@@ -531,8 +652,8 @@ public static class DbInitializer
         // ====================================================================
         if (student1 != null && parentUser != null)
         {
-            // Sample 1: Đơn xin chuyển lớp cho HS007 (Trần Bảo Ngọc) từ 1B -> 1A (Mới nộp - Submitted)
-            var student7Obj = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == "HS007");
+            // Sample 1: Đơn xin chuyển lớp cho HS031 (Trần Bảo Ngọc) từ 1B -> 1A (Mới nộp - Submitted)
+            var student7Obj = await context.Students.FirstOrDefaultAsync(s => s.StudentCode == "HS031" || s.StudentCode == "HS007");
             if (student7Obj != null && !await context.AdministrativeRequests.AnyAsync(r => r.RequestNumber == "REQ-CT-SAMPLE-001"))
             {
                 var ctReq1 = new AdministrativeRequest

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import {
   Sparkles,
   UtensilsCrossed,
   Clock,
   CheckCircle2,
-  AlertTriangle,
   Printer,
   Lock,
   RefreshCw,
@@ -16,7 +16,10 @@ import {
   Download,
   Users,
   Filter,
-  X,
+  Search,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
@@ -54,6 +57,9 @@ function getWeekdaysOfDate(isoDate: string): string[] {
 }
 
 export default function MealHeadcountPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as 'summary' | 'students' | 'logs') || 'summary';
+
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -66,9 +72,17 @@ export default function MealHeadcountPage() {
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Bộ lọc danh sách vận hành (UC-33)
+  // Bộ lọc & Tìm kiếm danh sách học sinh (UC-33)
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'CANCELLED'>('ACTIVE');
+
+  // Phân trang (Pagination) chuẩn theo phong cách Hồ sơ học sinh
+  const [pageIndex, setPageIndex] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Bộ lọc cho tab Nhật ký biến động
+  const [logFilter, setLogFilter] = useState<'ALL' | 'AutoCancelled' | 'ParentCancelled' | 'Restored'>('ALL');
 
   // Modal Chốt suất ăn (08h15)
   const [showLockModal, setShowLockModal] = useState<boolean>(false);
@@ -110,6 +124,7 @@ export default function MealHeadcountPage() {
     return board.cutoffTime.replace(':', 'h');
   }, [board?.cutoffTime]);
 
+  // Lọc danh sách học sinh
   const filteredStudentMeals = useMemo(() => {
     const list = board?.studentMeals ?? [];
     return list.filter((item) => {
@@ -118,9 +133,42 @@ export default function MealHeadcountPage() {
       }
       if (statusFilter === 'ACTIVE' && !item.isActive) return false;
       if (statusFilter === 'CANCELLED' && item.isActive) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = item.studentName.toLowerCase().includes(q);
+        const matchCode = item.studentCode.toLowerCase().includes(q);
+        const matchClass = item.className.toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchClass) return false;
+      }
+
       return true;
     });
-  }, [board?.studentMeals, selectedClassFilter, statusFilter]);
+  }, [board?.studentMeals, selectedClassFilter, statusFilter, searchQuery]);
+
+  // Reset trang về 1 khi đổi bộ lọc
+  useEffect(() => {
+    setPageIndex(1);
+  }, [selectedClassFilter, statusFilter, searchQuery, selectedDate, pageSize]);
+
+  // Phân trang dữ liệu học sinh
+  const totalCount = filteredStudentMeals.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pagedStudents = useMemo(() => {
+    const start = (pageIndex - 1) * pageSize;
+    return filteredStudentMeals.slice(start, start + pageSize);
+  }, [filteredStudentMeals, pageIndex, pageSize]);
+
+  // Lọc nhật ký biến động
+  const filteredLogs = useMemo(() => {
+    const logs = board?.mealChangeLogs ?? [];
+    if (logFilter === 'ALL') return logs;
+    return logs.filter((l) => l.changeType === logFilter);
+  }, [board?.mealChangeLogs, logFilter]);
+
+  const handleTabChange = (tab: 'summary' | 'students' | 'logs') => {
+    setSearchParams({ tab });
+  };
 
   const handleSaveConfig = async () => {
     try {
@@ -212,8 +260,8 @@ export default function MealHeadcountPage() {
       <span className="decor decor--triangle" style={{ bottom: 30, left: 10 }} aria-hidden="true" />
       <span className="decor decor--square" style={{ top: 160, right: -15 }} aria-hidden="true" />
 
-      {/* Header */}
-      <header className="page-header" style={{ marginBottom: 24 }}>
+      {/* Page Header */}
+      <header className="page-header" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
@@ -225,14 +273,14 @@ export default function MealHeadcountPage() {
               )}
             </div>
             <h1 style={{ margin: '4px 0 8px' }}>
-              Bảng Vận Hành <span className="squiggle">Suất Ăn Bán Trú</span>
+              Báo Cáo <span className="squiggle">Suất Ăn Bếp</span>
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)' }}>
-              Cấu hình ngày phục vụ & hạn đăng ký/hủy ({effectiveCutoffLabel}), tự động trừ suất khi đơn nghỉ duyệt trước {effectiveCutoffLabel} và tổng hợp suất ăn theo lớp.
+              Theo dõi biến động và chốt suất ăn bán trú hàng ngày theo mốc cắt cơm {effectiveCutoffLabel}.
             </p>
           </div>
 
-          {/* Quick Date Control & UC-32 Button */}
+          {/* Controls: Date Picker & Quick Action buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div className="field" style={{ minWidth: 160 }}>
               <input
@@ -244,428 +292,748 @@ export default function MealHeadcountPage() {
               />
             </div>
 
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => fetchBoard(selectedDate)}
+              title="Làm mới dữ liệu"
+              disabled={loading}
+            >
+              <RefreshCw size={16} className={loading ? 'spin' : ''} />
+              Làm mới
+            </button>
+
             {board?.canManage && (
               <button
                 type="button"
                 className="btn btn--secondary"
                 onClick={() => setShowConfigModal(true)}
-                title="Cấu hình ngày phục vụ, hạn chốt và thực đơn (UC-32)"
+                title="Cấu hình mở/đóng phục vụ & thực đơn ngày (UC-32)"
               >
-                <Settings size={15} />
-                Cấu hình ngày (UC-32)
+                <Settings size={16} />
+                Cấu hình ngày
               </button>
             )}
 
             <button
               type="button"
               className="btn btn--secondary"
-              onClick={() => fetchBoard(selectedDate)}
-              disabled={loading}
-              title="Làm mới dữ liệu"
-            >
-              <RefreshCw size={15} className={loading ? 'spin' : ''} />
-              Làm mới
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Notifications */}
-      {message && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 20,
-            padding: '12px 18px',
-            background: message.type === 'success' ? 'var(--color-quaternary-soft)' : 'var(--color-secondary-soft)',
-            borderColor: message.type === 'success' ? 'var(--color-quaternary)' : 'var(--color-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--color-fg)', fontWeight: 600 }}>
-            {message.type === 'success' ? <CheckCircle2 size={18} color="#059669" /> : <AlertTriangle size={18} color="#e11d48" />}
-            <span>{message.text}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMessage(null)}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-fg)' }}
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* Status Bar: Cutoff, Menu & Lock state */}
-      {board && (
-        <div
-          className="card card--featured"
-          style={{
-            marginBottom: 28,
-            padding: '16px 24px',
-            background: !board.isServing
-              ? 'var(--color-muted)'
-              : board.isLocked
-                ? 'var(--color-quaternary-soft)'
-                : 'var(--color-tertiary-soft)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 16,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: '50%',
-                background: !board.isServing
-                  ? 'var(--color-border)'
-                  : board.isLocked
-                    ? 'var(--color-quaternary)'
-                    : 'var(--color-tertiary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
-                display: 'grid',
-                placeItems: 'center',
-                flexShrink: 0,
-              }}
-            >
-              {board.isLocked ? <Lock size={20} color="var(--color-fg)" /> : <Clock size={20} color="var(--color-fg)" />}
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <strong style={{ fontSize: 'var(--fs-md)', color: 'var(--color-fg)', fontFamily: 'var(--font-heading)' }}>
-                  {!board.isServing
-                    ? 'NGÀY KHÔNG PHỤC VỤ BÁN TRÚ'
-                    : board.isLocked
-                      ? 'ĐÃ CHỐT SỐ LIỆU SUẤT ĂN GỬI NHÀ BẾP'
-                      : 'ĐANG MỞ CẬP NHẬT SUẤT ĂN TRONG NGÀY'}
-                </strong>
-                <span className={`badge ${!board.isServing ? 'badge--muted' : board.isLocked ? 'badge--mint' : 'badge--amber'}`}>
-                  {!board.isServing
-                    ? 'Đóng dịch vụ'
-                    : board.isLocked
-                      ? `Đã khóa (Mốc ${effectiveCutoffLabel})`
-                      : `Hạn đăng ký/hủy: ${effectiveCutoffLabel}`}
-                </span>
-              </div>
-              <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-                {board.serviceRemarks ? (
-                  <>
-                    <strong>Thực đơn / Ghi chú ngày:</strong> {board.serviceRemarks}
-                  </>
-                ) : (
-                  `Đơn xin nghỉ học có bữa trưa được duyệt trước ${effectiveCutoffLabel} sẽ tự động giảm trừ suất ăn.`
-                )}
-              </p>
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={handleExportCsv}
-              title="Xuất danh sách vận hành ra file CSV/Excel"
-            >
-              <Download size={16} />
-              Xuất CSV
-            </button>
-
-            <button
-              type="button"
-              className="btn btn--secondary"
               onClick={() => setShowPrintModal(true)}
+              title="In phiếu bàn giao cho bếp"
             >
               <Printer size={16} />
-              In Phiếu Giao Bếp
+              In Phiếu Giao
             </button>
 
-            {board.canManage && board.isServing && !board.isLocked && (
+            {board?.canManage && board.isServing && !board.isLocked && (
               <button
                 type="button"
                 className="btn btn--primary"
                 onClick={() => setShowLockModal(true)}
               >
                 <Lock size={16} />
-                Chốt Suất Ăn (Mốc {effectiveCutoffLabel})
+                Chốt Suất ({effectiveCutoffLabel})
               </button>
             )}
           </div>
         </div>
-      )}
+      </header>
 
-      {/* 4 Live KPI Cards */}
-      {board && (
+      {/* Global alert toast */}
+      {message && (
         <div
+          className={`card card--featured`}
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
-            gap: 20,
-            marginBottom: 32,
-            paddingTop: 16,
+            marginBottom: 20,
+            background: message.type === 'success' ? 'var(--color-quaternary-soft)' : 'var(--color-secondary-soft)',
+            borderColor: message.type === 'success' ? 'var(--color-quaternary)' : 'var(--color-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 18px',
           }}
         >
-          {/* Card 1: Registered Total */}
-          <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
-            <div
-              style={{
-                position: 'absolute',
-                top: -20,
-                left: 20,
-                width: 42,
-                height: 42,
-                borderRadius: '50%',
-                background: 'var(--color-tertiary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <UtensilsCrossed size={18} color="var(--color-fg)" />
-            </div>
-            <div className="label" style={{ marginBottom: 4 }}>
-              Tổng bản ghi đăng ký ngày
-            </div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: 'var(--color-fg)', fontFamily: 'var(--font-heading)' }}>
-              {board.totalInitialRegistered}{' '}
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
-            </div>
-            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-              Theo các bản đăng ký ngày độc lập (UC-29)
-            </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700 }}>
+            {message.type === 'success' ? (
+              <CheckCircle2 size={18} color="#047857" />
+            ) : (
+              <ShieldAlert size={18} color="#e11d48" />
+            )}
+            <span style={{ color: message.type === 'success' ? '#065f46' : '#9f1239' }}>{message.text}</span>
           </div>
-
-          {/* Card 2: Cancelled */}
-          <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
-            <div
-              style={{
-                position: 'absolute',
-                top: -20,
-                left: 20,
-                width: 42,
-                height: 42,
-                borderRadius: '50%',
-                background: 'var(--color-secondary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <UserMinus size={18} color="#FFFFFF" />
-            </div>
-            <div className="label" style={{ marginBottom: 4 }}>
-              Đã hủy trước {effectiveCutoffLabel}
-            </div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: '#e11d48', fontFamily: 'var(--font-heading)' }}>
-              -{board.totalAutoCancelled}{' '}
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
-            </div>
-            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#e11d48' }}>
-              PH hủy trực tiếp (UC-30) & Tự hủy từ đơn nghỉ
-            </p>
-          </div>
-
-          {/* Card 3: Net Active To Cook */}
-          <div
-            className="card card--featured card--hover"
-            style={{
-              position: 'relative',
-              paddingTop: 28,
-              background: 'var(--color-quaternary-soft)',
-            }}
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={() => setMessage(null)}
           >
-            <div
-              style={{
-                position: 'absolute',
-                top: -20,
-                left: 20,
-                width: 42,
-                height: 42,
-                borderRadius: '50%',
-                background: 'var(--color-quaternary)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <Soup size={18} color="var(--color-fg)" />
-            </div>
-            <div className="label" style={{ marginBottom: 4, color: '#047857' }}>
-              Tổng suất còn hiệu lực (Thực nấu)
-            </div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, color: '#065f46', fontFamily: 'var(--font-heading)' }}>
-              {board.totalActiveToCook}{' '}
-              <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: '#047857' }}>khẩu phần</span>
-            </div>
-            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 600 }}>
-              = Đăng ký ({board.totalInitialRegistered}) - Đã hủy ({board.totalAutoCancelled})
-            </p>
-          </div>
+            Đóng
+          </button>
+        </div>
+      )}
 
-          {/* Card 4: Anomalies */}
-          <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
+      {/* TAB NAVIGATION PILLS (Tách thông tin thành các màn hình độc lập) */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          marginBottom: 24,
+          flexWrap: 'wrap',
+          background: 'var(--color-card)',
+          padding: '8px 12px',
+          borderRadius: 'var(--radius-md)',
+          border: 'var(--border)',
+          boxShadow: 'var(--shadow-card)',
+        }}
+      >
+        <button
+          type="button"
+          className={`btn ${activeTab === 'summary' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => handleTabChange('summary')}
+          style={{ borderRadius: 'var(--radius-full)' }}
+        >
+          <FileSpreadsheet size={16} />
+          1. Tổng Hợp & Chốt Suất
+        </button>
+
+        <button
+          type="button"
+          className={`btn ${activeTab === 'students' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => handleTabChange('students')}
+          style={{ borderRadius: 'var(--radius-full)' }}
+        >
+          <Users size={16} />
+          2. Danh Sách Học Sinh Nhận Suất ({totalCount})
+        </button>
+
+        <button
+          type="button"
+          className={`btn ${activeTab === 'logs' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => handleTabChange('logs')}
+          style={{ borderRadius: 'var(--radius-full)' }}
+        >
+          <Clock size={16} />
+          3. Nhật Ký Biến Động ({board?.mealChangeLogs?.length || 0})
+        </button>
+      </div>
+
+      {/* ===================================================================== */}
+      {/* MÀN HÌNH 1: TỔNG HỢP & CHỐT SUẤT BÁN TRÚ                               */}
+      {/* ===================================================================== */}
+      {activeTab === 'summary' && (
+        <div className="pop-in">
+          {/* Banner Cutoff Time */}
+          {board && (
+            <div
+              className="card card--featured"
+              style={{
+                marginBottom: 24,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 16,
+                background: !board.isServing
+                  ? 'var(--color-secondary-soft)'
+                  : board.isLocked
+                    ? 'var(--color-quaternary-soft)'
+                    : 'var(--color-tertiary-soft)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: '50%',
+                    background: !board.isServing
+                      ? 'var(--color-secondary)'
+                      : board.isLocked
+                        ? 'var(--color-quaternary)'
+                        : 'var(--color-tertiary)',
+                    border: 'var(--border)',
+                    boxShadow: 'var(--shadow-pop-active)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Clock size={22} color="var(--color-fg)" />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 'var(--fs-base)', fontFamily: 'var(--font-heading)' }}>
+                      Quy tắc chốt ăn Tân Lập A: 08h15
+                    </h3>
+                    <span
+                      className={`badge ${
+                        !board.isServing ? 'badge--pink' : board.isLocked ? 'badge--mint' : 'badge--amber'
+                      }`}
+                    >
+                      {!board.isServing
+                        ? 'Đóng dịch vụ ngày'
+                        : board.isLocked
+                          ? `Đã khóa số liệu (${effectiveCutoffLabel})`
+                          : `Hạn đăng ký/hủy: ${effectiveCutoffLabel}`}
+                    </span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                    {board.serviceRemarks ? (
+                      <>
+                        <strong>Thực đơn / Ghi chú ngày:</strong> {board.serviceRemarks}
+                      </>
+                    ) : (
+                      `Đơn xin nghỉ học có bữa trưa được GVCN duyệt trước ${effectiveCutoffLabel} sẽ tự động giảm trừ suất ăn.`
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => handleTabChange('students')}
+                >
+                  <Users size={14} />
+                  Xem danh sách học sinh
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 4 Live KPI Cards */}
+          {board && (
             <div
               style={{
-                position: 'absolute',
-                top: -20,
-                left: 20,
-                width: 42,
-                height: 42,
-                borderRadius: '50%',
-                background: 'var(--color-accent)',
-                border: 'var(--border)',
-                boxShadow: 'var(--shadow-pop-active)',
                 display: 'grid',
-                placeItems: 'center',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+                gap: 20,
+                marginBottom: 28,
               }}
             >
-              <ShieldAlert size={18} color="#FFFFFF" />
+              {/* Card 1: Registered Total */}
+              <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -20,
+                    left: 20,
+                    width: 42,
+                    height: 42,
+                    borderRadius: '50%',
+                    background: 'var(--color-tertiary)',
+                    border: 'var(--border)',
+                    boxShadow: 'var(--shadow-pop-active)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <UtensilsCrossed size={18} color="var(--color-fg)" />
+                </div>
+                <div className="label" style={{ marginBottom: 4 }}>
+                  Tổng bản ghi đăng ký ngày
+                </div>
+                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: 'var(--color-fg)', fontFamily: 'var(--font-heading)' }}>
+                  {board.totalInitialRegistered}{' '}
+                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                  Đăng ký bán trú hợp lệ theo ngày (UC-29)
+                </p>
+              </div>
+
+              {/* Card 2: Cancelled */}
+              <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -20,
+                    left: 20,
+                    width: 42,
+                    height: 42,
+                    borderRadius: '50%',
+                    background: 'var(--color-secondary)',
+                    border: 'var(--border)',
+                    boxShadow: 'var(--shadow-pop-active)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <UserMinus size={18} color="#FFFFFF" />
+                </div>
+                <div className="label" style={{ marginBottom: 4 }}>
+                  Đã hủy trước {effectiveCutoffLabel}
+                </div>
+                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: '#e11d48', fontFamily: 'var(--font-heading)' }}>
+                  -{board.totalAutoCancelled}{' '}
+                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#e11d48' }}>
+                  PH hủy trực tiếp & Tự hủy từ đơn xin nghỉ
+                </p>
+              </div>
+
+              {/* Card 3: Net Active To Cook */}
+              <div
+                className="card card--featured card--hover"
+                style={{
+                  position: 'relative',
+                  paddingTop: 28,
+                  background: 'var(--color-quaternary-soft)',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -20,
+                    left: 20,
+                    width: 42,
+                    height: 42,
+                    borderRadius: '50%',
+                    background: 'var(--color-quaternary)',
+                    border: 'var(--border)',
+                    boxShadow: 'var(--shadow-pop-active)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Soup size={18} color="var(--color-fg)" />
+                </div>
+                <div className="label" style={{ marginBottom: 4, color: '#047857' }}>
+                  Tổng suất còn hiệu lực (Thực nấu)
+                </div>
+                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, color: '#065f46', fontFamily: 'var(--font-heading)' }}>
+                  {board.totalActiveToCook}{' '}
+                  <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: '#047857' }}>khẩu phần</span>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 600 }}>
+                  = Đăng ký ({board.totalInitialRegistered}) - Đã hủy ({board.totalAutoCancelled})
+                </p>
+              </div>
+
+              {/* Card 4: Anomalies */}
+              <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -20,
+                    left: 20,
+                    width: 42,
+                    height: 42,
+                    borderRadius: '50%',
+                    background: 'var(--color-accent)',
+                    border: 'var(--border)',
+                    boxShadow: 'var(--shadow-pop-active)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <ShieldAlert size={18} color="#FFFFFF" />
+                </div>
+                <div className="label" style={{ marginBottom: 4 }}>
+                  Phát sinh bất thường
+                </div>
+                <div
+                  style={{
+                    fontSize: 'var(--fs-2xl)',
+                    fontWeight: 800,
+                    color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-fg)',
+                    fontFamily: 'var(--font-heading)',
+                  }}
+                >
+                  {board.totalAnomalies}{' '}
+                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>em</span>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
+                  Suất đã hủy nhưng GVCN điểm danh Có mặt
+                </p>
+              </div>
             </div>
-            <div className="label" style={{ marginBottom: 4 }}>
-              Phát sinh bất thường
+          )}
+
+          {/* Class Breakdown Table */}
+          <div className="card" style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FileSpreadsheet size={18} color="var(--color-accent)" />
+                  Tổng hợp số suất nhóm theo Lớp học (UC-33)
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                  Bấm vào hàng của một lớp để chuyển nhanh sang danh sách học sinh của lớp đó.
+                </p>
+              </div>
+              <span className="badge badge--muted">
+                {board?.classBreakdowns?.length || 0} lớp học
+              </span>
             </div>
-            <div
-              style={{
-                fontSize: 'var(--fs-2xl)',
-                fontWeight: 800,
-                color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-fg)',
-                fontFamily: 'var(--font-heading)',
-              }}
-            >
-              {board.totalAnomalies}{' '}
-              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>em</span>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+                <thead>
+                  <tr style={{ borderBottom: 'var(--border)', background: 'var(--color-muted)' }}>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700 }}>Lớp</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Khối</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Đăng ký</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Đã hủy</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Thực ăn</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700 }}>Tỷ lệ nhận</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {board?.classBreakdowns && board.classBreakdowns.length > 0 ? (
+                    board.classBreakdowns.map((cls) => {
+                      const percentage = cls.initialRegistered > 0
+                        ? Math.round((cls.actualCount / cls.initialRegistered) * 100)
+                        : 0;
+
+                      return (
+                        <tr
+                          key={cls.classId}
+                          style={{ borderBottom: '1px solid var(--color-border)' }}
+                        >
+                          <td style={{ padding: '12px', fontWeight: 700, color: 'var(--color-accent)' }}>
+                            Lớp {cls.className}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            Khối {cls.grade}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>
+                            {cls.initialRegistered}
+                          </td>
+                          <td
+                            style={{
+                              padding: '12px',
+                              textAlign: 'center',
+                              color: cls.cancelledCount > 0 ? '#e11d48' : 'var(--color-muted-fg)',
+                              fontWeight: cls.cancelledCount > 0 ? 700 : 400,
+                            }}
+                          >
+                            {cls.cancelledCount > 0 ? `-${cls.cancelledCount}` : '0'}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 800, color: '#047857', fontSize: 'var(--fs-base)' }}>
+                            {cls.actualCount}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1, height: 8, background: 'var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
+                                <div
+                                  style={{
+                                    width: `${percentage}%`,
+                                    height: '100%',
+                                    background: percentage === 100 ? 'var(--color-quaternary)' : 'var(--color-tertiary)',
+                                  }}
+                                />
+                              </div>
+                              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', minWidth: 32 }}>
+                                {percentage}%
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn--secondary btn--sm"
+                              onClick={() => {
+                                setSelectedClassFilter(String(cls.classId));
+                                handleTabChange('students');
+                              }}
+                              title={`Xem danh sách học sinh lớp ${cls.className}`}
+                            >
+                              Xem danh sách →
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted-fg)' }}>
+                        Chưa có dữ liệu phân bổ cho ngày này.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
-              Suất đã hủy nhưng GVCN điểm danh Có mặt
-            </p>
           </div>
         </div>
       )}
 
-      {/* Main Content Layout: Two Columns */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 24, alignItems: 'start', marginBottom: 28 }}>
-        {/* Left Column: Class Meal Breakdown Table */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileSpreadsheet size={18} color="var(--color-accent)" />
-              Tổng hợp số suất nhóm theo Lớp học (UC-33)
-            </h3>
-            <span className="badge badge--muted">
-              {board?.classBreakdowns?.length || 0} lớp
-            </span>
+      {/* ===================================================================== */}
+      {/* MÀN HÌNH 2: DANH SÁCH HỌC SINH NHẬN SUẤT (UC-33) + PAGINATION         */}
+      {/* ===================================================================== */}
+      {activeTab === 'students' && (
+        <div className="card pop-in">
+          {/* Header & Filter Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Users size={18} color="var(--color-accent)" />
+                Danh sách tối thiểu phục vụ vận hành theo ngày
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                Phục vụ nhân viên bán trú và giáo viên đối chiếu phát khay ăn theo từng lớp (UC-33).
+              </p>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={handleExportCsv}
+                title="Xuất danh sách học sinh ra file CSV/Excel"
+              >
+                <Download size={15} />
+                Xuất CSV
+              </button>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => setShowPrintModal(true)}
+              >
+                <Printer size={15} />
+                In Phiếu
+              </button>
+            </div>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
+          {/* Search & Filter Bar */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              padding: '12px 16px',
+              background: 'var(--color-muted)',
+              borderRadius: 'var(--radius-sm)',
+              marginBottom: 20,
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            {/* Search Input */}
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search
+                size={16}
+                color="var(--color-muted-fg)"
+                style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}
+              />
+              <input
+                type="text"
+                className="input"
+                placeholder="Tìm tên hoặc mã học sinh..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ paddingLeft: 36, fontSize: 'var(--fs-sm)' }}
+              />
+            </div>
+
+            {/* Class Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Filter size={15} color="var(--color-muted-fg)" />
+              <select
+                className="select"
+                value={selectedClassFilter}
+                onChange={(e) => setSelectedClassFilter(e.target.value)}
+                style={{ minWidth: 160, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+              >
+                <option value="ALL">Tất cả các lớp</option>
+                {board?.classBreakdowns?.map((c) => (
+                  <option key={c.classId} value={String(c.classId)}>
+                    Lớp {c.className} (Khối {c.grade})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <select
+              className="select"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'CANCELLED')}
+              style={{ minWidth: 190, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+            >
+              <option value="ACTIVE">Đang còn hiệu lực (Thực ăn)</option>
+              <option value="CANCELLED">Đã hủy trong ngày</option>
+              <option value="ALL">Tất cả bản ghi đăng ký</option>
+            </select>
+
+            {/* Page Size Select */}
+            <select
+              className="select"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              style={{ minWidth: 120, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+            >
+              <option value={10}>10 dòng / trang</option>
+              <option value={20}>20 dòng / trang</option>
+              <option value={50}>50 dòng / trang</option>
+            </select>
+          </div>
+
+          {/* Quick status counters */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="badge badge--violet">
+              Tổng tìm thấy: <strong>{totalCount}</strong> học sinh
+            </span>
+            <span className="badge badge--mint">
+              Thực ăn: <strong>{filteredStudentMeals.filter((s) => s.isActive).length}</strong>
+            </span>
+            <span className="badge badge--pink">
+              Đã hủy: <strong>{filteredStudentMeals.filter((s) => !s.isActive).length}</strong>
+            </span>
+            {searchQuery && (
+              <span className="badge badge--amber">
+                Từ khóa: &quot;{searchQuery}&quot;
+              </span>
+            )}
+          </div>
+
+          {/* Student Table */}
+          <div style={{ overflowX: 'auto', border: 'var(--border)', borderRadius: 'var(--radius-sm)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: 'var(--border)', background: 'var(--color-muted)' }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700 }}>Lớp</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Khối</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Đăng ký</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Đã hủy</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Thực ăn</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700 }}>Tỷ lệ nhận</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center', width: 56 }}>STT</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Mã HS</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Họ và tên học sinh</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Lớp</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Chế độ ăn</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Trạng thái</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Ghi chú / Lý do hủy</th>
                 </tr>
               </thead>
               <tbody>
-                {board?.classBreakdowns && board.classBreakdowns.length > 0 ? (
-                  board.classBreakdowns.map((cls) => {
-                    const percentage = cls.initialRegistered > 0
-                      ? Math.round((cls.actualCount / cls.initialRegistered) * 100)
-                      : 0;
-
-                    return (
-                      <tr
-                        key={cls.classId}
-                        onClick={() => setSelectedClassFilter(String(cls.classId))}
-                        style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
-                        title="Bấm để lọc danh sách học sinh của lớp này"
-                      >
-                        <td style={{ padding: '12px', fontWeight: 700, color: 'var(--color-accent)' }}>
-                          Lớp {cls.className}
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                          Khối {cls.grade}
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>
-                          {cls.initialRegistered}
-                        </td>
-                        <td
-                          style={{
-                            padding: '12px',
-                            textAlign: 'center',
-                            color: cls.cancelledCount > 0 ? '#e11d48' : 'var(--color-muted-fg)',
-                            fontWeight: cls.cancelledCount > 0 ? 700 : 400,
-                          }}
-                        >
-                          {cls.cancelledCount > 0 ? `-${cls.cancelledCount}` : '0'}
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 800, color: '#047857', fontSize: 'var(--fs-base)' }}>
-                          {cls.actualCount}
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ flex: 1, height: 8, background: 'var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
-                              <div
-                                style={{
-                                  width: `${percentage}%`,
-                                  height: '100%',
-                                  background: percentage === 100 ? 'var(--color-quaternary)' : 'var(--color-tertiary)',
-                                }}
-                              />
-                            </div>
-                            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', minWidth: 32 }}>
-                              {percentage}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                {pagedStudents.length > 0 ? (
+                  pagedStudents.map((item, idx) => (
+                    <tr key={item.registrationId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600 }}>
+                        {(pageIndex - 1) * pageSize + idx + 1}
+                      </td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--color-accent)' }}>
+                        {item.studentCode}
+                      </td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700 }}>{item.studentName}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>Lớp {item.className}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                        <span className="badge badge--amber">
+                          {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                        {item.isActive ? (
+                          <span className="badge badge--mint">Thực ăn</span>
+                        ) : (
+                          <span className="badge badge--pink">Đã hủy</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 12px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                        {(item.isActive ? item.remarks : item.cancellationReason) || '—'}
+                      </td>
+                    </tr>
+                  ))
                 ) : (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted-fg)' }}>
-                      Chưa có dữ liệu phân bổ cho ngày này.
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
+                      {SYSTEM_MESSAGES.MSG43.content}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+
+            {/* PAGINATION BAR (Chuẩn hóa như màn hình Hồ sơ học sinh - admin) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 18px',
+                borderTop: 'var(--border)',
+                background: 'var(--color-muted)',
+                fontSize: 'var(--fs-sm)',
+                flexWrap: 'wrap',
+                gap: 12,
+              }}
+            >
+              <div>
+                Hiển thị <strong>{pagedStudents.length}</strong> / <strong>{totalCount}</strong> học sinh
+                {totalCount > 0 && (
+                  <span style={{ color: 'var(--color-muted-fg)', marginLeft: 8 }}>
+                    (Bản ghi {(pageIndex - 1) * pageSize + 1} – {Math.min(pageIndex * pageSize, totalCount)})
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  disabled={pageIndex <= 1}
+                  onClick={() => setPageIndex((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} /> Trang trước
+                </button>
+                <span className="badge badge--violet" style={{ alignSelf: 'center', padding: '4px 10px' }}>
+                  Trang {pageIndex} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  disabled={pageIndex >= totalPages}
+                  onClick={() => setPageIndex((p) => Math.min(totalPages, p + 1))}
+                >
+                  Trang sau <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Right Column: Real-time Audit Logs */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Clock size={18} color="var(--color-secondary)" />
-              Nhật ký biến động suất ăn
-            </h3>
-            <span className="badge badge--pink">
-              UC-30 & WFL 1.2.3
-            </span>
+      {/* ===================================================================== */}
+      {/* MÀN HÌNH 3: NHẬT KÝ BIẾN ĐỘNG SUẤT ĂN (WFL 1.2.3 & UC-30)              */}
+      {/* ===================================================================== */}
+      {activeTab === 'logs' && (
+        <div className="card pop-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock size={18} color="var(--color-secondary)" />
+                Nhật ký biến động suất ăn (UC-30 & WFL 1.2.3)
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                Truy vết toàn bộ việc hủy suất tự động trước {effectiveCutoffLabel}, phụ huynh hủy trực tiếp và khôi phục suất ăn.
+              </p>
+            </div>
+
+            {/* Filter logs */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select
+                className="select"
+                value={logFilter}
+                onChange={(e) => setLogFilter(e.target.value as 'ALL' | 'AutoCancelled' | 'ParentCancelled' | 'Restored')}
+                style={{ minWidth: 200, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+              >
+                <option value="ALL">Tất cả loại biến động ({board?.mealChangeLogs?.length || 0})</option>
+                <option value="AutoCancelled">Tự hủy từ đơn xin nghỉ</option>
+                <option value="ParentCancelled">Phụ huynh hủy trực tiếp (UC-30)</option>
+                <option value="Restored">Khôi phục suất ăn</option>
+              </select>
+            </div>
           </div>
 
-          <div style={{ maxHeight: 440, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {board?.mealChangeLogs && board.mealChangeLogs.length > 0 ? (
-              board.mealChangeLogs.map((log, idx) => {
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {filteredLogs.length > 0 ? (
+              filteredLogs.map((log, idx) => {
                 const isCancel = log.changeType === 'AutoCancelled' || log.changeType === 'ParentCancelled';
                 return (
                   <div
                     key={idx}
                     style={{
-                      padding: '12px 14px',
+                      padding: '14px 18px',
                       borderRadius: 'var(--radius-sm)',
                       border: 'var(--border)',
                       boxShadow: 'var(--shadow-pop-active)',
@@ -673,10 +1041,12 @@ export default function MealHeadcountPage() {
                       fontSize: 'var(--fs-sm)',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                       <div>
-                        <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--color-fg)' }}>{log.studentName}</strong>
-                        <span style={{ marginLeft: 6, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                        <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--color-fg)' }}>
+                          {log.studentName}
+                        </strong>
+                        <span style={{ marginLeft: 8, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
                           ({log.studentCode}) — Lớp {log.className}
                         </span>
                       </div>
@@ -689,123 +1059,30 @@ export default function MealHeadcountPage() {
                       </span>
                     </div>
 
-                    <p style={{ margin: '4px 0 0', color: 'var(--color-fg)', fontSize: 'var(--fs-xs)', fontStyle: 'italic' }}>
-                      {log.reason}
+                    <p style={{ margin: '6px 0', color: 'var(--color-fg)', fontSize: 'var(--fs-sm)', fontStyle: 'italic' }}>
+                      Lý do: {log.reason}
                     </p>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                      <span>Thời điểm: {new Date(log.timestamp).toLocaleTimeString('vi-VN')}</span>
-                      <span style={{ color: '#059669', fontWeight: 600 }}>✓ Trước giờ chốt {effectiveCutoffLabel}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                      <span>Thời điểm ghi nhận: {new Date(log.timestamp).toLocaleTimeString('vi-VN')}</span>
+                      <span style={{ color: '#059669', fontWeight: 700 }}>✓ Trước giờ chốt {effectiveCutoffLabel}</span>
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-muted-fg)' }}>
-                <UtensilsCrossed size={36} color="var(--color-border)" style={{ marginBottom: 8 }} />
-                <p style={{ margin: 0 }}>Không có biến động hủy/khôi phục suất ăn nào trong ngày.</p>
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--color-muted-fg)' }}>
+                <UtensilsCrossed size={36} color="var(--color-border)" style={{ marginBottom: 12 }} />
+                <p style={{ margin: 0, fontWeight: 600 }}>Không có dữ liệu biến động suất ăn nào cho ngày này.</p>
               </div>
             )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Bottom Section: Minimal Operational Student List & Filters (UC-33) */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Users size={18} color="var(--color-accent)" />
-              Danh sách tối thiểu phục vụ vận hành theo ngày ({filteredStudentMeals.length} học sinh)
-            </h3>
-            <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-              Phục vụ nhân viên bán trú và giáo viên đối chiếu phát khay ăn theo từng lớp (UC-33).
-            </p>
-          </div>
-
-          {/* Filters */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Filter size={15} color="var(--color-muted-fg)" />
-              <select
-                className="select"
-                value={selectedClassFilter}
-                onChange={(e) => setSelectedClassFilter(e.target.value)}
-                style={{ minWidth: 150, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
-              >
-                <option value="ALL">Tất cả các lớp</option>
-                {board?.classBreakdowns?.map((c) => (
-                  <option key={c.classId} value={String(c.classId)}>
-                    Lớp {c.className} (Khối {c.grade})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <select
-              className="select"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'CANCELLED')}
-              style={{ minWidth: 180, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
-            >
-              <option value="ACTIVE">Đang còn hiệu lực (Thực ăn)</option>
-              <option value="CANCELLED">Đã hủy trong ngày</option>
-              <option value="ALL">Tất cả bản ghi đăng ký</option>
-            </select>
-          </div>
-        </div>
-
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
-            <thead>
-              <tr style={{ borderBottom: 'var(--border)', background: 'var(--color-muted)' }}>
-                <th style={{ padding: '10px 12px', textAlign: 'center', width: 56 }}>STT</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left' }}>Mã HS</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left' }}>Họ và tên học sinh</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center' }}>Lớp</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center' }}>Chế độ ăn</th>
-                <th style={{ padding: '10px 12px', textAlign: 'center' }}>Trạng thái</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left' }}>Ghi chú / Lý do hủy</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudentMeals.length > 0 ? (
-                filteredStudentMeals.map((item, idx) => (
-                  <tr key={item.registrationId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600 }}>{idx + 1}</td>
-                    <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--color-accent)' }}>{item.studentCode}</td>
-                    <td style={{ padding: '10px 12px', fontWeight: 700 }}>{item.studentName}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>Lớp {item.className}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      <span className="badge badge--amber">
-                        {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      {item.isActive ? (
-                        <span className="badge badge--mint">Thực ăn</span>
-                      ) : (
-                        <span className="badge badge--pink">Đã hủy</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
-                      {(item.isActive ? item.remarks : item.cancellationReason) || '—'}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '28px', color: 'var(--color-muted-fg)' }}>
-                    {SYSTEM_MESSAGES.MSG43.content}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* MODAL UC-32: Cấu hình Ngày phục vụ, Hạn đăng ký/hủy & Thực đơn */}
+      {/* ===================================================================== */}
+      {/* MODAL UC-32: Cấu hình Ngày phục vụ, Hạn đăng ký/hủy & Thực đơn        */}
+      {/* ===================================================================== */}
       <GeometricModal
         open={showConfigModal}
         onClose={() => setShowConfigModal(false)}
@@ -818,7 +1095,9 @@ export default function MealHeadcountPage() {
       >
         <div>
           <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="cfg-serving">Trạng thái phục vụ ngày {new Date(selectedDate).toLocaleDateString('vi-VN')}</label>
+            <label className="label" htmlFor="cfg-serving">
+              Trạng thái phục vụ ngày {new Date(selectedDate).toLocaleDateString('vi-VN')}
+            </label>
             <select
               id="cfg-serving"
               className="select"
@@ -831,7 +1110,9 @@ export default function MealHeadcountPage() {
           </div>
 
           <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="cfg-cutoff">Hạn đăng ký / hủy suất ăn trong ngày (Quy tắc Tân Lập A: 08:15)</label>
+            <label className="label" htmlFor="cfg-cutoff">
+              Hạn đăng ký / hủy suất ăn trong ngày (Quy tắc Tân Lập A: 08:15)
+            </label>
             <input
               id="cfg-cutoff"
               type="time"
@@ -842,7 +1123,9 @@ export default function MealHeadcountPage() {
           </div>
 
           <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="cfg-remarks">Thực đơn trưa hoặc Ghi chú phục vụ (hiển thị cho Phụ huynh)</label>
+            <label className="label" htmlFor="cfg-remarks">
+              Thực đơn trưa hoặc Ghi chú phục vụ (hiển thị cho Phụ huynh)
+            </label>
             <textarea
               id="cfg-remarks"
               className="input"
@@ -899,7 +1182,9 @@ export default function MealHeadcountPage() {
         </div>
       </GeometricModal>
 
-      {/* MODAL 1: Confirm Lock Headcount (GeometricModal) */}
+      {/* ===================================================================== */}
+      {/* MODAL 1: Confirm Lock Headcount                                       */}
+      {/* ===================================================================== */}
       <GeometricModal
         open={showLockModal}
         onClose={() => setShowLockModal(false)}
@@ -968,7 +1253,9 @@ export default function MealHeadcountPage() {
         </div>
       </GeometricModal>
 
-      {/* MODAL 2: Printable Handover Sheet (GeometricModal) */}
+      {/* ===================================================================== */}
+      {/* MODAL 2: Printable Handover Sheet                                     */}
+      {/* ===================================================================== */}
       <GeometricModal
         open={showPrintModal}
         onClose={() => setShowPrintModal(false)}

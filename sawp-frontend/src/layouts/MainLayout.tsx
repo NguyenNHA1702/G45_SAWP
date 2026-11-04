@@ -14,10 +14,11 @@ import {
   LogOut,
   School,
   Sparkles,
-  User,
   Users,
   UtensilsCrossed,
   ShieldCheck,
+  FileSpreadsheet,
+  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
@@ -29,109 +30,181 @@ import { ChildSelectorPill } from '../components/parent/ChildSelectorPill';
 import type { AppNotification } from '../types/notification.types';
 import './MainLayout.css';
 
-interface NavItem {
+export interface NavSubItem {
+  id: string;
   label: string;
   path: string;
+  roles?: string[];
+  badge?: string;
+  icon?: typeof LayoutDashboard;
+}
+
+export interface NavItem {
+  id: string;
+  label: string;
+  path?: string;
   icon: typeof LayoutDashboard;
   roles?: string[];
   badge?: string;
+  children?: NavSubItem[];
 }
 
 const NAV_ITEMS: NavItem[] = [
   {
+    id: 'dashboard',
     label: 'Tổng quan',
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- Lớp chủ nhiệm & Học sinh (Chỉ Teacher) ---
+  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard/Admin xem) ---
   {
-    label: 'Lớp chủ nhiệm',
-    path: '/teacher/roster',
-    icon: GraduationCap,
-    roles: ['Teacher'],
-  },
-  // --- Điểm danh (Chỉ Teacher) ---
-  {
-    label: 'Điểm danh lớp',
-    path: '/teacher/attendance',
-    icon: CalendarCheck2,
-    roles: ['Teacher'],
-  },
-  {
-    label: 'Duyệt đơn xin nghỉ',
-    path: '/teacher/leave-requests',
-    icon: FileCheck,
-    roles: ['Teacher', 'SchoolBoard'],
-  },
-  // --- Cổng phụ huynh theo dõi con ---
-  {
-    label: 'Hồ sơ các con',
-    path: '/parent/children',
-    icon: HeartHandshake,
-    roles: ['Parent'],
-  },
-  // --- Phụ huynh theo dõi chuyên cần & bán trú (Chỉ Parent) ---
-  {
-    label: 'Đăng ký bán trú',
-    path: '/parent/lunch',
-    icon: UtensilsCrossed,
-    roles: ['Parent'],
-  },
-  {
-    label: 'Đơn xin nghỉ học',
-    path: '/parent/leave-requests',
-    icon: FileText,
-    roles: ['Parent'],
-  },
-  {
-    label: 'Chuyên cần của con',
-    path: '/parent/attendance',
-    icon: ClipboardList,
-    roles: ['Parent'],
-  },
-  {
-    label: 'Đơn hành chính & Giấy tờ',
-    path: '/parent/requests',
-    icon: FileCheck,
-    roles: ['Parent'],
-  },
-  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard xem theo quyền) ---
-  {
+    id: 'kitchen-reports',
     label: 'Báo cáo suất ăn Bếp',
-    path: '/service/headcount',
     icon: UtensilsCrossed,
     roles: ['ServiceStaff', 'OfficeStaff', 'SchoolBoard', 'Admin'],
+    children: [
+      {
+        id: 'kitchen-summary',
+        label: 'Tổng hợp & Chốt suất',
+        path: '/service/headcount?tab=summary',
+        icon: FileSpreadsheet,
+      },
+      {
+        id: 'kitchen-students',
+        label: 'Danh sách nhận suất (UC-33)',
+        path: '/service/headcount?tab=students',
+        icon: Users,
+      },
+      {
+        id: 'kitchen-logs',
+        label: 'Nhật ký biến động',
+        path: '/service/headcount?tab=logs',
+        icon: Clock,
+      },
+    ],
   },
-  // --- Giáo vụ quản lý học sinh & phân lớp (OfficeStaff, Admin) ---
+  // --- Quản lý Giáo vụ: Học sinh & Xếp lớp (OfficeStaff, SchoolBoard, Admin) ---
   {
-    label: 'Hồ sơ học sinh',
-    path: '/students',
+    id: 'office-students-group',
+    label: 'Học sinh & Lớp học',
     icon: Users,
-    roles: ['OfficeStaff', 'Admin'],
-  },
-  {
-    label: 'Lớp học & Xếp lớp',
-    path: '/classes',
-    icon: GraduationCap,
     roles: ['OfficeStaff', 'SchoolBoard', 'Admin'],
+    children: [
+      {
+        id: 'office-students',
+        label: 'Hồ sơ học sinh',
+        path: '/students',
+        roles: ['OfficeStaff', 'Admin'],
+        icon: Users,
+      },
+      {
+        id: 'office-classes',
+        label: 'Lớp học & Xếp lớp',
+        path: '/classes',
+        roles: ['OfficeStaff', 'SchoolBoard', 'Admin'],
+        icon: GraduationCap,
+      },
+      {
+        id: 'office-link-requests',
+        label: 'Duyệt liên kết phụ huynh',
+        path: '/link-requests',
+        roles: ['OfficeStaff', 'Admin'],
+        icon: HeartHandshake,
+      },
+    ],
   },
+  // --- Giáo viên: Điểm danh & Lớp học (Teacher, SchoolBoard) ---
   {
-    label: 'Duyệt liên kết phụ huynh',
-    path: '/link-requests',
+    id: 'teacher-group',
+    label: 'Điểm danh & Lớp học',
+    icon: CalendarCheck2,
+    roles: ['Teacher', 'SchoolBoard'],
+    children: [
+      {
+        id: 'teacher-roster',
+        label: 'Lớp chủ nhiệm',
+        path: '/teacher/roster',
+        roles: ['Teacher'],
+        icon: GraduationCap,
+      },
+      {
+        id: 'teacher-attendance',
+        label: 'Điểm danh lớp',
+        path: '/teacher/attendance',
+        roles: ['Teacher'],
+        icon: CalendarCheck2,
+      },
+      {
+        id: 'teacher-leave',
+        label: 'Duyệt đơn xin nghỉ',
+        path: '/teacher/leave-requests',
+        roles: ['Teacher', 'SchoolBoard'],
+        icon: FileCheck,
+      },
+    ],
+  },
+  // --- Cổng phụ huynh (Parent) ---
+  {
+    id: 'parent-group',
+    label: 'Theo dõi con & Bán trú',
     icon: HeartHandshake,
-    roles: ['OfficeStaff', 'Admin'],
+    roles: ['Parent'],
+    children: [
+      {
+        id: 'parent-children',
+        label: 'Hồ sơ các con',
+        path: '/parent/children',
+        icon: HeartHandshake,
+      },
+      {
+        id: 'parent-lunch',
+        label: 'Đăng ký bán trú',
+        path: '/parent/lunch',
+        icon: UtensilsCrossed,
+      },
+      {
+        id: 'parent-leave',
+        label: 'Đơn xin nghỉ học',
+        path: '/parent/leave-requests',
+        icon: FileText,
+      },
+      {
+        id: 'parent-attendance',
+        label: 'Chuyên cần của con',
+        path: '/parent/attendance',
+        icon: ClipboardList,
+      },
+    ],
   },
+  // --- Đơn hành chính & Giấy tờ (Parent, OfficeStaff, SchoolBoard, Admin) ---
   {
-    label: 'Xử lý đơn hành chính',
-    path: '/office/requests',
+    id: 'administrative-requests-group',
+    label: 'Đơn từ & Hành chính',
     icon: FileCheck,
-    roles: ['OfficeStaff', 'Admin'],
-  },
-  {
-    label: 'Phê duyệt đơn hành chính',
-    path: '/board/requests',
-    icon: ShieldCheck,
-    roles: ['SchoolBoard', 'Admin'],
+    roles: ['Parent', 'OfficeStaff', 'SchoolBoard', 'Admin'],
+    children: [
+      {
+        id: 'parent-requests',
+        label: 'Gửi đơn & Giấy tờ',
+        path: '/parent/requests',
+        roles: ['Parent'],
+        icon: FileCheck,
+      },
+      {
+        id: 'office-requests',
+        label: 'Xử lý đơn hành chính',
+        path: '/office/requests',
+        roles: ['OfficeStaff', 'Admin'],
+        icon: FileCheck,
+      },
+      {
+        id: 'board-requests',
+        label: 'Phê duyệt đơn cấp trường',
+        path: '/board/requests',
+        roles: ['SchoolBoard', 'Admin'],
+        icon: ShieldCheck,
+      },
+    ],
   },
 ];
 
@@ -143,10 +216,38 @@ export function MainLayout() {
   const [showNotifs, setShowNotifs] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
+  // Expanded submenus state
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
+    'kitchen-reports': true,
+  });
+
   // Lấy thông tin user hiện tại từ localStorage
   const userJson = localStorage.getItem(USER_KEY);
   const currentUser = userJson ? JSON.parse(userJson) : null;
   const userRoles: string[] = currentUser?.roles ?? [];
+
+  const isChildActive = (targetPathWithQuery: string) => {
+    const [targetPath, targetQuery] = targetPathWithQuery.split('?');
+    if (location.pathname !== targetPath) return false;
+
+    if (targetQuery) {
+      return location.search.includes(targetQuery);
+    }
+
+    return !location.search || location.search.includes('tab=summary');
+  };
+
+  // Tự động mở menu chứa trang hiện tại
+  useEffect(() => {
+    NAV_ITEMS.forEach((item) => {
+      if (item.children) {
+        const hasActive = item.children.some((c) => isChildActive(c.path));
+        if (hasActive) {
+          setExpandedMenus((prev) => (prev[item.id] ? prev : { ...prev, [item.id]: true }));
+        }
+      }
+    });
+  }, [location.pathname, location.search]);
 
   const fetchNotifications = async () => {
     try {
@@ -196,8 +297,16 @@ export function MainLayout() {
 
   // Lọc menu theo roles
   const allowedNav = NAV_ITEMS.filter((item) => {
-    if (!item.roles || item.roles.length === 0) return true;
-    return item.roles.some((r) => userRoles.includes(r));
+    if (item.roles && item.roles.length > 0) {
+      if (!item.roles.some((r) => userRoles.includes(r))) return false;
+    }
+    if (item.children && item.children.length > 0) {
+      const hasVisibleChild = item.children.some(
+        (c) => !c.roles || c.roles.some((r) => userRoles.includes(r))
+      );
+      if (!hasVisibleChild) return false;
+    }
+    return true;
   });
 
   return (
@@ -218,17 +327,71 @@ export function MainLayout() {
           </div>
 
           <nav className="sidebar-nav">
-            <div className="nav-section-label">CHỨC NĂNG CHÍNH</div>
+            <div className="nav-section-label">CHỨC NĂNG HỆ THỐNG</div>
             {allowedNav.map((item) => {
               const Icon = item.icon;
+              const visibleChildren = item.children
+                ? item.children.filter((c) => !c.roles || c.roles.some((r) => userRoles.includes(r)))
+                : [];
+
+              const hasChildren = visibleChildren.length > 0;
+
+              if (hasChildren) {
+                const isExpanded = !!expandedMenus[item.id];
+                const isAnyChildActive = visibleChildren.some((c) => isChildActive(c.path));
+
+                return (
+                  <div key={item.id} className="nav-group">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedMenus((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                      className={`nav-parent-btn ${isAnyChildActive ? 'nav-parent-btn--active' : ''} ${isExpanded ? 'nav-parent-btn--open' : ''}`}
+                      aria-expanded={isExpanded}
+                    >
+                      <span className="nav-link__icon">
+                        <Icon size={18} />
+                      </span>
+                      <span className="nav-link__label">{item.label}</span>
+                      {item.badge && <span className="badge badge--pink nav-badge">{item.badge}</span>}
+                      <ChevronRight
+                        size={16}
+                        className={`nav-chevron-toggle ${isExpanded ? 'nav-chevron-toggle--rotated' : ''}`}
+                      />
+                    </button>
+
+                    {isExpanded && (
+                      <div className="nav-submenu">
+                        {visibleChildren.map((child) => {
+                          const ChildIcon = child.icon;
+                          const isActive = isChildActive(child.path);
+                          return (
+                            <Link
+                              key={child.id}
+                              to={child.path}
+                              className={`nav-sublink ${isActive ? 'nav-sublink--active' : ''}`}
+                            >
+                              {ChildIcon ? <ChildIcon size={14} /> : <span className="nav-sublink__dot" />}
+                              <span style={{ flex: 1 }}>{child.label}</span>
+                              {child.badge && <span className="badge badge--pink nav-badge">{child.badge}</span>}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Standalone item (e.g. Dashboard)
               const isActive =
                 item.path === '/dashboard'
                   ? location.pathname === '/dashboard'
-                  : location.pathname.startsWith(item.path);
+                  : location.pathname.startsWith(item.path ?? '');
+
               return (
                 <Link
-                  key={item.path}
-                  to={item.path}
+                  key={item.id}
+                  to={item.path ?? '#'}
                   className={`nav-link ${isActive ? 'nav-link--active' : ''}`}
                 >
                   <span className="nav-link__icon">
@@ -248,10 +411,12 @@ export function MainLayout() {
                 {currentUser?.fullName?.[0]?.toUpperCase() ?? 'U'}
               </div>
               <div className="user-info">
-                <div className="user-name">{currentUser?.fullName ?? 'Người dùng'}</div>
+                <div className="user-name" title={currentUser?.fullName}>
+                  {currentUser?.fullName ?? 'Người dùng'}
+                </div>
                 <div className="user-role-badge">
-                  <span className="badge badge--violet badge--sm">
-                    {userRoles[0] ?? 'Thành viên'}
+                  <span className="badge badge--mint" style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
+                    {userRoles[0] ?? 'User'}
                   </span>
                 </div>
               </div>
@@ -260,18 +425,19 @@ export function MainLayout() {
             <div className="sidebar-actions">
               <button
                 type="button"
-                className="btn btn--secondary btn--sm btn--full"
+                className="btn btn--secondary btn--sm"
                 onClick={() => setChangePasswordOpen(true)}
-                title="Đổi mật khẩu tài khoản"
               >
-                <KeyRound size={15} /> Đổi mật khẩu
+                <KeyRound size={14} />
+                <span>Đổi mật khẩu</span>
               </button>
               <button
                 type="button"
-                className="btn btn--secondary btn--sm btn--full btn--logout"
+                className="btn btn--secondary btn--sm btn--logout"
                 onClick={handleLogout}
               >
-                <LogOut size={15} /> Đăng xuất
+                <LogOut size={14} />
+                <span>Đăng xuất</span>
               </button>
             </div>
           </div>
@@ -279,117 +445,123 @@ export function MainLayout() {
 
         {/* MAIN WRAPPER */}
         <div className="layout-main-wrapper">
-          {/* HEADER */}
+          {/* TOP HEADER */}
           <header className="layout-header">
             <div className="header-left">
-              <span className="badge badge--amber header-pill">Năm học 2026 - 2027</span>
-              {userRoles.includes('Parent') && <ChildSelectorPill />}
+              <span className="badge badge--violet header-pill">
+                Hệ thống Quản trị & Bán trú Tiểu học
+              </span>
+              <ChildSelectorPill />
             </div>
 
             <div className="header-right">
-              {/* NOTIFICATION BUTTON & POPUP */}
+              {/* Notifications dropdown trigger */}
               <div style={{ position: 'relative' }} ref={notifRef}>
                 <button
                   type="button"
                   className="header-btn"
-                  onClick={() => {
-                    setShowNotifs(!showNotifs);
-                    if (!showNotifs) fetchNotifications();
-                  }}
-                  title="Thông báo hệ thống"
-                  style={{ position: 'relative' }}
+                  aria-label="Thông báo"
+                  onClick={() => setShowNotifs((v) => !v)}
                 >
                   <Bell size={18} />
-                  {unreadCount > 0 ? (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '2px',
-                        right: '2px',
-                        backgroundColor: '#EF4444',
-                        color: '#FFFFFF',
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        borderRadius: '10px',
-                        padding: '1px 5px',
-                        lineHeight: '1.2',
-                      }}
-                    >
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  ) : (
-                    <span className="header-badge-dot" />
-                  )}
+                  {unreadCount > 0 && <span className="header-badge-dot" />}
                 </button>
 
                 {showNotifs && (
                   <div
+                    className="card"
                     style={{
                       position: 'absolute',
-                      top: '46px',
                       right: 0,
-                      width: '360px',
-                      maxHeight: '440px',
+                      top: 'calc(100% + 8px)',
+                      width: 360,
+                      maxHeight: 440,
                       overflowY: 'auto',
-                      backgroundColor: '#FFFFFF',
-                      borderRadius: '16px',
-                      boxShadow: '0 12px 30px rgba(0, 0, 0, 0.15)',
-                      border: '1px solid #E2E8F0',
-                      zIndex: 9999,
-                      padding: '16px',
+                      zIndex: 50,
+                      boxShadow: 'var(--shadow-card)',
+                      padding: 0,
                     }}
                   >
                     <div
                       style={{
+                        padding: '12px 16px',
+                        borderBottom: 'var(--border)',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        marginBottom: '12px',
-                        paddingBottom: '8px',
-                        borderBottom: '1px solid #F1F5F9',
+                        background: 'var(--color-muted)',
                       }}
                     >
-                      <strong style={{ fontSize: '15px', color: '#0F172A' }}>Thông báo hệ thống</strong>
-                      <span style={{ fontSize: '12px', color: '#64748B' }}>
+                      <strong style={{ fontSize: 'var(--fs-sm)' }}>Thông báo</strong>
+                      <span className="badge badge--violet" style={{ fontSize: '0.7rem' }}>
                         {unreadCount} chưa đọc
                       </span>
                     </div>
 
                     {notifications.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '24px 8px', color: '#94A3B8', fontSize: '13px' }}>
-                        Không có thông báo nào
+                      <div
+                        style={{
+                          padding: 24,
+                          textAlign: 'center',
+                          color: 'var(--color-muted-fg)',
+                          fontSize: 'var(--fs-sm)',
+                        }}
+                      >
+                        Không có thông báo nào.
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {notifications.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => handleOpenNotification(item)}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {notifications.map((n) => (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => handleOpenNotification(n)}
                             style={{
-                              padding: '10px 12px',
-                              borderRadius: '10px',
-                              backgroundColor: item.isRead ? '#F8FAFC' : '#EFF6FF',
-                              border: item.isRead ? '1px solid #F1F5F9' : '1px solid #BFDBFE',
+                              padding: '10px 14px',
+                              textAlign: 'left',
+                              border: 'none',
+                              borderBottom: '1px solid var(--color-border)',
+                              background: n.isRead ? 'transparent' : 'var(--color-accent-soft)',
                               cursor: 'pointer',
-                              transition: 'background-color 0.15s ease',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2,
+                              transition: 'background 120ms ease',
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                              <strong style={{ fontSize: '13px', color: item.isRead ? '#334155' : '#1D4ED8' }}>
-                                {item.title}
-                              </strong>
-                              {!item.isRead && (
-                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2563EB', display: 'inline-block' }} />
-                              )}
-                            </div>
-                            <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
-                              {item.content}
-                            </p>
-                            <small style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px', display: 'block' }}>
-                              {new Date(item.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}{' '}
-                              {new Date(item.createdAt).toLocaleDateString('vi-VN')}
-                            </small>
-                          </div>
+                            <span
+                              style={{
+                                fontSize: 'var(--fs-xs)',
+                                fontWeight: n.isRead ? 600 : 800,
+                                color: 'var(--color-fg)',
+                              }}
+                            >
+                              {n.title}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 'var(--fs-xs)',
+                                color: 'var(--color-muted-fg)',
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              {n.content}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '0.65rem',
+                                color: 'var(--color-muted-fg)',
+                                marginTop: 2,
+                              }}
+                            >
+                              {new Date(n.createdAt).toLocaleTimeString('vi-VN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                day: '2-digit',
+                                month: '2-digit',
+                              })}
+                            </span>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -397,29 +569,30 @@ export function MainLayout() {
                 )}
               </div>
 
+              {/* User greeting */}
               <div className="header-user">
-                <span className="user-greeting">
-                  Xin chào, <strong>{currentUser?.fullName ?? 'Thầy/Cô'}</strong>
-                </span>
-                <div className="header-avatar">
-                  <User size={16} />
+                <div className="header-avatar" aria-hidden="true">
+                  {currentUser?.fullName?.[0]?.toUpperCase() ?? 'U'}
+                </div>
+                <div className="user-greeting">
+                  Xin chào, <strong>{currentUser?.fullName ?? 'Người dùng'}</strong>
                 </div>
               </div>
             </div>
           </header>
 
-          {/* CONTENT VIEW */}
+          {/* PAGE CONTENT */}
           <main className="layout-content">
             <Outlet />
           </main>
         </div>
-
-        {/* Modal đổi mật khẩu */}
-        <ChangePasswordModal
-          open={changePasswordOpen}
-          onClose={() => setChangePasswordOpen(false)}
-        />
       </div>
+
+      {/* Change password modal */}
+      <ChangePasswordModal
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </ParentChildProvider>
   );
 }
