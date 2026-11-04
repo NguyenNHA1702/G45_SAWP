@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
-  Sparkles,
   UtensilsCrossed,
   Clock,
   CheckCircle2,
@@ -277,28 +276,23 @@ export default function MealHeadcountPage() {
 
   return (
     <div className="container pop-in" style={{ paddingBottom: 60 }}>
-      {/* Decorative Memphis shapes */}
-      <span className="decor decor--circle" style={{ top: -20, right: 30 }} aria-hidden="true" />
-      <span className="decor decor--triangle" style={{ bottom: 30, left: 10 }} aria-hidden="true" />
-      <span className="decor decor--square" style={{ top: 160, right: -15 }} aria-hidden="true" />
-
       {/* Page Header */}
       <header className="page-header" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
               <span className="badge badge--mint">
-                <Sparkles size={14} /> Tổ Bán Trú & Bếp Ăn (UC-32 & UC-33)
+                <Soup size={13} /> Tổ Bán Trú & Bếp Ăn
               </span>
               {board && !board.canManage && (
-                <span className="badge badge--violet">Chế độ Xem báo cáo (Theo phân quyền)</span>
+                <span className="badge badge--violet">Chế độ Xem báo cáo</span>
               )}
             </div>
             <h1 style={{ margin: '4px 0 8px' }}>
-              Báo Cáo <span className="squiggle">Suất Ăn Bếp</span>
+              Báo Cáo <span className="squiggle">Suất Ăn Bán Trú</span>
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)' }}>
-              Theo dõi biến động và chốt suất ăn bán trú hàng ngày theo mốc cắt cơm {effectiveCutoffLabel}.
+              Theo dõi biến động và chốt khẩu phần nhà bếp hàng ngày theo mốc cắt cơm {effectiveCutoffLabel}.
             </p>
           </div>
 
@@ -320,8 +314,9 @@ export default function MealHeadcountPage() {
               onClick={() => fetchBoard(selectedDate)}
               title="Làm mới dữ liệu"
               disabled={loading}
+              style={{ borderRadius: 'var(--radius-full)' }}
             >
-              <RefreshCw size={16} className={loading ? 'spin' : ''} />
+              <RefreshCw size={15} className={loading ? 'spin' : ''} />
               Làm mới
             </button>
 
@@ -330,9 +325,10 @@ export default function MealHeadcountPage() {
                 type="button"
                 className="btn btn--secondary"
                 onClick={() => setShowConfigModal(true)}
-                title="Cấu hình mở/đóng phục vụ & thực đơn ngày (UC-32)"
+                title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
+                style={{ borderRadius: 'var(--radius-full)' }}
               >
-                <Settings size={16} />
+                <Settings size={15} />
                 Cấu hình ngày
               </button>
             )}
@@ -342,8 +338,9 @@ export default function MealHeadcountPage() {
               className="btn btn--secondary"
               onClick={() => setShowPrintModal(true)}
               title="In phiếu bàn giao cho bếp"
+              style={{ borderRadius: 'var(--radius-full)' }}
             >
-              <Printer size={16} />
+              <Printer size={15} />
               In Phiếu Giao
             </button>
 
@@ -352,8 +349,20 @@ export default function MealHeadcountPage() {
                 type="button"
                 className="btn btn--primary"
                 onClick={() => setShowLockModal(true)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '10px 22px',
+                  background: 'var(--color-accent)',
+                  color: '#FFFFFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
               >
-                <Lock size={16} />
+                <Lock size={15} />
                 Chốt Suất ({effectiveCutoffLabel})
               </button>
             )}
@@ -361,18 +370,20 @@ export default function MealHeadcountPage() {
         </div>
       </header>
 
-      {/* Global alert toast */}
+      {/* Global alert toast - Clean, un-cluttered notice */}
       {message && (
         <div
-          className={`card card--featured`}
           style={{
             marginBottom: 20,
-            background: message.type === 'success' ? 'var(--color-quaternary-soft)' : 'var(--color-secondary-soft)',
-            borderColor: message.type === 'success' ? 'var(--color-quaternary)' : 'var(--color-secondary)',
+            background: message.type === 'success' ? '#ECFDF5' : '#FFF1F2',
+            border: `2px solid ${message.type === 'success' ? 'var(--color-quaternary)' : 'var(--color-secondary)'}`,
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '3px 3px 0 0 var(--color-fg)',
+            padding: '12px 18px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '12px 18px',
+            animation: 'pop-in 0.2s ease',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700 }}>
@@ -387,55 +398,97 @@ export default function MealHeadcountPage() {
             type="button"
             className="btn btn--secondary btn--sm"
             onClick={() => setMessage(null)}
+            style={{ borderRadius: 'var(--radius-full)' }}
           >
             Đóng
           </button>
         </div>
       )}
 
-      {/* TAB NAVIGATION PILLS (Tách thông tin thành các màn hình độc lập) */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          marginBottom: 24,
-          flexWrap: 'wrap',
-          background: 'var(--color-card)',
-          padding: '8px 12px',
-          borderRadius: 'var(--radius-md)',
-          border: 'var(--border)',
-          boxShadow: 'var(--shadow-card)',
-        }}
-      >
-        <button
-          type="button"
-          className={`btn ${activeTab === 'summary' ? 'btn--primary' : 'btn--secondary'}`}
-          onClick={() => handleTabChange('summary')}
-          style={{ borderRadius: 'var(--radius-full)' }}
+      {/* TAB NAVIGATION PILLS - Clean, Sleek, Unified */}
+      <div style={{ marginBottom: 24 }}>
+        <div
+          style={{
+            display: 'inline-flex',
+            gap: 6,
+            background: 'var(--color-muted)',
+            padding: '4px',
+            borderRadius: 'var(--radius-full)',
+            border: '2px solid var(--color-fg)',
+            boxShadow: '3px 3px 0 0 var(--color-fg)',
+            maxWidth: '100%',
+            overflowX: 'auto',
+          }}
         >
-          <FileSpreadsheet size={16} />
-          1. Tổng Hợp & Chốt Suất
-        </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('summary')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-full)',
+              border: activeTab === 'summary' ? '2px solid var(--color-fg)' : '2px solid transparent',
+              background: activeTab === 'summary' ? 'var(--color-accent)' : 'transparent',
+              color: activeTab === 'summary' ? '#FFFFFF' : 'var(--color-fg)',
+              fontWeight: 800,
+              fontSize: 'var(--fs-sm)',
+              cursor: 'pointer',
+              boxShadow: activeTab === 'summary' ? '2px 2px 0 0 var(--color-fg)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <FileSpreadsheet size={15} />
+            1. Tổng Hợp & Chốt Suất
+          </button>
 
-        <button
-          type="button"
-          className={`btn ${activeTab === 'students' ? 'btn--primary' : 'btn--secondary'}`}
-          onClick={() => handleTabChange('students')}
-          style={{ borderRadius: 'var(--radius-full)' }}
-        >
-          <Users size={16} />
-          2. Danh Sách Học Sinh Nhận Suất ({totalCount})
-        </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('students')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-full)',
+              border: activeTab === 'students' ? '2px solid var(--color-fg)' : '2px solid transparent',
+              background: activeTab === 'students' ? 'var(--color-accent)' : 'transparent',
+              color: activeTab === 'students' ? '#FFFFFF' : 'var(--color-fg)',
+              fontWeight: 800,
+              fontSize: 'var(--fs-sm)',
+              cursor: 'pointer',
+              boxShadow: activeTab === 'students' ? '2px 2px 0 0 var(--color-fg)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Users size={15} />
+            2. Danh Sách Học Sinh ({totalCount})
+          </button>
 
-        <button
-          type="button"
-          className={`btn ${activeTab === 'logs' ? 'btn--primary' : 'btn--secondary'}`}
-          onClick={() => handleTabChange('logs')}
-          style={{ borderRadius: 'var(--radius-full)' }}
-        >
-          <Clock size={16} />
-          3. Nhật Ký Biến Động ({board?.mealChangeLogs?.length || 0})
-        </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('logs')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-full)',
+              border: activeTab === 'logs' ? '2px solid var(--color-fg)' : '2px solid transparent',
+              background: activeTab === 'logs' ? 'var(--color-accent)' : 'transparent',
+              color: activeTab === 'logs' ? '#FFFFFF' : 'var(--color-fg)',
+              fontWeight: 800,
+              fontSize: 'var(--fs-sm)',
+              cursor: 'pointer',
+              boxShadow: activeTab === 'logs' ? '2px 2px 0 0 var(--color-fg)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Clock size={15} />
+            3. Nhật Ký Biến Động ({board?.mealChangeLogs?.length || 0})
+          </button>
+        </div>
       </div>
 
       {/* ===================================================================== */}
@@ -443,10 +496,9 @@ export default function MealHeadcountPage() {
       {/* ===================================================================== */}
       {activeTab === 'summary' && (
         <div className="pop-in">
-          {/* Banner Cutoff Time */}
+          {/* Banner Cutoff Time & Menu (Clean Warm Cream Paper) */}
           {board && (
             <div
-              className="card card--featured"
               style={{
                 marginBottom: 24,
                 display: 'flex',
@@ -454,11 +506,11 @@ export default function MealHeadcountPage() {
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
                 gap: 16,
-                background: !board.isServing
-                  ? 'var(--color-secondary-soft)'
-                  : board.isLocked
-                    ? 'var(--color-quaternary-soft)'
-                    : 'var(--color-tertiary-soft)',
+                background: '#FFFDF5',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '16px 20px',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -472,18 +524,19 @@ export default function MealHeadcountPage() {
                       : board.isLocked
                         ? 'var(--color-quaternary)'
                         : 'var(--color-tertiary)',
-                    border: 'var(--border)',
-                    boxShadow: 'var(--shadow-pop-active)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '2px 2px 0 0 var(--color-fg)',
                     display: 'grid',
                     placeItems: 'center',
+                    flexShrink: 0,
                   }}
                 >
                   <Clock size={22} color="var(--color-fg)" />
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <h3 style={{ margin: 0, fontSize: 'var(--fs-base)', fontFamily: 'var(--font-heading)' }}>
-                      Quy tắc chốt ăn Tân Lập A: 08h15
+                      Quy tắc chốt ăn Tân Lập A: {effectiveCutoffLabel}
                     </h3>
                     <span
                       className={`badge ${
@@ -494,13 +547,13 @@ export default function MealHeadcountPage() {
                         ? 'Đóng dịch vụ ngày'
                         : board.isLocked
                           ? `Đã khóa số liệu (${effectiveCutoffLabel})`
-                          : `Hạn đăng ký/hủy: ${effectiveCutoffLabel}`}
+                          : `Hạn hủy suất: ${effectiveCutoffLabel}`}
                     </span>
                   </div>
                   <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
                     {board.serviceRemarks ? (
                       <>
-                        <strong>Thực đơn / Ghi chú ngày:</strong> {board.serviceRemarks}
+                        <strong style={{ color: 'var(--color-fg)' }}>Thực đơn trưa hôm nay:</strong> {board.serviceRemarks}
                       </>
                     ) : (
                       `Đơn xin nghỉ học có bữa trưa được GVCN duyệt trước ${effectiveCutoffLabel} sẽ tự động giảm trừ suất ăn.`
@@ -514,6 +567,7 @@ export default function MealHeadcountPage() {
                   type="button"
                   className="btn btn--secondary btn--sm"
                   onClick={() => handleTabChange('students')}
+                  style={{ borderRadius: 'var(--radius-full)' }}
                 >
                   <Users size={14} />
                   Xem danh sách học sinh
@@ -523,138 +577,178 @@ export default function MealHeadcountPage() {
             </div>
           )}
 
-          {/* 4 Live KPI Cards */}
+          {/* 4 Live KPI Cards - Harmonious, Clean, Balanced Grid */}
           {board && (
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
-                gap: 20,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: 16,
                 marginBottom: 28,
               }}
             >
               {/* Card 1: Registered Total */}
-              <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -20,
-                    left: 20,
-                    width: 42,
-                    height: 42,
-                    borderRadius: '50%',
-                    background: 'var(--color-tertiary)',
-                    border: 'var(--border)',
-                    boxShadow: 'var(--shadow-pop-active)',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <UtensilsCrossed size={18} color="var(--color-fg)" />
+              <div
+                className="card"
+                style={{
+                  background: 'var(--color-card)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '20px 22px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div className="label" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.04em' }}>
+                    TỔNG ĐĂNG KÝ ĐẦU NGÀY
+                  </div>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: 'var(--color-tertiary)',
+                      border: '1.5px solid var(--color-fg)',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <UtensilsCrossed size={16} color="var(--color-fg)" />
+                  </div>
                 </div>
-                <div className="label" style={{ marginBottom: 4 }}>
-                  Tổng bản ghi đăng ký ngày
-                </div>
+
                 <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: 'var(--color-fg)', fontFamily: 'var(--font-heading)' }}>
                   {board.totalInitialRegistered}{' '}
                   <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
                 </div>
-                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                  Đăng ký bán trú hợp lệ theo ngày (UC-29)
+
+                <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                  Đăng ký bán trú chính thức trong ngày
                 </p>
               </div>
 
               {/* Card 2: Cancelled */}
-              <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -20,
-                    left: 20,
-                    width: 42,
-                    height: 42,
-                    borderRadius: '50%',
-                    background: 'var(--color-secondary)',
-                    border: 'var(--border)',
-                    boxShadow: 'var(--shadow-pop-active)',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <UserMinus size={18} color="#FFFFFF" />
+              <div
+                className="card"
+                style={{
+                  background: 'var(--color-card)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '20px 22px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div className="label" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: '#9F1239' }}>
+                    ĐÃ HỦY TRƯỚC {effectiveCutoffLabel}
+                  </div>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: '#FFE4E6',
+                      border: '1.5px solid var(--color-fg)',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <UserMinus size={16} color="#E11D48" />
+                  </div>
                 </div>
-                <div className="label" style={{ marginBottom: 4 }}>
-                  Đã hủy trước {effectiveCutoffLabel}
-                </div>
-                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: '#e11d48', fontFamily: 'var(--font-heading)' }}>
+
+                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: '#E11D48', fontFamily: 'var(--font-heading)' }}>
                   -{board.totalAutoCancelled}{' '}
                   <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
                 </div>
-                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#e11d48' }}>
-                  PH hủy trực tiếp & Tự hủy từ đơn xin nghỉ
+
+                <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: '#E11D48' }}>
+                  Hủy từ đơn xin nghỉ & phụ huynh báo hủy
                 </p>
               </div>
 
-              {/* Card 3: Net Active To Cook */}
+              {/* Card 3: Net Active To Cook - HERO METRIC CARD */}
               <div
-                className="card card--featured card--hover"
+                className="card"
                 style={{
-                  position: 'relative',
-                  paddingTop: 28,
-                  background: 'var(--color-quaternary-soft)',
+                  background: '#ECFDF5',
+                  border: '2.5px solid #059669',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '20px 22px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
                 }}
               >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -20,
-                    left: 20,
-                    width: 42,
-                    height: 42,
-                    borderRadius: '50%',
-                    background: 'var(--color-quaternary)',
-                    border: 'var(--border)',
-                    boxShadow: 'var(--shadow-pop-active)',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <Soup size={18} color="var(--color-fg)" />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div className="label" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: '#065F46', fontWeight: 800 }}>
+                    THỰC NẤU (BÀN GIAO BẾP)
+                  </div>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: 'var(--color-quaternary)',
+                      border: '1.5px solid var(--color-fg)',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <Soup size={18} color="var(--color-fg)" />
+                  </div>
                 </div>
-                <div className="label" style={{ marginBottom: 4, color: '#047857' }}>
-                  Tổng suất còn hiệu lực (Thực nấu)
-                </div>
-                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, color: '#065f46', fontFamily: 'var(--font-heading)' }}>
+
+                <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 900, color: '#065F46', fontFamily: 'var(--font-heading)' }}>
                   {board.totalActiveToCook}{' '}
                   <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: '#047857' }}>khẩu phần</span>
                 </div>
-                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 600 }}>
-                  = Đăng ký ({board.totalInitialRegistered}) - Đã hủy ({board.totalAutoCancelled})
+
+                <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 700 }}>
+                  ✓ Số lượng thực tế giao bếp thực hiện
                 </p>
               </div>
 
               {/* Card 4: Anomalies */}
-              <div className="card card--hover" style={{ position: 'relative', paddingTop: 28 }}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -20,
-                    left: 20,
-                    width: 42,
-                    height: 42,
-                    borderRadius: '50%',
-                    background: 'var(--color-accent)',
-                    border: 'var(--border)',
-                    boxShadow: 'var(--shadow-pop-active)',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <ShieldAlert size={18} color="#FFFFFF" />
+              <div
+                className="card"
+                style={{
+                  background: 'var(--color-card)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '20px 22px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div className="label" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
+                    PHÁT SINH CẦN ĐỐI SOÁT
+                  </div>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: '#EDE9FE',
+                      border: '1.5px solid var(--color-fg)',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <ShieldAlert size={16} color="var(--color-accent)" />
+                  </div>
                 </div>
-                <div className="label" style={{ marginBottom: 4 }}>
-                  Phát sinh bất thường
-                </div>
+
                 <div
                   style={{
                     fontSize: 'var(--fs-2xl)',
@@ -666,41 +760,51 @@ export default function MealHeadcountPage() {
                   {board.totalAnomalies}{' '}
                   <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>em</span>
                 </div>
-                <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
-                  Suất đã hủy nhưng GVCN điểm danh Có mặt
+
+                <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: board.totalAnomalies > 0 ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
+                  Hủy suất ăn nhưng có mặt tại lớp
                 </p>
               </div>
             </div>
           )}
 
           {/* Class Breakdown Table */}
-          <div className="card" style={{ marginBottom: 28 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div
+            className="card"
+            style={{
+              marginBottom: 28,
+              border: '2px solid var(--color-fg)',
+              boxShadow: '4px 4px 0 0 var(--color-fg)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '24px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <FileSpreadsheet size={18} color="var(--color-accent)" />
-                  Tổng hợp số suất nhóm theo Lớp học (UC-33)
+                  Tổng Hợp Khẩu Phần Theo Lớp Học
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
                   Bấm vào hàng của một lớp để chuyển nhanh sang danh sách học sinh của lớp đó.
                 </p>
               </div>
-              <span className="badge badge--muted">
-                {board?.classBreakdowns?.length || 0} lớp học
+              <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', padding: '5px 12px', fontWeight: 700 }}>
+                {board?.classBreakdowns?.length || 0} lớp học • {board?.totalActiveToCook || 0} suất
               </span>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
                 <thead>
-                  <tr style={{ borderBottom: 'var(--border)', background: 'var(--color-muted)' }}>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700 }}>Lớp</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Khối</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Đăng ký</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Đã hủy</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Thực ăn</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700 }}>Tỷ lệ nhận</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>Thao tác</th>
+                  <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                    <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Lớp</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Khối</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đăng ký</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đã hủy</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Thực ăn</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Tỷ lệ nhận</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -713,33 +817,35 @@ export default function MealHeadcountPage() {
                       return (
                         <tr
                           key={cls.classId}
-                          style={{ borderBottom: '1px solid var(--color-border)' }}
+                          style={{ borderBottom: '1px solid var(--color-border)', transition: 'background 0.15s' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#FFFDF5')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
-                          <td style={{ padding: '12px', fontWeight: 700, color: 'var(--color-accent)' }}>
+                          <td style={{ padding: '12px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>
                             Lớp {cls.className}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                             Khối {cls.grade}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 600 }}>
                             {cls.initialRegistered}
                           </td>
                           <td
                             style={{
-                              padding: '12px',
+                              padding: '12px 14px',
                               textAlign: 'center',
-                              color: cls.cancelledCount > 0 ? '#e11d48' : 'var(--color-muted-fg)',
-                              fontWeight: cls.cancelledCount > 0 ? 700 : 400,
+                              color: cls.cancelledCount > 0 ? '#E11D48' : 'var(--color-muted-fg)',
+                              fontWeight: cls.cancelledCount > 0 ? 800 : 400,
                             }}
                           >
                             {cls.cancelledCount > 0 ? `-${cls.cancelledCount}` : '0'}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center', fontWeight: 800, color: '#047857', fontSize: 'var(--fs-base)' }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 900, color: '#047857', fontSize: 'var(--fs-base)' }}>
                             {cls.actualCount}
                           </td>
-                          <td style={{ padding: '12px' }}>
+                          <td style={{ padding: '12px 14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{ flex: 1, height: 8, background: 'var(--color-border)', borderRadius: 4, overflow: 'hidden' }}>
+                              <div style={{ flex: 1, height: 10, background: 'var(--color-border)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--color-fg)' }}>
                                 <div
                                   style={{
                                     width: `${percentage}%`,
@@ -748,12 +854,12 @@ export default function MealHeadcountPage() {
                                   }}
                                 />
                               </div>
-                              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', minWidth: 32 }}>
+                              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)', minWidth: 36, fontWeight: 700 }}>
                                 {percentage}%
                               </span>
                             </div>
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                             <button
                               type="button"
                               className="btn btn--secondary btn--sm"
@@ -762,6 +868,14 @@ export default function MealHeadcountPage() {
                                 handleTabChange('students');
                               }}
                               title={`Xem danh sách học sinh lớp ${cls.className}`}
+                              style={{
+                                borderRadius: 'var(--radius-full)',
+                                border: '1.5px solid var(--color-fg)',
+                                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                fontWeight: 700,
+                                fontSize: 'var(--fs-xs)',
+                                padding: '4px 12px',
+                              }}
                             >
                               Xem danh sách →
                             </button>
@@ -784,19 +898,27 @@ export default function MealHeadcountPage() {
       )}
 
       {/* ===================================================================== */}
-      {/* MÀN HÌNH 2: DANH SÁCH HỌC SINH NHẬN SUẤT (UC-33) + PAGINATION         */}
+      {/* MÀN HÌNH 2: DANH SÁCH HỌC SINH NHẬN SUẤT + PAGINATION                 */}
       {/* ===================================================================== */}
       {activeTab === 'students' && (
-        <div className="card pop-in">
+        <div
+          className="card pop-in"
+          style={{
+            border: '2px solid var(--color-fg)',
+            boxShadow: '4px 4px 0 0 var(--color-fg)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+          }}
+        >
           {/* Header & Filter Controls */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Users size={18} color="var(--color-accent)" />
-                Danh sách tối thiểu phục vụ vận hành theo ngày
+                Danh Sách Học Sinh Nhận Suất Ăn
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                Phục vụ nhân viên bán trú và giáo viên đối chiếu phát khay ăn theo từng lớp (UC-33).
+                Phục vụ nhân viên bán trú và giáo viên chủ nhiệm đối chiếu phát khay ăn theo từng lớp.
               </p>
             </div>
 
@@ -807,16 +929,30 @@ export default function MealHeadcountPage() {
                 className="btn btn--secondary btn--sm"
                 onClick={handleExportCsv}
                 title="Xuất danh sách học sinh ra file CSV/Excel"
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '6px 14px',
+                }}
               >
-                <Download size={15} />
+                <Download size={14} />
                 Xuất CSV
               </button>
               <button
                 type="button"
                 className="btn btn--secondary btn--sm"
                 onClick={() => setShowPrintModal(true)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '6px 14px',
+                }}
               >
-                <Printer size={15} />
+                <Printer size={14} />
                 In Phiếu
               </button>
             </div>
@@ -829,11 +965,12 @@ export default function MealHeadcountPage() {
               gap: 12,
               flexWrap: 'wrap',
               alignItems: 'center',
-              padding: '12px 16px',
-              background: 'var(--color-muted)',
-              borderRadius: 'var(--radius-sm)',
+              padding: '14px 18px',
+              background: '#FFFDF5',
+              borderRadius: 'var(--radius-md)',
               marginBottom: 20,
-              border: '1px solid var(--color-border)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '2px 2px 0 0 var(--color-fg)',
             }}
           >
             {/* Search Input */}
@@ -849,7 +986,12 @@ export default function MealHeadcountPage() {
                 placeholder="Tìm tên hoặc mã học sinh..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ paddingLeft: 36, fontSize: 'var(--fs-sm)' }}
+                style={{
+                  paddingLeft: 36,
+                  fontSize: 'var(--fs-sm)',
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                }}
               />
             </div>
 
@@ -860,7 +1002,13 @@ export default function MealHeadcountPage() {
                 className="select"
                 value={selectedClassFilter}
                 onChange={(e) => setSelectedClassFilter(e.target.value)}
-                style={{ minWidth: 160, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+                style={{
+                  minWidth: 160,
+                  padding: '6px 12px',
+                  fontSize: 'var(--fs-sm)',
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                }}
               >
                 <option value="ALL">Tất cả các lớp</option>
                 {board?.classBreakdowns?.map((c) => (
@@ -876,7 +1024,13 @@ export default function MealHeadcountPage() {
               className="select"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'CANCELLED')}
-              style={{ minWidth: 190, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+              style={{
+                minWidth: 190,
+                padding: '6px 12px',
+                fontSize: 'var(--fs-sm)',
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+              }}
             >
               <option value="ACTIVE">Đang còn hiệu lực (Thực ăn)</option>
               <option value="CANCELLED">Đã hủy trong ngày</option>
@@ -888,7 +1042,13 @@ export default function MealHeadcountPage() {
               className="select"
               value={pageSize}
               onChange={(e) => setPageSize(Number(e.target.value))}
-              style={{ minWidth: 120, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+              style={{
+                minWidth: 120,
+                padding: '6px 12px',
+                fontSize: 'var(--fs-sm)',
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+              }}
             >
               <option value={10}>10 dòng / trang</option>
               <option value={20}>20 dòng / trang</option>
@@ -898,61 +1058,66 @@ export default function MealHeadcountPage() {
 
           {/* Quick status counters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className="badge badge--violet">
+            <span className="badge badge--violet" style={{ border: '1.5px solid var(--color-fg)' }}>
               Tổng tìm thấy: <strong>{totalCount}</strong> học sinh
             </span>
-            <span className="badge badge--mint">
+            <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)' }}>
               Thực ăn: <strong>{filteredStudentMeals.filter((s) => s.isActive).length}</strong>
             </span>
-            <span className="badge badge--pink">
+            <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)' }}>
               Đã hủy: <strong>{filteredStudentMeals.filter((s) => !s.isActive).length}</strong>
             </span>
             {searchQuery && (
-              <span className="badge badge--amber">
+              <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)' }}>
                 Từ khóa: &quot;{searchQuery}&quot;
               </span>
             )}
           </div>
 
           {/* Student Table */}
-          <div style={{ overflowX: 'auto', border: 'var(--border)', borderRadius: 'var(--radius-sm)' }}>
+          <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
-                <tr style={{ borderBottom: 'var(--border)', background: 'var(--color-muted)' }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'center', width: 56 }}>STT</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Mã HS</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Họ và tên học sinh</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Lớp</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Chế độ ăn</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Trạng thái</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Ghi chú / Lý do hủy</th>
+                <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', width: 56, fontWeight: 800 }}>STT</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Mã HS</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Họ và tên học sinh</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Lớp</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Chế độ ăn</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Trạng thái</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Ghi chú / Lý do hủy</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedStudents.length > 0 ? (
                   pagedStudents.map((item, idx) => (
-                    <tr key={item.registrationId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 600 }}>
+                    <tr
+                      key={item.registrationId}
+                      style={{ borderBottom: '1px solid var(--color-border)', transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#FFFDF5')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600 }}>
                         {(pageIndex - 1) * pageSize + idx + 1}
                       </td>
-                      <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--color-accent)' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>
                         {item.studentCode}
                       </td>
-                      <td style={{ padding: '10px 12px', fontWeight: 700 }}>{item.studentName}</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>Lớp {item.className}</td>
-                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                        <span className="badge badge--amber">
+                      <td style={{ padding: '10px 14px', fontWeight: 700 }}>{item.studentName}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>Lớp {item.className}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                        <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)' }}>
                           {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                         {item.isActive ? (
-                          <span className="badge badge--mint">Thực ăn</span>
+                          <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)' }}>Thực ăn</span>
                         ) : (
-                          <span className="badge badge--pink">Đã hủy</span>
+                          <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)' }}>Đã hủy</span>
                         )}
                       </td>
-                      <td style={{ padding: '10px 12px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                      <td style={{ padding: '10px 14px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
                         {(item.isActive ? item.remarks : item.cancellationReason) || '—'}
                       </td>
                     </tr>
@@ -967,15 +1132,15 @@ export default function MealHeadcountPage() {
               </tbody>
             </table>
 
-            {/* PAGINATION BAR (Chuẩn hóa như màn hình Hồ sơ học sinh - admin) */}
+            {/* PAGINATION BAR */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '12px 18px',
-                borderTop: 'var(--border)',
-                background: 'var(--color-muted)',
+                borderTop: '2px solid var(--color-fg)',
+                background: '#F8FAFC',
                 fontSize: 'var(--fs-sm)',
                 flexWrap: 'wrap',
                 gap: 12,
@@ -995,10 +1160,16 @@ export default function MealHeadcountPage() {
                   className="btn btn--secondary btn--sm"
                   disabled={pageIndex <= 1}
                   onClick={() => setPageIndex((p) => Math.max(1, p - 1))}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '1.5px solid var(--color-fg)',
+                    boxShadow: pageIndex > 1 ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                    fontWeight: 700,
+                  }}
                 >
                   <ChevronLeft size={14} /> Trang trước
                 </button>
-                <span className="badge badge--violet" style={{ alignSelf: 'center', padding: '4px 10px' }}>
+                <span className="badge badge--violet" style={{ alignSelf: 'center', padding: '4px 12px', border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
                   Trang {pageIndex} / {totalPages}
                 </span>
                 <button
@@ -1006,6 +1177,12 @@ export default function MealHeadcountPage() {
                   className="btn btn--secondary btn--sm"
                   disabled={pageIndex >= totalPages}
                   onClick={() => setPageIndex((p) => Math.min(totalPages, p + 1))}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '1.5px solid var(--color-fg)',
+                    boxShadow: pageIndex < totalPages ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                    fontWeight: 700,
+                  }}
                 >
                   Trang sau <ChevronRight size={14} />
                 </button>
@@ -1016,18 +1193,26 @@ export default function MealHeadcountPage() {
       )}
 
       {/* ===================================================================== */}
-      {/* MÀN HÌNH 3: NHẬT KÝ BIẾN ĐỘNG SUẤT ĂN (WFL 1.2.3 & UC-30)              */}
+      {/* MÀN HÌNH 3: NHẬT KÝ BIẾN ĐỘNG SUẤT ĂN                                */}
       {/* ===================================================================== */}
       {activeTab === 'logs' && (
-        <div className="card pop-in">
+        <div
+          className="card pop-in"
+          style={{
+            border: '2px solid var(--color-fg)',
+            boxShadow: '4px 4px 0 0 var(--color-fg)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+          }}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Clock size={18} color="var(--color-secondary)" />
-                Nhật ký biến động suất ăn (UC-30 & WFL 1.2.3)
+                Nhật Ký Biến Động Suất Ăn
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                Truy vết toàn bộ việc hủy suất tự động trước {effectiveCutoffLabel}, phụ huynh hủy trực tiếp và khôi phục suất ăn.
+                Truy vết toàn bộ việc tự động hủy suất trước {effectiveCutoffLabel}, phụ huynh báo hủy trực tiếp và khôi phục suất ăn.
               </p>
             </div>
 
@@ -1037,11 +1222,17 @@ export default function MealHeadcountPage() {
                 className="select"
                 value={logFilter}
                 onChange={(e) => setLogFilter(e.target.value as 'ALL' | 'AutoCancelled' | 'ParentCancelled' | 'Restored')}
-                style={{ minWidth: 200, padding: '6px 12px', fontSize: 'var(--fs-sm)' }}
+                style={{
+                  minWidth: 220,
+                  padding: '8px 14px',
+                  fontSize: 'var(--fs-sm)',
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                }}
               >
-                <option value="ALL">Tất cả loại biến động ({board?.mealChangeLogs?.length || 0})</option>
+                <option value="ALL">Tất cả biến động ({board?.mealChangeLogs?.length || 0})</option>
                 <option value="AutoCancelled">Tự hủy từ đơn xin nghỉ</option>
-                <option value="ParentCancelled">Phụ huynh hủy trực tiếp (UC-30)</option>
+                <option value="ParentCancelled">Phụ huynh báo hủy</option>
                 <option value="Restored">Khôi phục suất ăn</option>
               </select>
             </div>
@@ -1055,15 +1246,15 @@ export default function MealHeadcountPage() {
                   <div
                     key={idx}
                     style={{
-                      padding: '14px 18px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: 'var(--border)',
-                      boxShadow: 'var(--shadow-pop-active)',
-                      background: isCancel ? 'var(--color-secondary-soft)' : 'var(--color-quaternary-soft)',
+                      padding: '16px 20px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '2px solid var(--color-fg)',
+                      boxShadow: '3px 3px 0 0 var(--color-fg)',
+                      background: isCancel ? '#FFF1F2' : '#ECFDF5',
                       fontSize: 'var(--fs-sm)',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
                       <div>
                         <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--color-fg)' }}>
                           {log.studentName}
@@ -1072,9 +1263,9 @@ export default function MealHeadcountPage() {
                           ({log.studentCode}) — Lớp {log.className}
                         </span>
                       </div>
-                      <span className={`badge ${isCancel ? 'badge--pink' : 'badge--mint'}`}>
+                      <span className={`badge ${isCancel ? 'badge--pink' : 'badge--mint'}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
                         {log.changeType === 'ParentCancelled'
-                          ? 'PH hủy trực tiếp (UC-30)'
+                          ? 'Phụ huynh báo hủy'
                           : log.changeType === 'AutoCancelled'
                             ? `Tự hủy trước ${effectiveCutoffLabel}`
                             : 'Khôi phục suất'}
@@ -1087,7 +1278,7 @@ export default function MealHeadcountPage() {
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
                       <span>Thời điểm ghi nhận: {new Date(log.timestamp).toLocaleTimeString('vi-VN')}</span>
-                      <span style={{ color: '#059669', fontWeight: 700 }}>✓ Trước giờ chốt {effectiveCutoffLabel}</span>
+                      <span style={{ color: '#059669', fontWeight: 800 }}>✓ Trước giờ chốt {effectiveCutoffLabel}</span>
                     </div>
                   </div>
                 );
