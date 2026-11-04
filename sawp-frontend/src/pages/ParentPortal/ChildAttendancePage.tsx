@@ -90,7 +90,7 @@ export default function ChildAttendancePage() {
         </div>
       </div>
 
-      {data && <AttendanceSummaryBar summary={data.summary} />}
+      {data && <AttendanceSummaryBar summary={data.summary} totalLabel="Tổng số buổi" />}
       {data && data.days.length === 0 && <div className="card empty-state">{SYSTEM_MESSAGES.MSG43.content}</div>}
 
       <div className="card" style={{ marginTop: 16 }}>

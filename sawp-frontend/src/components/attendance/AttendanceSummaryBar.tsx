@@ -1,9 +1,9 @@
 import type { AttendanceSummary } from '../../types/attendance.types';
 import './AttendanceSummaryBar.css';
 
-export function AttendanceSummaryBar({ summary }: { summary: AttendanceSummary }) {
+export function AttendanceSummaryBar({ summary, totalLabel = 'Sĩ số' }: { summary: AttendanceSummary; totalLabel?: string }) {
   const items = [
-    { key: 'total', label: 'Sĩ số', value: summary.total, tone: '' },
+    { key: 'total', label: totalLabel, value: summary.total, tone: '' },
     { key: 'present', label: 'Có mặt', value: summary.present, tone: 'chip--present' },
     { key: 'late', label: 'Đi muộn', value: summary.late, tone: 'chip--late' },
     { key: 'excused', label: 'Vắng có phép', value: summary.excusedAbsence, tone: 'chip--excused' },

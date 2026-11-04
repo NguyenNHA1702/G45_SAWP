@@ -495,12 +495,13 @@ public static class DbInitializer
         }
         await context.SaveChangesAsync();
 
-        // Điểm danh chuyên cần toàn diện cho toàn bộ 86 học sinh (1A, 1B, 1C) trong 15 ngày học gần nhất (Ca sáng & Ca chiều)
+        // Điểm danh chuyên cần toàn diện cho toàn bộ 86 học sinh (1A, 1B, 1C) từ đầu năm học 2026 (Tháng 9, 10, 11) (Ca sáng & Ca chiều)
         var schoolDays = new List<DateTime>();
-        var checkDate = today.AddDays(-22);
-        while (checkDate <= today)
+        var checkDate = new DateTime(2026, 9, 1);
+        var endSchoolDate = new DateTime(2026, 11, 30);
+        while (checkDate <= endSchoolDate)
         {
-            if (checkDate.DayOfWeek != DayOfWeek.Saturday && checkDate.DayOfWeek != DayOfWeek.Sunday)
+            if (checkDate.DayOfWeek != DayOfWeek.Saturday && checkDate.DayOfWeek != DayOfWeek.Sunday && checkDate != new DateTime(2026, 9, 2))
             {
                 schoolDays.Add(checkDate);
             }
