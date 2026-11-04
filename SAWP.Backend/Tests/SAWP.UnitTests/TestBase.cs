@@ -22,6 +22,9 @@ public abstract class TestBase
     protected readonly Mock<IClassRepository> ClassRepoMock;
     protected readonly Mock<IUserRepository> UserRepoMock;
     protected readonly Mock<ILunchRepository> LunchRepoMock;
+    protected readonly Mock<IAttendanceRepository> AttendanceRepoMock;
+    protected readonly Mock<IClassScheduleRepository> ScheduleRepoMock;
+    protected readonly Mock<INotificationRepository> NotificationRepoMock;
 
     protected TestBase()
     {
@@ -31,11 +34,17 @@ public abstract class TestBase
         ClassRepoMock = new Mock<IClassRepository>();
         UserRepoMock = new Mock<IUserRepository>();
         LunchRepoMock = new Mock<ILunchRepository>();
+        AttendanceRepoMock = new Mock<IAttendanceRepository>();
+        ScheduleRepoMock = new Mock<IClassScheduleRepository>();
+        NotificationRepoMock = new Mock<INotificationRepository>();
 
         UnitOfWorkMock.Setup(u => u.Students).Returns(StudentRepoMock.Object);
         UnitOfWorkMock.Setup(u => u.Classes).Returns(ClassRepoMock.Object);
         UnitOfWorkMock.Setup(u => u.Users).Returns(UserRepoMock.Object);
         UnitOfWorkMock.Setup(u => u.Lunch).Returns(LunchRepoMock.Object);
+        UnitOfWorkMock.Setup(u => u.Attendance).Returns(AttendanceRepoMock.Object);
+        UnitOfWorkMock.Setup(u => u.Schedules).Returns(ScheduleRepoMock.Object);
+        UnitOfWorkMock.Setup(u => u.Notifications).Returns(NotificationRepoMock.Object);
         UnitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         UnitOfWorkMock.Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         UnitOfWorkMock.Setup(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);

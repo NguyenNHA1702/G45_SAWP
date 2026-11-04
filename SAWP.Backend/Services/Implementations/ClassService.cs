@@ -627,7 +627,8 @@ public class ClassService : IClassService
                 EnrolledDate = s.EnrollmentDate,
                 PrimaryGuardianName = primaryGuardian?.User?.FullName,
                 PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
-                PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString()
+                PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString(),
+                EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.User?.PhoneNumber ?? primaryGuardian?.User?.PhoneNumber
             };
         }).ToList();
 
@@ -908,7 +909,8 @@ public class ClassService : IClassService
                     EnrolledDate = s.EnrollmentDate,
                     PrimaryGuardianName = primaryGuardian?.User?.FullName,
                     PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
-                    PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString()
+                    PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString(),
+                    EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.User?.PhoneNumber ?? primaryGuardian?.User?.PhoneNumber
                 };
             }).OrderBy(s => s.FullName).ToList()
         };

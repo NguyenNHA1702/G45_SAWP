@@ -16,6 +16,7 @@ import AdministrativeRequestsPage from './pages/ParentPortal/AdministrativeReque
 import AdminRequestsManagementPage from './pages/OfficeStaffPortal/AdminRequestsManagementPage';
 import AdministrativeApprovalPage from './pages/SchoolBoardPortal/AdministrativeApprovalPage';
 import ParentLunchPage from './pages/ParentPortal/ParentLunchPage';
+import ProfilePage from './pages/Auth/ProfilePage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
           <Route path="/parent/children" element={<ChildDashboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

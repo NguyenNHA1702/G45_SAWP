@@ -72,6 +72,10 @@ public class StudentProfileDto
     public int? CurrentGrade { get; set; }
     public string? CurrentRoomNumber { get; set; }
     public string? HomeroomTeacherName { get; set; }
+    public string? Address { get; set; }
+    public string? PrimaryGuardianName { get; set; }
+    public string? PrimaryGuardianPhone { get; set; }
+    public int GuardiansCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<StudentGuardianItemDto> Guardians { get; set; } = new();
 }
