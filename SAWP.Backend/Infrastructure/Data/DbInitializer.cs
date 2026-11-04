@@ -495,36 +495,80 @@ public static class DbInitializer
         }
         await context.SaveChangesAsync();
 
-        // Điểm danh ca sáng hôm nay cho toàn bộ học sinh lớp 1A (teacher1)
-        var studentsIn1A = studentEntities.Where(s => int.TryParse(s.StudentCode.Replace("HS", ""), out int n) && n <= 30).ToList();
-        foreach (var s in studentsIn1A)
+        // Điểm danh chuyên cần toàn diện cho toàn bộ 86 học sinh (1A, 1B, 1C) trong 15 ngày học gần nhất (Ca sáng & Ca chiều)
+        var schoolDays = new List<DateTime>();
+        var checkDate = today.AddDays(-22);
+        while (checkDate <= today)
         {
-            if (!await context.AttendanceRecords.AnyAsync(ar => ar.StudentId == s.Id && ar.Date == today && ar.Session == AttendanceSession.Morning))
+            if (checkDate.DayOfWeek != DayOfWeek.Saturday && checkDate.DayOfWeek != DayOfWeek.Sunday)
             {
-                var attStatus = AttendanceStatus.Present;
-                string? attRem = null;
-                if (s.StudentCode == "HS005")
-                {
-                    attStatus = AttendanceStatus.ExcusedAbsence;
-                    attRem = "Nghỉ ốm có đơn xin phép";
-                }
-                else if (s.StudentCode == "HS011")
-                {
-                    attStatus = AttendanceStatus.Late;
-                    attRem = "Đến muộn 15 phút do thời tiết";
-                }
+                schoolDays.Add(checkDate);
+            }
+            checkDate = checkDate.AddDays(1);
+        }
 
-                context.AttendanceRecords.Add(new AttendanceRecord
+        var activeAssignments = await context.ClassAssignments
+            .Where(ca => ca.IsActive)
+            .Include(ca => ca.Student)
+            .ToListAsync();
+
+        for (int dayIdx = 0; dayIdx < schoolDays.Count; dayIdx++)
+        {
+            var sDate = schoolDays[dayIdx];
+            foreach (var session in new[] { AttendanceSession.Morning, AttendanceSession.Afternoon })
+            {
+                foreach (var ca in activeAssignments)
                 {
-                    StudentId = s.Id,
-                    ClassId = class1A.Id,
-                    Date = today,
-                    Session = AttendanceSession.Morning,
-                    Status = attStatus,
-                    Remarks = attRem,
-                    RecordedByUserId = teacherUser.Id,
-                    CreatedAt = DateTime.UtcNow
-                });
+                    if (!await context.AttendanceRecords.AnyAsync(ar => ar.StudentId == ca.StudentId && ar.Date == sDate && ar.Session == session))
+                    {
+                        var stCode = ca.Student.StudentCode;
+                        var attStatus = AttendanceStatus.Present;
+                        string? attRem = null;
+
+                        if (stCode == "HS005" && sDate >= today.AddDays(-2))
+                        {
+                            attStatus = AttendanceStatus.ExcusedAbsence;
+                            attRem = "Nghỉ ốm có đơn xin phép từ phụ huynh";
+                        }
+                        else if (stCode == "HS011" && session == AttendanceSession.Morning && dayIdx % 3 == 0)
+                        {
+                            attStatus = AttendanceStatus.Late;
+                            attRem = "Đến muộn 15 phút do kẹt xe";
+                        }
+                        else if (stCode == "HS038" && sDate >= today.AddDays(-1))
+                        {
+                            attStatus = AttendanceStatus.ExcusedAbsence;
+                            attRem = "Gia đình có việc hiếu hỉ có đơn phép";
+                        }
+                        else if ((ca.StudentId + dayIdx * 7 + (int)session) % 37 == 0)
+                        {
+                            attStatus = AttendanceStatus.Late;
+                            attRem = "Đến muộn 10-15 phút do thời tiết / kẹt xe";
+                        }
+                        else if ((ca.StudentId + dayIdx * 11 + (int)session) % 41 == 0)
+                        {
+                            attStatus = AttendanceStatus.ExcusedAbsence;
+                            attRem = "Nghỉ có đơn xin phép từ gia đình";
+                        }
+                        else if ((ca.StudentId + dayIdx * 13 + (int)session) % 89 == 0)
+                        {
+                            attStatus = AttendanceStatus.UnexcusedAbsence;
+                            attRem = "Vắng không rõ lý do, GVCN đã liên hệ";
+                        }
+
+                        context.AttendanceRecords.Add(new AttendanceRecord
+                        {
+                            StudentId = ca.StudentId,
+                            ClassId = ca.ClassId,
+                            Date = sDate,
+                            Session = session,
+                            Status = attStatus,
+                            Remarks = attRem,
+                            RecordedByUserId = teacherUser.Id,
+                            CreatedAt = sDate.AddHours(session == AttendanceSession.Morning ? 8 : 14)
+                        });
+                    }
+                }
             }
         }
         await context.SaveChangesAsync();
