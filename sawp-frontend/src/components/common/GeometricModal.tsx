@@ -86,11 +86,21 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
         <div className="modal-header">
           <div>
             {badgeText && (
-              <span className={`badge badge--${badgeColor}`} style={{ marginBottom: 6 }}>
+              <span
+                className={`badge badge--${badgeColor}`}
+                style={{
+                  marginBottom: 6,
+                  border: '1.5px solid var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '3px 10px',
+                }}
+              >
                 {badgeText}
               </span>
             )}
-            <h2 className="modal-title">{title}</h2>
+            <h2 className="modal-title" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, margin: '2px 0 0' }}>
+              {title}
+            </h2>
             {subtitle && (
               <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
                 {subtitle}
@@ -103,15 +113,17 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
             onClick={onClose}
             aria-label="Đóng hộp thoại"
             style={{
-              width: 34,
-              height: 34,
+              width: 36,
+              height: 36,
               borderRadius: '50%',
-              border: '2px solid var(--color-border)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '2px 2px 0 0 var(--color-fg)',
               background: 'var(--color-card)',
               display: 'grid',
               placeItems: 'center',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
+              flexShrink: 0,
             }}
           >
             <X size={18} strokeWidth={2.5} />

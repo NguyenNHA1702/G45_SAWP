@@ -236,9 +236,9 @@
 }
 .modal-box {
   background: var(--color-card);
-  border: var(--border);
+  border: 2px solid var(--color-fg);
   border-radius: var(--radius-lg);
-  box-shadow: 8px 8px 0 0 var(--color-fg);
+  box-shadow: 6px 6px 0 0 var(--color-fg);
   width: 100%;
   max-width: 580px;
   max-height: calc(100vh - 88px);
