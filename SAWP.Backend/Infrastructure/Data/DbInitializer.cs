@@ -513,6 +513,12 @@ public static class DbInitializer
             .Include(ca => ca.Student)
             .ToListAsync();
 
+        var existingAttendanceKeys = (await context.AttendanceRecords
+            .Select(ar => new { ar.StudentId, ar.Date, ar.Session })
+            .ToListAsync())
+            .Select(ar => (ar.StudentId, ar.Date, ar.Session))
+            .ToHashSet();
+
         for (int dayIdx = 0; dayIdx < schoolDays.Count; dayIdx++)
         {
             var sDate = schoolDays[dayIdx];
@@ -520,7 +526,7 @@ public static class DbInitializer
             {
                 foreach (var ca in activeAssignments)
                 {
-                    if (!await context.AttendanceRecords.AnyAsync(ar => ar.StudentId == ca.StudentId && ar.Date == sDate && ar.Session == session))
+                    if (!existingAttendanceKeys.Contains((ca.StudentId, sDate, session)))
                     {
                         var stCode = ca.Student.StudentCode;
                         var attStatus = AttendanceStatus.Present;
