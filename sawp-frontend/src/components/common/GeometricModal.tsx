@@ -5,6 +5,7 @@ interface GeometricModalProps {
   open: boolean;
   onClose: () => void;
   title: string;
+  subtitle?: string;
   badgeText?: string;
   badgeColor?: 'mint' | 'amber' | 'violet' | 'pink';
   icon?: React.ReactNode;
@@ -17,6 +18,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
   open,
   onClose,
   title,
+  subtitle,
   badgeText,
   badgeColor = 'violet',
   icon,
@@ -70,8 +72,8 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
               height: 50,
               borderRadius: '50%',
               background: iconBg,
-              border: 'var(--border)',
-              boxShadow: 'var(--shadow-pop-active)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '3px 3px 0 0 var(--color-fg)',
               display: 'grid',
               placeItems: 'center',
               zIndex: 10,
@@ -89,14 +91,30 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
               </span>
             )}
             <h2 className="modal-title">{title}</h2>
+            {subtitle && (
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                {subtitle}
+              </p>
+            )}
           </div>
           <button
             type="button"
             className="modal-close-btn"
             onClick={onClose}
             aria-label="Đóng hộp thoại"
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              border: '2px solid var(--color-border)',
+              background: 'var(--color-card)',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
           >
-            <X size={22} strokeWidth={2.5} />
+            <X size={18} strokeWidth={2.5} />
           </button>
         </div>
 

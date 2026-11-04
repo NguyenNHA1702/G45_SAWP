@@ -20,6 +20,8 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  CalendarRange,
+  Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
@@ -27,6 +29,18 @@ import type { DailyMealBoard } from '../../types/lunch.types';
 import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
+
+const MENU_SUGGESTIONS = [
+  'Cơm trắng',
+  'Gà kho nấm',
+  'Thịt kho trứng cút',
+  'Sườn xào chua ngọt',
+  'Cá phi lê sốt cà',
+  'Canh bí đỏ nấu tôm',
+  'Canh cua mồng tơi',
+  'Chuối tiêu tráng miệng',
+  'Sữa chua',
+];
 
 const MEAL_TYPE_TEXT: Record<string, string> = {
   StandardLunch: 'Tiêu chuẩn',
@@ -168,6 +182,14 @@ export default function MealHeadcountPage() {
 
   const handleTabChange = (tab: 'summary' | 'students' | 'logs') => {
     setSearchParams({ tab });
+  };
+
+  const handleAddDish = (dish: string) => {
+    if (!cfgRemarks.trim()) {
+      setCfgRemarks(dish);
+    } else if (!cfgRemarks.includes(dish)) {
+      setCfgRemarks(`${cfgRemarks.trim()}, ${dish}`);
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -1086,46 +1108,218 @@ export default function MealHeadcountPage() {
       <GeometricModal
         open={showConfigModal}
         onClose={() => setShowConfigModal(false)}
-        title={`Cấu hình Ngày Phục Vụ Bán Trú (UC-32)`}
+        title="Cấu hình Ngày Phục Vụ Bán Trú"
+        subtitle="Thiết lập trạng thái phục vụ, giờ chốt suất ăn và thực đơn trưa của trường"
         badgeText={`Ngày ${new Date(selectedDate).toLocaleDateString('vi-VN')}`}
         badgeColor="mint"
         icon={<Settings size={22} color="var(--color-fg)" />}
         iconBg="var(--color-quaternary)"
         maxWidth="md"
       >
-        <div>
-          <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="cfg-serving">
-              Trạng thái phục vụ ngày {new Date(selectedDate).toLocaleDateString('vi-VN')}
-            </label>
-            <select
-              id="cfg-serving"
-              className="select"
-              value={cfgIsServing ? 'OPEN' : 'CLOSED'}
-              onChange={(e) => setCfgIsServing(e.target.value === 'OPEN')}
-            >
-              <option value="OPEN">🟢 Có phục vụ ăn bán trú (Mở đăng ký)</option>
-              <option value="CLOSED">🔴 Không phục vụ (Nghỉ lễ / Ngoại khóa / Nghỉ bếp)</option>
-            </select>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* 1. Trạng thái phục vụ (2-Card Segmented Selector) */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label className="label" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.05em' }}>
+                1. TRẠNG THÁI PHỤC VỤ TRONG NGÀY
+              </label>
+              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: cfgIsServing ? '#059669' : '#E11D48' }}>
+                {cfgIsServing ? '🟢 Đang mở phục vụ' : '🔴 Tạm nghỉ phục vụ'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setCfgIsServing(true)}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: cfgIsServing ? '2.5px solid var(--color-quaternary)' : '2px solid var(--color-border)',
+                  background: cfgIsServing ? '#ECFDF5' : 'var(--color-card)',
+                  boxShadow: cfgIsServing ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  transform: cfgIsServing ? 'translate(-1px, -1px)' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: '#065F46', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>🟢</span> Phục vụ bán trú
+                  </span>
+                  {cfgIsServing && (
+                    <span className="badge badge--mint" style={{ fontSize: 10, padding: '2px 6px' }}>
+                      Đang chọn
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                  Mở đăng ký & nhà bếp nấu suất ăn bình thường
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCfgIsServing(false)}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: !cfgIsServing ? '2.5px solid #F43F5E' : '2px solid var(--color-border)',
+                  background: !cfgIsServing ? '#FFF1F2' : 'var(--color-card)',
+                  boxShadow: !cfgIsServing ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  transform: !cfgIsServing ? 'translate(-1px, -1px)' : 'none',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: '#9F1239', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>🔴</span> Nghỉ phục vụ
+                  </span>
+                  {!cfgIsServing && (
+                    <span className="badge badge--pink" style={{ fontSize: 10, padding: '2px 6px' }}>
+                      Đang chọn
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                  Nghỉ lễ, hoạt động ngoại khóa hoặc nghỉ bếp
+                </span>
+              </button>
+            </div>
           </div>
 
-          <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="cfg-cutoff">
-              Hạn đăng ký / hủy suất ăn trong ngày (Quy tắc Tân Lập A: 08:15)
-            </label>
-            <input
-              id="cfg-cutoff"
-              type="time"
-              className="input"
-              value={cfgCutoffTime}
-              onChange={(e) => setCfgCutoffTime(e.target.value)}
-            />
+          {/* 2. Giờ chốt (Cutoff Time) */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label className="label" htmlFor="cfg-cutoff" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Clock size={14} color="var(--color-accent)" /> 2. HẠN ĐĂNG KÝ / HỦY SUẤT ĂN
+              </label>
+              <span className="badge badge--amber" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                Mốc chuẩn: 08:15
+              </span>
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <input
+                id="cfg-cutoff"
+                type="time"
+                className="input"
+                value={cfgCutoffTime}
+                onChange={(e) => setCfgCutoffTime(e.target.value)}
+                style={{
+                  fontWeight: 700,
+                  fontSize: 'var(--fs-base)',
+                  letterSpacing: '0.05em',
+                  paddingLeft: 40,
+                }}
+              />
+              <Clock
+                size={18}
+                color="var(--color-muted-fg)"
+                style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              />
+            </div>
+
+            {/* Quick preset chips */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--color-muted-fg)' }}>Gợi ý nhanh:</span>
+              {[
+                { time: '08:00', label: '08:00' },
+                { time: '08:15', label: '08:15 (Tân Lập A)' },
+                { time: '08:30', label: '08:30' },
+                { time: '09:00', label: '09:00' },
+              ].map((preset) => (
+                <button
+                  key={preset.time}
+                  type="button"
+                  onClick={() => setCfgCutoffTime(preset.time)}
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: 'var(--radius-full)',
+                    border: cfgCutoffTime === preset.time ? '2px solid var(--color-fg)' : '1.5px solid var(--color-border)',
+                    background: cfgCutoffTime === preset.time ? 'var(--color-tertiary)' : 'var(--color-card)',
+                    boxShadow: cfgCutoffTime === preset.time ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                    fontWeight: 700,
+                    fontSize: 'var(--fs-xs)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="field" style={{ marginBottom: 14 }}>
-            <label className="label" htmlFor="cfg-remarks">
-              Thực đơn trưa hoặc Ghi chú phục vụ (hiển thị cho Phụ huynh)
-            </label>
+          {/* 3. Thực đơn & Ghi chú (Menu Builder) */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label className="label" htmlFor="cfg-remarks" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <UtensilsCrossed size={14} color="var(--color-secondary)" /> 3. THỰC ĐƠN TRƯA HOẶC GHI CHÚ
+              </label>
+              {cfgRemarks.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setCfgRemarks('')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#E11D48',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                  }}
+                >
+                  Xóa thực đơn
+                </button>
+              )}
+            </div>
+
+            {/* Quick dish chips */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {MENU_SUGGESTIONS.map((dish) => (
+                <button
+                  key={dish}
+                  type="button"
+                  onClick={() => handleAddDish(dish)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1.5px dashed var(--color-border)',
+                    background: '#FFFDF5',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: 'var(--color-fg)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    transition: 'all 0.12s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-fg)';
+                    e.currentTarget.style.background = 'var(--color-tertiary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                    e.currentTarget.style.background = '#FFFDF5';
+                  }}
+                >
+                  <Plus size={11} strokeWidth={3} /> {dish}
+                </button>
+              ))}
+            </div>
+
             <textarea
               id="cfg-remarks"
               className="input"
@@ -1133,39 +1327,79 @@ export default function MealHeadcountPage() {
               placeholder="VD: Cơm trắng, Thịt gà kho nấm, Canh bí đỏ nấu tôm, Chuối tiêu..."
               value={cfgRemarks}
               onChange={(e) => setCfgRemarks(e.target.value)}
-              style={{ resize: 'vertical', minHeight: 76 }}
+              style={{ resize: 'vertical', minHeight: 76, width: '100%', boxSizing: 'border-box' }}
             />
           </div>
 
-          <label
+          {/* 4. Áp dụng cả tuần (Playful Sticker Card) */}
+          <div
+            onClick={() => setCfgApplyFullWeek(!cfgApplyFullWeek)}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
-              padding: '10px 14px',
-              background: 'var(--color-muted)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--color-border)',
+              gap: 14,
+              padding: '12px 16px',
+              background: cfgApplyFullWeek ? '#FEF3C7' : '#FFFDF5',
+              borderRadius: 'var(--radius-md)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: cfgApplyFullWeek ? '3px 3px 0 0 var(--color-fg)' : '2px 2px 0 0 var(--color-fg)',
               cursor: 'pointer',
-              marginBottom: 20,
-              fontSize: 'var(--fs-sm)',
-              fontWeight: 600,
+              transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              userSelect: 'none',
             }}
           >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                background: cfgApplyFullWeek ? 'var(--color-tertiary)' : 'var(--color-muted)',
+                border: '2px solid var(--color-fg)',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <CalendarRange size={20} color="var(--color-fg)" />
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                Áp dụng cấu hình này cho cả tuần làm việc
+              </div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
+                Tự động đồng bộ trạng thái, giờ chốt và thực đơn cho Thứ 2 – Thứ 6 của tuần đang chọn
+              </div>
+            </div>
+
             <input
               type="checkbox"
               checked={cfgApplyFullWeek}
               onChange={(e) => setCfgApplyFullWeek(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 18,
+                height: 18,
+                accentColor: 'var(--color-accent)',
+                cursor: 'pointer',
+              }}
             />
-            <span>Áp dụng cấu hình này cho cả tuần làm việc (Thứ 2 – Thứ 6 của tuần đang chọn)</span>
-          </label>
+          </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          {/* 5. Candy Action Buttons */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 10, borderTop: '1.5px dashed var(--color-border)' }}>
             <button
               type="button"
               className="btn btn--secondary"
               onClick={() => setShowConfigModal(false)}
               disabled={actionLoading}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                fontWeight: 700,
+                padding: '10px 20px',
+              }}
             >
               Hủy
             </button>
@@ -1174,9 +1408,21 @@ export default function MealHeadcountPage() {
               className="btn btn--primary"
               onClick={handleSaveConfig}
               disabled={actionLoading}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '4px 4px 0 0 var(--color-fg)',
+                fontWeight: 800,
+                padding: '10px 24px',
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
-              <CheckCircle2 size={16} />
-              {actionLoading ? 'Đang lưu...' : 'Lưu cấu hình (UC-32)'}
+              <CheckCircle2 size={18} />
+              {actionLoading ? 'Đang lưu...' : 'Lưu cấu hình phục vụ'}
             </button>
           </div>
         </div>
@@ -1199,19 +1445,24 @@ export default function MealHeadcountPage() {
           <div
             className="card"
             style={{
-              background: 'var(--color-muted)',
-              padding: '14px 18px',
+              background: '#FFFDF5',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '3px 3px 0 0 var(--color-fg)',
+              borderRadius: 'var(--radius-md)',
+              padding: '16px 20px',
               marginBottom: 16,
               fontSize: 'var(--fs-sm)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span>Tổng suất cần nấu hôm nay:</span>
-              <strong style={{ color: '#047857', fontSize: 'var(--fs-base)' }}>{board?.totalActiveToCook} suất</strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center' }}>
+              <span style={{ fontWeight: 600 }}>Tổng suất cần nấu hôm nay:</span>
+              <span className="badge badge--mint" style={{ fontSize: 'var(--fs-sm)', padding: '4px 10px', fontWeight: 800 }}>
+                {board?.totalActiveToCook} suất
+              </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e11d48' }}>
-              <span>Tổng suất hủy hợp lệ:</span>
-              <strong>-{board?.totalAutoCancelled} suất</strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#e11d48' }}>
+              <span style={{ fontWeight: 600 }}>Tổng suất hủy hợp lệ:</span>
+              <strong style={{ fontSize: 'var(--fs-sm)' }}>-{board?.totalAutoCancelled} suất</strong>
             </div>
           </div>
 
@@ -1237,6 +1488,13 @@ export default function MealHeadcountPage() {
               className="btn btn--secondary"
               onClick={() => setShowLockModal(false)}
               disabled={actionLoading}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                fontWeight: 700,
+                padding: '10px 20px',
+              }}
             >
               Hủy bỏ
             </button>
@@ -1245,6 +1503,18 @@ export default function MealHeadcountPage() {
               className="btn btn--primary"
               onClick={handleLockDay}
               disabled={actionLoading}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '4px 4px 0 0 var(--color-fg)',
+                fontWeight: 800,
+                padding: '10px 24px',
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
               <Lock size={16} />
               {actionLoading ? 'Đang chốt...' : 'Xác nhận chốt số liệu'}
