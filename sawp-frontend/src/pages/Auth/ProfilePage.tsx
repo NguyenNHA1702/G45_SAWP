@@ -339,11 +339,11 @@ export default function ProfilePage() {
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Họ và tên */}
-              <div className="form-group">
-                <label className="form-label" htmlFor="profile-fullname">
+              <div className="field">
+                <label className="label" htmlFor="profile-fullname">
                   Họ và tên <span style={{ color: 'var(--color-secondary)' }}>*</span>
                 </label>
-                <div style={{ position: 'relative' }}>
+                <div>
                   <input
                     id="profile-fullname"
                     type="text"
@@ -358,8 +358,8 @@ export default function ProfilePage() {
 
               {/* Grid 2 cột: Điện thoại & Email */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="profile-phone">
+                <div className="field">
+                  <label className="label" htmlFor="profile-phone">
                     <Phone size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
                     Số điện thoại
                   </label>
@@ -373,8 +373,8 @@ export default function ProfilePage() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="profile-email">
+                <div className="field">
+                  <label className="label" htmlFor="profile-email">
                     <Mail size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
                     Địa chỉ Email
                   </label>
@@ -392,8 +392,8 @@ export default function ProfilePage() {
               {/* Nếu là Phụ huynh: thêm Địa chỉ và Nghề nghiệp */}
               {profile.guardianProfile && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="profile-address">
+                  <div className="field">
+                    <label className="label" htmlFor="profile-address">
                       <MapPin size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
                       Địa chỉ liên hệ
                     </label>
@@ -407,8 +407,8 @@ export default function ProfilePage() {
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="profile-occupation">
+                  <div className="field">
+                    <label className="label" htmlFor="profile-occupation">
                       <Briefcase size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
                       Nghề nghiệp
                     </label>

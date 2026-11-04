@@ -9,7 +9,6 @@ import {
   FileText,
   GraduationCap,
   HeartHandshake,
-  KeyRound,
   LayoutDashboard,
   LogOut,
   School,
@@ -25,7 +24,6 @@ import toast from 'react-hot-toast';
 import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
 import { notificationApi } from '../services/implementations/notificationApi';
 import { SYSTEM_MESSAGES } from '../constants/messages';
-import { ChangePasswordModal } from '../components/auth/ChangePasswordModal';
 import { ParentChildProvider } from '../contexts/ParentChildContext';
 import { ChildSelectorPill } from '../components/parent/ChildSelectorPill';
 import type { AppNotification } from '../types/notification.types';
@@ -212,7 +210,6 @@ const NAV_ITEMS: NavItem[] = [
 export function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -452,14 +449,6 @@ export function MainLayout() {
               </button>
               <button
                 type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={() => setChangePasswordOpen(true)}
-              >
-                <KeyRound size={14} />
-                <span>Đổi mật khẩu</span>
-              </button>
-              <button
-                type="button"
                 className="btn btn--secondary btn--sm btn--logout"
                 onClick={handleLogout}
               >
@@ -619,12 +608,6 @@ export function MainLayout() {
           </main>
         </div>
       </div>
-
-      {/* Change password modal */}
-      <ChangePasswordModal
-        open={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
-      />
     </ParentChildProvider>
   );
 }
