@@ -189,4 +189,14 @@ public class AuthService : IAuthService
         bool hasSpecial = Regex.IsMatch(password, @"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]");
         return hasUpper && hasLower && hasDigit && hasSpecial;
     }
+
+    public Task<ApiResponse<UserProfileDto>> GetProfileAsync(int userId, CancellationToken ct = default)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<ApiResponse<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileRequestDto request, CancellationToken ct = default)
+    {
+        throw new NotImplementedException();
+    }
 }

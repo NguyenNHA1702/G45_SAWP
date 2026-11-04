@@ -70,9 +70,11 @@ public class LinkedChildSummaryDto
     public string Status { get; set; } = "Active";
     public int? CurrentClassId { get; set; }
     public string? CurrentClassName { get; set; }
+    public string? ClassName { get => CurrentClassName; set => CurrentClassName = value; }
     public int? Grade { get; set; }
     public bool IsPlacementPublished { get; set; }
     public string RelationshipName { get; set; } = string.Empty;
+    public string Relationship { get => RelationshipName; set => RelationshipName = value; }
     public bool IsPrimaryContact { get; set; }
 }
 
