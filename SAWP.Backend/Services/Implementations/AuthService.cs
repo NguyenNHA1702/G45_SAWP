@@ -7,6 +7,7 @@ using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
 using Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using Services.Interfaces;
@@ -190,13 +191,120 @@ public class AuthService : IAuthService
         return hasUpper && hasLower && hasDigit && hasSpecial;
     }
 
-    public Task<ApiResponse<UserProfileDto>> GetProfileAsync(int userId, CancellationToken ct = default)
+    public async Task<ApiResponse<UserProfileDto>> GetProfileAsync(int userId, CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.StaffProfile).ThenInclude(sp => sp.HomeroomClasses)
+            .Include(u => u.Guardian).ThenInclude(g => g.StudentGuardians).ThenInclude(sg => sg.Student).ThenInclude(s => s.ClassAssignments).ThenInclude(ca => ca.Class)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        if (user == null)
+        {
+            return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG07);
+        }
+
+        var dto = new UserProfileDto
+        {
+            UserId = user.Id,
+            Username = user.Username,
+            FullName = user.FullName,
+            Email = user.Email,
+            PhoneNumber = user.PhoneNumber,
+            IsActive = user.IsActive,
+            CreatedAt = user.CreatedAt,
+            Roles = user.UserRoles.Where(ur => ur.Role != null).Select(ur => ur.Role.Name).ToList()
+        };
+
+        if (user.StaffProfile != null)
+        {
+            var homeroomClass = user.StaffProfile.HomeroomClasses.FirstOrDefault(c => c.Status == "Active");
+            dto.StaffProfile = new StaffProfileDetailDto
+            {
+                StaffCode = user.StaffProfile.StaffCode,
+                Department = user.StaffProfile.Department,
+                Position = user.StaffProfile.Position,
+                IsHomeroomTeacher = user.StaffProfile.IsHomeroomTeacher,
+                HomeroomClassName = homeroomClass?.ClassName
+            };
+        }
+
+        if (user.Guardian != null)
+        {
+            dto.GuardianProfile = new GuardianProfileDetailDto
+            {
+                IdentityCardNumber = user.Guardian.IdentityCardNumber,
+                Occupation = user.Guardian.Occupation,
+                Address = user.Guardian.Address,
+                Children = user.Guardian.StudentGuardians
+                    .Where(sg => sg.Student != null)
+                    .Select(sg =>
+                    {
+                        var activeClass = sg.Student.ClassAssignments.FirstOrDefault(ca => ca.IsActive)?.Class;
+                        return new LinkedChildSummaryDto
+                        {
+                            StudentId = sg.Student.Id,
+                            StudentCode = sg.Student.StudentCode,
+                            FullName = sg.Student.FullName,
+                            Gender = sg.Student.Gender,
+                            DateOfBirth = sg.Student.DateOfBirth,
+                            AvatarUrl = sg.Student.AvatarUrl,
+                            Status = sg.Student.Status,
+                            CurrentClassId = activeClass?.Id,
+                            CurrentClassName = activeClass?.ClassName,
+                            Grade = activeClass?.Grade,
+                            IsPlacementPublished = activeClass?.IsPlacementPublished ?? false,
+                            Relationship = sg.Relationship.ToString(),
+                            IsPrimaryContact = sg.IsPrimaryContact
+                        };
+                    }).ToList()
+            };
+        }
+
+        return ApiResponse<UserProfileDto>.Ok(dto);
     }
 
-    public Task<ApiResponse<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileRequestDto request, CancellationToken ct = default)
+    public async Task<ApiResponse<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileRequestDto request, CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        if (string.IsNullOrWhiteSpace(request.FullName))
+        {
+            return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01);
+        }
+
+        var user = await _unitOfWork.Users.Query()
+            .Include(u => u.Guardian)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        if (user == null)
+        {
+            return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG07);
+        }
+
+        user.FullName = request.FullName.Trim();
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            user.PhoneNumber = request.PhoneNumber.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            user.Email = request.Email.Trim();
+        }
+        user.UpdatedAt = DateTime.UtcNow;
+
+        if (user.Guardian != null)
+        {
+            if (request.Address != null) user.Guardian.Address = request.Address.Trim();
+            if (request.Occupation != null) user.Guardian.Occupation = request.Occupation.Trim();
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        var freshProfile = await GetProfileAsync(userId, ct);
+        if (!freshProfile.Success || freshProfile.Data == null)
+        {
+            return freshProfile;
+        }
+
+        return ApiResponse<UserProfileDto>.Ok(freshProfile.Data, SystemMessages.MSG47);
     }
 }
