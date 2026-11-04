@@ -95,7 +95,10 @@ export default function MealHeadcountPage() {
   const [pageSize, setPageSize] = useState<number>(10);
 
   // Bộ lọc cho tab Nhật ký biến động
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
   const [logFilter, setLogFilter] = useState<'ALL' | 'AutoCancelled' | 'ParentCancelled' | 'Restored'>('ALL');
+  const [logPageIndex, setLogPageIndex] = useState<number>(1);
+  const [logPageSize, setLogPageSize] = useState<number>(10);
 
   // Modal Chốt suất ăn (08h15)
   const [showLockModal, setShowLockModal] = useState<boolean>(false);
@@ -175,9 +178,30 @@ export default function MealHeadcountPage() {
   // Lọc nhật ký biến động
   const filteredLogs = useMemo(() => {
     const logs = board?.mealChangeLogs ?? [];
-    if (logFilter === 'ALL') return logs;
-    return logs.filter((l) => l.changeType === logFilter);
-  }, [board?.mealChangeLogs, logFilter]);
+    return logs.filter((l) => {
+      if (logFilter !== 'ALL' && l.changeType !== logFilter) return false;
+      if (logSearchQuery.trim()) {
+        const q = logSearchQuery.toLowerCase().trim();
+        const matchName = l.studentName.toLowerCase().includes(q);
+        const matchCode = l.studentCode.toLowerCase().includes(q);
+        const matchClass = l.className.toLowerCase().includes(q);
+        const matchReason = l.reason.toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchClass && !matchReason) return false;
+      }
+      return true;
+    });
+  }, [board?.mealChangeLogs, logFilter, logSearchQuery]);
+
+  useEffect(() => {
+    setLogPageIndex(1);
+  }, [logFilter, logSearchQuery, selectedDate, logPageSize]);
+
+  const totalLogCount = filteredLogs.length;
+  const totalLogPages = Math.max(1, Math.ceil(totalLogCount / logPageSize));
+  const pagedLogs = useMemo(() => {
+    const start = (logPageIndex - 1) * logPageSize;
+    return filteredLogs.slice(start, start + logPageSize);
+  }, [filteredLogs, logPageIndex, logPageSize]);
 
   const handleTabChange = (tab: 'summary' | 'students' | 'logs') => {
     setSearchParams({ tab });
@@ -1205,88 +1229,251 @@ export default function MealHeadcountPage() {
             padding: '24px',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Clock size={18} color="var(--color-secondary)" />
                 Nhật Ký Biến Động Suất Ăn
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                Truy vết toàn bộ việc tự động hủy suất trước {effectiveCutoffLabel}, phụ huynh báo hủy trực tiếp và khôi phục suất ăn.
+                Truy vết toàn bộ việc tự động hủy suất trước {effectiveCutoffLabel}, phụ huynh báo hủy hoặc khôi phục suất ăn.
               </p>
             </div>
 
-            {/* Filter logs */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <select
-                className="select"
-                value={logFilter}
-                onChange={(e) => setLogFilter(e.target.value as 'ALL' | 'AutoCancelled' | 'ParentCancelled' | 'Restored')}
+            {/* Quick Status Chips */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="badge badge--violet" style={{ border: '1.5px solid var(--color-fg)' }}>
+                Tổng biến động: <strong>{board?.mealChangeLogs?.length || 0}</strong>
+              </span>
+              <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)' }}>
+                Hủy suất: <strong>{(board?.mealChangeLogs ?? []).filter((l) => l.changeType !== 'Restored').length}</strong>
+              </span>
+              <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)' }}>
+                Khôi phục: <strong>{(board?.mealChangeLogs ?? []).filter((l) => l.changeType === 'Restored').length}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              padding: '14px 18px',
+              background: '#FFFDF5',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: 20,
+              border: '2px solid var(--color-fg)',
+              boxShadow: '2px 2px 0 0 var(--color-fg)',
+            }}
+          >
+            {/* Search Input */}
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search
+                size={16}
+                color="var(--color-muted-fg)"
+                style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}
+              />
+              <input
+                type="text"
+                className="input"
+                placeholder="Tìm tên, mã học sinh, lớp hoặc lý do..."
+                value={logSearchQuery}
+                onChange={(e) => setLogSearchQuery(e.target.value)}
                 style={{
-                  minWidth: 220,
-                  padding: '8px 14px',
+                  paddingLeft: 36,
                   fontSize: 'var(--fs-sm)',
                   borderRadius: 'var(--radius-full)',
                   border: '2px solid var(--color-fg)',
                 }}
-              >
-                <option value="ALL">Tất cả biến động ({board?.mealChangeLogs?.length || 0})</option>
-                <option value="AutoCancelled">Tự hủy từ đơn xin nghỉ</option>
-                <option value="ParentCancelled">Phụ huynh báo hủy</option>
-                <option value="Restored">Khôi phục suất ăn</option>
-              </select>
+              />
             </div>
+
+            {/* Log Type Filter */}
+            <select
+              className="select"
+              value={logFilter}
+              onChange={(e) => setLogFilter(e.target.value as 'ALL' | 'AutoCancelled' | 'ParentCancelled' | 'Restored')}
+              style={{
+                minWidth: 200,
+                padding: '6px 14px',
+                fontSize: 'var(--fs-sm)',
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+              }}
+            >
+              <option value="ALL">Tất cả biến động ({board?.mealChangeLogs?.length || 0})</option>
+              <option value="AutoCancelled">Tự hủy từ đơn xin nghỉ</option>
+              <option value="ParentCancelled">Phụ huynh báo hủy</option>
+              <option value="Restored">Khôi phục suất ăn</option>
+            </select>
+
+            {/* Page Size Select */}
+            <select
+              className="select"
+              value={logPageSize}
+              onChange={(e) => setLogPageSize(Number(e.target.value))}
+              style={{
+                minWidth: 120,
+                padding: '6px 12px',
+                fontSize: 'var(--fs-sm)',
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+              }}
+            >
+              <option value={5}>5 dòng / trang</option>
+              <option value={10}>10 dòng / trang</option>
+              <option value={20}>20 dòng / trang</option>
+            </select>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {filteredLogs.length > 0 ? (
-              filteredLogs.map((log, idx) => {
-                const isCancel = log.changeType === 'AutoCancelled' || log.changeType === 'ParentCancelled';
-                return (
-                  <div
-                    key={idx}
+          {/* Audit Logs Table */}
+          <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', width: 50, fontWeight: 800 }}>STT</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', width: 90, fontWeight: 800 }}>Thời gian</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', width: 100, fontWeight: 800 }}>Mã HS</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', minWidth: 150, fontWeight: 800 }}>Học sinh & Lớp</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', width: 160, fontWeight: 800 }}>Loại biến động</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Lý do / Căn cứ</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', width: 130, fontWeight: 800 }}>Mốc chốt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedLogs.length > 0 ? (
+                  pagedLogs.map((log, idx) => {
+                    const isParent = log.changeType === 'ParentCancelled';
+                    const isAuto = log.changeType === 'AutoCancelled';
+
+                    return (
+                      <tr
+                        key={idx}
+                        style={{ borderBottom: '1px solid var(--color-border)', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = '#FFFDF5')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <td style={{ padding: '11px 14px', textAlign: 'center', fontWeight: 600 }}>
+                          {(logPageIndex - 1) * logPageSize + idx + 1}
+                        </td>
+                        <td style={{ padding: '11px 14px', textAlign: 'center', fontWeight: 700, color: 'var(--color-fg)', fontSize: 'var(--fs-xs)' }}>
+                          {new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td style={{ padding: '11px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>
+                          {log.studentCode}
+                        </td>
+                        <td style={{ padding: '11px 14px' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--color-fg)' }}>{log.studentName}</span>
+                          <span className="badge badge--muted" style={{ marginLeft: 8, fontSize: 11, padding: '1px 6px' }}>
+                            Lớp {log.className}
+                          </span>
+                        </td>
+                        <td style={{ padding: '11px 14px', textAlign: 'center' }}>
+                          {isParent ? (
+                            <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                              Phụ huynh báo hủy
+                            </span>
+                          ) : isAuto ? (
+                            <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                              Tự hủy (Đơn nghỉ)
+                            </span>
+                          ) : (
+                            <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                              Khôi phục suất
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '11px 14px', color: 'var(--color-fg)', fontSize: 'var(--fs-xs)', fontStyle: 'italic' }}>
+                          {log.reason || '—'}
+                        </td>
+                        <td style={{ padding: '11px 14px', textAlign: 'center' }}>
+                          {log.isBeforeCutoff ? (
+                            <span style={{ color: '#059669', fontWeight: 800, fontSize: 'var(--fs-xs)' }}>
+                              ✓ Trước {effectiveCutoffLabel}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#E11D48', fontWeight: 800, fontSize: 'var(--fs-xs)' }}>
+                              ! Sau {effectiveCutoffLabel}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--color-muted-fg)' }}>
+                      <CheckCircle2 size={36} color="#059669" style={{ marginBottom: 8, display: 'inline-block' }} />
+                      <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                        Không có biến động nào trong ngày
+                      </div>
+                      <div style={{ fontSize: 'var(--fs-xs)', marginTop: 4 }}>
+                        Toàn bộ học sinh dùng bữa theo danh sách đăng ký ban đầu.
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            {/* Pagination Controls */}
+            {totalLogCount > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 18px',
+                  borderTop: '2px solid var(--color-fg)',
+                  background: '#F8FAFC',
+                  fontSize: 'var(--fs-sm)',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                }}
+              >
+                <div>
+                  Hiển thị <strong>{pagedLogs.length}</strong> / <strong>{totalLogCount}</strong> biến động
+                  <span style={{ color: 'var(--color-muted-fg)', marginLeft: 8 }}>
+                    (Bản ghi {(logPageIndex - 1) * logPageSize + 1} – {Math.min(logPageIndex * logPageSize, totalLogCount)})
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    disabled={logPageIndex <= 1}
+                    onClick={() => setLogPageIndex((p) => Math.max(1, p - 1))}
                     style={{
-                      padding: '16px 20px',
-                      borderRadius: 'var(--radius-md)',
-                      border: '2px solid var(--color-fg)',
-                      boxShadow: '3px 3px 0 0 var(--color-fg)',
-                      background: isCancel ? '#FFF1F2' : '#ECFDF5',
-                      fontSize: 'var(--fs-sm)',
+                      borderRadius: 'var(--radius-full)',
+                      border: '1.5px solid var(--color-fg)',
+                      boxShadow: logPageIndex > 1 ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                      fontWeight: 700,
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
-                      <div>
-                        <strong style={{ fontSize: 'var(--fs-base)', color: 'var(--color-fg)' }}>
-                          {log.studentName}
-                        </strong>
-                        <span style={{ marginLeft: 8, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
-                          ({log.studentCode}) — Lớp {log.className}
-                        </span>
-                      </div>
-                      <span className={`badge ${isCancel ? 'badge--pink' : 'badge--mint'}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
-                        {log.changeType === 'ParentCancelled'
-                          ? 'Phụ huynh báo hủy'
-                          : log.changeType === 'AutoCancelled'
-                            ? `Tự hủy trước ${effectiveCutoffLabel}`
-                            : 'Khôi phục suất'}
-                      </span>
-                    </div>
-
-                    <p style={{ margin: '6px 0', color: 'var(--color-fg)', fontSize: 'var(--fs-sm)', fontStyle: 'italic' }}>
-                      Lý do: {log.reason}
-                    </p>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                      <span>Thời điểm ghi nhận: {new Date(log.timestamp).toLocaleTimeString('vi-VN')}</span>
-                      <span style={{ color: '#059669', fontWeight: 800 }}>✓ Trước giờ chốt {effectiveCutoffLabel}</span>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--color-muted-fg)' }}>
-                <UtensilsCrossed size={36} color="var(--color-border)" style={{ marginBottom: 12 }} />
-                <p style={{ margin: 0, fontWeight: 600 }}>Không có dữ liệu biến động suất ăn nào cho ngày này.</p>
+                    <ChevronLeft size={14} /> Trang trước
+                  </button>
+                  <span className="badge badge--violet" style={{ alignSelf: 'center', padding: '4px 12px', border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+                    Trang {logPageIndex} / {totalLogPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    disabled={logPageIndex >= totalLogPages}
+                    onClick={() => setLogPageIndex((p) => Math.min(totalLogPages, p + 1))}
+                    style={{
+                      borderRadius: 'var(--radius-full)',
+                      border: '1.5px solid var(--color-fg)',
+                      boxShadow: logPageIndex < totalLogPages ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                      fontWeight: 700,
+                    }}
+                  >
+                    Trang sau <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
             )}
           </div>

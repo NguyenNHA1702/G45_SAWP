@@ -752,13 +752,15 @@ public class LunchService : ILunchService
         // 5. Danh sách nhật ký biến động suất ăn (Audit Log): hủy bởi PH (UC-30), tự hủy do đơn nghỉ (WFL 1.2.3), hoặc khôi phục
         var cutoffAt = targetDate.Add(resolved.Cutoff);
         var logs = new List<MealAuditLogDto>();
-        foreach (var reg in scopedRegistrations.Where(r => !r.IsActive || !string.IsNullOrEmpty(r.Remarks)))
+        foreach (var reg in scopedRegistrations.Where(r => !r.IsActive || (r.Remarks != null && r.Remarks.Contains("Khôi phục"))))
         {
             var studentClass = reg.Student?.ClassAssignments.FirstOrDefault(ca => ca.IsActive)?.Class?.ClassName ?? "Chưa phân lớp";
             var isCancelled = !reg.IsActive;
             var changeType = isCancelled
-                ? (reg.CancellationSource == LunchCancellationSource.Parent ? "ParentCancelled" : "AutoCancelled")
-                : (reg.Remarks?.Contains("Khôi phục") == true ? "Restored" : "Adjustment");
+                ? (reg.CancellationSource == LunchCancellationSource.Parent || (reg.CancellationReason != null && reg.CancellationReason.Contains("Phụ huynh"))
+                    ? "ParentCancelled"
+                    : "AutoCancelled")
+                : "Restored";
             var changedAt = isCancelled && reg.CancelledAt.HasValue ? reg.CancelledAt.Value : reg.CreatedAt;
 
             logs.Add(new MealAuditLogDto
