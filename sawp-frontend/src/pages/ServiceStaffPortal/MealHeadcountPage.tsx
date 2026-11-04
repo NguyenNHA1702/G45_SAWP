@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarRange,
+  Calendar,
   Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -320,25 +321,64 @@ export default function MealHeadcountPage() {
             </p>
           </div>
 
-          {/* Controls: Date Picker & Quick Action buttons */}
+          {/* Controls: Capsule Date Picker & Tactile Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div className="field" style={{ minWidth: 160 }}>
+            {/* Capsule Date Picker with icon */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                background: '#FFFFFF',
+                border: '2px solid var(--color-fg)',
+                borderRadius: 'var(--radius-full)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                padding: '6px 14px 6px 16px',
+                height: 42,
+                boxSizing: 'border-box',
+              }}
+            >
+              <Calendar size={16} color="var(--color-accent)" style={{ flexShrink: 0 }} />
               <input
                 type="date"
-                className="input"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                style={{ fontWeight: 700 }}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  fontWeight: 800,
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--color-fg)',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  padding: 0,
+                }}
               />
             </div>
 
             <button
               type="button"
-              className="btn btn--secondary"
+              className="btn"
               onClick={() => fetchBoard(selectedDate)}
               title="Làm mới dữ liệu"
               disabled={loading}
-              style={{ borderRadius: 'var(--radius-full)' }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                background: '#FFFFFF',
+                color: 'var(--color-fg)',
+                fontWeight: 800,
+                fontSize: 'var(--fs-sm)',
+                padding: '0 18px',
+                height: 42,
+                boxSizing: 'border-box',
+                cursor: loading ? 'not-allowed' : 'pointer',
+              }}
             >
               <RefreshCw size={15} className={loading ? 'spin' : ''} />
               Làm mới
@@ -347,10 +387,25 @@ export default function MealHeadcountPage() {
             {board?.canManage && (
               <button
                 type="button"
-                className="btn btn--secondary"
+                className="btn"
                 onClick={() => setShowConfigModal(true)}
                 title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
-                style={{ borderRadius: 'var(--radius-full)' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  background: '#FEF9C3',
+                  color: 'var(--color-fg)',
+                  fontWeight: 800,
+                  fontSize: 'var(--fs-sm)',
+                  padding: '0 18px',
+                  height: 42,
+                  boxSizing: 'border-box',
+                  cursor: 'pointer',
+                }}
               >
                 <Settings size={15} />
                 Cấu hình ngày
@@ -359,37 +414,78 @@ export default function MealHeadcountPage() {
 
             <button
               type="button"
-              className="btn btn--secondary"
+              className="btn"
               onClick={() => setShowPrintModal(true)}
               title="In phiếu bàn giao cho bếp"
-              style={{ borderRadius: 'var(--radius-full)' }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                background: '#ECFDF5',
+                color: 'var(--color-fg)',
+                fontWeight: 800,
+                fontSize: 'var(--fs-sm)',
+                padding: '0 18px',
+                height: 42,
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+              }}
             >
               <Printer size={15} />
               In Phiếu Giao
             </button>
 
-            {board?.canManage && board.isServing && !board.isLocked && (
+            {board?.canManage && board.isServing && !board.isLocked ? (
               <button
                 type="button"
-                className="btn btn--primary"
+                className="btn"
                 onClick={() => setShowLockModal(true)}
                 style={{
                   borderRadius: 'var(--radius-full)',
                   border: '2px solid var(--color-fg)',
-                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
                   fontWeight: 800,
-                  padding: '10px 22px',
+                  fontSize: 'var(--fs-sm)',
+                  padding: '0 22px',
+                  height: 42,
+                  boxSizing: 'border-box',
                   background: 'var(--color-accent)',
                   color: '#FFFFFF',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
+                  cursor: 'pointer',
                 }}
               >
                 <Lock size={15} />
                 Chốt Suất ({effectiveCutoffLabel})
               </button>
-            )}
+            ) : board?.canManage && board.isServing && board.isLocked ? (
+              <div
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  fontSize: 'var(--fs-sm)',
+                  padding: '0 20px',
+                  height: 42,
+                  boxSizing: 'border-box',
+                  background: '#D1FAE5',
+                  color: '#065F46',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+                title="Bảng số liệu đã được chốt và gửi sang nhà bếp"
+              >
+                <CheckCircle2 size={16} />
+                Đã chốt suất ({effectiveCutoffLabel})
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -1914,7 +2010,7 @@ export default function MealHeadcountPage() {
         iconBg="var(--color-quaternary)"
         maxWidth="lg"
       >
-        <div style={{ background: '#FFFFFF', color: '#1E293B', padding: '16px 8px' }}>
+        <div id="printable-handover-sheet" style={{ background: '#FFFFFF', color: '#1E293B', padding: '16px 8px' }}>
           {/* Header A4 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #1E293B', paddingBottom: 16, marginBottom: 20 }}>
             <div>
@@ -1999,14 +2095,43 @@ export default function MealHeadcountPage() {
           </div>
 
           {/* Print Modal Buttons */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
-            <button type="button" className="btn btn--secondary" onClick={() => setShowPrintModal(false)}>
+          <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowPrintModal(false)}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                fontWeight: 700,
+                fontSize: 'var(--fs-sm)',
+                padding: '8px 20px',
+                background: '#FFFFFF',
+                color: 'var(--color-fg)',
+                cursor: 'pointer',
+              }}
+            >
               Đóng
             </button>
             <button
               type="button"
-              className="btn btn--primary"
+              className="btn"
               onClick={() => window.print()}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                fontWeight: 800,
+                fontSize: 'var(--fs-sm)',
+                padding: '8px 24px',
+                background: 'var(--color-accent)',
+                color: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+              }}
             >
               <Printer size={16} /> In Phiếu Bàn Giao
             </button>
