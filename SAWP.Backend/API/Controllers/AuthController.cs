@@ -88,4 +88,47 @@ public class AuthController : ControllerBase
 
         return Ok(ApiResponse<object>.Ok(userInfo));
     }
+
+    [HttpGet("profile")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetProfile(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG07));
+        }
+
+        var result = await _authService.GetProfileAsync(userId.Value, cancellationToken);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    [HttpPut("profile")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<UserProfileDto>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG07));
+        }
+
+        var result = await _authService.UpdateProfileAsync(userId.Value, request, cancellationToken);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
 }
