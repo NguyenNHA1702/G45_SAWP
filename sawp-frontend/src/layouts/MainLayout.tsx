@@ -11,6 +11,7 @@ import {
   HeartHandshake,
   LayoutDashboard,
   LogOut,
+  Newspaper,
   School,
   Sparkles,
   User,
@@ -140,6 +141,13 @@ const NAV_ITEMS: NavItem[] = [
         roles: ['Teacher', 'SchoolBoard'],
         icon: FileCheck,
       },
+      {
+        id: 'teacher-contact-book',
+        label: 'Sổ liên lạc lớp (WF6)',
+        path: '/teacher/contact-book',
+        roles: ['Teacher'],
+        icon: Newspaper,
+      },
     ],
   },
   // --- Cổng phụ huynh (Parent) ---
@@ -154,6 +162,12 @@ const NAV_ITEMS: NavItem[] = [
         label: 'Hồ sơ các con',
         path: '/parent/children',
         icon: HeartHandshake,
+      },
+      {
+        id: 'parent-contact-book',
+        label: 'Sổ liên lạc điện tử (WF6)',
+        path: '/parent/contact-book',
+        icon: Newspaper,
       },
       {
         id: 'parent-lunch',

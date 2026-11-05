@@ -46,6 +46,7 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IStudentImporter, StudentImporter>();
 builder.Services.AddScoped<IStaffImporter, StaffImporter>();
 builder.Services.AddScoped<IPlacementPlanService, PlacementPlanService>();
+builder.Services.AddScoped<IEContactBookService, EContactBookService>();
 
 // 4. External Services (Infrastructure ExternalServices -> Interfaces)
 builder.Services.AddTransient<IEmailService, EmailService>();

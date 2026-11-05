@@ -17,6 +17,8 @@ import AdminRequestsManagementPage from './pages/OfficeStaffPortal/AdminRequests
 import AdministrativeApprovalPage from './pages/SchoolBoardPortal/AdministrativeApprovalPage';
 import ParentLunchPage from './pages/ParentPortal/ParentLunchPage';
 import ProfilePage from './pages/Auth/ProfilePage';
+import EContactBookPage from './pages/ParentPortal/EContactBookPage';
+import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -57,10 +59,12 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/teacher/attendance" element={<AttendancePage />} />
           <Route path="/teacher/leave-requests" element={<LeaveApprovalPage />} />
+          <Route path="/teacher/contact-book" element={<TeacherContactBookPage />} />
           <Route path="/parent/attendance" element={<ChildAttendancePage />} />
           <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
           <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
           <Route path="/parent/lunch" element={<ParentLunchPage />} />
+          <Route path="/parent/contact-book" element={<EContactBookPage />} />
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />
