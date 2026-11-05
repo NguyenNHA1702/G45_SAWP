@@ -101,9 +101,10 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
   }
 
   // School Board operations
-  async getBoardRequests(requestType?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>> {
+  async getBoardRequests(requestType?: string, status?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>> {
     const params: Record<string, string> = {};
-    if (requestType) params.requestType = requestType;
+    if (requestType && requestType !== 'ALL') params.requestType = requestType;
+    if (status && status !== 'ALL') params.status = status;
     const res = await apiClient.get<ApiResponse<AdministrativeRequestSummary[]>>('/requests/board', { params });
     return res.data;
   }

@@ -19,7 +19,7 @@ public interface IRequestWorkflowEngine
     Task<ApiResponse<bool>> ExecuteClassTransferAsync(int requestId, int staffUserId, CancellationToken cancellationToken = default);
 
     // School Board operations
-    Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetSchoolBoardRequestsAsync(string? requestType = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetSchoolBoardRequestsAsync(string? requestType = null, string? status = null, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> ProcessBoardDecisionAsync(int requestId, int boardUserId, BoardDecisionDto request, CancellationToken cancellationToken = default);
 
     // Legacy fallback

@@ -452,9 +452,10 @@ public class RequestsController : ControllerBase
     [Authorize(Roles = "SchoolBoard,Admin")]
     public async Task<IActionResult> GetBoardRequests(
         [FromQuery] string? requestType,
+        [FromQuery] string? status,
         CancellationToken cancellationToken)
     {
-        var result = await _workflowEngine.GetSchoolBoardRequestsAsync(requestType, cancellationToken);
+        var result = await _workflowEngine.GetSchoolBoardRequestsAsync(requestType, status, cancellationToken);
         return Ok(result);
     }
 

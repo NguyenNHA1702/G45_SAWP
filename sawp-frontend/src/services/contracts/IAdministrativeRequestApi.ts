@@ -28,6 +28,6 @@ export interface IAdministrativeRequestApi {
   executeClassTransfer(id: number): Promise<ApiResponse<boolean>>;
 
   // School Board
-  getBoardRequests(requestType?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>>;
+  getBoardRequests(requestType?: string, status?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>>;
   processBoardDecision(id: number, req: BoardDecisionRequest): Promise<ApiResponse<boolean>>;
 }
