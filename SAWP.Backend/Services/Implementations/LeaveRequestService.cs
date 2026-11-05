@@ -512,7 +512,7 @@ public class LeaveRequestService : ILeaveRequestService
             }
         }
 
-        // 3. Handshake with Lunch Service: Evaluate the lunch cutoff (School:LunchCutoffTime) per APPLICABLE DATE
+        // 3. Handshake with Lunch Service: Evaluate the lunch cutoff (theo cấu hình LunchServiceDay hoặc School:LunchCutoffTime = 08:15) per APPLICABLE DATE
         var cancelledDates = new List<DateTime>();
         var totalDays = (req.LeaveRequest.EndDate.Date - req.LeaveRequest.StartDate.Date).Days;
 
@@ -524,20 +524,15 @@ public class LeaveRequestService : ILeaveRequestService
             for (int i = 0; i <= totalDays; i++)
             {
                 var curDate = req.LeaveRequest.StartDate.Date.AddDays(i);
-                var cutoffTime = curDate.Date.Add(_options.LunchCutoff);
+                var cancelRes = await _lunchService.CancelMealForLeaveAsync(
+                    req.StudentId.Value,
+                    curDate,
+                    $"Đơn nghỉ {req.RequestNumber}",
+                    cancellationToken);
 
-                if (_clock.Now <= cutoffTime)
+                if (cancelRes.Data)
                 {
-                    var cancelRes = await _lunchService.CancelMealForLeaveAsync(
-                        req.StudentId.Value,
-                        curDate,
-                        $"Đơn nghỉ {req.RequestNumber}",
-                        cancellationToken);
-
-                    if (cancelRes.Data)
-                    {
-                        cancelledDates.Add(curDate);
-                    }
+                    cancelledDates.Add(curDate);
                 }
             }
         }

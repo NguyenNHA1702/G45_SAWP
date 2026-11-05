@@ -99,11 +99,15 @@ export interface ClassRosterDto {
   className: string;
   grade: number;
   capacity: number;
-  totalStudents: number;
+  academicYear?: string;
+  schoolYearName?: string;
+  roomNumber?: string;
+  totalEnrolled?: number;
+  totalStudents?: number;
   isPlacementPublished: boolean;
-  schoolYearName: string;
   homeroomTeacherName?: string;
   homeroomTeacherPhone?: string;
+  homeroomTeacherEmail?: string;
   students: RosterStudentItemDto[];
 }
 

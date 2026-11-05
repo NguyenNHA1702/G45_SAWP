@@ -103,6 +103,7 @@ public class RosterStudentItemDto
     public string? PrimaryGuardianName { get; set; }
     public string? PrimaryGuardianPhone { get; set; }
     public string? PrimaryGuardianRelationship { get; set; }
+    public string? EmergencyContactPhone { get; set; }
 }
 
 public class ClassRosterDto

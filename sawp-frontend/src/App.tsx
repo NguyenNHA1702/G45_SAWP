@@ -15,6 +15,8 @@ import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
 import AdministrativeRequestsPage from './pages/ParentPortal/AdministrativeRequestsPage';
 import AdminRequestsManagementPage from './pages/OfficeStaffPortal/AdminRequestsManagementPage';
 import AdministrativeApprovalPage from './pages/SchoolBoardPortal/AdministrativeApprovalPage';
+import ParentLunchPage from './pages/ParentPortal/ParentLunchPage';
+import ProfilePage from './pages/Auth/ProfilePage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/parent/attendance" element={<ChildAttendancePage />} />
           <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
           <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
+          <Route path="/parent/lunch" element={<ParentLunchPage />} />
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />
@@ -66,6 +69,7 @@ export default function App() {
           <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
           <Route path="/parent/children" element={<ChildDashboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

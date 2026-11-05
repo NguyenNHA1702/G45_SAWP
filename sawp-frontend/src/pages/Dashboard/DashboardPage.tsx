@@ -211,6 +211,34 @@ export default function DashboardPage() {
 
         {roles.includes('Parent') && (
           <Link
+            to="/parent/lunch"
+            className="card card--hover"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'var(--color-tertiary-soft)',
+                border: 'var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <UtensilsCrossed size={22} color="var(--color-fg)" />
+            </div>
+            <h3>Đăng ký & Lịch bán trú</h3>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Chọn ngày đăng ký bán trú (UC-29), xem thực đơn & trạng thái từng ngày (UC-31) hoặc hủy trước 08h15 (UC-30).
+            </p>
+            <span className="badge badge--amber">Mở lịch bán trú →</span>
+          </Link>
+        )}
+
+        {roles.includes('Parent') && (
+          <Link
             to="/parent/attendance"
             className="card card--hover"
             style={{ textDecoration: 'none', color: 'inherit' }}
@@ -237,7 +265,7 @@ export default function DashboardPage() {
           </Link>
         )}
 
-        {roles.includes('ServiceStaff') && (
+        {(roles.includes('ServiceStaff') || roles.includes('SchoolBoard') || roles.includes('OfficeStaff')) && (
           <Link
             to="/service/headcount"
             className="card card--hover"
@@ -257,9 +285,9 @@ export default function DashboardPage() {
             >
               <UtensilsCrossed size={22} color="var(--color-fg)" />
             </div>
-            <h3>Báo cáo suất ăn Bếp</h3>
+            <h3>Vận hành & Báo cáo Bán trú</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              Tổng hợp khẩu phần (Thường, Chay, Đặc biệt) và số lượng suất bị trừ do vắng học.
+              Cấu hình ngày phục vụ & thực đơn (UC-32), tổng hợp suất ăn theo lớp, chốt số liệu 08h15 và xuất danh sách (UC-33).
             </p>
             <span className="badge badge--amber">Xem thống kê bếp →</span>
           </Link>
