@@ -579,6 +579,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
     public async Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetSchoolBoardRequestsAsync(
         string? requestType = null,
+        string? status = null,
         CancellationToken cancellationToken = default)
     {
         var query = _unitOfWork.Repository<AdministrativeRequest>()
@@ -588,14 +589,44 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.FromClass)
             .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.ToClass)
             .Include(r => r.DocumentRequestDetail)
-            .Where(r => r.Status == RequestStatus.UnderReview && (r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document));
+            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document);
 
-        if (!string.IsNullOrWhiteSpace(requestType))
+        if (!string.IsNullOrWhiteSpace(requestType) && !requestType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
         {
             query = query.Where(r => r.RequestType == requestType);
         }
 
-        var list = await query.OrderBy(r => r.SubmissionDate).ToListAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (status.Equals("UnderReview", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.Status == RequestStatus.UnderReview);
+            }
+            else if (status.Equals("Approved", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.SchoolBoardApprovedAt != null || r.Status == RequestStatus.Approved);
+            }
+            else if (status.Equals("Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.Status == RequestStatus.Rejected);
+            }
+            else if (Enum.TryParse<RequestStatus>(status, true, out var parsedStatus))
+            {
+                query = query.Where(r => r.Status == parsedStatus);
+            }
+        }
+        else
+        {
+            query = query.Where(r => r.Status == RequestStatus.UnderReview 
+                                  || r.SchoolBoardApprovedAt != null 
+                                  || r.Status == RequestStatus.Approved 
+                                  || (r.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(r.SchoolBoardNotes)));
+        }
+
+        var list = await query
+            .OrderByDescending(r => r.SchoolBoardApprovedAt ?? r.ProcessedDate ?? r.SubmissionDate)
+            .ToListAsync(cancellationToken);
+
         var dtos = list.Select(MapToSummaryDto).ToList();
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
     }

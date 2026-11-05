@@ -1114,6 +1114,48 @@ public class RequestWorkflowEngineTests : TestBase
         result.Data.Should().HaveCount(1);
     }
 
+    [Fact]
+    public async Task UTCID03_GetSchoolBoardRequests_FilterByStatusApproved_ReturnsApproved()
+    {
+        // Arrange
+        var requests = new List<AdministrativeRequest>
+        {
+            new() { Id = 1, Status = RequestStatus.UnderReview, RequestType = RequestTypes.ClassTransfer },
+            new() { Id = 2, Status = RequestStatus.Approved, RequestType = RequestTypes.Document, SchoolBoardApprovedAt = DateTime.UtcNow }
+        };
+        SetupRepository(requests);
+
+        // Act
+        var result = await _service.GetSchoolBoardRequestsAsync(null, "Approved");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Data.Should().HaveCount(1);
+        result.Data![0].Id.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UTCID04_GetSchoolBoardRequests_FilterByStatusRejected_ReturnsRejected()
+    {
+        // Arrange
+        var requests = new List<AdministrativeRequest>
+        {
+            new() { Id = 1, Status = RequestStatus.UnderReview, RequestType = RequestTypes.ClassTransfer },
+            new() { Id = 2, Status = RequestStatus.Rejected, RequestType = RequestTypes.Document, SchoolBoardNotes = "Rejected reason" }
+        };
+        SetupRepository(requests);
+
+        // Act
+        var result = await _service.GetSchoolBoardRequestsAsync(null, "Rejected");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Data.Should().HaveCount(1);
+        result.Data![0].Id.Should().Be(2);
+    }
+
     #endregion
 
     #region Method 44: ProcessBoardDecisionAsync (UTCID01 - UTCID06)

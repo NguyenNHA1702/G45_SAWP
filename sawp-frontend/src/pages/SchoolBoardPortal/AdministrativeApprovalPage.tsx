@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowRight,
+  CheckCircle2,
   Clock,
-  FileText,
-  GraduationCap,
+  Download,
   RefreshCw,
   Search,
   ShieldCheck,
   Users,
+  XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
@@ -19,6 +20,7 @@ export default function AdministrativeApprovalPage() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('UnderReview');
 
   const [selectedReq, setSelectedReq] = useState<AdministrativeRequestSummary | null>(null);
   const [decisionModalOpen, setDecisionModalOpen] = useState(false);
@@ -26,12 +28,13 @@ export default function AdministrativeApprovalPage() {
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await administrativeRequestApi.getBoardRequests();
+      // Fetch all board-relevant requests so statistics and quick tab switching stay accurate
+      const res = await administrativeRequestApi.getBoardRequests(undefined, 'ALL');
       if (res.success && Array.isArray(res.data)) {
         setRequests(res.data);
       }
     } catch {
-      toast.error('Không thể tải danh sách đề xuất chờ duyệt.');
+      toast.error('Không thể tải danh sách đề xuất trình Ban Giám Hiệu.');
     } finally {
       setLoading(false);
     }
@@ -44,12 +47,28 @@ export default function AdministrativeApprovalPage() {
   // Thống kê nhanh
   const stats = useMemo(() => {
     const total = requests.length;
+    const pending = requests.filter((r) => r.status === 'UnderReview').length;
+    const approved = requests.filter(
+      (r) => r.schoolBoardApprovedAt != null || r.status === 'Approved'
+    ).length;
+    const rejected = requests.filter((r) => r.status === 'Rejected').length;
     const transferCount = requests.filter((r) => r.requestType === 'ClassTransfer').length;
     const documentCount = requests.filter((r) => r.requestType === 'Document').length;
-    return { total, transferCount, documentCount };
+    return { total, pending, approved, rejected, transferCount, documentCount };
   }, [requests]);
 
-  // Lọc
+  // Tải văn bản phát hành (nếu có)
+  const handleDownloadDoc = async (req: AdministrativeRequestSummary) => {
+    try {
+      const fileName = `Giay_Xac_Nhan_${req.studentCode || 'HS'}_${req.requestNumber}.doc`;
+      await administrativeRequestApi.downloadIssuedDocument(req.id, fileName);
+      toast.success('Đã tải văn bản chính thức thành công!');
+    } catch {
+      toast.error('Không thể tải văn bản. Vui lòng thử lại sau.');
+    }
+  };
+
+  // Lọc danh sách theo search, typeFilter, statusFilter
   const filteredRequests = useMemo(() => {
     return requests.filter((r) => {
       const search = searchTerm.toLowerCase().trim();
@@ -61,9 +80,19 @@ export default function AdministrativeApprovalPage() {
         (r.requesterName && r.requesterName.toLowerCase().includes(search));
 
       const matchType = typeFilter === 'ALL' || r.requestType === typeFilter;
-      return matchSearch && matchType;
+
+      let matchStatus = true;
+      if (statusFilter === 'UnderReview') {
+        matchStatus = r.status === 'UnderReview';
+      } else if (statusFilter === 'Approved') {
+        matchStatus = r.schoolBoardApprovedAt != null || r.status === 'Approved';
+      } else if (statusFilter === 'Rejected') {
+        matchStatus = r.status === 'Rejected';
+      }
+
+      return matchSearch && matchType && matchStatus;
     });
-  }, [requests, searchTerm, typeFilter]);
+  }, [requests, searchTerm, typeFilter, statusFilter]);
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 20px 48px' }}>
@@ -109,7 +138,7 @@ export default function AdministrativeApprovalPage() {
             Phê Duyệt Đơn Hành Chính (Ban Giám Hiệu)
           </h1>
           <p style={{ margin: 0, color: '#64748B', fontSize: 14 }}>
-            Xem xét các đề xuất chuyển lớp và cấp văn bản xác nhận đã được bộ phận Giáo vụ thẩm định hồ sơ.
+            Xem xét các đề xuất chuyển lớp và cấp văn bản xác nhận từ bộ phận Giáo vụ; theo dõi lịch sử các đơn đã được duyệt hoặc từ chối.
           </p>
         </div>
 
@@ -130,19 +159,22 @@ export default function AdministrativeApprovalPage() {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: 16,
-          marginBottom: 24,
+          marginBottom: 20,
         }}
       >
         <div
+          onClick={() => setStatusFilter('UnderReview')}
           style={{
-            backgroundColor: '#FFFFFF',
-            border: '2px solid #1E293B',
+            backgroundColor: statusFilter === 'UnderReview' ? '#F3E8FF' : '#FFFFFF',
+            border: statusFilter === 'UnderReview' ? '2px solid #7E22CE' : '2px solid #1E293B',
             borderRadius: 14,
             padding: 16,
             boxShadow: '3px 3px 0 #1E293B',
             display: 'flex',
             alignItems: 'center',
             gap: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           <div
@@ -162,20 +194,23 @@ export default function AdministrativeApprovalPage() {
           </div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>ĐƠN CHỜ BGH DUYỆT</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#1E293B' }}>{stats.total}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#1E293B' }}>{stats.pending}</div>
           </div>
         </div>
 
         <div
+          onClick={() => setStatusFilter('Approved')}
           style={{
-            backgroundColor: '#ECFDF5',
-            border: '2px solid #1E293B',
+            backgroundColor: statusFilter === 'Approved' ? '#D1FAE5' : '#ECFDF5',
+            border: statusFilter === 'Approved' ? '2px solid #059669' : '2px solid #1E293B',
             borderRadius: 14,
             padding: 16,
             boxShadow: '3px 3px 0 #1E293B',
             display: 'flex',
             alignItems: 'center',
             gap: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           <div
@@ -191,24 +226,27 @@ export default function AdministrativeApprovalPage() {
               border: '2px solid #1E293B',
             }}
           >
-            <GraduationCap size={22} />
+            <CheckCircle2 size={22} />
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#047857' }}>ĐỀ XUẤT CHUYỂN LỚP</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#065F46' }}>{stats.transferCount}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#047857' }}>ĐÃ PHÊ DUYỆT</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#065F46' }}>{stats.approved}</div>
           </div>
         </div>
 
         <div
+          onClick={() => setStatusFilter('Rejected')}
           style={{
-            backgroundColor: '#FDF2F8',
-            border: '2px solid #1E293B',
+            backgroundColor: statusFilter === 'Rejected' ? '#FEE2E2' : '#FEF2F2',
+            border: statusFilter === 'Rejected' ? '2px solid #DC2626' : '2px solid #1E293B',
             borderRadius: 14,
             padding: 16,
             boxShadow: '3px 3px 0 #1E293B',
             display: 'flex',
             alignItems: 'center',
             gap: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           <div
@@ -216,21 +254,98 @@ export default function AdministrativeApprovalPage() {
               width: 44,
               height: 44,
               borderRadius: 12,
-              backgroundColor: '#FCE7F3',
-              color: '#9D174D',
+              backgroundColor: '#FEE2E2',
+              color: '#B91C1C',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               border: '2px solid #1E293B',
             }}
           >
-            <FileText size={22} />
+            <XCircle size={22} />
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#9D174D' }}>ĐỀ XUẤT CẤP GIẤY TỜ</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#831843' }}>{stats.documentCount}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#B91C1C' }}>ĐÃ TỪ CHỐI</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#991B1B' }}>{stats.rejected}</div>
           </div>
         </div>
+
+        <div
+          onClick={() => setStatusFilter('ALL')}
+          style={{
+            backgroundColor: statusFilter === 'ALL' ? '#E2E8F0' : '#FFFFFF',
+            border: statusFilter === 'ALL' ? '2px solid #475569' : '2px solid #1E293B',
+            borderRadius: 14,
+            padding: 16,
+            boxShadow: '3px 3px 0 #1E293B',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              backgroundColor: '#E2E8F0',
+              color: '#334155',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '2px solid #1E293B',
+            }}
+          >
+            <ShieldCheck size={22} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>TỔNG SỐ HỒ SƠ</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#1E293B' }}>{stats.total}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Tabs as Playful Pills */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+        {[
+          { key: 'UnderReview', label: 'Chờ BGH duyệt', count: stats.pending },
+          { key: 'Approved', label: 'Đã phê duyệt', count: stats.approved },
+          { key: 'Rejected', label: 'Đã từ chối', count: stats.rejected },
+          { key: 'ALL', label: 'Tất cả hồ sơ', count: stats.total },
+        ].map((tab) => {
+          const isActive = statusFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              className={isActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+              onClick={() => setStatusFilter(tab.key)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontWeight: isActive ? 800 : 600,
+                padding: '6px 14px',
+              }}
+            >
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '2px 7px',
+                  borderRadius: 10,
+                  backgroundColor: isActive ? 'rgba(255,255,255,0.3)' : 'var(--color-muted, #E2E8F0)',
+                  color: isActive ? '#FFFFFF' : '#1E293B',
+                  fontWeight: 800,
+                }}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filter and Search Bar */}
@@ -302,10 +417,18 @@ export default function AdministrativeApprovalPage() {
         >
           <div style={{ fontSize: 44, marginBottom: 12 }}>✨</div>
           <h3 style={{ fontSize: 18, fontWeight: 800, color: '#1E293B', margin: '0 0 6px' }}>
-            Không có hồ sơ nào đang chờ phê duyệt
+            {statusFilter === 'Approved'
+              ? 'Chưa có hồ sơ nào đã phê duyệt'
+              : statusFilter === 'Rejected'
+              ? 'Không có hồ sơ nào bị từ chối'
+              : statusFilter === 'UnderReview'
+              ? 'Không có hồ sơ nào đang chờ Ban Giám Hiệu phê duyệt'
+              : 'Không tìm thấy hồ sơ nào phù hợp'}
           </h3>
           <p style={{ fontSize: 14, color: '#64748B', maxWidth: 440, margin: '0 auto' }}>
-            Tất cả các đề xuất từ bộ phận Giáo vụ đã được xem xét và ra quyết định hoàn tất.
+            {statusFilter === 'UnderReview'
+              ? 'Tất cả các đề xuất từ bộ phận Giáo vụ đã được xem xét và ra quyết định hoàn tất.'
+              : 'Hãy thay đổi bộ lọc tìm kiếm hoặc trạng thái để xem các đơn khác.'}
           </p>
         </div>
       ) : (
@@ -314,6 +437,9 @@ export default function AdministrativeApprovalPage() {
             const isTransfer = req.requestType === 'ClassTransfer';
             const transfer = req.classTransfer;
             const doc = req.documentRequest;
+            const isApproved = req.schoolBoardApprovedAt != null || req.status === 'Approved';
+            const isRejected = req.status === 'Rejected';
+            const isPending = req.status === 'UnderReview';
 
             return (
               <div
@@ -321,8 +447,16 @@ export default function AdministrativeApprovalPage() {
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: 16,
-                  border: '2px solid #1E293B',
-                  boxShadow: '4px 4px 0 #1E293B',
+                  border: isApproved
+                    ? '2px solid #059669'
+                    : isRejected
+                    ? '2px solid #DC2626'
+                    : '2px solid #1E293B',
+                  boxShadow: isApproved
+                    ? '4px 4px 0 #D1FAE5'
+                    : isRejected
+                    ? '4px 4px 0 #FEE2E2'
+                    : '4px 4px 0 #1E293B',
                   padding: 22,
                   display: 'flex',
                   flexDirection: 'column',
@@ -341,7 +475,7 @@ export default function AdministrativeApprovalPage() {
                     borderBottom: '2px dashed #E2E8F0',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span
                       style={{
                         padding: '4px 10px',
@@ -361,25 +495,67 @@ export default function AdministrativeApprovalPage() {
                     <span style={{ fontSize: 13, color: '#64748B' }}>
                       (Ngày trình: {new Date(req.submissionDate).toLocaleDateString('vi-VN')})
                     </span>
+
+                    {/* Status Badge */}
+                    {isApproved && (
+                      <span className="badge badge--mint" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <CheckCircle2 size={13} /> Ban Giám Hiệu đã phê duyệt
+                      </span>
+                    )}
+                    {isRejected && (
+                      <span className="badge badge--pink" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <XCircle size={13} /> Ban Giám Hiệu đã từ chối
+                      </span>
+                    )}
+                    {isPending && (
+                      <span className="badge badge--violet" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Clock size={13} /> Chờ BGH phê duyệt
+                      </span>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    className="btn btn--primary"
-                    onClick={() => {
-                      setSelectedReq(req);
-                      setDecisionModalOpen(true);
-                    }}
-                    style={{
-                      padding: '8px 18px',
-                      fontSize: 13,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    <ShieldCheck size={16} /> Xem xét & Ra quyết định
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {/* Action buttons */}
+                    {isPending && (
+                      <button
+                        type="button"
+                        className="btn btn--primary"
+                        onClick={() => {
+                          setSelectedReq(req);
+                          setDecisionModalOpen(true);
+                        }}
+                        style={{
+                          padding: '8px 18px',
+                          fontSize: 13,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <ShieldCheck size={16} /> Xem xét & Ra quyết định
+                      </button>
+                    )}
+
+                    {/* Download button for approved document request */}
+                    {isApproved && !isTransfer && (
+                      <button
+                        type="button"
+                        className="btn btn--outline"
+                        onClick={() => handleDownloadDoc(req)}
+                        style={{
+                          padding: '7px 14px',
+                          fontSize: 13,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          borderColor: '#059669',
+                          color: '#065F46',
+                        }}
+                      >
+                        <Download size={14} /> Tải văn bản chính thức
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Body info */}
@@ -413,6 +589,16 @@ export default function AdministrativeApprovalPage() {
                         <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#15803D' }}>
                           <Users size={14} /> Sĩ số lớp đích: {transfer.targetClassCapacity ?? 0}/{transfer.targetClassMaxCapacity ?? 35} học sinh
                         </div>
+                        {transfer.isExecuted && (
+                          <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#059669' }}>
+                            ✓ Giáo vụ đã thực thi phân lớp cho học sinh.
+                          </div>
+                        )}
+                        {!transfer.isExecuted && isApproved && (
+                          <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: '#D97706' }}>
+                            ⏳ BGH đã duyệt. Đang chờ Giáo vụ thực thi chuyển lớp.
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -433,7 +619,7 @@ export default function AdministrativeApprovalPage() {
                 <div
                   style={{
                     backgroundColor: '#EFF6FF',
-                    border: '2px solid #3B82F6',
+                    border: '1.5px solid #3B82F6',
                     borderRadius: 12,
                     padding: '12px 16px',
                   }}
@@ -445,6 +631,30 @@ export default function AdministrativeApprovalPage() {
                     "{isTransfer ? transfer?.staffRecommendation : doc?.staffEndorsement}"
                   </div>
                 </div>
+
+                {/* Quyết định / Chỉ đạo của Ban Giám Hiệu (đối với hồ sơ đã duyệt hoặc từ chối) */}
+                {(isApproved || isRejected) && (
+                  <div
+                    style={{
+                      backgroundColor: isApproved ? '#ECFDF5' : '#FEF2F2',
+                      border: `2px solid ${isApproved ? '#059669' : '#DC2626'}`,
+                      borderRadius: 12,
+                      padding: '12px 16px',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 800, color: isApproved ? '#047857' : '#B91C1C', marginBottom: 2 }}>
+                      {isApproved ? 'QUYẾT ĐỊNH PHÊ DUYỆT CỦA BAN GIÁM HIỆU:' : 'LÝ DO TỪ CHỐI CỦA BAN GIÁM HIỆU:'}
+                    </div>
+                    <div style={{ fontSize: 13, color: isApproved ? '#065F46' : '#991B1B', fontWeight: 600, lineHeight: 1.5 }}>
+                      "{req.schoolBoardNotes || req.reviewerNotes || (isApproved ? 'Đồng ý phê duyệt đề xuất.' : 'Không đủ điều kiện phê duyệt.')}"
+                    </div>
+                    {req.schoolBoardApprovedAt && (
+                      <div style={{ fontSize: 11, color: '#64748B', marginTop: 6 }}>
+                        Thời gian phê duyệt: {new Date(req.schoolBoardApprovedAt).toLocaleString('vi-VN')}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
