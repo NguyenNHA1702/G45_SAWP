@@ -48,10 +48,14 @@ public class LunchService : ILunchService
         var lockedAt = day?.LockedAt;
 
         string? remarks = day?.Remarks;
-        if (string.IsNullOrWhiteSpace(remarks) && isServing)
+        if ((string.IsNullOrWhiteSpace(remarks) || remarks == "Phục vụ bán trú bình thường") && isServing)
         {
             var menuIdx = Math.Abs((int)targetDate.DayOfWeek - 1) % DefaultMenus.Length;
             remarks = DefaultMenus[menuIdx];
+            if (day != null && day.Remarks == "Phục vụ bán trú bình thường")
+            {
+                day.Remarks = remarks;
+            }
         }
 
         return (isServing, cutoff, isLocked, lockedAt, remarks);
@@ -620,20 +624,46 @@ public class LunchService : ILunchService
 
         var resolved = ResolveServiceDay(targetDate, serviceDay);
 
-        // Tự động bảo đảm có dữ liệu đăng ký bán trú mẫu nếu ngày phục vụ xem chưa có bản ghi nào
-        if (resolved.IsServing && !await _unitOfWork.Repository<LunchRegistration>().Query().AnyAsync(r => r.Date == targetDate, cancellationToken))
+        // Tự động bảo đảm có dữ liệu đăng ký bán trú mẫu cho tất cả học sinh đang học nếu ngày phục vụ còn thiếu
+        if (resolved.IsServing)
         {
-            var studentList = await _unitOfWork.Repository<Student>().Query().Take(5).ToListAsync(cancellationToken);
-            if (studentList.Any())
+            var existingStudentIds = await _unitOfWork.Repository<LunchRegistration>()
+                .Query()
+                .Where(r => r.Date == targetDate)
+                .Select(r => r.StudentId)
+                .ToListAsync(cancellationToken);
+
+            var allActiveStudents = await _unitOfWork.Repository<Student>()
+                .Query()
+                .Where(s => s.Status == "Active")
+                .ToListAsync(cancellationToken);
+
+            if (existingStudentIds.Count < allActiveStudents.Count)
             {
-                foreach (var s in studentList)
+                var existingSet = existingStudentIds.ToHashSet();
+                foreach (var s in allActiveStudents.Where(st => !existingSet.Contains(st.Id)))
                 {
+                    var code = s.StudentCode ?? string.Empty;
+                    bool isVegetarian = code is "HS004" or "HS017" or "HS022" or "HS035" or "HS062";
+                    bool isSpecialDiet = code is "HS006" or "HS015" or "HS028" or "HS040";
+                    bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
+
                     await _unitOfWork.Repository<LunchRegistration>().AddAsync(new LunchRegistration
                     {
                         StudentId = s.Id,
                         Date = targetDate,
-                        MealType = MealType.StandardLunch,
-                        IsActive = true
+                        MealType = isVegetarian ? MealType.VegetarianLunch : isSpecialDiet ? MealType.SpecialDiet : MealType.StandardLunch,
+                        IsActive = !isCancelled,
+                        Remarks = isVegetarian
+                            ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
+                            : isSpecialDiet
+                                ? (code == "HS006"
+                                    ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
+                                    : "Cháo dinh dưỡng thịt băm, Cá hồi hấp xì dầu, Bí đỏ hấp mềm, Canh rau mồng tơi, Sữa chua | Ghi chú: Chế độ ăn mềm dễ tiêu hóa")
+                                : null,
+                        CancelledAt = isCancelled ? targetDate.AddHours(7).AddMinutes(45) : null,
+                        CancellationReason = isCancelled ? "Nghỉ có phép / Phụ huynh báo hủy trước 08h15" : null,
+                        CreatedAt = DateTime.UtcNow
                     }, cancellationToken);
                 }
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -718,7 +748,10 @@ public class LunchService : ILunchService
                 Grade = cls.Grade,
                 InitialRegistered = classRegs.Count,
                 CancelledCount = classRegs.Count(r => !r.IsActive),
-                ActualCount = classRegs.Count(r => r.IsActive)
+                ActualCount = classRegs.Count(r => r.IsActive),
+                StandardCount = classRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+                VegetarianCount = classRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+                SpecialDietCount = classRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet)
             });
         }
 
@@ -897,5 +930,170 @@ public class LunchService : ILunchService
         };
 
         return ApiResponse<MealHeadcountDto>.Ok(dto);
+    }
+
+    public async Task<ApiResponse<bool>> UpdateRegistrationMealTypeAsync(
+        int userId,
+        IReadOnlyList<UserRoles> roles,
+        UpdateLunchRegistrationMealTypeDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.StudentId <= 0)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01);
+        }
+
+        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
+        if (!isStaffOrAdmin)
+        {
+            var isLinked = await IsParentLinkedToStudentAsync(userId, request.StudentId, cancellationToken);
+            if (!isLinked)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+            }
+        }
+
+        var targetDate = request.Date.Date;
+        var reg = await _unitOfWork.Repository<LunchRegistration>()
+            .Query()
+            .FirstOrDefaultAsync(r => r.StudentId == request.StudentId && r.Date == targetDate, cancellationToken);
+
+        if (reg == null || !reg.IsActive)
+        {
+            return ApiResponse<bool>.Fail("Không tìm thấy đăng ký bán trú còn hiệu lực cho ngày đã chọn.");
+        }
+
+        var serviceDay = await _unitOfWork.Repository<LunchServiceDay>()
+            .Query()
+            .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
+
+        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG27);
+        }
+
+        var oldVal = $"{reg.MealType} | {reg.Remarks}";
+        reg.MealType = request.MealType;
+        reg.Remarks = request.Remarks?.Trim();
+
+        await _auditService.LogActionAsync(
+            userId,
+            "LUNCH_UPDATE_MEAL_TYPE",
+            "LunchRegistration",
+            reg.Id.ToString(),
+            oldVal,
+            $"{reg.MealType} | {reg.Remarks}",
+            null,
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return ApiResponse<bool>.Ok(true, "Đã cập nhật chế độ ăn và ghi chú dị ứng thành công.");
+    }
+
+    public async Task<ApiResponse<LunchPeriodReportDto>> GetPeriodReportAsync(
+        DateTime fromDate,
+        DateTime toDate,
+        int? classId = null,
+        int? userId = null,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var start = fromDate.Date;
+        var end = toDate.Date;
+        if (end < start || (end - start).TotalDays > 92)
+        {
+            return ApiResponse<LunchPeriodReportDto>.Fail("Khoảng thời gian báo cáo không hợp lệ (tối đa 92 ngày).");
+        }
+
+        // ponytail: nếu là Giáo viên (Teacher), chỉ cho phép xem lớp mình chủ nhiệm
+        bool isTeacherOnly = roles != null &&
+                             roles.Contains(UserRoles.Teacher) &&
+                             !roles.Contains(UserRoles.ServiceStaff) &&
+                             !roles.Contains(UserRoles.OfficeStaff) &&
+                             !roles.Contains(UserRoles.SchoolBoard) &&
+                             !roles.Contains(UserRoles.Admin);
+
+        HashSet<int>? allowedClassIds = null;
+        if (isTeacherOnly && userId.HasValue)
+        {
+            var staff = await _unitOfWork.Repository<StaffProfile>()
+                .Query()
+                .FirstOrDefaultAsync(sp => sp.UserId == userId.Value, cancellationToken);
+
+            if (staff != null)
+            {
+                var homeroomIds = await _unitOfWork.Repository<Class>()
+                    .Query()
+                    .Where(c => c.HomeroomTeacherId == staff.Id && c.Status == "Active")
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+                allowedClassIds = homeroomIds.ToHashSet();
+            }
+            else
+            {
+                allowedClassIds = new HashSet<int>();
+            }
+        }
+
+        var serviceDays = await _unitOfWork.Repository<LunchServiceDay>()
+            .Query()
+            .Where(d => d.Date >= start && d.Date <= end)
+            .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+
+        int servingCount = 0;
+        for (var cur = start; cur <= end; cur = cur.AddDays(1))
+        {
+            serviceDays.TryGetValue(cur, out var sDay);
+            if (ResolveServiceDay(cur, sDay).IsServing) servingCount++;
+        }
+
+        var classesQuery = _unitOfWork.Repository<Class>().Query().Where(c => c.Status == "Active");
+        if (allowedClassIds != null) classesQuery = classesQuery.Where(c => allowedClassIds.Contains(c.Id));
+        if (classId.HasValue) classesQuery = classesQuery.Where(c => c.Id == classId.Value);
+        var classes = await classesQuery.OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToListAsync(cancellationToken);
+        var classIds = classes.Select(c => c.Id).ToHashSet();
+
+        var regs = await _unitOfWork.Repository<LunchRegistration>()
+            .Query()
+            .Include(r => r.Student)
+                .ThenInclude(s => s.ClassAssignments.Where(ca => ca.IsActive))
+            .Where(r => r.Date >= start && r.Date <= end)
+            .ToListAsync(cancellationToken);
+
+        var scopedRegs = regs
+            .Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && classIds.Contains(ca.ClassId)) == true)
+            .ToList();
+
+        var summaries = classes.Select(cls =>
+        {
+            var cRegs = scopedRegs.Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && ca.ClassId == cls.Id) == true).ToList();
+            return new ClassMealSummaryDto
+            {
+                ClassId = cls.Id,
+                ClassName = cls.ClassName,
+                Grade = cls.Grade,
+                InitialRegistered = cRegs.Count,
+                CancelledCount = cRegs.Count(r => !r.IsActive),
+                ActualCount = cRegs.Count(r => r.IsActive),
+                StandardCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+                VegetarianCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+                SpecialDietCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet)
+            };
+        }).ToList();
+
+        return ApiResponse<LunchPeriodReportDto>.Ok(new LunchPeriodReportDto
+        {
+            FromDate = start,
+            ToDate = end,
+            TotalServiceDays = servingCount,
+            TotalInitialRegistered = scopedRegs.Count,
+            TotalCancelled = scopedRegs.Count(r => !r.IsActive),
+            TotalActualMeals = scopedRegs.Count(r => r.IsActive),
+            TotalStandard = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+            TotalVegetarian = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+            TotalSpecialDiet = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet),
+            ClassSummaries = summaries
+        });
     }
 }

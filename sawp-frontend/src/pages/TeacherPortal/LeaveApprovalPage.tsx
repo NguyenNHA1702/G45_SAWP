@@ -402,32 +402,39 @@ export default function LeaveApprovalPage() {
                     <span style={{ color: 'var(--color-fg)' }}>{r.reason}</span>
                   </p>
                   {r.doctorNoteAttachmentUrl && (
-                    <div style={{ marginTop: 8 }}>
-                      {r.doctorNoteAttachmentUrl.startsWith('/') || r.doctorNoteAttachmentUrl.startsWith('http') ? (
-                        <a
-                          href={r.doctorNoteAttachmentUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn btn--secondary btn--sm"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            textDecoration: 'none',
-                            color: 'var(--color-accent)',
-                            borderColor: 'var(--color-accent)',
-                          }}
-                        >
-                          <Paperclip size={14} />
-                          <span>Xem minh chứng của phụ huynh</span>
-                          <ExternalLink size={12} />
-                        </a>
-                      ) : (
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
-                          <Paperclip size={14} />
-                          <strong>Minh chứng:</strong> {r.doctorNoteAttachmentUrl}
-                        </div>
-                      )}
+                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {r.doctorNoteAttachmentUrl
+                        .split('|')
+                        .map((u) => u.trim())
+                        .filter(Boolean)
+                        .map((urlItem, idx) =>
+                          urlItem.startsWith('/') || urlItem.startsWith('http') ? (
+                            <a
+                              key={idx}
+                              href={urlItem}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn--secondary btn--sm"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                textDecoration: 'none',
+                                color: 'var(--color-accent)',
+                                borderColor: 'var(--color-accent)',
+                              }}
+                            >
+                              <Paperclip size={14} />
+                              <span>Xem minh chứng {idx + 1}</span>
+                              <ExternalLink size={12} />
+                            </a>
+                          ) : (
+                            <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
+                              <Paperclip size={14} />
+                              <strong>Minh chứng:</strong> {urlItem}
+                            </div>
+                          )
+                        )}
                     </div>
                   )}
                   {r.reviewerNotes && (

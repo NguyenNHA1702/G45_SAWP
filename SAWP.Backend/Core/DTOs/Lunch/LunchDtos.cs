@@ -52,6 +52,9 @@ public class ClassMealSummaryDto
     public int InitialRegistered { get; set; }
     public int CancelledCount { get; set; }
     public int ActualCount { get; set; }
+    public int StandardCount { get; set; }
+    public int VegetarianCount { get; set; }
+    public int SpecialDietCount { get; set; }
 }
 
 public class MealAuditLogDto
@@ -179,4 +182,26 @@ public class CancelLunchRegistrationRequestDto
     public int StudentId { get; set; }
     public DateTime Date { get; set; }
     public string? Reason { get; set; }
+}
+
+public class UpdateLunchRegistrationMealTypeDto
+{
+    public int StudentId { get; set; }
+    public DateTime Date { get; set; }
+    public MealType MealType { get; set; } = MealType.StandardLunch;
+    public string? Remarks { get; set; }
+}
+
+public class LunchPeriodReportDto
+{
+    public DateTime FromDate { get; set; }
+    public DateTime ToDate { get; set; }
+    public int TotalServiceDays { get; set; }
+    public int TotalInitialRegistered { get; set; }
+    public int TotalCancelled { get; set; }
+    public int TotalActualMeals { get; set; }
+    public int TotalStandard { get; set; }
+    public int TotalVegetarian { get; set; }
+    public int TotalSpecialDiet { get; set; }
+    public List<ClassMealSummaryDto> ClassSummaries { get; set; } = new();
 }

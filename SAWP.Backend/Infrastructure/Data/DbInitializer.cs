@@ -473,24 +473,48 @@ public static class DbInitializer
                 await context.SaveChangesAsync();
             }
 
-            // Đăng ký suất ăn bán trú trong ngày (UC-29)
-            var existingLunch = await context.LunchRegistrations.FirstOrDefaultAsync(lr => lr.StudentId == student.Id && lr.Date == today);
-            if (existingLunch == null)
+            // Đăng ký suất ăn bán trú cho các ngày quanh hôm nay (-3 ngày đến +7 ngày) (UC-29)
+            for (int dOffset = -3; dOffset <= 7; dOffset++)
             {
-                bool isVegetarian = code is "HS004" or "HS017" or "HS035" or "HS062";
-                bool isSpecialDiet = code is "HS006" or "HS040";
-                bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
+                var mealDate = today.AddDays(dOffset);
+                if (mealDate.DayOfWeek == DayOfWeek.Saturday || mealDate.DayOfWeek == DayOfWeek.Sunday) continue;
 
-                context.LunchRegistrations.Add(new LunchRegistration
+                var existingLunch = await context.LunchRegistrations.FirstOrDefaultAsync(lr => lr.StudentId == student.Id && lr.Date == mealDate);
+                if (existingLunch == null)
                 {
-                    StudentId = student.Id,
-                    Date = today,
-                    MealType = isVegetarian ? MealType.VegetarianLunch : isSpecialDiet ? MealType.SpecialDiet : MealType.StandardLunch,
-                    IsActive = !isCancelled,
-                    Remarks = isVegetarian ? "Suất ăn chay dinh dưỡng" : isSpecialDiet ? "Thực đơn dinh dưỡng đặc biệt" : "Suất ăn bán trú tiêu chuẩn",
-                    CancelledAt = isCancelled ? today.AddHours(7).AddMinutes(45) : null,
-                    CancellationReason = isCancelled ? (code is "HS005" or "HS038" ? "Đơn xin nghỉ ốm đã được GVCN duyệt trước 08h15" : "Phụ huynh hủy trực tiếp trên cổng trước 08h15 (UC-30)") : null
-                });
+                    bool isVegetarian = code is "HS004" or "HS017" or "HS022" or "HS035" or "HS062";
+                    bool isSpecialDiet = code is "HS006" or "HS015" or "HS028" or "HS040";
+                    bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
+
+                    string mealDishRemarks = isVegetarian
+                        ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
+                        : isSpecialDiet
+                            ? (code == "HS006"
+                                ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
+                                : "Cháo dinh dưỡng thịt băm, Cá hồi hấp xì dầu, Bí đỏ hấp mềm, Canh rau mồng tơi, Sữa chua | Ghi chú: Chế độ ăn mềm dễ tiêu hóa")
+                            : string.Empty; // Suất tiêu chuẩn dùng trực tiếp thực đơn ngày trong bảng LunchServiceDays
+
+                    context.LunchRegistrations.Add(new LunchRegistration
+                    {
+                        StudentId = student.Id,
+                        Date = mealDate,
+                        MealType = isVegetarian ? MealType.VegetarianLunch : isSpecialDiet ? MealType.SpecialDiet : MealType.StandardLunch,
+                        IsActive = !isCancelled,
+                        Remarks = mealDishRemarks,
+                        CancelledAt = isCancelled ? mealDate.AddHours(7).AddMinutes(45) : null,
+                        CancellationReason = isCancelled ? (code is "HS005" or "HS038" ? "Đơn xin nghỉ ốm đã được GVCN duyệt trước 08h15" : "Phụ huynh hủy trực tiếp trên cổng trước 08h15 (UC-30)") : null
+                    });
+                }
+                else if (existingLunch.Remarks == "Suất ăn bán trú tiêu chuẩn" || existingLunch.Remarks == "Suất ăn chay dinh dưỡng" || existingLunch.Remarks == "Thực đơn dinh dưỡng đặc biệt")
+                {
+                    bool isVegetarian = existingLunch.MealType == MealType.VegetarianLunch;
+                    bool isSpecialDiet = existingLunch.MealType == MealType.SpecialDiet;
+                    existingLunch.Remarks = isVegetarian
+                        ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
+                        : isSpecialDiet
+                            ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
+                            : null;
+                }
             }
         }
         await context.SaveChangesAsync();
@@ -803,18 +827,44 @@ public static class DbInitializer
         }
 
         // ====================================================================
-        // 9. LUNCH SERVICE DAY
+        // 9. LUNCH SERVICE DAY (Thực đơn từng ngày lưu thật trong DB)
         // ====================================================================
-        if (!await context.LunchServiceDays.AnyAsync(ls => ls.Date == today))
+        var weekdayMenus = new[]
         {
-            context.LunchServiceDays.Add(new LunchServiceDay
+            "Cơm trắng dẻo, Thịt gà kho nấm hương, Rau cải ngọt xào tỏi, Canh bí đỏ nấu tôm tươi, Chuối tiêu",
+            "Cơm trắng dẻo, Cá basa sốt cà chua, Đậu cove xào thịt băm, Canh cua mồng tơi, Sữa chua",
+            "Cơm trắng dẻo, Thịt lợn rim tiêu, Đậu phụ nhồi thịt sốt cà, Canh rau ngót thịt băm, Dưa hấu",
+            "Cơm trắng dẻo, Trứng đúc thịt hấp, Su su xào cà rốt, Canh sườn non hầm củ quả, Cam tươi",
+            "Cơm trắng dẻo, Bò hầm khoai tây cà rốt, Bắp cải luộc chấm trứng, Canh chua cá lóc, Bánh flan"
+        };
+
+        for (int dOffset = -5; dOffset <= 10; dOffset++)
+        {
+            var sDate = today.AddDays(dOffset);
+            if (sDate.DayOfWeek == DayOfWeek.Saturday || sDate.DayOfWeek == DayOfWeek.Sunday) continue;
+
+            var menuIdx = Math.Abs((int)sDate.DayOfWeek - 1) % weekdayMenus.Length;
+            var menuStr = weekdayMenus[menuIdx];
+
+            var existingServiceDay = await context.LunchServiceDays.FirstOrDefaultAsync(ls => ls.Date == sDate);
+            if (existingServiceDay == null)
             {
-                Date = today,
-                IsServing = true,
-                Remarks = "Phục vụ bán trú bình thường"
-            });
-            await context.SaveChangesAsync();
+                context.LunchServiceDays.Add(new LunchServiceDay
+                {
+                    Date = sDate,
+                    IsServing = true,
+                    CutoffTime = new TimeSpan(8, 15, 0),
+                    Remarks = menuStr
+                });
+            }
+            else if (string.IsNullOrWhiteSpace(existingServiceDay.Remarks) ||
+                     existingServiceDay.Remarks == "Phục vụ bán trú bình thường" ||
+                     !existingServiceDay.Remarks.Contains(','))
+            {
+                existingServiceDay.Remarks = menuStr;
+            }
         }
+        await context.SaveChangesAsync();
 
         // ====================================================================
         // 10. ADMINISTRATIVE REQUESTS SAMPLE SEED (Class Transfer & Documents)
