@@ -90,6 +90,40 @@ export default function ParentLunchPage() {
   const [cancelReason, setCancelReason] = useState<string>('');
   const [submittingCancel, setSubmittingCancel] = useState<boolean>(false);
 
+  // Modal Đổi chế độ ăn / ghi chú dị ứng trước giờ chốt 08:15
+  const [editTargetDay, setEditTargetDay] = useState<StudentLunchDay | null>(null);
+  const [editMealType, setEditMealType] = useState<number>(1);
+  const [editRemarks, setEditRemarks] = useState<string>('');
+  const [submittingEdit, setSubmittingEdit] = useState<boolean>(false);
+
+  const openEditDietModal = (day: StudentLunchDay) => {
+    setEditTargetDay(day);
+    const mt = day.mealType === 'VegetarianLunch' || day.mealType === 2 ? 2 : day.mealType === 'SpecialDiet' || day.mealType === 3 ? 3 : 1;
+    setEditMealType(mt);
+    setEditRemarks(day.studentRemarks || '');
+  };
+
+  const handleConfirmEditDiet = async () => {
+    if (!studentId || !editTargetDay) return;
+    try {
+      setSubmittingEdit(true);
+      const res = await lunchApi.updateRegistrationMealType({
+        studentId,
+        date: toDateKey(editTargetDay.date),
+        mealType: editMealType,
+        remarks: editRemarks.trim() || undefined,
+      });
+      toast.success(res.message || 'Đã cập nhật chế độ ăn thành công.');
+      setEditTargetDay(null);
+      await fetchSchedule();
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string } } })?.response?.data;
+      toast.error(apiErr?.message || 'Không thể cập nhật chế độ ăn.');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
   // Modal Xem chi tiết ngày / thực đơn
   const [detailDay, setDetailDay] = useState<StudentLunchDay | null>(null);
 
@@ -915,17 +949,41 @@ export default function ParentLunchPage() {
                       <Check size={11} /> Đã chọn
                     </span>
                   ) : day.isRegistered ? (
-                    <span
-                      className="badge badge--mint"
-                      style={{
-                        fontSize: '10px',
-                        border: '1.5px solid var(--color-fg)',
-                        fontWeight: 800,
-                        padding: '2px 8px',
-                      }}
-                    >
-                      ✓ Đã đăng ký
-                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      <span
+                        className="badge badge--mint"
+                        style={{
+                          fontSize: '10px',
+                          border: '1.5px solid var(--color-fg)',
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                        }}
+                      >
+                        ✓ Đã đăng ký
+                      </span>
+                      <span
+                        className="badge"
+                        style={{
+                          fontSize: '9.5px',
+                          border: '1px solid var(--color-fg)',
+                          fontWeight: 800,
+                          padding: '1px 6px',
+                          background:
+                            day.mealType === 'VegetarianLunch' || day.mealType === 2
+                              ? '#FEF3C7'
+                              : day.mealType === 'SpecialDiet' || day.mealType === 3
+                              ? '#FCE7F3'
+                              : '#E0F2FE',
+                          color: 'var(--color-fg)',
+                        }}
+                      >
+                        {day.mealType === 'VegetarianLunch' || day.mealType === 2
+                          ? '🥗 Chay'
+                          : day.mealType === 'SpecialDiet' || day.mealType === 3
+                          ? '⚕️ Đặc biệt'
+                          : '🍱 Tiêu chuẩn'}
+                      </span>
+                    </div>
                   ) : isCancelled ? (
                     <span
                       className="badge badge--pink"
@@ -1017,26 +1075,46 @@ export default function ParentLunchPage() {
                   )}
 
                   {canCancel && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCancelTargetDay(day);
-                        setCancelReason('');
-                      }}
-                      style={{
-                        background: '#FFE4E6',
-                        border: '1.5px solid #F43F5E',
-                        borderRadius: 'var(--radius-full)',
-                        boxShadow: '1px 1px 0 0 var(--color-fg)',
-                        padding: '2px 8px',
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        color: '#E11D48',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Hủy
-                    </button>
+                    <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => openEditDietModal(day)}
+                        style={{
+                          background: '#FEF3C7',
+                          border: '1.5px solid var(--color-fg)',
+                          borderRadius: 'var(--radius-full)',
+                          boxShadow: '1px 1px 0 0 var(--color-fg)',
+                          padding: '2px 7px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          color: 'var(--color-fg)',
+                          cursor: 'pointer',
+                        }}
+                        title="Đổi chế độ ăn (Mặn / Chay / Đặc biệt)"
+                      >
+                        Đổi suất
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelTargetDay(day);
+                          setCancelReason('');
+                        }}
+                        style={{
+                          background: '#FFE4E6',
+                          border: '1.5px solid #F43F5E',
+                          borderRadius: 'var(--radius-full)',
+                          boxShadow: '1px 1px 0 0 var(--color-fg)',
+                          padding: '2px 7px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          color: '#E11D48',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Hủy
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1110,6 +1188,11 @@ export default function ParentLunchPage() {
                       </td>
                       <td style={{ padding: '14px', color: 'var(--color-fg)', maxWidth: 360 }}>
                         <div style={{ fontWeight: 600 }}>{cleanedRemarks || 'Thực đơn tiêu chuẩn nhà bếp'}</div>
+                        {day.studentRemarks && (
+                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-accent)', marginTop: 4, fontWeight: 700 }}>
+                            Ghi chú PH: {day.studentRemarks}
+                          </div>
+                        )}
                         {day.cancellationReason && (
                           <div style={{ fontSize: 'var(--fs-xs)', color: '#E11D48', marginTop: 4, fontWeight: 700 }}>
                             Lý do hủy: {day.cancellationReason}
@@ -1146,30 +1229,50 @@ export default function ParentLunchPage() {
                       </td>
                       <td style={{ padding: '14px', textAlign: 'right' }}>
                         {canCancel ? (
-                          <button
-                            type="button"
-                            className="btn btn--sm"
-                            onClick={() => {
-                              setCancelTargetDay(day);
-                              setCancelReason('');
-                            }}
-                            style={{
-                              borderRadius: 'var(--radius-full)',
-                              border: '1.5px solid #F43F5E',
-                              boxShadow: '2px 2px 0 0 var(--color-fg)',
-                              background: '#FFE4E6',
-                              color: '#E11D48',
-                              fontWeight: 800,
-                              fontSize: 'var(--fs-xs)',
-                              padding: '6px 14px',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 6,
-                            }}
-                          >
-                            <Trash2 size={13} /> Hủy đăng ký
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              onClick={() => openEditDietModal(day)}
+                              style={{
+                                borderRadius: 'var(--radius-full)',
+                                border: '1.5px solid var(--color-fg)',
+                                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                background: '#FEF3C7',
+                                color: 'var(--color-fg)',
+                                fontWeight: 800,
+                                fontSize: 'var(--fs-xs)',
+                                padding: '6px 12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Đổi chế độ ăn
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              onClick={() => {
+                                setCancelTargetDay(day);
+                                setCancelReason('');
+                              }}
+                              style={{
+                                borderRadius: 'var(--radius-full)',
+                                border: '1.5px solid #F43F5E',
+                                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                background: '#FFE4E6',
+                                color: '#E11D48',
+                                fontWeight: 800,
+                                fontSize: 'var(--fs-xs)',
+                                padding: '6px 14px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              <Trash2 size={13} /> Hủy đăng ký
+                            </button>
+                          </div>
                         ) : day.isRegistered ? (
                           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
                             Đã qua hạn {day.cutoffTime}
@@ -1411,6 +1514,103 @@ export default function ParentLunchPage() {
               >
                 <Trash2 size={16} />
                 {submittingCancel ? 'Đang hủy...' : 'Xác nhận hủy suất ăn'}
+              </button>
+            </div>
+          </div>
+        )}
+      </GeometricModal>
+
+      {/* MODAL Đổi chế độ ăn & ghi chú dị ứng trước 08h15 */}
+      <GeometricModal
+        open={Boolean(editTargetDay)}
+        onClose={() => setEditTargetDay(null)}
+        title={`Đổi chế độ ăn ngày ${editTargetDay ? new Date(editTargetDay.date).toLocaleDateString('vi-VN') : ''}`}
+        badgeText={`Trước giờ chốt ${editTargetDay?.cutoffTime ?? LUNCH_CUTOFF_LABEL}`}
+        badgeColor="amber"
+        icon={<UtensilsCrossed size={22} color="var(--color-fg)" />}
+        iconBg="var(--color-tertiary)"
+        maxWidth="md"
+      >
+        {editTargetDay && (
+          <div>
+            <p style={{ marginTop: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Cập nhật chế độ ăn hoặc ghi chú dị ứng thực phẩm cho bé <strong>{schedule?.studentName}</strong> trước giờ chốt bếp ({editTargetDay.cutoffTime}):
+            </p>
+
+            <div className="field" style={{ marginBottom: 14 }}>
+              <label className="label" htmlFor="edit-meal-type" style={{ fontWeight: 800 }}>
+                CHẾ ĐỘ SUẤT ĂN
+              </label>
+              <select
+                id="edit-meal-type"
+                className="select"
+                value={editMealType}
+                onChange={(e) => setEditMealType(Number(e.target.value))}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              >
+                <option value={1}>Suất tiêu chuẩn (Mặn)</option>
+                <option value={2}>Suất ăn chay</option>
+                <option value={3}>Chế độ ăn đặc biệt (Dị ứng / Kiêng)</option>
+              </select>
+            </div>
+
+            <div className="field" style={{ marginBottom: 20 }}>
+              <label className="label" htmlFor="edit-meal-remarks" style={{ fontWeight: 800 }}>
+                GHI CHÚ DỊ ỨNG / DẶN DÒ NHÀ BẾP
+              </label>
+              <input
+                id="edit-meal-remarks"
+                type="text"
+                className="input"
+                placeholder="VD: Bé dị ứng hải sản, xin đổi món trứng..."
+                value={editRemarks}
+                onChange={(e) => setEditRemarks(e.target.value)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setEditTargetDay(null)}
+                disabled={submittingEdit}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '10px 20px',
+                }}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={handleConfirmEditDiet}
+                disabled={submittingEdit}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '10px 24px',
+                  background: 'var(--color-accent)',
+                  color: '#FFFFFF',
+                }}
+              >
+                {submittingEdit ? 'Đang lưu...' : 'Lưu thay đổi'}
               </button>
             </div>
           </div>

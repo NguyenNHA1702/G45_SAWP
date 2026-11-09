@@ -58,4 +58,14 @@ public interface ILunchService
     /// Chốt số lượng suất ăn trong ngày gửi bếp ăn (giờ chốt: CutoffTime của ngày hoặc School:LunchCutoffTime)
     /// </summary>
     Task<ApiResponse<bool>> LockDailyMealAsync(LockMealDayRequestDto request, CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<bool>> UpdateRegistrationMealTypeAsync(int userId, IReadOnlyList<UserRoles> roles, UpdateLunchRegistrationMealTypeDto request, CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<LunchPeriodReportDto>> GetPeriodReportAsync(
+        DateTime fromDate,
+        DateTime toDate,
+        int? classId = null,
+        int? userId = null,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default);
 }

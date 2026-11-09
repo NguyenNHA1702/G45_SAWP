@@ -81,6 +81,12 @@ const NAV_ITEMS: NavItem[] = [
         path: '/service/headcount?tab=logs',
         icon: Clock,
       },
+      {
+        id: 'kitchen-report',
+        label: 'Báo cáo thống kê (Lunch Report)',
+        path: '/service/headcount?tab=report',
+        icon: ClipboardList,
+      },
     ],
   },
   // --- Quản lý Giáo vụ: Học sinh & Xếp lớp (OfficeStaff, SchoolBoard, Admin) ---
@@ -113,12 +119,12 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  // --- Giáo viên: Điểm danh & Lớp học (Teacher, SchoolBoard) ---
+  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard, Admin) ---
   {
     id: 'teacher-group',
     label: 'Điểm danh & Lớp học',
     icon: CalendarCheck2,
-    roles: ['Teacher', 'SchoolBoard'],
+    roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard', 'Admin'],
     children: [
       {
         id: 'teacher-roster',
@@ -129,16 +135,16 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'teacher-attendance',
-        label: 'Điểm danh lớp',
+        label: 'Điểm danh & Tình trạng chuyên cần',
         path: '/teacher/attendance',
-        roles: ['Teacher'],
+        roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard', 'Admin'],
         icon: CalendarCheck2,
       },
       {
         id: 'teacher-leave',
         label: 'Duyệt đơn xin nghỉ',
         path: '/teacher/leave-requests',
-        roles: ['Teacher', 'SchoolBoard'],
+        roles: ['Teacher', 'SchoolBoard', 'Admin'],
         icon: FileCheck,
       },
       {
