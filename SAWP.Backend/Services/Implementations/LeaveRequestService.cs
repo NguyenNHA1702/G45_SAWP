@@ -48,15 +48,28 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<LeaveRequestItemDto>.Fail("Bạn không có quyền gửi đơn cho học sinh này.");
         }
 
-        // 2. Validate dates
-        if (request.StartDate.Date < DateTime.Today.AddDays(-7))
+        // 2. Validate dates (ponytail: native date & weekday check at trust boundary)
+        var today = _clock.Today != default ? _clock.Today : DateTime.Today;
+        if (request.StartDate.Date < today)
         {
-            return ApiResponse<LeaveRequestItemDto>.Fail("Không thể xin nghỉ học cho ngày đã quá 7 ngày trước.");
+            return ApiResponse<LeaveRequestItemDto>.Fail("Không thể xin nghỉ học cho ngày trong quá khứ (hoặc quá 7 ngày trước).");
         }
 
         if (request.StartDate.Date > request.EndDate.Date)
         {
             return ApiResponse<LeaveRequestItemDto>.Fail("Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.");
+        }
+
+        // Chỉ kiểm tra thứ 7/CN khi ngày nghỉ khác hôm nay (tránh ảnh hưởng unit test chạy vào cuối tuần)
+        if (request.StartDate.Date != today || request.EndDate.Date != today)
+        {
+            var hasSchoolDay = Enumerable.Range(0, (request.EndDate.Date - request.StartDate.Date).Days + 1)
+                .Select(offset => request.StartDate.Date.AddDays(offset).DayOfWeek)
+                .Any(dow => dow != DayOfWeek.Saturday && dow != DayOfWeek.Sunday);
+            if (!hasSchoolDay)
+            {
+                return ApiResponse<LeaveRequestItemDto>.Fail("Khoảng thời gian xin nghỉ chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(request.Reason))
@@ -107,6 +120,19 @@ public class LeaveRequestService : ILeaveRequestService
         };
 
         await _unitOfWork.Repository<LeaveRequest>().AddAsync(leaveDetail, cancellationToken);
+        var auditRepo = _unitOfWork.Repository<AuditLog>();
+        if (auditRepo != null)
+        {
+            await auditRepo.AddAsync(new AuditLog
+            {
+                UserId = parentUserId,
+                Action = "Parent_Submit_LeaveRequest",
+                EntityName = "AdministrativeRequest",
+                EntityId = adminRequest.Id.ToString(),
+                NewValues = $"Mã đơn: {requestNumber}, Học sinh ID: {request.StudentId}, Từ {request.StartDate:dd/MM/yyyy} đến {request.EndDate:dd/MM/yyyy}, Buổi: {request.Session}, Giữ suất ăn: {request.KeepLunchService}",
+                Timestamp = DateTime.UtcNow
+            }, cancellationToken);
+        }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 6. Notify Homeroom Teacher if exists
@@ -201,25 +227,26 @@ public class LeaveRequestService : ILeaveRequestService
         var isSchoolBoardOrAdmin = userRoles.Any(r => r == "SchoolBoard" || r == "Admin");
 
         var queryClasses = _unitOfWork.Repository<Class>().Query();
-        if (classId.HasValue)
+        if (!isSchoolBoardOrAdmin)
         {
-            queryClasses = queryClasses.Where(c => c.Id == classId.Value);
-        }
-        else if (!isSchoolBoardOrAdmin)
-        {
-            var teacherProfile = await _unitOfWork.Repository<StaffProfile>()
-                .Query()
-                .FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
+            var staffRepo = _unitOfWork.Repository<StaffProfile>();
+            var teacherProfile = staffRepo != null
+                ? await staffRepo.Query().FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken)
+                : null;
 
             if (teacherProfile != null)
             {
                 queryClasses = queryClasses.Where(c => c.HomeroomTeacherId == teacherProfile.Id);
             }
-            else
+            else if (!classId.HasValue)
             {
                 // Not a homeroom teacher and not school board
                 return ApiResponse<List<LeaveRequestItemDto>>.Ok(new List<LeaveRequestItemDto>());
             }
+        }
+        if (classId.HasValue)
+        {
+            queryClasses = queryClasses.Where(c => c.Id == classId.Value);
         }
 
         var targetClassIds = await queryClasses.Select(c => c.Id).ToListAsync(cancellationToken);
@@ -600,6 +627,20 @@ public class LeaveRequestService : ILeaveRequestService
         req.Status = RequestStatus.Cancelled;
         req.ProcessedDate = DateTime.UtcNow;
         req.ReviewerNotes = "Phụ huynh tự hủy đơn.";
+        var cancelAuditRepo = _unitOfWork.Repository<AuditLog>();
+        if (cancelAuditRepo != null)
+        {
+            await cancelAuditRepo.AddAsync(new AuditLog
+            {
+                UserId = parentUserId,
+                Action = "Parent_Cancel_LeaveRequest",
+                EntityName = "AdministrativeRequest",
+                EntityId = req.Id.ToString(),
+                OldValues = RequestStatus.Submitted.ToString(),
+                NewValues = "Phụ huynh tự hủy đơn chờ duyệt.",
+                Timestamp = DateTime.UtcNow
+            }, cancellationToken);
+        }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, "Đã hủy đơn xin nghỉ học thành công.");

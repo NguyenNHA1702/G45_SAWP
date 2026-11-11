@@ -26,7 +26,7 @@ public class AttendanceController : BaseApiController
     /// </summary>
     [HttpGet("my-classes")]
     [HttpGet("classes")]
-    [Authorize(Roles = "Teacher,OfficeStaff,Admin,SchoolBoard")]
+    [Authorize(Roles = "Teacher,OfficeStaff,ServiceStaff,Admin,SchoolBoard")]
     public async Task<IActionResult> GetMyClasses(
         [FromQuery] DateTime? date,
         [FromQuery] AttendanceSession session = AttendanceSession.Morning,
@@ -43,7 +43,7 @@ public class AttendanceController : BaseApiController
     /// </summary>
     [HttpGet("classes/{classId}/sheet")]
     [HttpGet("classes/{classId}")]
-    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff,ServiceStaff,SchoolBoard,Admin")]
     public async Task<IActionResult> GetAttendanceSheet(
         int classId,
         [FromQuery] DateTime? date,
@@ -89,7 +89,7 @@ public class AttendanceController : BaseApiController
     /// API-5: Báo cáo chuyên cần tổng hợp của lớp
     /// </summary>
     [HttpGet("classes/{classId}/summary")]
-    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff,ServiceStaff,SchoolBoard,Admin")]
     public async Task<IActionResult> GetClassSummary(
         int classId, 
         [FromQuery] DateTime? from, 

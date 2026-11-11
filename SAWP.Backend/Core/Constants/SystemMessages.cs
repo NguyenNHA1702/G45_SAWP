@@ -205,6 +205,22 @@ public static class SystemMessages
     public static readonly SystemMessage MSG50 = new("MSG50", "Toast (Error)", "Unexpected system error", "Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.");
     public static readonly SystemMessage MSG50_UnexpectedSystemError = MSG50;
 
+    /// <summary>[Toast (Success)] Class post published: Bài viết lớp học đã được đăng tải thành công.</summary>
+    public static readonly SystemMessage MSG51 = new("MSG51", "Toast (Success)", "Class post published", "Bài viết lớp học đã được đăng tải thành công.");
+    public static readonly SystemMessage MSG51_ClassPostPublished = MSG51;
+
+    /// <summary>[Toast (Success)] Student evaluation submitted: Đã lưu và gửi phiếu nhận xét rèn luyện của học sinh.</summary>
+    public static readonly SystemMessage MSG52 = new("MSG52", "Toast (Success)", "Student evaluation submitted", "Đã lưu và gửi phiếu nhận xét rèn luyện của học sinh.");
+    public static readonly SystemMessage MSG52_StudentEvaluationSubmitted = MSG52;
+
+    /// <summary>[Toast (Success)] Evaluation acknowledged: Đã xác nhận tiếp nhận thông tin và gửi phản hồi thành công.</summary>
+    public static readonly SystemMessage MSG53 = new("MSG53", "Toast (Success)", "Evaluation acknowledged", "Đã xác nhận tiếp nhận thông tin và gửi phản hồi thành công.");
+    public static readonly SystemMessage MSG53_EvaluationAcknowledged = MSG53;
+
+    /// <summary>[Toast (Info)] Comments disabled: Bài viết này hiện đã tắt tính năng bình luận.</summary>
+    public static readonly SystemMessage MSG54 = new("MSG54", "Toast (Info)", "Comments disabled", "Bài viết này hiện đã tắt tính năng bình luận.");
+    public static readonly SystemMessage MSG54_CommentsDisabled = MSG54;
+
     /// <summary>Map of all system messages by code</summary>
     public static readonly IReadOnlyDictionary<string, SystemMessage> All = new Dictionary<string, SystemMessage>(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -258,8 +274,13 @@ public static class SystemMessages
         { "MSG48", MSG48 },
         { "MSG49", MSG49 },
         { "MSG50", MSG50 },
+        { "MSG51", MSG51 },
+        { "MSG52", MSG52 },
+        { "MSG53", MSG53 },
+        { "MSG54", MSG54 },
     };
 
     /// <summary>Lookup a message by code (e.g. MSG01)</summary>
     public static SystemMessage? GetByCode(string code) => All.TryGetValue(code, out var msg) ? msg : null;
 }
+

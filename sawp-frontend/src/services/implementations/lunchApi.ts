@@ -6,10 +6,12 @@ import type {
   CancelLunchRegistrationPayload,
   DailyMealBoard,
   LockMealDayPayload,
+  LunchPeriodReport,
   LunchServiceDayConfig,
   MealHeadcount,
   RestoreMealPayload,
   StudentLunchSchedule,
+  UpdateLunchRegistrationMealTypePayload,
   UpsertLunchServiceDaysPayload,
 } from '../../types/lunch.types';
 
@@ -89,5 +91,23 @@ export const lunchApi = {
       message: res.data.message,
       code: res.data.code,
     };
+  },
+
+  updateRegistrationMealType: async (payload: UpdateLunchRegistrationMealTypePayload): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.put<{ success: boolean; data: boolean; message: string }>(
+      '/lunch/registration',
+      payload
+    );
+    return {
+      success: res.data.success,
+      message: res.data.message,
+    };
+  },
+
+  getPeriodReport: async (from: string, to: string, classId?: number): Promise<LunchPeriodReport> => {
+    const params: Record<string, string | number> = { from, to };
+    if (classId) params.classId = classId;
+    const res = await apiClient.get<{ success: boolean; data: LunchPeriodReport }>('/lunch/report', { params });
+    return res.data.data;
   },
 };

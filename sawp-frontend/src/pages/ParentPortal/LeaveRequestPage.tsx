@@ -27,6 +27,14 @@ interface LinkedChild {
   currentClassName?: string | null;
 }
 
+interface AttachedFileItem {
+  id: string;
+  file: File;
+  previewUrl: string | null;
+  uploadedUrl: string;
+  uploading: boolean;
+}
+
 export default function LeaveRequestPage() {
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,17 +43,16 @@ export default function LeaveRequestPage() {
   // Form states
   const [children, setChildren] = useState<LinkedChild[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number>(0);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState(todayStr);
+  const [endDate, setEndDate] = useState(todayStr);
   const [session, setSession] = useState<number>(3); // 1: Sáng, 2: Chiều, 3: Cả ngày
   const [keepLunch, setKeepLunch] = useState<boolean>(false);
   const [reason, setReason] = useState('');
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadingFile, setUploadingFile] = useState<boolean>(false);
-  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<AttachedFileItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
+  const uploadingFile = attachments.some((a) => a.uploading);
 
   const calculateDays = (start: string, end: string) => {
     if (!start || !end) return 1;
@@ -101,54 +108,78 @@ export default function LeaveRequestPage() {
   }, []);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileList.length === 0) return;
 
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx'];
-    const fileExt = '.' + (file.name.split('.').pop() || '').toLowerCase();
-    if (!allowedExtensions.includes(fileExt)) {
-      toast.error('Định dạng tệp không hợp lệ! Chỉ chấp nhận ảnh (JPG, PNG, WEBP), PDF hoặc Word (DOC, DOCX).');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
+    // Validate file extensions (chấp nhận ảnh JPG/PNG/WEBP và tài liệu PDF/Word)
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx'];
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Kích thước tệp vượt quá 10MB.');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    setSelectedFile(file);
-    if (file.type.startsWith('image/')) {
-      setFilePreviewUrl(URL.createObjectURL(file));
-    } else {
-      setFilePreviewUrl(null);
-    }
-
-    try {
-      setUploadingFile(true);
-      const res = await leaveRequestApi.uploadAttachment(file);
-      if (res.success && res.data) {
-        setAttachmentUrl(res.data.url);
-        toast.success(`Đã tải lên tệp: ${file.name}`);
-      } else {
-        setAttachmentUrl(file.name);
+    for (const file of fileList) {
+      if (attachments.length >= 5) {
+        toast.error('Chỉ được đính kèm tối đa 5 tệp / ảnh minh chứng.');
+        break;
       }
-    } catch {
-      // Fallback to filename so submission still succeeds
-      setAttachmentUrl(file.name);
-    } finally {
-      setUploadingFile(false);
+
+      const ext = file.name.slice(Math.max(0, file.name.lastIndexOf('.'))).toLowerCase();
+      if (!allowedExts.includes(ext)) {
+        toast.error(`Tệp "${file.name}" không đúng định dạng! Chỉ chấp nhận ảnh (.jpg, .png, .webp) hoặc tài liệu (.pdf, .doc, .docx).`);
+        continue;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`Tệp "${file.name}" vượt quá giới hạn 10MB.`);
+        continue;
+      }
+
+      const tempId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+
+      setAttachments((prev) => [
+        ...prev,
+        { id: tempId, file, previewUrl, uploadedUrl: '', uploading: true },
+      ]);
+
+      try {
+        const res = await leaveRequestApi.uploadAttachment(file);
+        if (res.success && res.data) {
+          setAttachments((prev) =>
+            prev.map((item) =>
+              item.id === tempId ? { ...item, uploadedUrl: res.data!.url, uploading: false } : item
+            )
+          );
+          toast.success(`Đã tải lên: ${file.name}`);
+        } else {
+          toast.error(res.message || `Tải tệp "${file.name}" thất bại.`);
+          setAttachments((prev) => prev.filter((item) => item.id !== tempId));
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+        }
+      } catch (err: unknown) {
+        const msg =
+          (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+          `Tải tệp "${file.name}" thất bại.`;
+        toast.error(msg);
+        setAttachments((prev) => prev.filter((item) => item.id !== tempId));
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+      }
     }
   };
 
+  const handleRemoveOneFile = (id: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((x) => x.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((x) => x.id !== id);
+    });
+  };
+
   const handleRemoveFile = () => {
-    setSelectedFile(null);
-    setAttachmentUrl('');
-    if (filePreviewUrl) {
-      URL.revokeObjectURL(filePreviewUrl);
-      setFilePreviewUrl(null);
-    }
+    setAttachments((prev) => {
+      prev.forEach((x) => {
+        if (x.previewUrl) URL.revokeObjectURL(x.previewUrl);
+      });
+      return [];
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -160,8 +191,40 @@ export default function LeaveRequestPage() {
       toast.error('Vui lòng chọn học sinh.');
       return;
     }
-    if (new Date(startDate) > new Date(endDate)) {
-      toast.error('Ngày bắt đầu nghỉ không được sau ngày kết thúc nghỉ.');
+    // Validate date range & weekday-only before API call
+    if (!startDate || !endDate) {
+      toast.error('Vui lòng chọn ngày bắt đầu và ngày kết thúc nghỉ.');
+      return;
+    }
+    if (startDate < todayStr) {
+      toast.error('Không thể xin nghỉ học cho ngày trong quá khứ.');
+      return;
+    }
+    if (endDate < startDate) {
+      toast.error('Ngày kết thúc không được nhỏ hơn ngày bắt đầu.');
+      return;
+    }
+    let hasWeekday = false;
+    for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) {
+        hasWeekday = true;
+        break;
+      }
+    }
+    if (!hasWeekday) {
+      toast.error('Khoảng ngày chọn chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.');
+      return;
+    }
+    const overlapping = requests.some(
+      (r) =>
+        r.studentId === selectedStudentId &&
+        (r.status === 'Submitted' || r.status === 'UnderReview' || r.status === 'Approved') &&
+        r.startDate.slice(0, 10) <= endDate &&
+        r.endDate.slice(0, 10) >= startDate
+    );
+    if (overlapping) {
+      toast.error('Học sinh đã có đơn xin nghỉ trùng khoảng thời gian này đang chờ duyệt hoặc đã duyệt.');
       return;
     }
     if (!reason.trim()) {
@@ -171,6 +234,11 @@ export default function LeaveRequestPage() {
 
     try {
       setSubmitting(true);
+      const combinedUrls = attachments
+        .map((a) => a.uploadedUrl.trim())
+        .filter(Boolean)
+        .join(' | ');
+
       const res = await leaveRequestApi.submit({
         studentId: selectedStudentId,
         startDate,
@@ -178,7 +246,7 @@ export default function LeaveRequestPage() {
         session,
         keepLunchService: keepLunch,
         reason,
-        doctorNoteAttachmentUrl: attachmentUrl.trim() || undefined,
+        doctorNoteAttachmentUrl: combinedUrls || undefined,
       });
 
       if (res.success) {
@@ -418,32 +486,39 @@ export default function LeaveRequestPage() {
                     <span style={{ color: 'var(--color-fg)' }}>{r.reason}</span>
                   </p>
                   {r.doctorNoteAttachmentUrl && (
-                    <div style={{ marginTop: 8 }}>
-                      {r.doctorNoteAttachmentUrl.startsWith('/') || r.doctorNoteAttachmentUrl.startsWith('http') ? (
-                        <a
-                          href={r.doctorNoteAttachmentUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn btn--secondary btn--sm"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            textDecoration: 'none',
-                            color: 'var(--color-accent)',
-                            borderColor: 'var(--color-accent)',
-                          }}
-                        >
-                          <Paperclip size={14} />
-                          <span>Xem tài liệu đính kèm</span>
-                          <ExternalLink size={12} />
-                        </a>
-                      ) : (
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
-                          <Paperclip size={14} />
-                          <strong>Minh chứng đính kèm:</strong> {r.doctorNoteAttachmentUrl}
-                        </div>
-                      )}
+                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {r.doctorNoteAttachmentUrl
+                        .split('|')
+                        .map((u) => u.trim())
+                        .filter(Boolean)
+                        .map((urlItem, idx) =>
+                          urlItem.startsWith('/') || urlItem.startsWith('http') ? (
+                            <a
+                              key={idx}
+                              href={urlItem}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn--secondary btn--sm"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                textDecoration: 'none',
+                                color: 'var(--color-accent)',
+                                borderColor: 'var(--color-accent)',
+                              }}
+                            >
+                              <Paperclip size={14} />
+                              <span>Xem minh chứng {idx + 1}</span>
+                              <ExternalLink size={12} />
+                            </a>
+                          ) : (
+                            <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
+                              <Paperclip size={14} />
+                              <strong>Minh chứng:</strong> {urlItem}
+                            </div>
+                          )
+                        )}
                     </div>
                   )}
                   {r.reviewerNotes && (
@@ -493,7 +568,7 @@ export default function LeaveRequestPage() {
         <form onSubmit={handleSubmit}>
           <div className="modal-grid-2col">
             {/* CỘT TRÁI: THÔNG TIN NGHỈ HỌC */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
               {/* Chọn học sinh */}
               <div className="field">
                 <label className="label" htmlFor="leave-student">Học sinh *</label>
@@ -532,6 +607,7 @@ export default function LeaveRequestPage() {
                     type="date"
                     className="input"
                     value={startDate}
+                    min={todayStr}
                     onChange={(e) => {
                       setStartDate(e.target.value);
                       if (e.target.value > endDate) setEndDate(e.target.value);
@@ -636,7 +712,7 @@ export default function LeaveRequestPage() {
             </div>
 
             {/* CỘT PHẢI: LÝ DO & MINH CHỨNG */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
               {/* Lý do */}
               <div className="field">
                 <label className="label" htmlFor="leave-reason">Lý do xin nghỉ học *</label>
@@ -652,157 +728,177 @@ export default function LeaveRequestPage() {
                 />
               </div>
 
-              {/* Tài liệu đính kèm */}
-              <div className="field">
-                <label className="label">
-                  Tài liệu đính kèm (giấy khám, đơn thuốc nếu có)
-                </label>
+              {/* Tài liệu đính kèm (Nhiều ảnh / tệp) */}
+              <div className="field" style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label className="label" style={{ marginBottom: 0 }}>
+                    Tài liệu đính kèm (giấy khám, đơn thuốc nếu có)
+                  </label>
+                  {attachments.length > 0 && (
+                    <span className="badge badge--violet" style={{ fontSize: '10px', padding: '2px 8px' }}>
+                      Đã chọn {attachments.length}/5 tệp
+                    </span>
+                  )}
+                </div>
 
                 <input
                   ref={fileInputRef}
                   id="leave-file-input"
                   type="file"
+                  multiple
                   accept="image/png,image/jpeg,image/webp,application/pdf,.doc,.docx"
                   style={{ display: 'none' }}
                   onChange={handleFileSelect}
                 />
 
-                {!selectedFile ? (
+                {/* Danh sách các tệp / ảnh đã chọn với nút X xóa rõ ràng */}
+                {attachments.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                    {attachments.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          border: '2px solid var(--color-fg)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '8px 10px',
+                          background: '#FFFFFF',
+                          boxShadow: '2px 2px 0 0 var(--color-fg)',
+                          display: 'grid',
+                          gridTemplateColumns: '42px minmax(0, 1fr) auto',
+                          alignItems: 'center',
+                          gap: 10,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        {item.previewUrl ? (
+                          <img
+                            src={item.previewUrl}
+                            alt="Xem trước"
+                            style={{
+                              width: 42,
+                              height: 42,
+                              objectFit: 'cover',
+                              borderRadius: 'var(--radius-sm)',
+                              border: '1.5px solid var(--color-fg)',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 42,
+                              height: 42,
+                              borderRadius: 'var(--radius-sm)',
+                              background: 'var(--color-tertiary)',
+                              border: '1.5px solid var(--color-fg)',
+                              display: 'grid',
+                              placeItems: 'center',
+                            }}
+                          >
+                            <FileText size={18} color="var(--color-fg)" />
+                          </div>
+                        )}
+
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div
+                            title={item.file.name}
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 'var(--fs-xs)',
+                              color: 'var(--color-fg)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {item.file.name}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-muted-fg)' }}>
+                              {(item.file.size / 1024).toFixed(1)} KB
+                            </span>
+                            {item.uploading ? (
+                              <span className="badge badge--amber" style={{ fontSize: '10px', padding: '1px 6px' }}>
+                                Đang tải lên…
+                              </span>
+                            ) : (
+                              <span className="badge badge--mint" style={{ fontSize: '10px', padding: '1px 6px' }}>
+                                <CheckCircle2 size={11} /> Sẵn sàng
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOneFile(item.id)}
+                          title="Xóa ảnh / tệp này"
+                          style={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: '50%',
+                            border: '2px solid var(--color-fg)',
+                            background: '#FFE4E6',
+                            color: '#E11D48',
+                            boxShadow: '1.5px 1.5px 0 0 var(--color-fg)',
+                            display: 'grid',
+                            placeItems: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            padding: 0,
+                          }}
+                        >
+                          <X size={15} strokeWidth={2.5} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {attachments.length < 5 && (
                   <div
                     className="card"
                     onClick={() => fileInputRef.current?.click()}
                     style={{
-                      border: '2px dashed var(--color-border)',
+                      border: '2px dashed var(--color-fg)',
                       borderRadius: 'var(--radius-md)',
-                      padding: '16px 14px',
+                      padding: attachments.length > 0 ? '10px 12px' : '16px 14px',
                       textAlign: 'center',
                       cursor: 'pointer',
-                      background: 'var(--color-muted)',
+                      background: '#FFFDF5',
                       display: 'flex',
-                      flexDirection: 'column',
+                      flexDirection: attachments.length > 0 ? 'row' : 'column',
+                      justifyContent: 'center',
                       alignItems: 'center',
-                      gap: 6,
+                      gap: 8,
                     }}
                   >
                     <div
                       style={{
-                        width: 38,
-                        height: 38,
+                        width: attachments.length > 0 ? 28 : 38,
+                        height: attachments.length > 0 ? 28 : 38,
                         borderRadius: '50%',
                         background: 'var(--color-primary)',
                         color: '#FFFFFF',
                         display: 'grid',
                         placeItems: 'center',
                         boxShadow: 'var(--shadow-pop-active)',
+                        flexShrink: 0,
                       }}
                     >
-                      <UploadCloud size={18} />
+                      {attachments.length > 0 ? <Plus size={15} /> : <UploadCloud size={18} />}
                     </div>
                     <div>
-                      <span style={{ fontWeight: 700, fontSize: 'var(--fs-xs)', color: 'var(--color-fg)' }}>
-                        Bấm vào đây để chọn tệp từ máy tính
+                      <span style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', color: 'var(--color-fg)' }}>
+                        {attachments.length > 0
+                          ? 'Bấm để thêm ảnh / tài liệu khác (Tối đa 5 tệp)'
+                          : 'Bấm vào đây để chọn 1 hoặc nhiều ảnh / tệp từ máy tính'}
                       </span>
-                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--color-muted-fg)' }}>
-                        Ảnh (JPG, PNG), Tài liệu (PDF, DOCX) — Tối đa 10MB
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="card"
-                    style={{
-                      border: '2px solid var(--color-primary)',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '10px 12px',
-                      background: 'var(--color-card)',
-                      boxShadow: 'var(--shadow-pop-active)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      {filePreviewUrl ? (
-                        <img
-                          src={filePreviewUrl}
-                          alt="Xem trước ảnh"
-                          style={{
-                            width: 42,
-                            height: 42,
-                            objectFit: 'cover',
-                            borderRadius: 'var(--radius-sm)',
-                            border: 'var(--border)',
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : (
-                        <div
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 'var(--radius-sm)',
-                            background: 'var(--color-tertiary)',
-                            border: 'var(--border)',
-                            display: 'grid',
-                            placeItems: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <FileText size={20} color="var(--color-fg)" />
-                        </div>
+                      {attachments.length === 0 && (
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--color-muted-fg)' }}>
+                          Hỗ trợ chọn nhiều ảnh cùng lúc (JPG, PNG, WEBP) hoặc PDF, DOCX — Tối đa 10MB/tệp
+                        </p>
                       )}
-
-                      <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 'var(--fs-xs)',
-                            color: 'var(--color-fg)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {selectedFile.name}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                          <span style={{ fontSize: '11px', color: 'var(--color-muted-fg)' }}>
-                            {(selectedFile.size / 1024).toFixed(1)} KB
-                          </span>
-                          {uploadingFile ? (
-                            <span className="badge badge--amber" style={{ fontSize: '10px', padding: '1px 6px' }}>
-                              Đang tải lên…
-                            </span>
-                          ) : (
-                            <span className="badge badge--mint" style={{ fontSize: '10px', padding: '1px 6px' }}>
-                              <CheckCircle2 size={11} /> Sẵn sàng
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingFile}
-                        style={{ padding: '4px 8px', fontSize: '11px' }}
-                      >
-                        Đổi
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        onClick={handleRemoveFile}
-                        disabled={uploadingFile}
-                        style={{ color: '#e11d48', borderColor: '#fda4af', padding: '4px 6px' }}
-                        title="Xóa tệp đính kèm này"
-                      >
-                        <X size={14} />
-                      </button>
                     </div>
                   </div>
                 )}

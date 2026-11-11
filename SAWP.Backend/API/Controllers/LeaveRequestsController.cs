@@ -159,11 +159,11 @@ public class LeaveRequestsController : ControllerBase
             return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail("Kích thước tệp không được vượt quá 10MB."));
         }
 
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx" };
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx" };
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (!allowedExtensions.Contains(ext))
         {
-            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail("Định dạng tệp không được hỗ trợ. Vui lòng chọn ảnh (.jpg, .png) hoặc tài liệu (.pdf, .doc, .docx)."));
+            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail("Định dạng tệp không được hỗ trợ. Vui lòng chọn ảnh (.jpg, .png, .webp) hoặc tài liệu (.pdf, .doc, .docx)."));
         }
 
         using var stream = file.OpenReadStream();
@@ -207,6 +207,7 @@ public class LeaveRequestsController : ControllerBase
         {
             ".pdf" => "application/pdf",
             ".png" => "image/png",
+            ".webp" => "image/webp",
             ".jpg" or ".jpeg" => "image/jpeg",
             ".doc" => "application/msword",
             ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

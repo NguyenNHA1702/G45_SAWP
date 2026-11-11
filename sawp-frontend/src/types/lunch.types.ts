@@ -31,6 +31,9 @@ export interface ClassMealSummary {
   initialRegistered: number;
   cancelledCount: number;
   actualCount: number;
+  standardCount?: number;
+  vegetarianCount?: number;
+  specialDietCount?: number;
 }
 
 export interface MealAuditLog {
@@ -153,4 +156,24 @@ export interface CancelLunchRegistrationPayload {
   studentId: number;
   date: string;
   reason?: string;
+}
+
+export interface UpdateLunchRegistrationMealTypePayload {
+  studentId: number;
+  date: string;
+  mealType: number;
+  remarks?: string;
+}
+
+export interface LunchPeriodReport {
+  fromDate: string;
+  toDate: string;
+  totalServiceDays: number;
+  totalInitialRegistered: number;
+  totalCancelled: number;
+  totalActualMeals: number;
+  totalStandard: number;
+  totalVegetarian: number;
+  totalSpecialDiet: number;
+  classSummaries: ClassMealSummary[];
 }

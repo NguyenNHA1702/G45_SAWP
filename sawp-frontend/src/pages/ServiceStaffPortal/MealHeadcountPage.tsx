@@ -25,10 +25,26 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
-import type { DailyMealBoard } from '../../types/lunch.types';
+import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, StudentMealOperationItem } from '../../types/lunch.types';
 import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
+
+const COURSE_SLOTS = [
+  { role: 'Món chính • Tinh bột', emoji: '🍚', bg: '#FEF3C7', accent: '#D97706' },
+  { role: 'Món mặn • Giàu đạm', emoji: '🍗', bg: '#FCE7F3', accent: '#DB2777' },
+  { role: 'Món xào • Rau củ', emoji: '🥦', bg: '#ECFDF5', accent: '#059669' },
+  { role: 'Món canh • Thanh mát', emoji: '🍲', bg: '#EDE9FE', accent: '#7C3AED' },
+  { role: 'Tráng miệng • Vitamin', emoji: '🍌', bg: '#FFFDF5', accent: '#EA580C' },
+];
+
+const DEFAULT_WEEKDAY_MENUS = [
+  'Cơm trắng, Thịt gà kho nấm, Canh bí đỏ nấu tôm, Chuối tiêu',
+  'Cơm trắng, Cá basa sốt cà chua, Rau cải xào tỏi, Canh cua mồng tơi, Sữa chua',
+  'Cơm trắng, Thịt lợn rim tiêu, Đậu phụ nhồi thịt, Canh rau ngót thịt băm, Dưa hấu',
+  'Cơm trắng, Trứng đúc thịt, Su su xào cà rốt, Canh sườn nấu củ quả, Cam tươi',
+  'Cơm trắng, Bò hầm khoai tây cà rốt, Bắp cải luộc, Canh chua cá, Bánh flan',
+];
 
 const MENU_SUGGESTIONS = [
   'Cơm trắng',
@@ -51,6 +67,53 @@ const MEAL_TYPE_TEXT: Record<string, string> = {
   '3': 'Đặc biệt',
 };
 
+function formatCleanRemark(remarks?: string | null): string {
+  const raw = (remarks || '').trim();
+  if (!raw || raw === 'Suất ăn bán trú tiêu chuẩn') return '';
+  if (raw.includes('|')) {
+    const [, notePart] = raw.split('|');
+    return (notePart || '').replace(/^Ghi chú:\s*/i, '').trim();
+  }
+  return raw;
+}
+
+// ponytail: derive concrete dish list for each student based on daily menu + mealType + allergy remarks
+function getStudentDishes(
+  mealType: string | number,
+  dailyMenu?: string | null,
+  studentRemarks?: string | null
+): string[] {
+  const rawRemarks = (studentRemarks || '').trim();
+  if (rawRemarks.includes('|')) {
+    const [menuPart] = rawRemarks.split('|');
+    const customDishes = menuPart.split(',').map((d) => d.trim()).filter(Boolean);
+    if (customDishes.length >= 2) {
+      return customDishes;
+    }
+  }
+
+  const cleanMenu = (dailyMenu || '')
+    .replace(/^Thực đơn:\s*/i, '')
+    .replace(/^Thực đơn Tân Lập A:\s*/i, '')
+    .trim();
+  const parsed = cleanMenu
+    .split(',')
+    .map((d) => d.trim())
+    .filter(Boolean);
+  const baseDishes =
+    parsed.length >= 2 && !cleanMenu.toLowerCase().includes('phục vụ bán trú bình thường')
+      ? parsed
+      : ['Cơm trắng dẻo', 'Thịt gà kho nấm hương', 'Rau cải ngọt xào tỏi', 'Canh bí đỏ nấu tôm tươi', 'Chuối tiêu tráng miệng'];
+
+  if (mealType === 'VegetarianLunch' || mealType === 2 || mealType === '2') {
+    return ['Cơm trắng dẻo', 'Đậu phụ sốt cà chua', 'Nấm đùi gà kho xì dầu', 'Rau củ luộc', 'Canh nấm hạt sen', 'Trái cây tráng miệng'];
+  }
+  if (mealType === 'SpecialDiet' || mealType === 3 || mealType === '3') {
+    return ['Cơm mềm / Cháo dinh dưỡng', 'Thịt nạc thăn hấp mềm', 'Rau củ hấp tươi', 'Canh rau ngót thịt băm', 'Sữa chua men sống'];
+  }
+  return baseDishes;
+}
+
 function getWeekdaysOfDate(isoDate: string): string[] {
   const d = new Date(isoDate);
   const day = d.getDay(); // 0 CN, 1 T2 ...
@@ -72,7 +135,7 @@ function getWeekdaysOfDate(isoDate: string): string[] {
 
 export default function MealHeadcountPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get('tab') as 'summary' | 'students' | 'logs') || 'summary';
+  const activeTab = (searchParams.get('tab') as 'summary' | 'students' | 'logs' | 'report') || 'summary';
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
@@ -116,6 +179,62 @@ export default function MealHeadcountPage() {
   const [cfgCutoffTime, setCfgCutoffTime] = useState<string>(LUNCH_CUTOFF_DEFAULT_TIME);
   const [cfgRemarks, setCfgRemarks] = useState<string>('');
   const [cfgApplyFullWeek, setCfgApplyFullWeek] = useState<boolean>(false);
+  const [cfgWeeklyMenus, setCfgWeeklyMenus] = useState<Record<string, string>>({});
+
+  // Modal Xem chi tiết khẩu phần từng lớp
+  const [detailClass, setDetailClass] = useState<ClassMealSummary | null>(null);
+  const [selectedStudentTray, setSelectedStudentTray] = useState<StudentMealOperationItem | null>(null);
+
+  // Tab 4: Báo cáo thống kê kỳ / tháng (Lunch Report)
+  const [reportFrom, setReportFrom] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [reportTo, setReportTo] = useState<string>(() => {
+    const d = new Date();
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
+  });
+  const [periodReport, setPeriodReport] = useState<LunchPeriodReport | null>(null);
+  const [loadingReport, setLoadingReport] = useState<boolean>(false);
+
+  const fetchPeriodReport = async (from: string, to: string) => {
+    try {
+      setLoadingReport(true);
+      const data = await lunchApi.getPeriodReport(from, to);
+      setPeriodReport(data);
+    } catch {
+      toast.error('Không thể tải báo cáo tổng hợp suất ăn.');
+    } finally {
+      setLoadingReport(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'report') {
+      fetchPeriodReport(reportFrom, reportTo);
+    }
+  }, [activeTab, reportFrom, reportTo]);
+
+  useEffect(() => {
+    if (showConfigModal && cfgApplyFullWeek) {
+      const weekdays = getWeekdaysOfDate(selectedDate);
+      lunchApi.getServiceDays(weekdays[0], weekdays[weekdays.length - 1]).then((list) => {
+        const map: Record<string, string> = {};
+        weekdays.forEach((d, idx) => {
+          const found = list.find((x) => x.date.slice(0, 10) === d);
+          map[d] = found?.remarks || DEFAULT_WEEKDAY_MENUS[idx] || cfgRemarks;
+        });
+        setCfgWeeklyMenus(map);
+      }).catch(() => {
+        const map: Record<string, string> = {};
+        weekdays.forEach((d, idx) => {
+          map[d] = DEFAULT_WEEKDAY_MENUS[idx] || cfgRemarks;
+        });
+        setCfgWeeklyMenus(map);
+      });
+    }
+  }, [showConfigModal, cfgApplyFullWeek, selectedDate]);
 
   const fetchBoard = async (date: string) => {
     try {
@@ -204,7 +323,7 @@ export default function MealHeadcountPage() {
     return filteredLogs.slice(start, start + logPageSize);
   }, [filteredLogs, logPageIndex, logPageSize]);
 
-  const handleTabChange = (tab: 'summary' | 'students' | 'logs') => {
+  const handleTabChange = (tab: 'summary' | 'students' | 'logs' | 'report') => {
     setSearchParams({ tab });
   };
 
@@ -219,17 +338,29 @@ export default function MealHeadcountPage() {
   const handleSaveConfig = async () => {
     try {
       setActionLoading(true);
-      const targetDates = cfgApplyFullWeek ? getWeekdaysOfDate(selectedDate) : [selectedDate];
-      const res = await lunchApi.upsertServiceDays({
-        dates: targetDates,
-        isServing: cfgIsServing,
-        cutoffTime: cfgCutoffTime,
-        remarks: cfgRemarks.trim() || undefined,
-      });
-
-      const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG44.content;
-      toast.success(msg);
-      setMessage({ text: `${msg} (Áp dụng cho ${targetDates.length} ngày)`, type: 'success' });
+      if (cfgApplyFullWeek) {
+        const weekdays = getWeekdaysOfDate(selectedDate);
+        for (const d of weekdays) {
+          await lunchApi.upsertServiceDays({
+            dates: [d],
+            isServing: cfgIsServing,
+            cutoffTime: cfgCutoffTime,
+            remarks: (cfgWeeklyMenus[d] ?? cfgRemarks).trim() || undefined,
+          });
+        }
+        toast.success(`Đã lưu cấu hình thực đơn riêng cho ${weekdays.length} ngày trong tuần!`);
+        setMessage({ text: `Đã cập nhật thực đơn cụ thể cho từng ngày Thứ 2 – Thứ 6.`, type: 'success' });
+      } else {
+        const res = await lunchApi.upsertServiceDays({
+          dates: [selectedDate],
+          isServing: cfgIsServing,
+          cutoffTime: cfgCutoffTime,
+          remarks: cfgRemarks.trim() || undefined,
+        });
+        const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG44.content;
+        toast.success(msg);
+        setMessage({ text: `${msg} (Ngày ${selectedDate})`, type: 'success' });
+      }
       setShowConfigModal(false);
       await fetchBoard(selectedDate);
     } catch (err: unknown) {
@@ -608,6 +739,29 @@ export default function MealHeadcountPage() {
             <Clock size={15} />
             3. Nhật Ký Biến Động ({board?.mealChangeLogs?.length || 0})
           </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('report')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-full)',
+              border: activeTab === 'report' ? '2px solid var(--color-fg)' : '2px solid transparent',
+              background: activeTab === 'report' ? 'var(--color-accent)' : 'transparent',
+              color: activeTab === 'report' ? '#FFFFFF' : 'var(--color-fg)',
+              fontWeight: 800,
+              fontSize: 'var(--fs-sm)',
+              cursor: 'pointer',
+              boxShadow: activeTab === 'report' ? '2px 2px 0 0 var(--color-fg)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <CalendarRange size={15} />
+            4. Báo Cáo Thống Kê (Lunch Report)
+          </button>
         </div>
       </div>
 
@@ -923,6 +1077,7 @@ export default function MealHeadcountPage() {
                     <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đăng ký</th>
                     <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đã hủy</th>
                     <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Thực ăn</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Mặn / Chay / ĐB</th>
                     <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Tỷ lệ nhận</th>
                     <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Thao tác</th>
                   </tr>
@@ -933,11 +1088,18 @@ export default function MealHeadcountPage() {
                       const percentage = cls.initialRegistered > 0
                         ? Math.round((cls.actualCount / cls.initialRegistered) * 100)
                         : 0;
+                      const classActiveMeals = (board.studentMeals ?? []).filter(
+                        (s) => s.classId === cls.classId && s.isActive
+                      );
+                      const stdCnt = cls.standardCount ?? classActiveMeals.filter((s) => s.mealType === 'StandardLunch' || s.mealType === 1).length;
+                      const vegCnt = cls.vegetarianCount ?? classActiveMeals.filter((s) => s.mealType === 'VegetarianLunch' || s.mealType === 2).length;
+                      const spcCnt = cls.specialDietCount ?? classActiveMeals.filter((s) => s.mealType === 'SpecialDiet' || s.mealType === 3).length;
 
                       return (
                         <tr
                           key={cls.classId}
-                          style={{ borderBottom: '1px solid var(--color-border)', transition: 'background 0.15s' }}
+                          style={{ borderBottom: '1px solid var(--color-border)', transition: 'background 0.15s', cursor: 'pointer' }}
+                          onClick={() => setDetailClass(cls)}
                           onMouseEnter={(e) => (e.currentTarget.style.background = '#FFFDF5')}
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
@@ -963,6 +1125,11 @@ export default function MealHeadcountPage() {
                           <td style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 900, color: '#047857', fontSize: 'var(--fs-base)' }}>
                             {cls.actualCount}
                           </td>
+                          <td style={{ padding: '12px 14px', textAlign: 'center', fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
+                            <span className="badge badge--mint" style={{ marginRight: 4, padding: '2px 6px' }} title="Suất tiêu chuẩn">{stdCnt} Mặn</span>
+                            {vegCnt > 0 && <span className="badge badge--amber" style={{ marginRight: 4, padding: '2px 6px' }} title="Suất ăn chay">{vegCnt} Chay</span>}
+                            {spcCnt > 0 && <span className="badge badge--pink" style={{ padding: '2px 6px' }} title="Chế độ đặc biệt">{spcCnt} ĐB</span>}
+                          </td>
                           <td style={{ padding: '12px 14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{ flex: 1, height: 10, background: 'var(--color-border)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--color-fg)' }}>
@@ -979,26 +1146,43 @@ export default function MealHeadcountPage() {
                               </span>
                             </div>
                           </td>
-                          <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              className="btn btn--secondary btn--sm"
-                              onClick={() => {
-                                setSelectedClassFilter(String(cls.classId));
-                                handleTabChange('students');
-                              }}
-                              title={`Xem danh sách học sinh lớp ${cls.className}`}
-                              style={{
-                                borderRadius: 'var(--radius-full)',
-                                border: '1.5px solid var(--color-fg)',
-                                boxShadow: '2px 2px 0 0 var(--color-fg)',
-                                fontWeight: 700,
-                                fontSize: 'var(--fs-xs)',
-                                padding: '4px 12px',
-                              }}
-                            >
-                              Xem danh sách →
-                            </button>
+                          <td style={{ padding: '12px 14px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: 'inline-flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn btn--primary btn--sm"
+                                onClick={() => setDetailClass(cls)}
+                                style={{
+                                  borderRadius: 'var(--radius-full)',
+                                  border: '1.5px solid var(--color-fg)',
+                                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                  fontWeight: 800,
+                                  fontSize: 'var(--fs-xs)',
+                                  padding: '4px 12px',
+                                }}
+                              >
+                                Chi tiết suất lớp
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--secondary btn--sm"
+                                onClick={() => {
+                                  setSelectedClassFilter(String(cls.classId));
+                                  handleTabChange('students');
+                                }}
+                                title={`Lọc danh sách học sinh lớp ${cls.className}`}
+                                style={{
+                                  borderRadius: 'var(--radius-full)',
+                                  border: '1.5px solid var(--color-fg)',
+                                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                  fontWeight: 700,
+                                  fontSize: 'var(--fs-xs)',
+                                  padding: '4px 10px',
+                                }}
+                              >
+                                Tab HS →
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1204,13 +1388,15 @@ export default function MealHeadcountPage() {
                   <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Họ và tên học sinh</th>
                   <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Lớp</th>
                   <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Chế độ ăn</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Khay ăn</th>
                   <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Trạng thái</th>
                   <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Ghi chú / Lý do hủy</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedStudents.length > 0 ? (
-                  pagedStudents.map((item, idx) => (
+                  pagedStudents.map((item, idx) => {
+                    return (
                     <tr
                       key={item.registrationId}
                       style={{ borderBottom: '1px solid var(--color-border)', transition: 'background 0.15s' }}
@@ -1232,19 +1418,61 @@ export default function MealHeadcountPage() {
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                         {item.isActive ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStudentTray(item)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '5px 12px',
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid var(--color-fg)',
+                              background: '#FFFDF5',
+                              boxShadow: '2px 2px 0 0 var(--color-fg)',
+                              fontWeight: 800,
+                              fontSize: '11.5px',
+                              color: 'var(--color-fg)',
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.15s cubic-bezier(0.34,1.56,0.64,1)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'var(--color-tertiary)';
+                              e.currentTarget.style.transform = 'translate(-1px, -1px)';
+                              e.currentTarget.style.boxShadow = '3px 3px 0 0 var(--color-fg)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#FFFDF5';
+                              e.currentTarget.style.transform = 'none';
+                              e.currentTarget.style.boxShadow = '2px 2px 0 0 var(--color-fg)';
+                            }}
+                          >
+                            <UtensilsCrossed size={12} color="var(--color-accent)" strokeWidth={2.5} />
+                            Xem khay ăn
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>
+                            Không chia khay
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                        {item.isActive ? (
                           <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)' }}>Thực ăn</span>
                         ) : (
                           <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)' }}>Đã hủy</span>
                         )}
                       </td>
                       <td style={{ padding: '10px 14px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
-                        {(item.isActive ? item.remarks : item.cancellationReason) || '—'}
+                        {(item.isActive ? formatCleanRemark(item.remarks) : item.cancellationReason) || '—'}
                       </td>
                     </tr>
-                  ))
+                  );
+                })
                 ) : (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
                       {SYSTEM_MESSAGES.MSG43.content}
                     </td>
                   </tr>
@@ -1577,6 +1805,410 @@ export default function MealHeadcountPage() {
       )}
 
       {/* ===================================================================== */}
+      {/* MÀN HÌNH 4: BÁO CÁO THỐNG KÊ KỲ / THÁNG (LUNCH REPORT)               */}
+      {/* ===================================================================== */}
+      {activeTab === 'report' && (
+        <div
+          className="card pop-in"
+          style={{
+            border: '2px solid var(--color-fg)',
+            boxShadow: '4px 4px 0 0 var(--color-fg)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CalendarRange size={18} color="var(--color-accent)" />
+                Báo Cáo Thống Kê Suất Ăn Bán Trú Theo Kỳ (Lunch Report)
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                Tổng hợp số ngày phục vụ, tổng suất đăng ký, suất hủy và phân loại chế độ ăn (Mặn / Chay / Đặc biệt) theo từng lớp.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#FFFDF5', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-full)', padding: '4px 12px' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 800 }}>Từ:</span>
+                <input
+                  type="date"
+                  value={reportFrom}
+                  onChange={(e) => setReportFrom(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', fontWeight: 700, fontSize: 'var(--fs-xs)', outline: 'none' }}
+                />
+                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 800 }}>Đến:</span>
+                <input
+                  type="date"
+                  value={reportTo}
+                  min={reportFrom}
+                  onChange={(e) => setReportTo(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', fontWeight: 700, fontSize: 'var(--fs-xs)', outline: 'none' }}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => fetchPeriodReport(reportFrom, reportTo)}
+                disabled={loadingReport}
+                style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', fontWeight: 700 }}
+              >
+                <RefreshCw size={14} className={loadingReport ? 'spin' : ''} /> Tải báo cáo
+              </button>
+
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={() => {
+                  if (!periodReport) return;
+                  const rows: string[][] = [
+                    ['Lop', 'Khoi', 'Tong Dang Ky', 'Da Huy', 'Thuc An', 'Suat Tieu Chuan (Man)', 'Suat An Chay', 'Che Do Dac Biet'],
+                  ];
+                  periodReport.classSummaries.forEach((c) => {
+                    rows.push([
+                      c.className,
+                      String(c.grade),
+                      String(c.initialRegistered),
+                      String(c.cancelledCount),
+                      String(c.actualCount),
+                      String(c.standardCount ?? 0),
+                      String(c.vegetarianCount ?? 0),
+                      String(c.specialDietCount ?? 0),
+                    ]);
+                  });
+                  const csvContent = '\uFEFF' + rows.map((r) => r.map((cell) => `"${cell}"`).join(',')).join('\n');
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Bao_cao_ban_tru_${reportFrom}_${reportTo}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success('Đã xuất báo cáo thống kê bán trú (.csv)!');
+                }}
+                style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', fontWeight: 800 }}
+              >
+                <Download size={14} /> Xuất Báo Cáo CSV
+              </button>
+            </div>
+          </div>
+
+          {periodReport && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+                <div className="card" style={{ background: '#FFFDF5', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
+                  <div className="label">NGÀY PHỤC VỤ</div>
+                  <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>{periodReport.totalServiceDays} ngày</div>
+                </div>
+                <div className="card" style={{ background: '#ECFDF5', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
+                  <div className="label" style={{ color: '#047857' }}>TỔNG SUẤT THỰC NẤU</div>
+                  <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, color: '#065F46', fontFamily: 'var(--font-heading)' }}>{periodReport.totalActualMeals} suất</div>
+                </div>
+                <div className="card" style={{ background: '#F0F9FF', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
+                  <div className="label">TIÊU CHUẨN / CHAY / ĐB</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, marginTop: 4 }}>
+                    🍱 {periodReport.totalStandard} Mặn • 🥗 {periodReport.totalVegetarian} Chay • ⚕️ {periodReport.totalSpecialDiet} ĐB
+                  </div>
+                </div>
+                <div className="card" style={{ background: '#FFF1F2', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
+                  <div className="label" style={{ color: '#E11D48' }}>TỔNG ĐÃ HỦY HỢP LỆ</div>
+                  <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, color: '#E11D48', fontFamily: 'var(--font-heading)' }}>-{periodReport.totalCancelled} suất</div>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                      <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Lớp</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Khối</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Tổng Đăng Ký</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đã Hủy</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Thực Nấu</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Tiêu Chuẩn (Mặn)</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Ăn Chay</th>
+                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đặc Biệt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {periodReport.classSummaries.map((c) => (
+                      <tr key={c.classId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>Lớp {c.className}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>Khối {c.grade}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700 }}>{c.initialRegistered}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', color: '#E11D48', fontWeight: 700 }}>
+                          {c.cancelledCount > 0 ? `-${c.cancelledCount}` : '0'}
+                        </td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 900, color: '#047857' }}>{c.actualCount}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{c.standardCount ?? 0}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: (c.vegetarianCount ?? 0) > 0 ? 800 : 400 }}>{c.vegetarianCount ?? 0}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: (c.specialDietCount ?? 0) > 0 ? 800 : 400 }}>{c.specialDietCount ?? 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* MODAL CHI TIẾT KHẨU PHẦN TỪNG LỚP                                     */}
+      {/* ===================================================================== */}
+      <GeometricModal
+        open={Boolean(detailClass)}
+        onClose={() => setDetailClass(null)}
+        title={`Chi Tiết Suất Ăn Lớp ${detailClass?.className ?? ''}`}
+        subtitle={`Ngày ${new Date(selectedDate).toLocaleDateString('vi-VN')} • Danh sách học sinh và chế độ ăn của lớp`}
+        badgeText={`Thực ăn: ${detailClass?.actualCount ?? 0}/${detailClass?.initialRegistered ?? 0} suất`}
+        badgeColor="mint"
+        icon={<Soup size={22} color="var(--color-fg)" />}
+        iconBg="var(--color-quaternary)"
+        maxWidth="lg"
+      >
+        {detailClass && (
+          <div>
+            {(() => {
+              const classMeals = (board?.studentMeals ?? []).filter((s) => s.classId === detailClass.classId);
+              const activeMeals = classMeals.filter((s) => s.isActive);
+              return (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                      🍱 Tiêu chuẩn: {activeMeals.filter((s) => s.mealType === 'StandardLunch' || s.mealType === 1).length}
+                    </span>
+                    <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                      🥗 Ăn chay: {activeMeals.filter((s) => s.mealType === 'VegetarianLunch' || s.mealType === 2).length}
+                    </span>
+                    <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                      ⚕️ Đặc biệt: {activeMeals.filter((s) => s.mealType === 'SpecialDiet' || s.mealType === 3).length}
+                    </span>
+                    <span className="badge badge--muted" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+                      Đã hủy: {classMeals.filter((s) => !s.isActive).length}
+                    </span>
+                  </div>
+
+                  <div style={{ maxHeight: 360, overflowY: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 800 }}>Mã HS</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 800 }}>Họ và tên</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800 }}>Chế độ ăn</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800 }}>Khay ăn</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800 }}>Trạng thái</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 800 }}>Ghi chú dị ứng / Lý do hủy</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {classMeals.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--color-muted-fg)' }}>
+                              Chưa có học sinh đăng ký ăn trưa trong lớp này.
+                            </td>
+                          </tr>
+                        ) : (
+                          classMeals.map((s) => {
+                            return (
+                            <tr key={s.registrationId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                              <td style={{ padding: '8px 12px', fontWeight: 800, color: 'var(--color-accent)' }}>{s.studentCode}</td>
+                              <td style={{ padding: '8px 12px', fontWeight: 700 }}>{s.studentName}</td>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)' }}>
+                                  {MEAL_TYPE_TEXT[String(s.mealType)] ?? 'Tiêu chuẩn'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                {s.isActive ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedStudentTray(s)}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      padding: '4px 10px',
+                                      borderRadius: 'var(--radius-full)',
+                                      border: '1.5px solid var(--color-fg)',
+                                      background: '#FFFDF5',
+                                      boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                      fontWeight: 800,
+                                      fontSize: '11px',
+                                      color: 'var(--color-fg)',
+                                      cursor: 'pointer',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    <UtensilsCrossed size={11} color="var(--color-accent)" strokeWidth={2.5} />
+                                    Xem khay ăn
+                                  </button>
+                                ) : (
+                                  <span style={{ fontSize: '11px', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>Đã hủy suất</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                {s.isActive ? (
+                                  <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)' }}>Thực ăn</span>
+                                ) : (
+                                  <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)' }}>Đã hủy</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                                {(s.isActive ? formatCleanRemark(s.remarks) : s.cancellationReason) || '—'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+      </GeometricModal>
+
+      {/* ===================================================================== */}
+      {/* MODAL KHAY ĂN HỌC SINH (PLAYFUL GEOMETRIC BENTO TRAY)                 */}
+      {/* ===================================================================== */}
+      <GeometricModal
+        open={Boolean(selectedStudentTray)}
+        onClose={() => setSelectedStudentTray(null)}
+        title={`Khay Ăn Bán Trú • ${selectedStudentTray?.studentName ?? ''}`}
+        subtitle={`Lớp ${selectedStudentTray?.className ?? ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${new Date(selectedDate).toLocaleDateString('vi-VN')}`}
+        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn') : ''}
+        badgeColor="mint"
+        icon={<Soup size={22} color="var(--color-fg)" strokeWidth={2.5} />}
+        iconBg="var(--color-tertiary)"
+        maxWidth="md"
+      >
+        {selectedStudentTray && (() => {
+          const dishes = getStudentDishes(selectedStudentTray.mealType, board?.serviceRemarks, selectedStudentTray.remarks)
+            .filter((d) => !d.startsWith('(Lưu ý'));
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div
+                style={{
+                  background: '#FFFDF5',
+                  border: '2.5px solid var(--color-fg)',
+                  borderRadius: 'var(--radius-lg)',
+                  boxShadow: '5px 5px 0 0 #E2E8F0',
+                  padding: '16px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-heading)',
+                      fontWeight: 800,
+                      fontSize: 'var(--fs-sm)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      color: 'var(--color-fg)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <UtensilsCrossed size={15} color="var(--color-accent)" strokeWidth={2.5} />
+                    Các món trong khay ({dishes.length} món)
+                  </span>
+                  <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: '11px' }}>
+                    {MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+                  {dishes.map((dish, idx) => {
+                    const slot = COURSE_SLOTS[idx % COURSE_SLOTS.length];
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '10px 12px',
+                          background: '#FFFFFF',
+                          border: '2px solid var(--color-fg)',
+                          borderRadius: 'var(--radius-md)',
+                          boxShadow: '3px 3px 0 0 var(--color-fg)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: '50%',
+                            background: slot.bg,
+                            border: '2px solid var(--color-fg)',
+                            display: 'grid',
+                            placeItems: 'center',
+                            fontSize: 18,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {slot.emoji}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: slot.accent }}>
+                            {slot.role}
+                          </div>
+                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginTop: 2 }}>
+                            {dish}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '2px dashed var(--color-fg)',
+                  background: formatCleanRemark(selectedStudentTray.remarks) ? '#FFF1F2' : '#F8FAFC',
+                  fontSize: 'var(--fs-xs)',
+                }}
+              >
+                <strong style={{ color: formatCleanRemark(selectedStudentTray.remarks) ? '#BE123C' : 'var(--color-fg)' }}>
+                  📝 Ghi chú bếp / dị ứng:{' '}
+                </strong>
+                <span style={{ fontWeight: 600, color: formatCleanRemark(selectedStudentTray.remarks) ? '#9F1239' : 'var(--color-muted-fg)' }}>
+                  {formatCleanRemark(selectedStudentTray.remarks) || 'Không có ghi chú dị ứng đặc biệt.'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => setSelectedStudentTray(null)}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    fontWeight: 800,
+                    padding: '8px 22px',
+                    background: 'var(--color-accent)',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  Đóng khay ăn
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </GeometricModal>
+
+      {/* ===================================================================== */}
       {/* MODAL UC-32: Cấu hình Ngày phục vụ, Hạn đăng ký/hủy & Thực đơn        */}
       {/* ===================================================================== */}
       <GeometricModal
@@ -1839,10 +2471,10 @@ export default function MealHeadcountPage() {
 
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
-                Áp dụng cấu hình này cho cả tuần làm việc
+                Cấu hình thực đơn cụ thể từng ngày trong tuần (Thứ 2 – Thứ 6)
               </div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
-                Tự động đồng bộ trạng thái, giờ chốt và thực đơn cho Thứ 2 – Thứ 6 của tuần đang chọn
+                Tự động mở bảng nhập thực đơn riêng cho từng ngày học trong tuần đang chọn
               </div>
             </div>
 
@@ -1859,6 +2491,45 @@ export default function MealHeadcountPage() {
               }}
             />
           </div>
+
+          {cfgApplyFullWeek && (
+            <div
+              className="card"
+              style={{
+                background: '#FFFDF5',
+                border: '2px solid var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                maxHeight: 240,
+                overflowY: 'auto',
+              }}
+            >
+              <div className="label" style={{ fontWeight: 800, marginBottom: 2 }}>
+                THỰC ĐƠN CỤ THỂ TỪNG NGÀY TRONG TUẦN:
+              </div>
+              {getWeekdaysOfDate(selectedDate).map((d, idx) => {
+                const dayNames = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6'];
+                return (
+                  <div key={d} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-accent)' }}>
+                      {dayNames[idx]} ({new Date(d).toLocaleDateString('vi-VN')}):
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={cfgWeeklyMenus[d] ?? ''}
+                      onChange={(e) => setCfgWeeklyMenus((prev) => ({ ...prev, [d]: e.target.value }))}
+                      placeholder={`Nhập thực đơn ${dayNames[idx]}...`}
+                      style={{ padding: '6px 12px', fontSize: 'var(--fs-xs)', border: '1.5px solid var(--color-fg)' }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* 5. Candy Action Buttons */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 10, borderTop: '1.5px dashed var(--color-border)' }}>

@@ -87,10 +87,38 @@ public class LunchController : BaseApiController
     }
 
     /// <summary>
+    /// Phụ huynh thay đổi chế độ ăn (Tiêu chuẩn / Ăn chay / Đặc biệt) và ghi chú trước hạn chốt 08h15
+    /// </summary>
+    [HttpPut("registration")]
+    [Authorize(Roles = "Parent,ServiceStaff,Admin")]
+    public async Task<IActionResult> UpdateRegistrationMealType([FromBody] UpdateLunchRegistrationMealTypeDto request, CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _lunchService.UpdateRegistrationMealTypeAsync(userId, roles, request, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Báo cáo tổng hợp suất ăn bán trú theo khoảng ngày / tháng
+    /// </summary>
+    [HttpGet("report")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    public async Task<IActionResult> GetPeriodReport([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] int? classId, CancellationToken ct)
+    {
+        var start = (from ?? new DateTime(_clock.Today.Year, _clock.Today.Month, 1)).Date;
+        var end = (to ?? start.AddMonths(1).AddDays(-1)).Date;
+        int? userId = User?.Identity?.IsAuthenticated == true ? User.GetRequiredUserId() : null;
+        IReadOnlyList<UserRoles>? roles = User?.Identity?.IsAuthenticated == true ? User.GetRoles() : null;
+        var result = await _lunchService.GetPeriodReportAsync(start, end, classId, userId, roles, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
     /// API-7: Số liệu suất ăn phục vụ trong ngày cho tổ Bếp / Ban Giám hiệu
     /// </summary>
     [HttpGet("headcount")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
     public async Task<IActionResult> GetMealHeadcount([FromQuery] DateTime? date, CancellationToken ct)
     {
         var targetDate = date ?? _clock.Today;
@@ -102,7 +130,7 @@ public class LunchController : BaseApiController
     /// UC-33: Lấy bảng vận hành & báo cáo suất ăn bán trú theo ngày (hỗ trợ phân quyền theo role và lọc lớp)
     /// </summary>
     [HttpGet("live-board")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
     public async Task<IActionResult> GetLiveBoard([FromQuery] DateTime? date, [FromQuery] int? classId, CancellationToken cancellationToken)
     {
         var targetDate = date ?? _clock.Today;
