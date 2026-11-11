@@ -34,6 +34,10 @@ export function BoardDecisionModal({
   const isTransfer = request.requestType === 'ClassTransfer';
   const transfer = request.classTransfer;
   const doc = request.documentRequest;
+  const isAlreadyProcessed =
+    request.status === 'Approved' ||
+    request.status === 'Rejected' ||
+    request.schoolBoardApprovedAt != null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,118 +195,149 @@ export function BoardDecisionModal({
           </div>
         )}
 
-        {/* Lựa chọn quyết định */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#1E293B', marginBottom: 8 }}>
-              QUYẾT ĐỊNH CỦA BAN GIÁM HIỆU: <span style={{ color: '#EF4444' }}>*</span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: decision === 'approve' ? '2.5px solid #16A34A' : '2px solid #E2E8F0',
-                  backgroundColor: decision === 'approve' ? '#F0FDF4' : '#FFFFFF',
-                  boxShadow: decision === 'approve' ? '3px 3px 0 #16A34A' : 'none',
-                  cursor: 'pointer',
-                  fontWeight: 800,
-                  color: decision === 'approve' ? '#15803D' : '#64748B',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="decision"
-                  checked={decision === 'approve'}
-                  onChange={() => setDecision('approve')}
-                  style={{ width: 18, height: 18, accentColor: '#16A34A' }}
-                />
-                <CheckCircle2 size={20} color="#16A34A" />
-                PHÊ DUYỆT ĐỀ XUẤT
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: decision === 'reject' ? '2.5px solid #EF4444' : '2px solid #E2E8F0',
-                  backgroundColor: decision === 'reject' ? '#FEF2F2' : '#FFFFFF',
-                  boxShadow: decision === 'reject' ? '3px 3px 0 #EF4444' : 'none',
-                  cursor: 'pointer',
-                  fontWeight: 800,
-                  color: decision === 'reject' ? '#B91C1C' : '#64748B',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="decision"
-                  checked={decision === 'reject'}
-                  onChange={() => setDecision('reject')}
-                  style={{ width: 18, height: 18, accentColor: '#EF4444' }}
-                />
-                <XCircle size={20} color="#EF4444" />
-                TỪ CHỐI ĐỀ XUẤT
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-              {decision === 'approve' ? 'Ý kiến chỉ đạo / Ghi chú phê duyệt (Tùy chọn):' : 'Lý do từ chối (Bắt buộc - sẽ ghi vào Audit Log & gửi phụ huynh):'}
-              {decision === 'reject' && <span style={{ color: '#EF4444' }}> *</span>}
-            </label>
-            <textarea
-              className="input"
+        {/* Quyết định / Chỉ đạo của BGH */}
+        {isAlreadyProcessed ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div
               style={{
-                width: '100%',
-                minHeight: 80,
-                borderRadius: 10,
-                padding: '10px 12px',
-                borderColor: decision === 'reject' ? '#EF4444' : undefined,
-              }}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={
-                decision === 'approve'
-                  ? 'Ví dụ: Đồng ý chuyển lớp, giao Giáo vụ thực hiện / Đồng ý phát hành văn bản...'
-                  : 'Vui lòng nêu rõ lý do từ chối (ví dụ: sĩ số vượt quá quy định, điều kiện chưa phù hợp)...'
-              }
-              required={decision === 'reject'}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-            <button
-              type="button"
-              className="btn btn--outline"
-              onClick={onClose}
-              disabled={submitting}
-            >
-              Đóng
-            </button>
-            <button
-              type="submit"
-              className="btn btn--primary"
-              disabled={submitting}
-              style={{
-                backgroundColor: decision === 'approve' ? '#16A34A' : '#DC2626',
-                borderColor: '#1E293B',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
+                backgroundColor: request.status === 'Approved' ? '#ECFDF5' : '#FEF2F2',
+                border: `2px solid ${request.status === 'Approved' ? '#059669' : '#DC2626'}`,
+                borderRadius: 12,
+                padding: '14px 16px',
               }}
             >
-              <Send size={16} /> {submitting ? 'Đang lưu...' : decision === 'approve' ? 'Xác nhận Phê Duyệt' : 'Xác nhận Từ Chối'}
-            </button>
+              <div style={{ fontSize: 13, fontWeight: 800, color: request.status === 'Approved' ? '#047857' : '#B91C1C', marginBottom: 4 }}>
+                {request.status === 'Approved' ? 'KẾT QUẢ: BAN GIÁM HIỆU ĐÃ PHÊ DUYỆT' : 'KẾT QUẢ: BAN GIÁM HIỆU ĐÃ TỪ CHỐI'}
+              </div>
+              <div style={{ fontSize: 13, color: request.status === 'Approved' ? '#065F46' : '#991B1B', fontWeight: 600, lineHeight: 1.5 }}>
+                &quot;{request.schoolBoardNotes || request.reviewerNotes || (request.status === 'Approved' ? 'Đã phê duyệt đề xuất.' : 'Không đủ điều kiện phê duyệt.')}&quot;
+              </div>
+              {request.schoolBoardApprovedAt && (
+                <div style={{ fontSize: 11, color: '#64748B', marginTop: 6 }}>
+                  Thời gian phê duyệt: {new Date(request.schoolBoardApprovedAt).toLocaleString('vi-VN')}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+              <button type="button" className="btn btn--outline" onClick={onClose}>
+                Đóng
+              </button>
+            </div>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#1E293B', marginBottom: 8 }}>
+                QUYẾT ĐỊNH CỦA BAN GIÁM HIỆU: <span style={{ color: '#EF4444' }}>*</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: decision === 'approve' ? '2.5px solid #16A34A' : '2px solid #E2E8F0',
+                    backgroundColor: decision === 'approve' ? '#F0FDF4' : '#FFFFFF',
+                    boxShadow: decision === 'approve' ? '3px 3px 0 #16A34A' : 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    color: decision === 'approve' ? '#15803D' : '#64748B',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="decision"
+                    checked={decision === 'approve'}
+                    onChange={() => setDecision('approve')}
+                    style={{ width: 18, height: 18, accentColor: '#16A34A' }}
+                  />
+                  <CheckCircle2 size={20} color="#16A34A" />
+                  PHÊ DUYỆT ĐỀ XUẤT
+                </label>
+
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: decision === 'reject' ? '2.5px solid #EF4444' : '2px solid #E2E8F0',
+                    backgroundColor: decision === 'reject' ? '#FEF2F2' : '#FFFFFF',
+                    boxShadow: decision === 'reject' ? '3px 3px 0 #EF4444' : 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    color: decision === 'reject' ? '#B91C1C' : '#64748B',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="decision"
+                    checked={decision === 'reject'}
+                    onChange={() => setDecision('reject')}
+                    style={{ width: 18, height: 18, accentColor: '#EF4444' }}
+                  />
+                  <XCircle size={20} color="#EF4444" />
+                  TỪ CHỐI ĐỀ XUẤT
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                {decision === 'approve' ? 'Ý kiến chỉ đạo / Ghi chú phê duyệt (Tùy chọn):' : 'Lý do từ chối (Bắt buộc - sẽ ghi vào Audit Log & gửi phụ huynh):'}
+                {decision === 'reject' && <span style={{ color: '#EF4444' }}> *</span>}
+              </label>
+              <textarea
+                className="input"
+                style={{
+                  width: '100%',
+                  minHeight: 80,
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  borderColor: decision === 'reject' ? '#EF4444' : undefined,
+                }}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={
+                  decision === 'approve'
+                    ? 'Ví dụ: Đồng ý chuyển lớp, giao Giáo vụ thực hiện / Đồng ý phát hành văn bản...'
+                    : 'Vui lòng nêu rõ lý do từ chối (ví dụ: sĩ số vượt quá quy định, điều kiện chưa phù hợp)...'
+                }
+                required={decision === 'reject'}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+              <button
+                type="button"
+                className="btn btn--outline"
+                onClick={onClose}
+                disabled={submitting}
+              >
+                Đóng
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={submitting}
+                style={{
+                  backgroundColor: decision === 'approve' ? '#16A34A' : '#DC2626',
+                  borderColor: '#1E293B',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Send size={16} /> {submitting ? 'Đang lưu...' : decision === 'approve' ? 'Xác nhận Phê Duyệt' : 'Xác nhận Từ Chối'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </GeometricModal>
   );

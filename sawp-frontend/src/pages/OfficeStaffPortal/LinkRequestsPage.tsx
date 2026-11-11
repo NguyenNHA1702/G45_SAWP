@@ -53,13 +53,14 @@ export default function LinkRequestsPage() {
     try {
       const res = await guardianApi.verifyLinkRequest(id, {
         isApproved,
+        reviewerNotes: rejectionReason || (isApproved ? 'Đã duyệt yêu cầu liên kết phụ huynh/người giám hộ.' : ''),
         rejectionReason,
       });
 
       if (res.success) {
         toast.success(
           isApproved
-            ? 'Đã duyệt yêu cầu liên kết học sinh thành công!'
+            ? 'Đã duyệt yêu cầu liên kết học sinh thành công (MSG13)!'
             : 'Đã từ chối yêu cầu liên kết.'
         );
         loadRequests();

@@ -281,7 +281,8 @@ public class GuardianService : IGuardianService
 
         request.ReviewerUserId = reviewerUserId;
         request.ProcessedDate = DateTime.UtcNow;
-        request.ReviewerNotes = review.ReviewerNotes.Trim();
+        var notes = !string.IsNullOrWhiteSpace(review.ReviewerNotes) ? review.ReviewerNotes : (review.RejectionReason ?? string.Empty);
+        request.ReviewerNotes = notes.Trim();
 
         if (review.IsApproved)
         {

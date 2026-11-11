@@ -83,6 +83,7 @@ public class StudentProfileDto
 public class StudentFilterDto
 {
     public string? SearchTerm { get; set; }
+    public string? Keyword { get; set; }
     public int? Grade { get; set; }
     public int? ClassId { get; set; }
     public string? Status { get; set; }
@@ -106,8 +107,11 @@ public class ResolveDuplicateStudentDto
     /// Action: "Merge", "Overwrite", or "Rename"
     /// </summary>
     public string Action { get; set; } = "Merge";
+    public string? ResolutionAction { get; set; }
+    public int? ExistingStudentId { get; set; }
     public string? NewStudentCode { get; set; }
     public CreateStudentDto ProfileData { get; set; } = new();
+    public CreateStudentDto? NewStudentData { get; set; }
 }
 
 public class ImportStudentRowDto

@@ -35,9 +35,12 @@ export const DuplicateResolveModal: React.FC<DuplicateResolveModalProps> = ({
     setLoading(true);
     try {
       const res = await studentApi.resolveDuplicate({
+        studentCode: pendingStudent.studentCode || existingStudent.studentCode,
+        action,
+        newStudentCode: action === 'Rename' ? newCode.trim().toUpperCase() : undefined,
+        profileData: pendingStudent,
         resolutionAction: action,
         existingStudentId: existingStudent.id,
-        newStudentCode: action === 'Rename' ? newCode.trim().toUpperCase() : undefined,
         newStudentData: pendingStudent,
       });
 
@@ -49,7 +52,11 @@ export const DuplicateResolveModal: React.FC<DuplicateResolveModalProps> = ({
         toast.error(res.message || 'Không thể xử lý trùng lặp.');
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi xử lý trùng lặp.');
+      const msg =
+        err.response?.data?.errors?.[0] ||
+        err.response?.data?.message ||
+        'Lỗi khi xử lý trùng lặp.';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

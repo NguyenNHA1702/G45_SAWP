@@ -7,6 +7,7 @@ import {
   GraduationCap,
   Layers,
   Megaphone,
+  PlusCircle,
   RefreshCw,
   Sparkles,
   UserCheck,
@@ -17,6 +18,7 @@ import toast from 'react-hot-toast';
 import { classApi } from '../../services/implementations/classApi';
 import { placementPlanApi } from '../../services/implementations/placementPlanApi';
 import { CreateSchoolYearModal } from '../../components/classes/CreateSchoolYearModal';
+import { CreateClassModal } from '../../components/classes/CreateClassModal';
 import { BatchInitClassesModal } from '../../components/classes/BatchInitClassesModal';
 import { AssignTeacherModal } from '../../components/classes/AssignTeacherModal';
 import { AssignStudentsModal } from '../../components/classes/AssignStudentsModal';
@@ -49,6 +51,7 @@ export default function ClassesPage() {
 
   // Modals state for Classes & School Year
   const [createYearModalOpen, setCreateYearModalOpen] = useState(false);
+  const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [studentsModalOpen, setStudentsModalOpen] = useState(false);
@@ -108,10 +111,12 @@ export default function ClassesPage() {
     }
   };
 
-  const loadClasses = async () => {
+  const loadClasses = async (targetYearId?: number, targetGrade?: number) => {
     setLoading(true);
     try {
-      const res = await classApi.getClasses(selectedYearId, selectedGrade);
+      const yearToUse = targetYearId !== undefined ? targetYearId : selectedYearId;
+      const gradeToUse = targetGrade !== undefined ? targetGrade : selectedGrade;
+      const res = await classApi.getClasses(yearToUse, gradeToUse);
       if (res.success && res.data) {
         setClasses(res.data);
       }
@@ -268,6 +273,14 @@ export default function ClassesPage() {
                 >
                   <Megaphone size={16} color="var(--color-secondary)" />
                   {publishingAll ? 'Đang công bố...' : 'Công bố toàn trường'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => setCreateClassModalOpen(true)}
+                  title="Thêm một lớp học đơn lẻ"
+                >
+                  <PlusCircle size={18} /> + Thêm lớp học
                 </button>
                 <button
                   type="button"
@@ -671,7 +684,18 @@ export default function ClassesPage() {
           loadSchoolYears();
           setSelectedYearId(newYear.id);
           setActiveSchoolYear(newYear);
-          loadClasses();
+          loadClasses(newYear.id);
+        }}
+      />
+
+      <CreateClassModal
+        open={createClassModalOpen}
+        onClose={() => setCreateClassModalOpen(false)}
+        activeSchoolYear={activeSchoolYear}
+        initialGrade={selectedGrade || 1}
+        onClassCreated={(_newClass, grade) => {
+          setSelectedGrade(grade);
+          loadClasses(selectedYearId, grade);
         }}
       />
 
@@ -679,7 +703,10 @@ export default function ClassesPage() {
         open={batchModalOpen}
         onClose={() => setBatchModalOpen(false)}
         activeSchoolYear={activeSchoolYear}
-        onClassesCreated={() => loadClasses()}
+        onClassesCreated={(_classes, grade) => {
+          setSelectedGrade(grade);
+          loadClasses(selectedYearId, grade);
+        }}
       />
 
       <AssignTeacherModal

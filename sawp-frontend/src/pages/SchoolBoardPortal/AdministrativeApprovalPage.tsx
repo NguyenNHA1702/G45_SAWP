@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  Eye,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -515,6 +516,26 @@ export default function AdministrativeApprovalPage() {
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {/* View details button for all requests */}
+                    <button
+                      type="button"
+                      className="btn btn--outline"
+                      onClick={() => {
+                        setSelectedReq(req);
+                        setDecisionModalOpen(true);
+                      }}
+                      style={{
+                        padding: '7px 14px',
+                        fontSize: 13,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      title="Xem toàn bộ hồ sơ chi tiết và ý kiến thẩm định"
+                    >
+                      <Eye size={15} /> Xem chi tiết
+                    </button>
+
                     {/* Action buttons */}
                     {isPending && (
                       <button
@@ -532,7 +553,7 @@ export default function AdministrativeApprovalPage() {
                           gap: 6,
                         }}
                       >
-                        <ShieldCheck size={16} /> Xem xét & Ra quyết định
+                        <ShieldCheck size={16} /> Phê duyệt / Từ chối
                       </button>
                     )}
 

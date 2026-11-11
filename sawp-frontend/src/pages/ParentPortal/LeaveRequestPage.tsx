@@ -104,8 +104,17 @@ export default function LeaveRequestPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx'];
+    const fileExt = '.' + (file.name.split('.').pop() || '').toLowerCase();
+    if (!allowedExtensions.includes(fileExt)) {
+      toast.error('Định dạng tệp không hợp lệ! Chỉ chấp nhận ảnh (JPG, PNG, WEBP), PDF hoặc Word (DOC, DOCX).');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) {
       toast.error('Kích thước tệp vượt quá 10MB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -149,6 +158,10 @@ export default function LeaveRequestPage() {
     e.preventDefault();
     if (!selectedStudentId) {
       toast.error('Vui lòng chọn học sinh.');
+      return;
+    }
+    if (new Date(startDate) > new Date(endDate)) {
+      toast.error('Ngày bắt đầu nghỉ không được sau ngày kết thúc nghỉ.');
       return;
     }
     if (!reason.trim()) {

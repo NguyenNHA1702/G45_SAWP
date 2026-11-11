@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Eye,
   Filter,
   GraduationCap,
   Phone,
@@ -17,11 +18,14 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { classApi } from '../../services/implementations/classApi';
+import { StudentDetailModal } from '../../components/students/StudentDetailModal';
 import type { ClassRosterDto } from '../../types/class.types';
 
 export default function HomeroomRosterPage() {
   const [roster, setRoster] = useState<ClassRosterDto | null>(null);
   const [loading, setLoading] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -466,6 +470,7 @@ export default function HomeroomRosterPage() {
                     <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 150, fontWeight: 800 }}>SĐT Phụ huynh</th>
                     <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 130, fontWeight: 800 }}>SĐT Khẩn cấp</th>
                     <th style={{ padding: '12px 14px', textAlign: 'center', width: 120, fontWeight: 800 }}>Trạng thái</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', width: 110, fontWeight: 800 }}>Hành động</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -481,12 +486,40 @@ export default function HomeroomRosterPage() {
                           {(pageIndex - 1) * pageSize + idx + 1}
                         </td>
                         <td style={{ padding: '12px 14px' }}>
-                          <span className="badge badge--violet" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                            {s.studentCode}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedStudentId(s.studentId);
+                              setDetailModalOpen(true);
+                            }}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                            title="Bấm để xem hồ sơ học sinh"
+                          >
+                            <span className="badge badge--violet" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                              {s.studentCode}
+                            </span>
+                          </button>
                         </td>
                         <td style={{ padding: '12px 16px' }}>
-                          <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{s.fullName}</strong>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedStudentId(s.studentId);
+                              setDetailModalOpen(true);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                            title="Bấm để xem hồ sơ học sinh"
+                          >
+                            <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                              {s.fullName}
+                            </strong>
+                          </button>
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
                           {new Date(s.dateOfBirth).toLocaleDateString('vi-VN')}
@@ -536,11 +569,31 @@ export default function HomeroomRosterPage() {
                             {s.status === 'Active' ? 'Đang học' : s.status}
                           </span>
                         </td>
+                        <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: 12,
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid var(--color-fg)',
+                              gap: 4,
+                            }}
+                            onClick={() => {
+                              setSelectedStudentId(s.studentId);
+                              setDetailModalOpen(true);
+                            }}
+                            title="Xem chi tiết hồ sơ học sinh (chế độ chỉ đọc BR-07)"
+                          >
+                            <Eye size={13} /> Chi tiết
+                          </button>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
+                      <td colSpan={10} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
                         Không tìm thấy học sinh nào phù hợp với bộ lọc tìm kiếm.
                       </td>
                     </tr>
@@ -607,6 +660,14 @@ export default function HomeroomRosterPage() {
             )}
           </div>
         </>
+      )}
+
+      {selectedStudentId && (
+        <StudentDetailModal
+          open={detailModalOpen}
+          studentId={selectedStudentId}
+          onClose={() => setDetailModalOpen(false)}
+        />
       )}
     </div>
   );
