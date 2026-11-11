@@ -132,7 +132,7 @@ public class StudentsController : ControllerBase
     {
         if (file == null || file.Length == 0)
         {
-            return BadRequest(ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG41, new List<string> { "Vui lòng chọn tệp Excel (.xlsx)." }));
+            return BadRequest(ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG49, new List<string> { "Tệp Excel không có dòng dữ liệu hợp lệ nào." }));
         }
 
         var extension = Path.GetExtension(file.FileName);

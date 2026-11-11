@@ -112,7 +112,7 @@ export default function LeaveRequestPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (fileList.length === 0) return;
 
-    // ponytail: strict extension & MIME validation for multiple files
+    // Validate file extensions (chấp nhận ảnh JPG/PNG/WEBP và tài liệu PDF/Word)
     const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx'];
 
     for (const file of fileList) {
@@ -191,7 +191,7 @@ export default function LeaveRequestPage() {
       toast.error('Vui lòng chọn học sinh.');
       return;
     }
-    // ponytail: validate date range & weekday-only before API call
+    // Validate date range & weekday-only before API call
     if (!startDate || !endDate) {
       toast.error('Vui lòng chọn ngày bắt đầu và ngày kết thúc nghỉ.');
       return;

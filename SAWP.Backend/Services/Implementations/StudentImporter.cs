@@ -114,7 +114,7 @@ public class StudentImporter : IStudentImporter
 
             if (!rows.Any())
             {
-                return ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG49);
+                return ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG49, new List<string> { "Tệp Excel không có dòng dữ liệu hợp lệ nào." });
             }
 
             return ApiResponse<List<ImportStudentRowDto>>.Ok(rows);

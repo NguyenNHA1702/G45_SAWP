@@ -339,6 +339,19 @@ public class ClassService : IClassService
             }
         }
 
+        // TC_SPC_10: Nếu không có lớp mới nào được tạo và không có cập nhật sĩ số (các lớp yêu cầu đã tồn tại trong năm học) -> Báo lỗi MSG01 (Lớp đã tồn tại)
+        if (createdCount == 0 && updatedCount == 0)
+        {
+            var firstExisting = suffixes.Select(s => $"{grades.First()}{s}").FirstOrDefault(cn => existingDict.ContainsKey(cn));
+            if (firstExisting != null)
+            {
+                return ApiResponse<List<ClassSummaryDto>>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Lớp {firstExisting} đã tồn tại trong năm học {schoolYear.YearName}." }
+                );
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogActionAsync(

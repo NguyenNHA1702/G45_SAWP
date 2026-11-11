@@ -39,6 +39,7 @@ export interface CreateClassDto {
   grade: number;
   capacity: number;
   schoolYearId?: number;
+  roomNumber?: string;
   homeroomTeacherUserId?: number;
 }
 
