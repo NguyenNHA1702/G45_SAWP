@@ -149,7 +149,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'teacher-contact-book',
-        label: 'Sổ liên lạc lớp (WF6)',
+        label: 'Sổ liên lạc lớp',
         path: '/teacher/contact-book',
         roles: ['Teacher'],
         icon: Newspaper,
@@ -171,7 +171,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'parent-contact-book',
-        label: 'Sổ liên lạc điện tử (WF6)',
+        label: 'Sổ liên lạc điện tử',
         path: '/parent/contact-book',
         icon: Newspaper,
       },
@@ -487,7 +487,7 @@ export function MainLayout() {
               <span className="badge badge--violet header-pill">
                 Hệ thống Quản trị & Bán trú Tiểu học
               </span>
-              <ChildSelectorPill />
+              {userRoles.includes('Parent') && <ChildSelectorPill />}
             </div>
 
             <div className="header-right">

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface GeometricModalProps {
@@ -43,7 +44,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
     xl: 1040,
   }[maxWidth];
 
-  return (
+  return createPortal(
     <div
       className="modal-overlay"
       onClick={(e) => {
@@ -132,6 +133,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
 
         <div className="modal-content-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

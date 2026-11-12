@@ -10,6 +10,7 @@ interface ParentChildContextValue {
   selectChild: (studentId: number) => void;
   loading: boolean;
   refreshChildren: () => Promise<void>;
+  isParent: boolean;
 }
 
 const ParentChildContext = createContext<ParentChildContextValue | undefined>(undefined);
@@ -93,6 +94,7 @@ export function ParentChildProvider({ children, userId, userRoles }: ParentChild
         selectChild,
         loading,
         refreshChildren: fetchChildren,
+        isParent,
       }}
     >
       {children}
