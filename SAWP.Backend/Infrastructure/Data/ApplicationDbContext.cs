@@ -26,6 +26,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
     public DbSet<LunchServiceDay> LunchServiceDays => Set<LunchServiceDay>();
     public DbSet<LunchRegistration> LunchRegistrations => Set<LunchRegistration>();
+    public DbSet<LunchMonthlyQuota> LunchMonthlyQuotas => Set<LunchMonthlyQuota>();
+    public DbSet<BoardingIncident> BoardingIncidents => Set<BoardingIncident>();
     public DbSet<AdministrativeRequest> AdministrativeRequests => Set<AdministrativeRequest>();
     public DbSet<ClassTransferDetail> ClassTransferDetails => Set<ClassTransferDetail>();
     public DbSet<DocumentRequestDetail> DocumentRequestDetails => Set<DocumentRequestDetail>();

@@ -321,7 +321,7 @@ public static class DbInitializer
         var studentsData = new (string Code, string Name, string Gender, DateTime Dob, string Area, bool IsSpecial, string? SpecialNotes)[]
         {
             // ---- LỚP 1A (30 HỌC SINH: HS001 -> HS030) ----
-            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15), "Phường Bến Nghé", false, null),
+            ("HS001", "Trần Gia Bảo", "Nam", new DateTime(2020, 3, 15), "Phường Bến Nghé", false, "Dị ứng hải sản (tôm, cua, sò)"),
             ("HS002", "Nguyễn An Nhiên", "Nữ", new DateTime(2020, 5, 20), "Phường Bến Nghé", false, null),
             ("HS003", "Lê Quang Minh", "Nam", new DateTime(2020, 8, 10), "Phường Đa Kao", true, "Hòa nhập khiếm thính nhẹ"),
             ("HS004", "Phạm Thùy Linh", "Nữ", new DateTime(2020, 2, 14), "Phường Đa Kao", false, null),
@@ -606,6 +606,11 @@ public static class DbInitializer
 
         // Liên kết phụ huynh `parent1` với học sinh `HS001` (Trần Gia Bảo - Lớp 1A)
         var student1 = studentEntities.FirstOrDefault(s => s.StudentCode == "HS001");
+        if (student1 != null && string.IsNullOrWhiteSpace(student1.SpecialNeedsNotes))
+        {
+            student1.SpecialNeedsNotes = "Dị ứng hải sản (tôm, cua, sò)";
+            await context.SaveChangesAsync();
+        }
         if (student1 != null && guardianObj != null)
         {
             if (!await context.StudentGuardians.AnyAsync(sg => sg.StudentId == student1.Id && sg.GuardianId == guardianObj.Id))

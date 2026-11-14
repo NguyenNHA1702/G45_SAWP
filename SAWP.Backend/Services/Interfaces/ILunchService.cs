@@ -68,4 +68,9 @@ public interface ILunchService
         int? userId = null,
         IReadOnlyList<UserRoles>? roles = null,
         CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<MonthlyBoardingQuotaDto>> GetMonthlyQuotaAsync(string month, CancellationToken cancellationToken = default);
+    Task<ApiResponse<MonthlyBoardingQuotaDto>> UpsertMonthlyQuotaAsync(int userId, UpsertMonthlyBoardingQuotaRequestDto request, CancellationToken cancellationToken = default);
+    Task<ApiResponse<List<BoardingIncidentDto>>> GetBoardingIncidentsAsync(DateTime? date, string? month, DateTime? from, DateTime? to, int? classId, int? studentId, int? userId, IReadOnlyList<UserRoles>? roles, CancellationToken cancellationToken = default);
+    Task<ApiResponse<BoardingIncidentDto>> CreateBoardingIncidentAsync(int userId, IReadOnlyList<UserRoles> roles, CreateBoardingIncidentRequestDto request, CancellationToken cancellationToken = default);
 }

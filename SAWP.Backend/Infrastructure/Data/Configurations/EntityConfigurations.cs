@@ -258,6 +258,46 @@ public class LunchRegistrationConfiguration : IEntityTypeConfiguration<LunchRegi
     }
 }
 
+public class LunchMonthlyQuotaConfiguration : IEntityTypeConfiguration<LunchMonthlyQuota>
+{
+    public void Configure(EntityTypeBuilder<LunchMonthlyQuota> builder)
+    {
+        builder.HasKey(q => q.Id);
+        builder.Property(q => q.Month).IsRequired().HasMaxLength(7);
+        builder.HasIndex(q => q.Month).IsUnique();
+        builder.HasOne(q => q.UpdatedByUser)
+               .WithMany()
+               .HasForeignKey(q => q.UpdatedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class BoardingIncidentConfiguration : IEntityTypeConfiguration<BoardingIncident>
+{
+    public void Configure(EntityTypeBuilder<BoardingIncident> builder)
+    {
+        builder.HasKey(bi => bi.Id);
+        builder.Property(bi => bi.Date).HasColumnType("date");
+        builder.Property(bi => bi.IncidentType).IsRequired().HasMaxLength(50);
+        builder.Property(bi => bi.Note).IsRequired().HasMaxLength(1000);
+
+        builder.HasOne(bi => bi.Student)
+               .WithMany()
+               .HasForeignKey(bi => bi.StudentId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(bi => bi.Class)
+               .WithMany()
+               .HasForeignKey(bi => bi.ClassId)
+               .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(bi => bi.RecordedByUser)
+               .WithMany()
+               .HasForeignKey(bi => bi.RecordedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public class ClassScheduleConfiguration : IEntityTypeConfiguration<ClassSchedule>
 {
     public void Configure(EntityTypeBuilder<ClassSchedule> builder)

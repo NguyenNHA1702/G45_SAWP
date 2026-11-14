@@ -11,6 +11,7 @@ public class LunchRegistration
     public DateTime Date { get; set; }
     public MealType MealType { get; set; } = MealType.StandardLunch;
     public bool IsActive { get; set; } = true;
+    public bool IsWaitlisted { get; set; } = false;
     public string? Remarks { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
