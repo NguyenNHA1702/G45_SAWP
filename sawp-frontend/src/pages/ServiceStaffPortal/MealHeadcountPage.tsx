@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
-import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, StudentMealOperationItem } from '../../types/lunch.types';
+import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, MonthlyBoardingQuota, StudentMealOperationItem } from '../../types/lunch.types';
 import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
@@ -180,6 +180,51 @@ export default function MealHeadcountPage() {
   const [cfgRemarks, setCfgRemarks] = useState<string>('');
   const [cfgApplyFullWeek, setCfgApplyFullWeek] = useState<boolean>(false);
   const [cfgWeeklyMenus, setCfgWeeklyMenus] = useState<Record<string, string>>({});
+
+  // Modal Cấu hình chỉ tiêu bán trú tháng (TC_BDS_34)
+  const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
+  const [quotaMonth, setQuotaMonth] = useState<string>(() => selectedDate.slice(0, 7));
+  const [quotaValue, setQuotaValue] = useState<string>('80');
+  const [quotaInfo, setQuotaInfo] = useState<MonthlyBoardingQuota | null>(null);
+  const [savingQuota, setSavingQuota] = useState<boolean>(false);
+
+  const loadMonthlyQuota = async (month: string) => {
+    try {
+      const info = await lunchApi.getMonthlyQuota(month);
+      setQuotaInfo(info);
+      if (info.quota) {
+        setQuotaValue(String(info.quota));
+      }
+    } catch {
+      setQuotaInfo(null);
+    }
+  };
+
+  const handleOpenQuotaModal = async () => {
+    const m = selectedDate.slice(0, 7);
+    setQuotaMonth(m);
+    setShowQuotaModal(true);
+    await loadMonthlyQuota(m);
+  };
+
+  const handleSaveQuota = async () => {
+    const parsed = Number(quotaValue);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      toast.error('Chỉ tiêu phải là số nguyên dương.');
+      return;
+    }
+    try {
+      setSavingQuota(true);
+      const updated = await lunchApi.upsertMonthlyQuota({ month: quotaMonth, quota: parsed });
+      setQuotaInfo(updated);
+      toast.success(`Đã lưu chỉ tiêu bán trú tháng ${quotaMonth}: ${parsed} học sinh.`);
+      setShowQuotaModal(false);
+    } catch {
+      toast.error('Không thể lưu chỉ tiêu bán trú tháng.');
+    } finally {
+      setSavingQuota(false);
+    }
+  };
 
   // Modal Xem chi tiết khẩu phần từng lớp
   const [detailClass, setDetailClass] = useState<ClassMealSummary | null>(null);
@@ -516,31 +561,58 @@ export default function MealHeadcountPage() {
             </button>
 
             {board?.canManage && (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowConfigModal(true)}
-                title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  borderRadius: 'var(--radius-full)',
-                  border: '2px solid var(--color-fg)',
-                  boxShadow: '3px 3px 0 0 var(--color-fg)',
-                  background: '#FEF9C3',
-                  color: 'var(--color-fg)',
-                  fontWeight: 800,
-                  fontSize: 'var(--fs-sm)',
-                  padding: '0 18px',
-                  height: 42,
-                  boxSizing: 'border-box',
-                  cursor: 'pointer',
-                }}
-              >
-                <Settings size={15} />
-                Cấu hình ngày
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowConfigModal(true)}
+                  title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    background: '#FEF9C3',
+                    color: 'var(--color-fg)',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '0 18px',
+                    height: 42,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Settings size={15} />
+                  Cấu hình ngày
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleOpenQuotaModal}
+                  title="Cấu hình chỉ tiêu bán trú theo tháng"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    background: '#DBEAFE',
+                    color: 'var(--color-fg)',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '0 18px',
+                    height: 42,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Users size={15} />
+                  Chỉ tiêu tháng
+                </button>
+              </>
             )}
 
             <button
@@ -2805,6 +2877,83 @@ export default function MealHeadcountPage() {
               }}
             >
               <Printer size={16} /> In Phiếu Bàn Giao
+            </button>
+          </div>
+        </div>
+      </GeometricModal>
+
+      {/* Modal Cấu hình Chỉ tiêu Bán trú Tháng (TC_BDS_34) */}
+      <GeometricModal
+        open={showQuotaModal}
+        onClose={() => setShowQuotaModal(false)}
+        title="Cấu hình Chỉ tiêu Bán trú Tháng"
+        maxWidth="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ padding: 12, borderRadius: 12, background: '#EFF6FF', border: '1.5px solid #93C5FD', fontSize: 'var(--fs-xs)', color: '#1E3A8A', lineHeight: 1.5 }}>
+            Khi số học sinh đăng ký trong tháng đạt chỉ tiêu tối đa, các đăng ký mới sẽ tự động chuyển sang <strong>Danh sách chờ (Waitlist)</strong> và gửi thông báo cho phụ huynh.
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 800, fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
+              Tháng áp dụng (YYYY-MM)
+            </label>
+            <input
+              type="month"
+              className="input"
+              value={quotaMonth}
+              onChange={(e) => {
+                setQuotaMonth(e.target.value);
+                loadMonthlyQuota(e.target.value);
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          {quotaInfo && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ padding: 10, borderRadius: 12, background: '#F8FAFC', border: '1.5px solid var(--color-border)' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--color-muted-fg)', fontWeight: 700 }}>ĐÃ ĐĂNG KÝ</div>
+                <div style={{ fontSize: '1.15rem', fontWeight: 900 }}>{quotaInfo.registeredCount} HS</div>
+              </div>
+              <div style={{ padding: 10, borderRadius: 12, background: '#FEF3C7', border: '1.5px solid #F59E0B' }}>
+                <div style={{ fontSize: '0.7rem', color: '#92400E', fontWeight: 700 }}>DANH SÁCH CHỜ</div>
+                <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#B45309' }}>{quotaInfo.waitlistedCount} HS</div>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 800, fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
+              Chỉ tiêu tối đa (Số học sinh)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={10000}
+              className="input"
+              value={quotaValue}
+              onChange={(e) => setQuotaValue(e.target.value)}
+              placeholder="Ví dụ: 80"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setShowQuotaModal(false)}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleSaveQuota}
+              disabled={savingQuota}
+            >
+              {savingQuota ? 'Đang lưu...' : 'Lưu chỉ tiêu'}
             </button>
           </div>
         </div>

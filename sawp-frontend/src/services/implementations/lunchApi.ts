@@ -3,16 +3,20 @@ import { unwrapData } from '../../utils/apiError';
 import type {
   BatchLunchRegistrationPayload,
   BatchLunchRegistrationResult,
+  BoardingIncident,
   CancelLunchRegistrationPayload,
+  CreateBoardingIncidentPayload,
   DailyMealBoard,
   LockMealDayPayload,
   LunchPeriodReport,
   LunchServiceDayConfig,
   MealHeadcount,
+  MonthlyBoardingQuota,
   RestoreMealPayload,
   StudentLunchSchedule,
   UpdateLunchRegistrationMealTypePayload,
   UpsertLunchServiceDaysPayload,
+  UpsertMonthlyBoardingQuotaPayload,
 } from '../../types/lunch.types';
 
 export const lunchApi = {
@@ -108,6 +112,42 @@ export const lunchApi = {
     const params: Record<string, string | number> = { from, to };
     if (classId) params.classId = classId;
     const res = await apiClient.get<{ success: boolean; data: LunchPeriodReport }>('/lunch/report', { params });
+    return res.data.data;
+  },
+
+  getMonthlyQuota: async (month: string): Promise<MonthlyBoardingQuota> => {
+    const res = await apiClient.get<{ success: boolean; data: MonthlyBoardingQuota }>('/lunch/monthly-quota', {
+      params: { month },
+    });
+    return res.data.data;
+  },
+
+  upsertMonthlyQuota: async (payload: UpsertMonthlyBoardingQuotaPayload): Promise<MonthlyBoardingQuota> => {
+    const res = await apiClient.put<{ success: boolean; data: MonthlyBoardingQuota }>('/lunch/monthly-quota', payload);
+    return res.data.data;
+  },
+
+  getBoardingIncidents: async (
+    date?: string,
+    classId?: number,
+    month?: string,
+    studentId?: number,
+    from?: string,
+    to?: string
+  ): Promise<BoardingIncident[]> => {
+    const params: Record<string, string | number> = {};
+    if (date) params.date = date;
+    if (classId) params.classId = classId;
+    if (month) params.month = month;
+    if (studentId) params.studentId = studentId;
+    if (from) params.from = from;
+    if (to) params.to = to;
+    const res = await apiClient.get<{ success: boolean; data: BoardingIncident[] }>('/lunch/incidents', { params });
+    return res.data.data ?? [];
+  },
+
+  createBoardingIncident: async (payload: CreateBoardingIncidentPayload): Promise<BoardingIncident> => {
+    const res = await apiClient.post<{ success: boolean; data: BoardingIncident }>('/lunch/incidents', payload);
     return res.data.data;
   },
 };
