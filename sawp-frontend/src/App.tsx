@@ -11,11 +11,13 @@ import LeaveRequestPage from './pages/ParentPortal/LeaveRequestPage';
 import LeaveApprovalPage from './pages/TeacherPortal/LeaveApprovalPage';
 import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
 import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
+import TeacherBoardingPage from './pages/TeacherPortal/TeacherBoardingPage';
 import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
 import AdministrativeRequestsPage from './pages/ParentPortal/AdministrativeRequestsPage';
 import AdminRequestsManagementPage from './pages/OfficeStaffPortal/AdminRequestsManagementPage';
 import AdministrativeApprovalPage from './pages/SchoolBoardPortal/AdministrativeApprovalPage';
 import ParentLunchPage from './pages/ParentPortal/ParentLunchPage';
+import ParentBoardingIncidentsPage from './pages/ParentPortal/ParentBoardingIncidentsPage';
 import ProfilePage from './pages/Auth/ProfilePage';
 import EContactBookPage from './pages/ParentPortal/EContactBookPage';
 import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
@@ -64,6 +66,7 @@ export default function App() {
           <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
           <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
           <Route path="/parent/lunch" element={<ParentLunchPage />} />
+          <Route path="/parent/boarding-incidents" element={<ParentBoardingIncidentsPage />} />
           <Route path="/parent/contact-book" element={<EContactBookPage />} />
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
@@ -72,6 +75,7 @@ export default function App() {
           <Route path="/office/requests" element={<AdminRequestsManagementPage />} />
           <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
+          <Route path="/teacher/boarding" element={<TeacherBoardingPage />} />
           <Route path="/parent/children" element={<ChildDashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
