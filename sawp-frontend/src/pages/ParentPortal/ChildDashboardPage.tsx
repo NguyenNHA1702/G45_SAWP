@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import { guardianApi } from '../../services/implementations/guardianApi';
 import { LinkChildModal } from '../../components/parent/LinkChildModal';
+import { formatRelationship } from '../../utils/formatters';
 import type { LinkedChildSummaryDto } from '../../types/guardian.types';
 
 export default function ChildDashboardPage() {
@@ -133,7 +134,7 @@ export default function ChildDashboardPage() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <h3 style={{ margin: 0 }}>{child.fullName}</h3>
-                    <span className="badge badge--pink badge--sm">{child.relationshipName}</span>
+                    <span className="badge badge--pink badge--sm">{formatRelationship(child.relationshipName)}</span>
                   </div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
                     Mã định danh: <strong>{child.studentCode}</strong> • Ngày sinh:{' '}

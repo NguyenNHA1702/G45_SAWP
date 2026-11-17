@@ -109,7 +109,7 @@ export default function ParentBoardingIncidentsPage() {
               >
                 {children.map((c) => (
                   <option key={c.studentId} value={c.studentId}>
-                    {c.studentCode} - {c.fullName} ({c.className})
+                    {c.studentCode} - {c.fullName} ({c.currentClassName || 'Chưa xếp lớp'})
                   </option>
                 ))}
               </select>

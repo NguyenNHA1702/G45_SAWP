@@ -264,7 +264,11 @@ export function MainLayout() {
       setCurrentUser(userJson ? JSON.parse(userJson) : null);
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('user-updated', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('user-updated', handleStorageChange);
+    };
   }, []);
 
   const userRoles: string[] = currentUser?.roles ?? [];
@@ -509,11 +513,36 @@ export function MainLayout() {
                 <button
                   type="button"
                   className="header-btn"
-                  aria-label="Thông báo"
+                  aria-label={`Thông báo, ${unreadCount} chưa đọc`}
                   onClick={() => setShowNotifs((v) => !v)}
+                  style={{ position: 'relative' }}
                 >
                   <Bell size={18} />
-                  {unreadCount > 0 && <span className="header-badge-dot" />}
+                  {unreadCount > 0 && (
+                    <span
+                      className="badge badge--pink"
+                      style={{
+                        position: 'absolute',
+                        top: -5,
+                        right: -5,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 'var(--radius-full)',
+                        padding: '0 4px',
+                        fontSize: '0.65rem',
+                        fontWeight: 900,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1.5px solid var(--color-fg)',
+                        background: 'var(--color-secondary)',
+                        color: '#FFFFFF',
+                        lineHeight: 1,
+                      }}
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {showNotifs && (

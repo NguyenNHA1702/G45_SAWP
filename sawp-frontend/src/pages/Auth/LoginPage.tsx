@@ -135,7 +135,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="login-form">
+        <form onSubmit={handleLogin} className="login-form" noValidate>
           <div className="field">
             <label className="label" htmlFor="username">
               Tên đăng nhập hoặc Email

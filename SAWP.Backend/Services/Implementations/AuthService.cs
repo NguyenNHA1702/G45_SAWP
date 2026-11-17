@@ -6,6 +6,7 @@ using BCrypt.Net;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
+using Core.Enums;
 using Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -254,7 +255,7 @@ public class AuthService : IAuthService
                             CurrentClassName = activeClass?.ClassName,
                             Grade = activeClass?.Grade,
                             IsPlacementPublished = activeClass?.IsPlacementPublished ?? false,
-                            Relationship = sg.Relationship.ToString(),
+                            Relationship = sg.Relationship.ToVietnamese(),
                             IsPrimaryContact = sg.IsPrimaryContact
                         };
                     }).ToList()

@@ -52,7 +52,12 @@ export function ChangePasswordModal({ open, onClose }: Props) {
       return;
     }
 
-    if (newPassword !== confirmPassword) {
+    // BR-02: Yêu cầu chữ hoa, chữ thường, số, ký tự đặc biệt & khớp xác nhận
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasDigit = /[0-9]/.test(newPassword);
+    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(newPassword);
+    if (!hasUpper || !hasLower || !hasDigit || !hasSpecial || newPassword !== confirmPassword) {
       toast.error(SYSTEM_MESSAGES.MSG04.content);
       return;
     }
@@ -105,7 +110,7 @@ export function ChangePasswordModal({ open, onClose }: Props) {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* 1. Mật khẩu hiện tại */}
         <div className="field" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label className="label" htmlFor="cur-pass" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
