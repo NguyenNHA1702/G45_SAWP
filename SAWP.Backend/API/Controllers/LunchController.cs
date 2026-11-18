@@ -144,6 +144,7 @@ public class LunchController : BaseApiController
     /// Lấy báo cáo tổng số suất ăn theo ngày
     /// </summary>
     [HttpGet("daily-count")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
     public async Task<IActionResult> GetDailyCount([FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
         var targetDate = date ?? _clock.Today;
