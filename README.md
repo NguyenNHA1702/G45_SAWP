@@ -47,6 +47,33 @@
 - [Node.js](https://nodejs.org/) (v18+ or v20+) and `npm`
 - Microsoft SQL Server LocalDB (`(localdb)\mssqllocaldb`) or SQL Server Express
 
+### Local Configuration (`appsettings`)
+
+Configuration files live in `SAWP.Backend/API/`:
+
+| File | Tracked by Git? | Purpose |
+|------|-----------------|---------|
+| `appsettings.json` | Yes | Shared base/default settings. **Do not edit it for your machine.** |
+| `appsettings.Development.json` | Yes | Shared settings for the Development environment. **Do not edit it for your machine.** |
+| `appsettings.Local.example.json` | Yes | Template for your personal overrides. |
+| `appsettings.Local.json` | **No** (git-ignored) | Your own machine-specific overrides (e.g. connection string). Optional. |
+
+Files are loaded in this order, and later files override earlier ones key by key:
+`appsettings.json` -> `appsettings.Development.json` -> `appsettings.Local.json`
+(the launch profiles set `ASPNETCORE_ENVIRONMENT=Development`; the last file is added in `Program.cs`). Put only the keys you need to change in `appsettings.Local.json`. Because it is git-ignored, `git status` stays clean and pulls never touch it.
+
+**First-time setup:**
+```bash
+cd SAWP.Backend/API
+cp appsettings.Local.example.json appsettings.Local.json
+```
+Then edit `appsettings.Local.json` to match your local SQL Server, e.g. LocalDB `(localdb)\mssqllocaldb`, or Docker/Express with your own `User Id`/`Password`. Never commit real passwords or production keys.
+
+**Rules for the team:**
+- Only change `appsettings.json` / `appsettings.Development.json` when a setting must change for **everyone**, and commit it.
+- If you add a setting that people commonly override, add it to `appsettings.Local.example.json` too.
+- If you previously edited `appsettings.Development.json` for your machine, move those edits into `appsettings.Local.json`, then run `git checkout -- SAWP.Backend/API/appsettings.Development.json` to discard them before pulling.
+
 ### Backend Setup
 ```bash
 # Navigate to Backend folder

@@ -15,6 +15,11 @@ using Services.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Per-developer overrides (e.g. local SQL Server connection string). Loaded after appsettings.json and
+// appsettings.{Environment}.json, so its keys win. The file is git-ignored and optional: copy
+// appsettings.Local.example.json to appsettings.Local.json. See "Local Configuration" in README.md.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // 1. Database Context
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));

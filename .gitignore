@@ -371,3 +371,5 @@ docs/superpowers/
 
 # User uploaded storage
 **/Storage/
+
+appsettings.Local.json
