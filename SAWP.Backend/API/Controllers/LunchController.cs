@@ -87,10 +87,38 @@ public class LunchController : BaseApiController
     }
 
     /// <summary>
+    /// Phụ huynh thay đổi chế độ ăn (Tiêu chuẩn / Ăn chay / Đặc biệt) và ghi chú trước hạn chốt 08h15
+    /// </summary>
+    [HttpPut("registration")]
+    [Authorize(Roles = "Parent,ServiceStaff,Admin")]
+    public async Task<IActionResult> UpdateRegistrationMealType([FromBody] UpdateLunchRegistrationMealTypeDto request, CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _lunchService.UpdateRegistrationMealTypeAsync(userId, roles, request, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Báo cáo tổng hợp suất ăn bán trú theo khoảng ngày / tháng
+    /// </summary>
+    [HttpGet("report")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    public async Task<IActionResult> GetPeriodReport([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] int? classId, CancellationToken ct)
+    {
+        var start = (from ?? new DateTime(_clock.Today.Year, _clock.Today.Month, 1)).Date;
+        var end = (to ?? start.AddMonths(1).AddDays(-1)).Date;
+        int? userId = User?.Identity?.IsAuthenticated == true ? User.GetRequiredUserId() : null;
+        IReadOnlyList<UserRoles>? roles = User?.Identity?.IsAuthenticated == true ? User.GetRoles() : null;
+        var result = await _lunchService.GetPeriodReportAsync(start, end, classId, userId, roles, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
     /// API-7: Số liệu suất ăn phục vụ trong ngày cho tổ Bếp / Ban Giám hiệu
     /// </summary>
     [HttpGet("headcount")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
     public async Task<IActionResult> GetMealHeadcount([FromQuery] DateTime? date, CancellationToken ct)
     {
         var targetDate = date ?? _clock.Today;
@@ -102,7 +130,7 @@ public class LunchController : BaseApiController
     /// UC-33: Lấy bảng vận hành & báo cáo suất ăn bán trú theo ngày (hỗ trợ phân quyền theo role và lọc lớp)
     /// </summary>
     [HttpGet("live-board")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
     public async Task<IActionResult> GetLiveBoard([FromQuery] DateTime? date, [FromQuery] int? classId, CancellationToken cancellationToken)
     {
         var targetDate = date ?? _clock.Today;
@@ -116,6 +144,7 @@ public class LunchController : BaseApiController
     /// Lấy báo cáo tổng số suất ăn theo ngày
     /// </summary>
     [HttpGet("daily-count")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
     public async Task<IActionResult> GetDailyCount([FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
         var targetDate = date ?? _clock.Today;
@@ -143,6 +172,63 @@ public class LunchController : BaseApiController
     {
         var result = await _lunchService.RestoreMealForStudentAsync(request.StudentId, request.Date, request.Reason, cancellationToken);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy chỉ tiêu bán trú theo tháng (TC_BDS_34)
+    /// </summary>
+    [HttpGet("monthly-quota")]
+    [Authorize]
+    public async Task<IActionResult> GetMonthlyQuota([FromQuery] string? month, CancellationToken cancellationToken)
+    {
+        var targetMonth = string.IsNullOrWhiteSpace(month) ? _clock.Today.ToString("yyyy-MM") : month;
+        var result = await _lunchService.GetMonthlyQuotaAsync(targetMonth, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Nhân viên bán trú cấu hình chỉ tiêu bán trú theo tháng (TC_BDS_34)
+    /// </summary>
+    [HttpPut("monthly-quota")]
+    [Authorize(Roles = "ServiceStaff,Admin")]
+    public async Task<IActionResult> UpsertMonthlyQuota([FromBody] UpsertMonthlyBoardingQuotaRequestDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _lunchService.UpsertMonthlyQuotaAsync(userId, request, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Lấy danh sách sự cố bán trú theo ngày hoặc tháng (TC_BDS_36)
+    /// </summary>
+    [HttpGet("incidents")]
+    [Authorize(Roles = "Parent,Teacher,ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
+    public async Task<IActionResult> GetBoardingIncidents(
+        [FromQuery] DateTime? date,
+        [FromQuery] string? month,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int? classId,
+        [FromQuery] int? studentId,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _lunchService.GetBoardingIncidentsAsync(date, month, from, to, classId, studentId, userId, roles, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Giáo viên / Nhân viên bán trú ghi nhận sự cố bán trú và gửi cảnh báo cho phụ huynh (TC_BDS_36)
+    /// </summary>
+    [HttpPost("incidents")]
+    [Authorize(Roles = "Teacher,ServiceStaff,OfficeStaff,Admin")]
+    public async Task<IActionResult> CreateBoardingIncident([FromBody] CreateBoardingIncidentRequestDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _lunchService.CreateBoardingIncidentAsync(userId, roles, request, cancellationToken);
+        return ToActionResult(result);
     }
 }
 

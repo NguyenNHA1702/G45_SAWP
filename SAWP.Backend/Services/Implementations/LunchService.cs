@@ -48,10 +48,14 @@ public class LunchService : ILunchService
         var lockedAt = day?.LockedAt;
 
         string? remarks = day?.Remarks;
-        if (string.IsNullOrWhiteSpace(remarks) && isServing)
+        if ((string.IsNullOrWhiteSpace(remarks) || remarks == "Phục vụ bán trú bình thường") && isServing)
         {
             var menuIdx = Math.Abs((int)targetDate.DayOfWeek - 1) % DefaultMenus.Length;
             remarks = DefaultMenus[menuIdx];
+            if (day != null && day.Remarks == "Phục vụ bán trú bình thường")
+            {
+                day.Remarks = remarks;
+            }
         }
 
         return (isServing, cutoff, isLocked, lockedAt, remarks);
@@ -291,6 +295,7 @@ public class LunchService : ILunchService
                 ServiceRemarks = resolved.Remarks,
                 RegistrationId = reg?.Id,
                 IsRegistered = reg != null && reg.IsActive,
+                IsWaitlisted = reg != null && reg.IsWaitlisted && !reg.IsActive,
                 MealType = reg?.MealType,
                 StudentRemarks = reg?.Remarks,
                 CancellationSource = (reg != null && !reg.IsActive) ? reg.CancellationSource : null,
@@ -391,9 +396,51 @@ public class LunchService : ILunchService
 
         var registeredDates = new List<DateTime>();
         var skippedDuplicates = new List<DateTime>();
+        var waitlistedDates = new List<DateTime>();
+
+        // Kiểm tra chỉ tiêu bán trú theo tháng (Monthly Boarding Quota - TC_BDS_34)
+        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
+        var fullMonths = new HashSet<string>();
+        var monthQuotaMap = new Dictionary<string, (int Quota, int ActiveCount)>();
+
+        if (quotaRepo != null)
+        {
+            var distinctMonths = targetDates.Select(d => d.ToString("yyyy-MM")).Distinct().ToList();
+            var quotas = await quotaRepo.Query()
+                .Where(q => distinctMonths.Contains(q.Month))
+                .ToDictionaryAsync(q => q.Month, cancellationToken);
+
+            foreach (var mKey in distinctMonths)
+            {
+                if (quotas.TryGetValue(mKey, out var q) && q.Quota > 0)
+                {
+                    var parts = mKey.Split('-');
+                    int qYear = int.Parse(parts[0]);
+                    int qMonth = int.Parse(parts[1]);
+                    var mStart = new DateTime(qYear, qMonth, 1);
+                    var mEnd = mStart.AddMonths(1).AddDays(-1);
+
+                    var activeStudentIds = await _unitOfWork.Repository<LunchRegistration>()
+                        .Query()
+                        .Where(r => r.Date >= mStart && r.Date <= mEnd && r.IsActive && !r.IsWaitlisted)
+                        .Select(r => r.StudentId)
+                        .Distinct()
+                        .ToListAsync(cancellationToken);
+
+                    monthQuotaMap[mKey] = (q.Quota, activeStudentIds.Count);
+                    if (!activeStudentIds.Contains(request.StudentId) && activeStudentIds.Count >= q.Quota)
+                    {
+                        fullMonths.Add(mKey);
+                    }
+                }
+            }
+        }
 
         foreach (var d in targetDates)
         {
+            var dMonth = d.ToString("yyyy-MM");
+            bool isMonthFull = fullMonths.Contains(dMonth);
+
             if (existingRegs.TryGetValue(d, out var existing))
             {
                 if (existing.IsActive)
@@ -402,8 +449,19 @@ public class LunchService : ILunchService
                     continue;
                 }
 
-                // Bản ghi trước đó đã hủy -> kích hoạt lại thành bản đăng ký hợp lệ
+                if (isMonthFull)
+                {
+                    existing.IsActive = false;
+                    existing.IsWaitlisted = true;
+                    existing.MealType = request.MealType;
+                    existing.Remarks = request.Remarks?.Trim();
+                    waitlistedDates.Add(d);
+                    continue;
+                }
+
+                // Bản ghi trước đó đã hủy / waitlist -> kích hoạt lại thành bản đăng ký hợp lệ
                 existing.IsActive = true;
+                existing.IsWaitlisted = false;
                 existing.MealType = request.MealType;
                 existing.Remarks = request.Remarks?.Trim();
                 existing.CancellationSource = null;
@@ -419,12 +477,52 @@ public class LunchService : ILunchService
                     StudentId = request.StudentId,
                     Date = d,
                     MealType = request.MealType,
-                    IsActive = true,
+                    IsActive = !isMonthFull,
+                    IsWaitlisted = isMonthFull,
                     Remarks = request.Remarks?.Trim(),
                     CreatedAt = DateTime.UtcNow
                 };
                 await _unitOfWork.Repository<LunchRegistration>().AddAsync(newReg, cancellationToken);
-                registeredDates.Add(d);
+                if (isMonthFull)
+                {
+                    waitlistedDates.Add(d);
+                }
+                else
+                {
+                    registeredDates.Add(d);
+                }
+            }
+        }
+
+        // Xử lý Waitlist nếu có tháng đã đủ chỉ tiêu (TC_BDS_34)
+        if (waitlistedDates.Count > 0)
+        {
+            var firstMonth = waitlistedDates[0].ToString("yyyy-MM");
+            var (qVal, aVal) = monthQuotaMap.TryGetValue(firstMonth, out var info) ? info : (0, 0);
+
+            await _auditService.LogActionAsync(
+                userId > 0 ? userId : null,
+                "BOARDING_REGISTRATION_WAITLISTED",
+                "LunchRegistration",
+                student.Id.ToString(),
+                null,
+                $"Month={firstMonth};Quota={qVal};CurrentActive={aVal};StudentCode={student.StudentCode};Dates={string.Join(",", waitlistedDates.Select(x => x.ToString("yyyy-MM-dd")))}",
+                null,
+                cancellationToken);
+
+            var notifRepo = _unitOfWork.Repository<Notification>();
+            if (notifRepo != null && userId > 0)
+            {
+                await notifRepo.AddAsync(new Notification
+                {
+                    UserId = userId,
+                    Title = "Registration Waitlisted",
+                    Content = $"Đăng ký bán trú tháng {firstMonth} cho học sinh {student.FullName} ({student.StudentCode}) đã được đưa vào danh sách chờ (Waitlist) do đã đủ chỉ tiêu {aVal}/{qVal}.",
+                    Type = "BOARDING_WAITLISTED",
+                    LinkUrl = $"/parent/lunch?studentId={student.Id}&month={firstMonth}",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                }, cancellationToken);
             }
         }
 
@@ -451,8 +549,24 @@ public class LunchService : ILunchService
         {
             RegisteredCount = registeredDates.Count,
             RegisteredDates = registeredDates,
-            SkippedDuplicateDates = skippedDuplicates
+            SkippedDuplicateDates = skippedDuplicates,
+            WaitlistedCount = waitlistedDates.Count,
+            WaitlistedDates = waitlistedDates,
+            IsWaitlisted = waitlistedDates.Count > 0
         };
+
+        if (waitlistedDates.Count > 0 && registeredDates.Count == 0)
+        {
+            var firstMonth = waitlistedDates[0].ToString("yyyy-MM");
+            var (qVal, aVal) = monthQuotaMap.TryGetValue(firstMonth, out var info) ? info : (0, 0);
+            return new ApiResponse<BatchLunchRegistrationResultDto>
+            {
+                Success = false,
+                Code = "BOARDING_WAITLISTED",
+                Message = $"Registration Waitlisted: Chỉ tiêu bán trú tháng {firstMonth} đã đủ ({aVal}/{qVal}). Đăng ký cho {student.FullName} đã được chuyển vào danh sách chờ.",
+                Data = result
+            };
+        }
 
         return ApiResponse<BatchLunchRegistrationResultDto>.Ok(result, SystemMessages.MSG25);
     }
@@ -620,20 +734,49 @@ public class LunchService : ILunchService
 
         var resolved = ResolveServiceDay(targetDate, serviceDay);
 
-        // Tự động bảo đảm có dữ liệu đăng ký bán trú mẫu nếu ngày phục vụ xem chưa có bản ghi nào
-        if (resolved.IsServing && !await _unitOfWork.Repository<LunchRegistration>().Query().AnyAsync(r => r.Date == targetDate, cancellationToken))
+        // Tự động bảo đảm có dữ liệu đăng ký bán trú mẫu cho tất cả học sinh đang học nếu ngày phục vụ còn thiếu
+        var studentRepo = _unitOfWork.Repository<Student>();
+        if (resolved.IsServing && studentRepo != null)
         {
-            var studentList = await _unitOfWork.Repository<Student>().Query().Take(5).ToListAsync(cancellationToken);
-            if (studentList.Any())
+            var existingStudentIds = await _unitOfWork.Repository<LunchRegistration>()
+                .Query()
+                .Where(r => r.Date == targetDate)
+                .Select(r => r.StudentId)
+                .ToListAsync(cancellationToken);
+
+            var allActiveStudents = await studentRepo
+                .Query()
+                .Where(s => s.Status == "Active")
+                .ToListAsync(cancellationToken);
+
+            if (existingStudentIds.Count < allActiveStudents.Count)
             {
-                foreach (var s in studentList)
+                var existingSet = existingStudentIds.ToHashSet();
+                foreach (var s in allActiveStudents.Where(st => !existingSet.Contains(st.Id)))
                 {
+                    var code = s.StudentCode ?? string.Empty;
+                    bool isVegetarian = code is "HS004" or "HS017" or "HS022" or "HS035" or "HS062";
+                    bool isSpecialDiet = code is "HS001" or "HS006" or "HS015" or "HS028" or "HS040";
+                    bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
+
                     await _unitOfWork.Repository<LunchRegistration>().AddAsync(new LunchRegistration
                     {
                         StudentId = s.Id,
                         Date = targetDate,
-                        MealType = MealType.StandardLunch,
-                        IsActive = true
+                        MealType = isVegetarian ? MealType.VegetarianLunch : isSpecialDiet ? MealType.SpecialDiet : MealType.StandardLunch,
+                        IsActive = !isCancelled,
+                        Remarks = isVegetarian
+                            ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
+                            : isSpecialDiet
+                                ? (code == "HS001"
+                                    ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng hải sản (tôm, cua, sò)"
+                                    : code == "HS006"
+                                        ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
+                                        : "Cháo dinh dưỡng thịt băm, Cá hồi hấp xì dầu, Bí đỏ hấp mềm, Canh rau mồng tơi, Sữa chua | Ghi chú: Chế độ ăn mềm dễ tiêu hóa")
+                                : null,
+                        CancelledAt = isCancelled ? targetDate.AddHours(7).AddMinutes(45) : null,
+                        CancellationReason = isCancelled ? "Nghỉ có phép / Phụ huynh báo hủy trước 08h15" : null,
+                        CreatedAt = DateTime.UtcNow
                     }, cancellationToken);
                 }
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -701,8 +844,8 @@ public class LunchService : ILunchService
             .Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && scopedClassIds.Contains(ca.ClassId)) == true)
             .ToList();
 
-        var totalInitial = scopedRegistrations.Count;
-        var totalCancelled = scopedRegistrations.Count(r => !r.IsActive);
+        var totalInitial = scopedRegistrations.Count(r => !r.IsWaitlisted);
+        var totalCancelled = scopedRegistrations.Count(r => !r.IsActive && !r.IsWaitlisted);
         var totalActive = scopedRegistrations.Count(r => r.IsActive);
 
         var classBreakdowns = new List<ClassMealSummaryDto>();
@@ -716,9 +859,12 @@ public class LunchService : ILunchService
                 ClassId = cls.Id,
                 ClassName = cls.ClassName,
                 Grade = cls.Grade,
-                InitialRegistered = classRegs.Count,
-                CancelledCount = classRegs.Count(r => !r.IsActive),
-                ActualCount = classRegs.Count(r => r.IsActive)
+                InitialRegistered = classRegs.Count(r => !r.IsWaitlisted),
+                CancelledCount = classRegs.Count(r => !r.IsActive && !r.IsWaitlisted),
+                ActualCount = classRegs.Count(r => r.IsActive),
+                StandardCount = classRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+                VegetarianCount = classRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+                SpecialDietCount = classRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet)
             });
         }
 
@@ -738,7 +884,11 @@ public class LunchService : ILunchService
                     Grade = activeCa?.Class?.Grade ?? 0,
                     MealType = r.MealType,
                     IsActive = r.IsActive,
+                    IsWaitlisted = r.IsWaitlisted,
                     Remarks = r.Remarks,
+                    AllergyWarning = !string.IsNullOrWhiteSpace(r.Student?.SpecialNeedsNotes)
+                        ? r.Student.SpecialNeedsNotes
+                        : (r.Remarks != null && r.Remarks.Contains("Dị ứng", StringComparison.OrdinalIgnoreCase) ? r.Remarks : null),
                     CancellationSource = r.CancellationSource,
                     CancelledAt = r.CancelledAt,
                     CancellationReason = r.CancellationReason
@@ -897,5 +1047,547 @@ public class LunchService : ILunchService
         };
 
         return ApiResponse<MealHeadcountDto>.Ok(dto);
+    }
+
+    public async Task<ApiResponse<bool>> UpdateRegistrationMealTypeAsync(
+        int userId,
+        IReadOnlyList<UserRoles> roles,
+        UpdateLunchRegistrationMealTypeDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.StudentId <= 0)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01);
+        }
+
+        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
+        if (!isStaffOrAdmin)
+        {
+            var isLinked = await IsParentLinkedToStudentAsync(userId, request.StudentId, cancellationToken);
+            if (!isLinked)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+            }
+        }
+
+        var targetDate = request.Date.Date;
+        var reg = await _unitOfWork.Repository<LunchRegistration>()
+            .Query()
+            .FirstOrDefaultAsync(r => r.StudentId == request.StudentId && r.Date == targetDate, cancellationToken);
+
+        if (reg == null || !reg.IsActive)
+        {
+            return ApiResponse<bool>.Fail("Không tìm thấy đăng ký bán trú còn hiệu lực cho ngày đã chọn.");
+        }
+
+        var serviceDay = await _unitOfWork.Repository<LunchServiceDay>()
+            .Query()
+            .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
+
+        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG27);
+        }
+
+        var oldVal = $"{reg.MealType} | {reg.Remarks}";
+        reg.MealType = request.MealType;
+        reg.Remarks = request.Remarks?.Trim();
+
+        await _auditService.LogActionAsync(
+            userId,
+            "LUNCH_UPDATE_MEAL_TYPE",
+            "LunchRegistration",
+            reg.Id.ToString(),
+            oldVal,
+            $"{reg.MealType} | {reg.Remarks}",
+            null,
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return ApiResponse<bool>.Ok(true, "Đã cập nhật chế độ ăn và ghi chú dị ứng thành công.");
+    }
+
+    public async Task<ApiResponse<LunchPeriodReportDto>> GetPeriodReportAsync(
+        DateTime fromDate,
+        DateTime toDate,
+        int? classId = null,
+        int? userId = null,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var start = fromDate.Date;
+        var end = toDate.Date;
+        if (end < start || (end - start).TotalDays > 92)
+        {
+            return ApiResponse<LunchPeriodReportDto>.Fail("Khoảng thời gian báo cáo không hợp lệ (tối đa 92 ngày).");
+        }
+
+        // ponytail: nếu là Giáo viên (Teacher), chỉ cho phép xem lớp mình chủ nhiệm
+        bool isTeacherOnly = roles != null &&
+                             roles.Contains(UserRoles.Teacher) &&
+                             !roles.Contains(UserRoles.ServiceStaff) &&
+                             !roles.Contains(UserRoles.OfficeStaff) &&
+                             !roles.Contains(UserRoles.SchoolBoard) &&
+                             !roles.Contains(UserRoles.Admin);
+
+        HashSet<int>? allowedClassIds = null;
+        if (isTeacherOnly && userId.HasValue)
+        {
+            var staff = await _unitOfWork.Repository<StaffProfile>()
+                .Query()
+                .FirstOrDefaultAsync(sp => sp.UserId == userId.Value, cancellationToken);
+
+            if (staff != null)
+            {
+                var homeroomIds = await _unitOfWork.Repository<Class>()
+                    .Query()
+                    .Where(c => c.HomeroomTeacherId == staff.Id && c.Status == "Active")
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+                allowedClassIds = homeroomIds.ToHashSet();
+            }
+            else
+            {
+                allowedClassIds = new HashSet<int>();
+            }
+        }
+
+        var serviceDays = await _unitOfWork.Repository<LunchServiceDay>()
+            .Query()
+            .Where(d => d.Date >= start && d.Date <= end)
+            .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+
+        int servingCount = 0;
+        for (var cur = start; cur <= end; cur = cur.AddDays(1))
+        {
+            serviceDays.TryGetValue(cur, out var sDay);
+            if (ResolveServiceDay(cur, sDay).IsServing) servingCount++;
+        }
+
+        var classesQuery = _unitOfWork.Repository<Class>().Query().Where(c => c.Status == "Active");
+        if (allowedClassIds != null) classesQuery = classesQuery.Where(c => allowedClassIds.Contains(c.Id));
+        if (classId.HasValue) classesQuery = classesQuery.Where(c => c.Id == classId.Value);
+        var classes = await classesQuery.OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToListAsync(cancellationToken);
+        var classIds = classes.Select(c => c.Id).ToHashSet();
+
+        var regs = await _unitOfWork.Repository<LunchRegistration>()
+            .Query()
+            .Include(r => r.Student)
+                .ThenInclude(s => s.ClassAssignments.Where(ca => ca.IsActive))
+            .Where(r => r.Date >= start && r.Date <= end)
+            .ToListAsync(cancellationToken);
+
+        var scopedRegs = regs
+            .Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && classIds.Contains(ca.ClassId)) == true)
+            .ToList();
+
+        var summaries = classes.Select(cls =>
+        {
+            var cRegs = scopedRegs.Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && ca.ClassId == cls.Id) == true).ToList();
+            return new ClassMealSummaryDto
+            {
+                ClassId = cls.Id,
+                ClassName = cls.ClassName,
+                Grade = cls.Grade,
+                InitialRegistered = cRegs.Count,
+                CancelledCount = cRegs.Count(r => !r.IsActive),
+                ActualCount = cRegs.Count(r => r.IsActive),
+                StandardCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+                VegetarianCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+                SpecialDietCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet)
+            };
+        }).ToList();
+
+        return ApiResponse<LunchPeriodReportDto>.Ok(new LunchPeriodReportDto
+        {
+            FromDate = start,
+            ToDate = end,
+            TotalServiceDays = servingCount,
+            TotalInitialRegistered = scopedRegs.Count,
+            TotalCancelled = scopedRegs.Count(r => !r.IsActive),
+            TotalActualMeals = scopedRegs.Count(r => r.IsActive),
+            TotalStandard = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+            TotalVegetarian = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+            TotalSpecialDiet = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet),
+            ClassSummaries = summaries
+        });
+    }
+
+    // ---- Monthly Boarding Quota & Waitlist (TC_BDS_34) ----
+
+    public async Task<ApiResponse<MonthlyBoardingQuotaDto>> GetMonthlyQuotaAsync(string month, CancellationToken cancellationToken = default)
+    {
+        if (!TryParseMonth(month, out var year, out var m))
+        {
+            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Định dạng tháng không hợp lệ (YYYY-MM)." });
+        }
+
+        var normalizedMonth = $"{year:D4}-{m:D2}";
+        var mStart = new DateTime(year, m, 1);
+        var mEnd = mStart.AddMonths(1).AddDays(-1);
+
+        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
+        LunchMonthlyQuota? quotaEntity = null;
+        if (quotaRepo != null)
+        {
+            quotaEntity = await quotaRepo.Query()
+                .FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken);
+        }
+
+        var regRepo = _unitOfWork.Repository<LunchRegistration>();
+        int registeredCount = 0;
+        int waitlistedCount = 0;
+        if (regRepo != null)
+        {
+            registeredCount = await regRepo.Query()
+                .Where(r => r.Date >= mStart && r.Date <= mEnd && r.IsActive && !r.IsWaitlisted)
+                .Select(r => r.StudentId)
+                .Distinct()
+                .CountAsync(cancellationToken);
+
+            waitlistedCount = await regRepo.Query()
+                .Where(r => r.Date >= mStart && r.Date <= mEnd && !r.IsActive && r.IsWaitlisted)
+                .Select(r => r.StudentId)
+                .Distinct()
+                .CountAsync(cancellationToken);
+        }
+
+        int? quotaVal = quotaEntity?.Quota;
+        bool isFull = quotaVal.HasValue && quotaVal.Value > 0 && registeredCount >= quotaVal.Value;
+
+        return ApiResponse<MonthlyBoardingQuotaDto>.Ok(new MonthlyBoardingQuotaDto
+        {
+            Month = normalizedMonth,
+            Quota = quotaVal,
+            RegisteredCount = registeredCount,
+            WaitlistedCount = waitlistedCount,
+            IsFull = isFull,
+            UpdatedAt = quotaEntity?.UpdatedAt
+        });
+    }
+
+    public async Task<ApiResponse<MonthlyBoardingQuotaDto>> UpsertMonthlyQuotaAsync(
+        int userId,
+        UpsertMonthlyBoardingQuotaRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseMonth(request.Month, out var year, out var m))
+        {
+            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Định dạng tháng không hợp lệ (YYYY-MM)." });
+        }
+
+        if (request.Quota <= 0 || request.Quota > 10000)
+        {
+            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Chỉ tiêu bán trú tháng phải lớn hơn 0." });
+        }
+
+        var normalizedMonth = $"{year:D4}-{m:D2}";
+        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
+        if (quotaRepo == null)
+        {
+            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG09);
+        }
+
+        var existing = await quotaRepo.Query()
+            .FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken);
+
+        string? oldValue = existing != null ? $"Quota={existing.Quota}" : null;
+        if (existing != null)
+        {
+            existing.Quota = request.Quota;
+            existing.UpdatedByUserId = userId > 0 ? userId : null;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            existing = new LunchMonthlyQuota
+            {
+                Month = normalizedMonth,
+                Quota = request.Quota,
+                UpdatedByUserId = userId > 0 ? userId : null,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await quotaRepo.AddAsync(existing, cancellationToken);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogActionAsync(
+            userId > 0 ? userId : null,
+            "CONFIGURE_BOARDING_QUOTA",
+            "LunchMonthlyQuota",
+            normalizedMonth,
+            oldValue,
+            $"Month={normalizedMonth};Quota={request.Quota}",
+            null,
+            cancellationToken);
+
+        return await GetMonthlyQuotaAsync(normalizedMonth, cancellationToken);
+    }
+
+    // ---- Daily Boarding Incident Log (TC_BDS_36) ----
+
+    public async Task<ApiResponse<List<BoardingIncidentDto>>> GetBoardingIncidentsAsync(
+        DateTime? date,
+        string? month,
+        DateTime? from,
+        DateTime? to,
+        int? classId,
+        int? studentId,
+        int? userId,
+        IReadOnlyList<UserRoles>? roles,
+        CancellationToken cancellationToken = default)
+    {
+        var incidentRepo = _unitOfWork.Repository<BoardingIncident>();
+        if (incidentRepo == null)
+        {
+            return ApiResponse<List<BoardingIncidentDto>>.Ok(new List<BoardingIncidentDto>());
+        }
+
+        bool isStaffOrAdmin = roles != null && (roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.SchoolBoard));
+        bool isTeacherOnly = roles != null && roles.Contains(UserRoles.Teacher) && !isStaffOrAdmin;
+        bool isParentOnly = roles != null && roles.Contains(UserRoles.Parent) && !isStaffOrAdmin && !roles.Contains(UserRoles.Teacher);
+
+        HashSet<int>? allowedClassIds = null;
+        if (isTeacherOnly && userId.HasValue)
+        {
+            var staff = await _unitOfWork.Repository<StaffProfile>()
+                .Query()
+                .FirstOrDefaultAsync(sp => sp.UserId == userId.Value, cancellationToken);
+            if (staff != null)
+            {
+                var ids = await _unitOfWork.Repository<Class>()
+                    .Query()
+                    .Where(c => c.HomeroomTeacherId == staff.Id && c.Status == "Active")
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+                allowedClassIds = ids.ToHashSet();
+            }
+            else
+            {
+                allowedClassIds = new HashSet<int>();
+            }
+        }
+
+        HashSet<int>? allowedStudentIds = null;
+        if (isParentOnly && userId.HasValue)
+        {
+            var guardian = await _unitOfWork.Repository<Guardian>()
+                .Query()
+                .Include(g => g.StudentGuardians)
+                .FirstOrDefaultAsync(g => g.UserId == userId.Value, cancellationToken);
+            allowedStudentIds = guardian?.StudentGuardians.Select(sg => sg.StudentId).ToHashSet() ?? new HashSet<int>();
+        }
+
+        var query = incidentRepo.Query()
+            .Include(i => i.Student)
+            .Include(i => i.Class)
+            .Include(i => i.RecordedByUser)
+            .AsQueryable();
+
+        if (from.HasValue || to.HasValue)
+        {
+            if (from.HasValue)
+            {
+                var start = from.Value.Date;
+                query = query.Where(i => i.Date >= start);
+            }
+            if (to.HasValue)
+            {
+                var end = to.Value.Date;
+                query = query.Where(i => i.Date <= end);
+            }
+        }
+        else if (TryParseMonth(month, out var y, out var m))
+        {
+            var mStart = new DateTime(y, m, 1);
+            var mEnd = mStart.AddMonths(1).AddDays(-1);
+            query = query.Where(i => i.Date >= mStart && i.Date <= mEnd);
+        }
+        else if (date.HasValue)
+        {
+            var targetDate = date.Value.Date;
+            query = query.Where(i => i.Date == targetDate);
+        }
+
+        if (allowedClassIds != null)
+        {
+            query = query.Where(i => i.ClassId.HasValue && allowedClassIds.Contains(i.ClassId.Value));
+        }
+
+        if (allowedStudentIds != null)
+        {
+            query = query.Where(i => allowedStudentIds.Contains(i.StudentId));
+        }
+
+        if (classId.HasValue)
+        {
+            query = query.Where(i => i.ClassId == classId.Value);
+        }
+
+        if (studentId.HasValue)
+        {
+            query = query.Where(i => i.StudentId == studentId.Value);
+        }
+
+        var items = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var dtos = items.Select(i => new BoardingIncidentDto
+        {
+            Id = i.Id,
+            StudentId = i.StudentId,
+            StudentCode = i.Student?.StudentCode ?? string.Empty,
+            StudentName = i.Student?.FullName ?? string.Empty,
+            ClassId = i.ClassId,
+            ClassName = i.Class?.ClassName ?? "Chưa phân lớp",
+            Date = i.Date,
+            IncidentType = i.IncidentType,
+            Note = i.Note,
+            RecordedByUserId = i.RecordedByUserId,
+            RecordedByName = i.RecordedByUser?.FullName ?? i.RecordedByUser?.Username ?? "Giáo viên",
+            CreatedAt = i.CreatedAt
+        }).ToList();
+
+        return ApiResponse<List<BoardingIncidentDto>>.Ok(dtos);
+    }
+
+    public async Task<ApiResponse<BoardingIncidentDto>> CreateBoardingIncidentAsync(
+        int userId,
+        IReadOnlyList<UserRoles> roles,
+        CreateBoardingIncidentRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.StudentId <= 0 || string.IsNullOrWhiteSpace(request.Note))
+        {
+            return ApiResponse<BoardingIncidentDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh và nhập nội dung sự cố bán trú." });
+        }
+
+        var note = request.Note.Trim();
+        if (note.Length > 1000)
+        {
+            return ApiResponse<BoardingIncidentDto>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung sự cố không được vượt quá 1000 ký tự." });
+        }
+
+        var student = await _unitOfWork.Repository<Student>()
+            .Query()
+            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
+                .ThenInclude(ca => ca.Class)
+            .Include(s => s.StudentGuardians)
+                .ThenInclude(sg => sg.Guardian)
+            .FirstOrDefaultAsync(s => s.Id == request.StudentId, cancellationToken);
+
+        if (student == null)
+        {
+            return ApiResponse<BoardingIncidentDto>.Fail(SystemMessages.MSG11);
+        }
+
+        var activeCa = student.ClassAssignments.FirstOrDefault(ca => ca.IsActive);
+
+        // Nếu là Teacher (không phải Admin/ServiceStaff/OfficeStaff), kiểm tra đúng GVCN của lớp
+        bool isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.OfficeStaff);
+        if (!isStaffOrAdmin && roles.Contains(UserRoles.Teacher) && userId > 0)
+        {
+            var staff = await _unitOfWork.Repository<StaffProfile>()
+                .Query()
+                .FirstOrDefaultAsync(sp => sp.UserId == userId, cancellationToken);
+            if (staff == null || activeCa?.Class == null || activeCa.Class.HomeroomTeacherId != staff.Id)
+            {
+                return ApiResponse<BoardingIncidentDto>.Fail(SystemMessages.MSG10);
+            }
+        }
+
+        var targetDate = (request.Date == default ? _clock.Today : request.Date).Date;
+        var incidentType = string.IsNullOrWhiteSpace(request.IncidentType) ? "General" : request.IncidentType.Trim();
+
+        var incidentRepo = _unitOfWork.Repository<BoardingIncident>();
+        if (incidentRepo == null)
+        {
+            return ApiResponse<BoardingIncidentDto>.Fail(SystemMessages.MSG09);
+        }
+
+        var incident = new BoardingIncident
+        {
+            StudentId = student.Id,
+            ClassId = activeCa?.ClassId,
+            Date = targetDate,
+            IncidentType = incidentType,
+            Note = note,
+            RecordedByUserId = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+        await incidentRepo.AddAsync(incident, cancellationToken);
+
+        // Gửi thông báo real-time 'Boarding Incident' cho tất cả phụ huynh liên kết với học sinh
+        var notifRepo = _unitOfWork.Repository<Notification>();
+        if (notifRepo != null)
+        {
+            var parentUserIds = student.StudentGuardians
+                .Where(sg => sg.Guardian != null && sg.Guardian.UserId > 0)
+                .Select(sg => sg.Guardian.UserId)
+                .Distinct()
+                .ToList();
+
+            foreach (var parentUid in parentUserIds)
+            {
+                await notifRepo.AddAsync(new Notification
+                {
+                    UserId = parentUid,
+                    Title = "Boarding Incident",
+                    Content = $"Sự cố bán trú ngày {targetDate:dd/MM/yyyy} của học sinh {student.FullName} ({student.StudentCode}): {note}",
+                    Type = "BOARDING_INCIDENT",
+                    LinkUrl = $"/parent/boarding-incidents?studentId={student.Id}&month={targetDate:yyyy-MM}",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                }, cancellationToken);
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogActionAsync(
+            userId > 0 ? userId : null,
+            "BOARDING_INCIDENT_LOGGED",
+            "BoardingIncident",
+            incident.Id.ToString(),
+            null,
+            $"StudentCode={student.StudentCode};Date={targetDate:yyyy-MM-dd};Note={note}",
+            null,
+            cancellationToken);
+
+        var recorder = userId > 0
+            ? await _unitOfWork.Repository<User>().Query().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            : null;
+
+        return ApiResponse<BoardingIncidentDto>.Ok(new BoardingIncidentDto
+        {
+            Id = incident.Id,
+            StudentId = student.Id,
+            StudentCode = student.StudentCode,
+            StudentName = student.FullName,
+            ClassId = activeCa?.ClassId,
+            ClassName = activeCa?.Class?.ClassName ?? "Chưa phân lớp",
+            Date = targetDate,
+            IncidentType = incidentType,
+            Note = note,
+            RecordedByUserId = userId,
+            RecordedByName = recorder?.FullName ?? recorder?.Username ?? "Giáo viên",
+            CreatedAt = incident.CreatedAt
+        }, "Đã ghi nhận sự cố bán trú và gửi cảnh báo đến phụ huynh.");
+    }
+
+    private static bool TryParseMonth(string? month, out int year, out int m)
+    {
+        year = 0;
+        m = 0;
+        if (string.IsNullOrWhiteSpace(month)) return false;
+        var parts = month.Trim().Split('-');
+        return parts.Length == 2 &&
+               int.TryParse(parts[0], out year) &&
+               int.TryParse(parts[1], out m) &&
+               m >= 1 && m <= 12 &&
+               year >= 2000 && year <= 2100;
     }
 }

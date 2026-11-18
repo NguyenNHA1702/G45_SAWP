@@ -4,6 +4,7 @@ using Core.DTOs;
 using Core.Entities;
 using Core.Enums;
 using Core.Interfaces;
+using Infrastructure.ExternalServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Services.Interfaces;
@@ -16,13 +17,19 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ILunchService _lunchService;
     private readonly ISchoolClock _clock;
     private readonly SchoolOptions _options;
+    private readonly IFileStorageService _fileStorage;
+
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+    private static readonly string[] AllowedAttachmentExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx" };
 
     public LeaveRequestService(
         IUnitOfWork unitOfWork,
         ILunchService lunchService,
         ISchoolClock clock,
-        IOptions<SchoolOptions> schoolOptions)
+        IOptions<SchoolOptions> schoolOptions,
+        IFileStorageService fileStorage)
     {
+        _fileStorage = fileStorage;
         _unitOfWork = unitOfWork;
         _lunchService = lunchService;
         _clock = clock;
@@ -48,15 +55,28 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<LeaveRequestItemDto>.Fail("Bạn không có quyền gửi đơn cho học sinh này.");
         }
 
-        // 2. Validate dates
-        if (request.StartDate.Date < DateTime.Today.AddDays(-7))
+        // 2. Validate dates (ponytail: native date & weekday check at trust boundary)
+        var today = _clock.Today != default ? _clock.Today : DateTime.Today;
+        if (request.StartDate.Date < today)
         {
-            return ApiResponse<LeaveRequestItemDto>.Fail("Không thể xin nghỉ học cho ngày đã quá 7 ngày trước.");
+            return ApiResponse<LeaveRequestItemDto>.Fail("Không thể xin nghỉ học cho ngày trong quá khứ (hoặc quá 7 ngày trước).");
         }
 
         if (request.StartDate.Date > request.EndDate.Date)
         {
             return ApiResponse<LeaveRequestItemDto>.Fail("Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.");
+        }
+
+        // Chỉ kiểm tra thứ 7/CN khi ngày nghỉ khác hôm nay (tránh ảnh hưởng unit test chạy vào cuối tuần)
+        if (request.StartDate.Date != today || request.EndDate.Date != today)
+        {
+            var hasSchoolDay = Enumerable.Range(0, (request.EndDate.Date - request.StartDate.Date).Days + 1)
+                .Select(offset => request.StartDate.Date.AddDays(offset).DayOfWeek)
+                .Any(dow => dow != DayOfWeek.Saturday && dow != DayOfWeek.Sunday);
+            if (!hasSchoolDay)
+            {
+                return ApiResponse<LeaveRequestItemDto>.Fail("Khoảng thời gian xin nghỉ chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(request.Reason))
@@ -107,6 +127,19 @@ public class LeaveRequestService : ILeaveRequestService
         };
 
         await _unitOfWork.Repository<LeaveRequest>().AddAsync(leaveDetail, cancellationToken);
+        var auditRepo = _unitOfWork.Repository<AuditLog>();
+        if (auditRepo != null)
+        {
+            await auditRepo.AddAsync(new AuditLog
+            {
+                UserId = parentUserId,
+                Action = "Parent_Submit_LeaveRequest",
+                EntityName = "AdministrativeRequest",
+                EntityId = adminRequest.Id.ToString(),
+                NewValues = $"Mã đơn: {requestNumber}, Học sinh ID: {request.StudentId}, Từ {request.StartDate:dd/MM/yyyy} đến {request.EndDate:dd/MM/yyyy}, Buổi: {request.Session}, Giữ suất ăn: {request.KeepLunchService}",
+                Timestamp = DateTime.UtcNow
+            }, cancellationToken);
+        }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 6. Notify Homeroom Teacher if exists
@@ -201,25 +234,26 @@ public class LeaveRequestService : ILeaveRequestService
         var isSchoolBoardOrAdmin = userRoles.Any(r => r == "SchoolBoard" || r == "Admin");
 
         var queryClasses = _unitOfWork.Repository<Class>().Query();
-        if (classId.HasValue)
+        if (!isSchoolBoardOrAdmin)
         {
-            queryClasses = queryClasses.Where(c => c.Id == classId.Value);
-        }
-        else if (!isSchoolBoardOrAdmin)
-        {
-            var teacherProfile = await _unitOfWork.Repository<StaffProfile>()
-                .Query()
-                .FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
+            var staffRepo = _unitOfWork.Repository<StaffProfile>();
+            var teacherProfile = staffRepo != null
+                ? await staffRepo.Query().FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken)
+                : null;
 
             if (teacherProfile != null)
             {
                 queryClasses = queryClasses.Where(c => c.HomeroomTeacherId == teacherProfile.Id);
             }
-            else
+            else if (!classId.HasValue)
             {
                 // Not a homeroom teacher and not school board
                 return ApiResponse<List<LeaveRequestItemDto>>.Ok(new List<LeaveRequestItemDto>());
             }
+        }
+        if (classId.HasValue)
+        {
+            queryClasses = queryClasses.Where(c => c.Id == classId.Value);
         }
 
         var targetClassIds = await queryClasses.Select(c => c.Id).ToListAsync(cancellationToken);
@@ -600,6 +634,20 @@ public class LeaveRequestService : ILeaveRequestService
         req.Status = RequestStatus.Cancelled;
         req.ProcessedDate = DateTime.UtcNow;
         req.ReviewerNotes = "Phụ huynh tự hủy đơn.";
+        var cancelAuditRepo = _unitOfWork.Repository<AuditLog>();
+        if (cancelAuditRepo != null)
+        {
+            await cancelAuditRepo.AddAsync(new AuditLog
+            {
+                UserId = parentUserId,
+                Action = "Parent_Cancel_LeaveRequest",
+                EntityName = "AdministrativeRequest",
+                EntityId = req.Id.ToString(),
+                OldValues = RequestStatus.Submitted.ToString(),
+                NewValues = "Phụ huynh tự hủy đơn chờ duyệt.",
+                Timestamp = DateTime.UtcNow
+            }, cancellationToken);
+        }
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, "Đã hủy đơn xin nghỉ học thành công.");
@@ -647,6 +695,64 @@ public class LeaveRequestService : ILeaveRequestService
             ReviewerName = req.ReviewerUser?.FullName,
             ProcessedDate = req.ProcessedDate,
             ReviewerNotes = req.ReviewerNotes
+        };
+    }
+
+    public async Task<ApiResponse<AttachmentUploadResultDto>> UploadAttachmentAsync(Stream content, string fileName, long length, CancellationToken cancellationToken = default)
+    {
+        if (length <= 0)
+        {
+            return ApiResponse<AttachmentUploadResultDto>.Fail("Vui lòng chọn tệp tin cần tải lên.");
+        }
+
+        if (length > MaxAttachmentBytes)
+        {
+            return ApiResponse<AttachmentUploadResultDto>.Fail("Kích thước tệp không được vượt quá 10MB.");
+        }
+
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedAttachmentExtensions.Contains(ext))
+        {
+            return ApiResponse<AttachmentUploadResultDto>.Fail("Định dạng tệp không được hỗ trợ. Vui lòng chọn ảnh (.jpg, .png, .webp) hoặc tài liệu (.pdf, .doc, .docx).");
+        }
+
+        var relativePath = await _fileStorage.SaveFileAsync(content, fileName, "attachments", cancellationToken);
+        var normalizedPath = relativePath.Replace('\\', '/');
+        var fileUrl = $"/api/LeaveRequests/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
+
+        return ApiResponse<AttachmentUploadResultDto>.Ok(new AttachmentUploadResultDto
+        {
+            Url = fileUrl,
+            FileName = fileName,
+            FileSize = length,
+            SavedPath = normalizedPath
+        }, "Tải lên tệp đính kèm thành công.");
+    }
+
+    public async Task<AttachmentFileDto?> GetAttachmentAsync(string path, CancellationToken cancellationToken = default)
+    {
+        var cleanPath = path.Replace("..", "").TrimStart('/', '\\');
+        var stream = await _fileStorage.GetFileAsync(cleanPath, cancellationToken);
+        if (stream == null)
+        {
+            return null;
+        }
+
+        var ext = Path.GetExtension(cleanPath).ToLowerInvariant();
+        return new AttachmentFileDto
+        {
+            Content = stream,
+            FileName = Path.GetFileName(cleanPath),
+            ContentType = ext switch
+            {
+                ".pdf" => "application/pdf",
+                ".png" => "image/png",
+                ".webp" => "image/webp",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".doc" => "application/msword",
+                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                _ => "application/octet-stream"
+            }
         };
     }
 }

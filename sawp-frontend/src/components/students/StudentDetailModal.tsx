@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Calendar,
   CheckCircle,
@@ -14,30 +14,72 @@ import { GeometricModal } from '../common/GeometricModal';
 import { studentApi } from '../../services/implementations/studentApi';
 import type { StudentProfileDto } from '../../types/student.types';
 
-interface StudentDetailModalProps {
+export interface StudentDetailModalProps {
   open: boolean;
   onClose: () => void;
-  student: StudentProfileDto | null;
-  onUpdated: (student: StudentProfileDto) => void;
+  student?: StudentProfileDto | null;
+  studentId?: number | null;
+  onUpdated?: (student: StudentProfileDto) => void;
 }
 
 export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   open,
   onClose,
   student,
+  studentId,
   onUpdated,
 }) => {
   const [activating, setActivating] = useState(false);
+  const [loadedStudent, setLoadedStudent] = useState<StudentProfileDto | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  if (!student) return null;
+  useEffect(() => {
+    if (student) {
+      setLoadedStudent(student);
+    } else if (studentId && open) {
+      setLoading(true);
+      studentApi
+        .getStudentProfile(studentId)
+        .then((res) => {
+          if (res.success && res.data) {
+            setLoadedStudent(res.data);
+          }
+        })
+        .catch(() => {
+          toast.error('Không thể tải thông tin hồ sơ học sinh.');
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      setLoadedStudent(null);
+    }
+  }, [student, studentId, open]);
+
+  const activeStudent = student || loadedStudent;
+
+  if (!open) return null;
+
+  if (!activeStudent) {
+    return (
+      <GeometricModal open={open} onClose={onClose} title="Hồ sơ học sinh" maxWidth="md">
+        <div style={{ padding: 32, textAlign: 'center', color: 'var(--color-muted-fg)' }}>
+          {loading ? '⏳ Đang tải thông tin chi tiết học sinh...' : 'Không tìm thấy hồ sơ học sinh.'}
+        </div>
+      </GeometricModal>
+    );
+  }
 
   const handleActivate = async () => {
     setActivating(true);
     try {
-      const res = await studentApi.activateStudent(student.id);
+      const res = await studentApi.activateStudent(activeStudent.id);
       if (res.success) {
-        toast.success(`Đã kích hoạt hồ sơ học sinh ${student.fullName} (Active)!`);
-        onUpdated({ ...student, status: 'Active' });
+        toast.success(`Đã kích hoạt hồ sơ học sinh ${activeStudent.fullName} (Active)!`);
+        if (onUpdated) {
+          onUpdated({ ...activeStudent, status: 'Active' });
+        }
+        setLoadedStudent((prev) => (prev ? { ...prev, status: 'Active' } : null));
       } else {
         toast.error(res.message || 'Kích hoạt thất bại.');
       }
@@ -52,8 +94,8 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
     <GeometricModal
       open={open}
       onClose={onClose}
-      title={`Hồ sơ: ${student.fullName}`}
-      badgeText={student.studentCode}
+      title={`Hồ sơ: ${activeStudent.fullName}`}
+      badgeText={activeStudent.studentCode}
       badgeColor="violet"
       icon={<User size={24} color="#1E293B" strokeWidth={2.5} />}
       iconBg="var(--color-accent-soft)"
@@ -86,21 +128,21 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               border: 'var(--border)',
             }}
           >
-            {student.fullName.charAt(0)}
+            {activeStudent.fullName.charAt(0)}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h3 style={{ margin: 0 }}>{student.fullName}</h3>
+              <h3 style={{ margin: 0 }}>{activeStudent.fullName}</h3>
               <span
                 className={`badge ${
-                  student.status === 'Active' ? 'badge--mint' : 'badge--amber'
+                  activeStudent.status === 'Active' ? 'badge--mint' : 'badge--amber'
                 }`}
               >
-                {student.status}
+                {activeStudent.status}
               </span>
             </div>
             <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
-              Mã định danh: <strong>{student.studentCode}</strong> • Giới tính: {student.gender}
+              Mã định danh: <strong>{activeStudent.studentCode}</strong> • Giới tính: {activeStudent.gender}
             </div>
           </div>
         </div>
@@ -112,7 +154,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               <Calendar size={14} /> Ngày sinh
             </div>
             <div style={{ fontWeight: 700, marginTop: 4 }}>
-              {new Date(student.dateOfBirth).toLocaleDateString('vi-VN')}
+              {new Date(activeStudent.dateOfBirth).toLocaleDateString('vi-VN')}
             </div>
           </div>
 
@@ -120,8 +162,8 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)', textTransform: 'uppercase', fontWeight: 700 }}>
               <GraduationCap size={14} /> Lớp đang học
             </div>
-            <div style={{ fontWeight: 700, marginTop: 4, color: student.currentClassName ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
-              {student.currentClassName ? `Lớp ${student.currentClassName}` : 'Chưa xếp lớp'}
+            <div style={{ fontWeight: 700, marginTop: 4, color: activeStudent.currentClassName ? 'var(--color-accent)' : 'var(--color-muted-fg)' }}>
+              {activeStudent.currentClassName ? `Lớp ${activeStudent.currentClassName}` : 'Chưa xếp lớp'}
             </div>
           </div>
 
@@ -130,7 +172,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               <Users size={14} /> Giáo viên chủ nhiệm
             </div>
             <div style={{ fontWeight: 700, marginTop: 4 }}>
-              {student.homeroomTeacherName || 'Chưa phân công GVCN'}
+              {activeStudent.homeroomTeacherName || 'Chưa phân công GVCN'}
             </div>
           </div>
 
@@ -139,10 +181,10 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               <Phone size={14} /> Người giám hộ chính
             </div>
             <div style={{ fontWeight: 700, marginTop: 4 }}>
-              {student.primaryGuardianName || 'Chưa có thông tin'}
-              {student.primaryGuardianPhone && (
+              {activeStudent.primaryGuardianName || 'Chưa có thông tin'}
+              {activeStudent.primaryGuardianPhone && (
                 <span style={{ fontWeight: 400, color: 'var(--color-muted-fg)', marginLeft: 8 }}>
-                  (SĐT: {student.primaryGuardianPhone})
+                  (SĐT: {activeStudent.primaryGuardianPhone})
                 </span>
               )}
             </div>
@@ -153,14 +195,14 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               <MapPin size={14} /> Địa chỉ thường trú
             </div>
             <div style={{ fontWeight: 500, marginTop: 4 }}>
-              {student.address || 'Chưa cập nhật'}
+              {activeStudent.address || 'Chưa cập nhật'}
             </div>
           </div>
         </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          {student.status !== 'Active' ? (
+          {activeStudent.status !== 'Active' ? (
             <button
               type="button"
               className="btn btn--primary btn--sm"

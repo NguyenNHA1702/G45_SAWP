@@ -20,7 +20,7 @@ export const LinkChildModal: React.FC<LinkChildModalProps> = ({
     studentCode: '',
     studentFullName: '',
     studentDateOfBirth: '2020-01-01',
-    relationship: 'Bố',
+    relationship: '1',
     notes: '',
   });
 
@@ -39,12 +39,15 @@ export const LinkChildModal: React.FC<LinkChildModalProps> = ({
         ...formData,
         studentCode: formData.studentCode.trim().toUpperCase(),
         studentFullName: formData.studentFullName.trim(),
+        relationship: Number(formData.relationship) || 1,
       });
 
       if (res.success && res.data) {
-        if (res.data.isAutoVerified) {
+        if (res.data.requestNumber === 'ALREADY_LINKED') {
+          toast.success(res.data.message || 'Tài khoản của bạn đã được liên kết với học sinh này.');
+        } else if (res.data.isAutoVerified) {
           toast.success(
-            `Đã tự động xác thực và liên kết thành công với con ${res.data.studentFullName}!`,
+            `Đã tự động xác thực và liên kết thành công với con ${res.data.studentFullName || ''}!`,
             { icon: '🎉' }
           );
         } else {
@@ -59,7 +62,11 @@ export const LinkChildModal: React.FC<LinkChildModalProps> = ({
         toast.error(res.message || 'Gửi yêu cầu liên kết thất bại.');
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi gửi yêu cầu liên kết.');
+      const message =
+        err.response?.data?.errors?.[0] ||
+        err.response?.data?.message ||
+        'Lỗi khi gửi yêu cầu liên kết.';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -76,7 +83,7 @@ export const LinkChildModal: React.FC<LinkChildModalProps> = ({
       iconBg="var(--color-secondary)"
       maxWidth="md"
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="banner banner--info" style={{ fontSize: 'var(--fs-sm)' }}>
           <Sparkles size={18} color="var(--color-accent)" style={{ flexShrink: 0, marginTop: 2 }} />
           <div>
@@ -133,9 +140,9 @@ export const LinkChildModal: React.FC<LinkChildModalProps> = ({
             value={formData.relationship}
             onChange={(e) => setFormData({ ...formData, relationship: e.target.value })}
           >
-            <option value="Bố">Bố (Cha)</option>
-            <option value="Mẹ">Mẹ</option>
-            <option value="Người giám hộ">Người giám hộ</option>
+            <option value="1">Bố (Cha)</option>
+            <option value="2">Mẹ</option>
+            <option value="3">Người giám hộ</option>
           </select>
         </div>
 

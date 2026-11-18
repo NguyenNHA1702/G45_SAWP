@@ -9,7 +9,7 @@ interface BatchInitClassesModalProps {
   open: boolean;
   onClose: () => void;
   activeSchoolYear: SchoolYearDto | null;
-  onClassesCreated: (newClasses: ClassSummaryDto[]) => void;
+  onClassesCreated: (newClasses: ClassSummaryDto[], grade: number) => void;
 }
 
 export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
@@ -49,13 +49,17 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
 
       if (res.success && res.data) {
         toast.success(res.message || `Đã khởi tạo danh sách lớp thành công!`);
-        onClassesCreated(res.data);
+        onClassesCreated(res.data, targetGrade);
         onClose();
       } else {
         toast.error(res.message || 'Khởi tạo lớp hàng loạt thất bại.');
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi khởi tạo lớp học.');
+      const message =
+        err?.response?.data?.errors?.[0] ||
+        err?.response?.data?.message ||
+        'Lỗi khi khởi tạo lớp học.';
+      toast.error(message);
     } finally {
       setLoading(false);
     }

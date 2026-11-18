@@ -12,10 +12,12 @@ namespace Services.Implementations;
 public class EContactBookService : IEContactBookService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IAuditService _auditService;
 
-    public EContactBookService(ApplicationDbContext context)
+    public EContactBookService(ApplicationDbContext context, IAuditService auditService)
     {
         _context = context;
+        _auditService = auditService;
     }
 
     #region 1. Bảng tin lớp học (UC-61 & UC-62)
@@ -43,6 +45,16 @@ public class EContactBookService : IEContactBookService
                 return ApiResponse<List<ClassPostDto>>.Fail(SystemMessages.MSG10);
             }
         }
+
+        var linkedGuardians = await _context.StudentGuardians
+            .AsNoTracking()
+            .Where(sg => _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == classId && ca.IsActive))
+            .Select(sg => new { sg.Guardian.UserId, StudentName = sg.Student.FullName })
+            .ToListAsync(cancellationToken);
+
+        var guardianStudentMap = linkedGuardians
+            .GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.First().StudentName);
 
         var posts = await _context.ClassPosts
             .AsNoTracking()
@@ -84,16 +96,29 @@ public class EContactBookService : IEContactBookService
                     FileType = a.FileType,
                     FileSizeBytes = a.FileSizeBytes
                 }).ToList(),
-                Comments = p.Comments.OrderBy(c => c.CreatedAt).Select(c => new PostCommentDto
+                Comments = p.Comments.OrderBy(c => c.CreatedAt).Select(c =>
                 {
-                    Id = c.Id,
-                    PostId = c.PostId,
-                    UserId = c.UserId,
-                    AuthorName = c.User?.FullName ?? "Người dùng",
-                    AuthorRoleLabel = c.UserId == p.AuthorUserId ? "GVCN" : "Phụ huynh",
-                    Content = c.Content,
-                    CreatedAt = c.CreatedAt,
-                    CanDelete = c.UserId == currentUserId || p.AuthorUserId == currentUserId
+                    string roleLabel = "Phụ huynh";
+                    if (c.UserId == p.AuthorUserId)
+                    {
+                        roleLabel = "GVCN";
+                    }
+                    else if (guardianStudentMap.TryGetValue(c.UserId, out var childName))
+                    {
+                        roleLabel = $"Phụ huynh em {childName}";
+                    }
+
+                    return new PostCommentDto
+                    {
+                        Id = c.Id,
+                        PostId = c.PostId,
+                        UserId = c.UserId,
+                        AuthorName = c.User?.FullName ?? "Người dùng",
+                        AuthorRoleLabel = roleLabel,
+                        Content = c.Content,
+                        CreatedAt = c.CreatedAt,
+                        CanDelete = c.UserId == currentUserId || p.AuthorUserId == currentUserId
+                    };
                 }).ToList()
             };
         }).ToList();
@@ -139,22 +164,80 @@ public class EContactBookService : IEContactBookService
             CreatedAt = DateTime.UtcNow
         };
 
+        var allowedExts = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx" };
+
+        if (request.Attachments != null && request.Attachments.Count > 0)
+        {
+            foreach (var att in request.Attachments)
+            {
+                if (att.FileSizeBytes > 5 * 1024 * 1024)
+                {
+                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
+                }
+                var ext = System.IO.Path.GetExtension(att.FileName).ToLowerInvariant();
+                if (!allowedExts.Contains(ext))
+                {
+                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
+                }
+
+                post.Attachments.Add(new PostAttachment
+                {
+                    FileUrl = att.FileUrl,
+                    FileName = att.FileName,
+                    FileType = att.FileType ?? (ext is ".jpg" or ".jpeg" or ".png" or ".webp" ? "Image" : "Document"),
+                    FileSizeBytes = att.FileSizeBytes,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
         if (request.AttachmentUrls != null && request.AttachmentUrls.Count > 0)
         {
-            foreach (var url in request.AttachmentUrls)
+            foreach (var rawUrl in request.AttachmentUrls)
             {
-                if (!string.IsNullOrWhiteSpace(url))
+                if (!string.IsNullOrWhiteSpace(rawUrl))
                 {
-                    var isImg = url.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                                url.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-                                url.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                                url.EndsWith(".webp", StringComparison.OrdinalIgnoreCase);
+                    var url = rawUrl.Trim();
+                    var isYouTube = url.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) ||
+                                    url.Contains("youtu.be", StringComparison.OrdinalIgnoreCase);
+
+                    string fileType;
+                    string fileName;
+
+                    if (isYouTube)
+                    {
+                        fileType = "Video";
+                        fileName = "Video YouTube";
+                    }
+                    else
+                    {
+                        var ext = System.IO.Path.GetExtension(url).ToLowerInvariant();
+                        if (!string.IsNullOrEmpty(ext) && ext.Length <= 5 && !allowedExts.Contains(ext))
+                        {
+                            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
+                        }
+
+                        var isImg = ext is ".jpg" or ".jpeg" or ".png" or ".webp";
+                        fileType = isImg ? "Image" : "Document";
+
+                        try
+                        {
+                            var uri = new Uri(url);
+                            var lastSeg = uri.Segments.LastOrDefault()?.Trim('/');
+                            fileName = !string.IsNullOrWhiteSpace(lastSeg) ? Uri.UnescapeDataString(lastSeg) : "Liên kết đính kèm";
+                        }
+                        catch
+                        {
+                            var fn = System.IO.Path.GetFileName(url);
+                            fileName = !string.IsNullOrWhiteSpace(fn) ? fn : "Liên kết đính kèm";
+                        }
+                    }
 
                     post.Attachments.Add(new PostAttachment
                     {
                         FileUrl = url,
-                        FileName = System.IO.Path.GetFileName(url),
-                        FileType = isImg ? "Image" : "Document",
+                        FileName = fileName,
+                        FileType = fileType,
                         CreatedAt = DateTime.UtcNow
                     });
                 }
@@ -180,6 +263,7 @@ public class EContactBookService : IEContactBookService
                 Content = $"GVCN vừa đăng bài: \"{post.Title}\"",
                 Type = "ClassPost",
                 ReferenceKey = $"POST:{post.Id}",
+                LinkUrl = "/parent/contact-book",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
             });
@@ -307,6 +391,23 @@ public class EContactBookService : IEContactBookService
 
         var user = await _context.Users.FindAsync(new object[] { userId }, cancellationToken);
 
+        // Bắn thông báo cho GVCN tác giả bài đăng nếu người bình luận không phải chính tác giả
+        if (post.AuthorUserId != userId)
+        {
+            _context.Notifications.Add(new Notification
+            {
+                UserId = post.AuthorUserId,
+                Title = $"Bình luận mới từ {roleLabel}",
+                Content = $"{user?.FullName ?? "Phụ huynh"} vừa bình luận bài \"{post.Title}\": \"{comment.Content}\"",
+                Type = "PostComment",
+                ReferenceKey = $"POST:{post.Id}",
+                LinkUrl = "/teacher/contact-book",
+                CreatedAt = DateTime.UtcNow,
+                IsRead = false
+            });
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
         var dto = new PostCommentDto
         {
             Id = comment.Id,
@@ -339,8 +440,21 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<bool>.Fail(SystemMessages.MSG10);
         }
 
+        var commentContent = comment.Content;
         _context.PostComments.Remove(comment);
         await _context.SaveChangesAsync(cancellationToken);
+
+        // BR-58: Ghi nhật ký hệ thống khi xóa bình luận
+        await _auditService.LogActionAsync(
+            currentUserId,
+            "DELETE_COMMENT",
+            "PostComment",
+            commentId.ToString(),
+            commentContent,
+            null,
+            null,
+            cancellationToken
+        );
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
@@ -450,7 +564,8 @@ public class EContactBookService : IEContactBookService
 
     public async Task<ApiResponse<StudentEvaluationDto>> CreateOrUpdateEvaluationAsync(int teacherUserId, CreateStudentEvaluationDto request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.TeacherNote))
+        // TC_CTB_16 & TC_CTB_25: Bắt buộc phải có cả xếp loại nề nếp và lời nhận xét của giáo viên
+        if (string.IsNullOrWhiteSpace(request.Rating) || string.IsNullOrWhiteSpace(request.TeacherNote))
         {
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01);
         }
@@ -480,6 +595,12 @@ public class EContactBookService : IEContactBookService
 
         if (existing != null)
         {
+            // Nếu không truyền ID sửa hoặc ID không khớp, từ chối tạo trùng phiếu (BR-61)
+            if (!request.Id.HasValue || request.Id.Value == 0 || request.Id.Value != existing.Id)
+            {
+                return ApiResponse<StudentEvaluationDto>.Fail("Mỗi học sinh chỉ có tối đa 01 phiếu nhận xét cho mỗi tuần học (BR-61). Bản ghi hiện tại không thay đổi.");
+            }
+
             // BR-59: Lock if already acknowledged
             if (existing.IsAcknowledged)
             {
@@ -531,6 +652,7 @@ public class EContactBookService : IEContactBookService
                 Content = $"GVCN đã gửi nhận xét nề nếp tuần {request.WeekNumber}. Vui lòng xem và ký xác nhận.",
                 Type = "StudentEvaluation",
                 ReferenceKey = $"EVAL:{newEval.Id}",
+                LinkUrl = "/parent/contact-book",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
             });
@@ -585,6 +707,7 @@ public class EContactBookService : IEContactBookService
                       (!string.IsNullOrWhiteSpace(eval.ParentFeedback) ? $" Phản hồi: \"{eval.ParentFeedback}\"" : ""),
             Type = "EvaluationAcknowledged",
             ReferenceKey = $"EVAL:{eval.Id}",
+            LinkUrl = "/teacher/contact-book",
             CreatedAt = DateTime.UtcNow,
             IsRead = false
         });

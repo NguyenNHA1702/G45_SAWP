@@ -40,8 +40,8 @@ public class AttendanceService : IAttendanceService
     {
         var targetDate = (date ?? _clock.Today).Date;
 
-        // Nếu là Admin, OfficeStaff hoặc SchoolBoard: xem và điểm danh được tất cả các lớp Active của trường
-        if (roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.SchoolBoard))
+        // Nếu là Admin, OfficeStaff, ServiceStaff hoặc SchoolBoard: xem được tất cả các lớp Active của trường
+        if (roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.SchoolBoard))
         {
             var allClasses = await _unitOfWork.Repository<Class>()
                 .FindAsync(c => c.Status == "Active", ct);
@@ -73,17 +73,10 @@ public class AttendanceService : IAttendanceService
             return ApiResponse<List<TeacherClassOptionDto>>.Ok(new List<TeacherClassOptionDto>());
         }
 
-        // Lấy các lớp GV là GVCN
+        // Lấy các lớp GV là GVCN (ponytail: Giáo viên chỉ xem và điểm danh lớp mình chủ nhiệm)
         var homeroomClasses = await _unitOfWork.Repository<Class>()
             .FindAsync(c => c.HomeroomTeacherId == staff.Id && c.Status == "Active", ct);
 
-        // Lấy các lớp GV dạy tiết đầu trong ngày
-        var firstPeriodClassIds = await _unitOfWork.Schedules
-            .GetClassesWhereTeacherHasFirstPeriodAsync(staff.Id, targetDate, ct);
-        var firstPeriodClasses = await _unitOfWork.Repository<Class>()
-            .FindAsync(c => firstPeriodClassIds.Contains(c.Id) && c.Status == "Active", ct);
-
-        // Hợp 2 tập (ưu tiên Homeroom)
         var classDict = new Dictionary<int, TeacherClassOptionDto>();
 
         foreach (var c in homeroomClasses)
@@ -95,20 +88,6 @@ public class AttendanceService : IAttendanceService
                 Grade = c.Grade,
                 AccessReason = "Homeroom"
             };
-        }
-
-        foreach (var c in firstPeriodClasses)
-        {
-            if (!classDict.ContainsKey(c.Id))
-            {
-                classDict[c.Id] = new TeacherClassOptionDto
-                {
-                    ClassId = c.Id,
-                    ClassName = c.ClassName,
-                    Grade = c.Grade,
-                    AccessReason = "FirstPeriod"
-                };
-            }
         }
 
         // Check đã nộp điểm danh ngày đó chưa
@@ -934,15 +913,11 @@ public class AttendanceService : IAttendanceService
         // Là GVCN
         if (cls.HomeroomTeacherId == staff.Id) return (true, null);
 
-        // Là GV dạy tiết đầu
-        var firstTeacherId = await _unitOfWork.Schedules.GetFirstPeriodTeacherIdAsync(classId, date, ct);
-        if (firstTeacherId == staff.Id) return (true, null);
-
         return (false, "NotAssigned");
     }
 
     /// <summary>
-    /// Kiểm tra quyền xem lớp (BGH, Giáo vụ, hoặc GV phụ trách lớp)
+    /// Kiểm tra quyền xem lớp (BGH, Giáo vụ, hoặc GVCN của lớp)
     /// </summary>
     private async Task<bool> CanViewClassAsync(
         int classId, 
@@ -950,7 +925,7 @@ public class AttendanceService : IAttendanceService
         IReadOnlyList<UserRoles> roles, 
         CancellationToken ct = default)
     {
-        if (roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.SchoolBoard) || roles.Contains(UserRoles.Admin))
+        if (roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.SchoolBoard) || roles.Contains(UserRoles.Admin))
         {
             return true;
         }
@@ -964,12 +939,7 @@ public class AttendanceService : IAttendanceService
             if (staff == null) return false;
 
             var cls = await _unitOfWork.Repository<Class>().GetByIdAsync(classId, ct);
-            if (cls != null && cls.HomeroomTeacherId == staff.Id) return true;
-
-            var schedules = await _unitOfWork.Repository<ClassSchedule>()
-                .FindAsync(cs => cs.ClassId == classId && cs.TeacherStaffId == staff.Id && cs.IsActive, ct);
-
-            return schedules.Any();
+            return cls != null && cls.HomeroomTeacherId == staff.Id;
         }
 
         return false;

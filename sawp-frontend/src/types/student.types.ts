@@ -55,6 +55,7 @@ export interface StudentFilterDto {
   pageIndex?: number;
   pageSize?: number;
   keyword?: string;
+  searchTerm?: string;
   classId?: number;
   grade?: number;
   status?: string;
@@ -67,9 +68,12 @@ export interface DuplicateCheckResultDto {
 }
 
 export interface ResolveDuplicateStudentDto {
-  resolutionAction: 'Merge' | 'Overwrite' | 'Rename';
-  existingStudentId: number;
+  studentCode?: string;
+  action?: 'Merge' | 'Overwrite' | 'Rename';
   newStudentCode?: string;
+  profileData?: CreateStudentDto;
+  resolutionAction?: 'Merge' | 'Overwrite' | 'Rename';
+  existingStudentId?: number;
   newStudentData?: CreateStudentDto;
 }
 

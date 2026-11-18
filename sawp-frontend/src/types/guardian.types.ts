@@ -2,12 +2,13 @@ export interface SubmitChildLinkDto {
   studentCode: string;
   studentFullName: string;
   studentDateOfBirth: string;
-  relationship: string;
+  relationship: string | number;
   notes?: string;
 }
 
 export interface ChildLinkRequestResultDto {
   requestId: number;
+  requestNumber?: string;
   studentCode: string;
   studentFullName: string;
   isAutoVerified: boolean;
@@ -36,7 +37,10 @@ export interface ChildLinkRequestItemDto {
 
 export interface VerifyChildLinkDto {
   isApproved: boolean;
+  reviewerNotes?: string;
   rejectionReason?: string;
+  relationship?: number;
+  isPrimaryContact?: boolean;
 }
 
 export interface LinkedChildSummaryDto {

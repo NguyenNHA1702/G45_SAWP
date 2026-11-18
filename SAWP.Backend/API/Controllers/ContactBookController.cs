@@ -36,6 +36,88 @@ public class ContactBookController : BaseApiController
     }
 
     /// <summary>
+    /// Tải lên tệp đính kèm cho bài viết bảng tin lớp (hình ảnh hoặc tài liệu) (UC-61, BR-50)
+    /// </summary>
+    [HttpPost("upload-attachment")]
+    public async Task<IActionResult> UploadAttachment(
+        IFormFile file,
+        [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
+        CancellationToken cancellationToken)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG01));
+        }
+
+        // BR-50: Giới hạn kích thước tệp tối đa 5MB
+        if (file.Length > 5 * 1024 * 1024)
+        {
+            return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG41));
+        }
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx" };
+        if (!allowedExtensions.Contains(ext))
+        {
+            return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG41));
+        }
+
+        var isImg = ext is ".jpg" or ".jpeg" or ".png" or ".webp";
+        using var stream = file.OpenReadStream();
+        var relativePath = await fileStorageService.SaveFileAsync(stream, file.FileName, "contact-book", cancellationToken);
+        var normalizedPath = relativePath.Replace('\\', '/');
+        var fileUrl = $"/api/contact-book/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
+
+        return Ok(ApiResponse<ContactAttachmentUploadResultDto>.Ok(new ContactAttachmentUploadResultDto
+        {
+            Url = fileUrl,
+            FileName = file.FileName,
+            FileType = isImg ? "Image" : "Document",
+            FileSize = file.Length,
+            SavedPath = normalizedPath
+        }, SystemMessages.MSG08));
+    }
+
+    /// <summary>
+    /// Tải / Xem tệp đính kèm bảng tin lớp
+    /// </summary>
+    [HttpGet("attachment-file")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAttachmentFile(
+        [FromQuery] string path,
+        [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return BadRequest();
+        }
+
+        var cleanPath = path.Replace("..", "").TrimStart('/', '\\');
+        var stream = await fileStorageService.GetFileAsync(cleanPath, cancellationToken);
+        if (stream == null)
+        {
+            return NotFound("Không tìm thấy tệp đính kèm.");
+        }
+
+        var ext = Path.GetExtension(cleanPath).ToLowerInvariant();
+        var contentType = ext switch
+        {
+            ".pdf" => "application/pdf",
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp" => "image/webp",
+            ".doc" => "application/msword",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xls" => "application/vnd.ms-excel",
+            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            _ => "application/octet-stream"
+        };
+
+        return File(stream, contentType, Path.GetFileName(cleanPath));
+    }
+
+    /// <summary>
     /// GVCN đăng bài viết mới lên bảng tin lớp (UC-61)
     /// </summary>
     [HttpPost("posts")]

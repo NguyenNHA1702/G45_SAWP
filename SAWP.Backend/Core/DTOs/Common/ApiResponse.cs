@@ -23,5 +23,5 @@ public class ApiResponse<T>
         new() { Success = false, Message = message, Code = code };
 
     public static ApiResponse<T> Fail(SystemMessage sysMsg, List<string>? errors = null) =>
-        new() { Success = false, Code = sysMsg.Code, Message = sysMsg.Content, Errors = errors };
+        new() { Success = false, Code = sysMsg.Code, Message = errors?.FirstOrDefault() ?? sysMsg.Content, Errors = errors };
 }

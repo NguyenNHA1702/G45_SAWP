@@ -58,4 +58,19 @@ public interface ILunchService
     /// Chốt số lượng suất ăn trong ngày gửi bếp ăn (giờ chốt: CutoffTime của ngày hoặc School:LunchCutoffTime)
     /// </summary>
     Task<ApiResponse<bool>> LockDailyMealAsync(LockMealDayRequestDto request, CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<bool>> UpdateRegistrationMealTypeAsync(int userId, IReadOnlyList<UserRoles> roles, UpdateLunchRegistrationMealTypeDto request, CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<LunchPeriodReportDto>> GetPeriodReportAsync(
+        DateTime fromDate,
+        DateTime toDate,
+        int? classId = null,
+        int? userId = null,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<MonthlyBoardingQuotaDto>> GetMonthlyQuotaAsync(string month, CancellationToken cancellationToken = default);
+    Task<ApiResponse<MonthlyBoardingQuotaDto>> UpsertMonthlyQuotaAsync(int userId, UpsertMonthlyBoardingQuotaRequestDto request, CancellationToken cancellationToken = default);
+    Task<ApiResponse<List<BoardingIncidentDto>>> GetBoardingIncidentsAsync(DateTime? date, string? month, DateTime? from, DateTime? to, int? classId, int? studentId, int? userId, IReadOnlyList<UserRoles>? roles, CancellationToken cancellationToken = default);
+    Task<ApiResponse<BoardingIncidentDto>> CreateBoardingIncidentAsync(int userId, IReadOnlyList<UserRoles> roles, CreateBoardingIncidentRequestDto request, CancellationToken cancellationToken = default);
 }

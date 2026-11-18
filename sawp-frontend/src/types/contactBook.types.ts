@@ -37,6 +37,21 @@ export interface ClassPostDto {
   comments: PostCommentDto[];
 }
 
+export interface PostAttachmentInputDto {
+  fileUrl: string;
+  fileName: string;
+  fileType: string;
+  fileSizeBytes: number;
+}
+
+export interface ContactAttachmentUploadResultDto {
+  url: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  savedPath: string;
+}
+
 export interface CreateClassPostDto {
   classId: number;
   title: string;
@@ -45,6 +60,7 @@ export interface CreateClassPostDto {
   isPinned?: boolean;
   allowComments?: boolean;
   attachmentUrls?: string[];
+  attachments?: PostAttachmentInputDto[];
 }
 
 export interface CreatePostCommentDto {
@@ -78,6 +94,7 @@ export interface StudentEvaluationDto {
 }
 
 export interface CreateStudentEvaluationDto {
+  id?: number;
   studentId: number;
   classId: number;
   evaluationDate: string;

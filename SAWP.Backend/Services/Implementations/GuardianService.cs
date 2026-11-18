@@ -241,7 +241,7 @@ public class GuardianService : IGuardianService
             StudentFullName = ar.Student?.FullName,
             StudentDateOfBirth = ar.GuardianLinkDetail?.StudentDateOfBirth ?? ar.Student?.DateOfBirth,
             Relationship = (int)(ar.GuardianLinkDetail?.Relationship ?? RelationshipTypes.Guardian),
-            RelationshipName = (ar.GuardianLinkDetail?.Relationship ?? RelationshipTypes.Guardian).ToString(),
+            RelationshipName = (ar.GuardianLinkDetail?.Relationship ?? RelationshipTypes.Guardian).ToVietnamese(),
             GuardianPhone = ar.GuardianLinkDetail?.GuardianPhone,
             GuardianIdentityCard = ar.GuardianLinkDetail?.GuardianIdentityCard,
             ProofDocumentUrl = ar.GuardianLinkDetail?.ProofDocumentUrl,
@@ -281,7 +281,8 @@ public class GuardianService : IGuardianService
 
         request.ReviewerUserId = reviewerUserId;
         request.ProcessedDate = DateTime.UtcNow;
-        request.ReviewerNotes = review.ReviewerNotes.Trim();
+        var notes = !string.IsNullOrWhiteSpace(review.ReviewerNotes) ? review.ReviewerNotes : (review.RejectionReason ?? string.Empty);
+        request.ReviewerNotes = notes.Trim();
 
         if (review.IsApproved)
         {
@@ -390,7 +391,7 @@ public class GuardianService : IGuardianService
                 CurrentClassName = activeAssignment?.Class?.ClassName,
                 Grade = activeAssignment?.Class?.Grade,
                 IsPlacementPublished = activeAssignment?.Class?.IsPlacementPublished ?? false,
-                RelationshipName = myLink?.Relationship.ToString() ?? "Phụ huynh",
+                RelationshipName = myLink?.Relationship.ToVietnamese() ?? "Phụ huynh",
                 IsPrimaryContact = myLink?.IsPrimaryContact ?? false
             };
         }).ToList();
@@ -521,7 +522,7 @@ public class GuardianService : IGuardianService
                 Occupation = sg.Guardian.Occupation,
                 Address = sg.Guardian.Address,
                 Relationship = (int)sg.Relationship,
-                RelationshipName = sg.Relationship.ToString(),
+                RelationshipName = sg.Relationship.ToVietnamese(),
                 IsPrimaryContact = sg.IsPrimaryContact
             }).ToList()
         };

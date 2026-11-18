@@ -8,7 +8,9 @@ public class LunchRegistrationDto
     public DateTime Date { get; set; }
     public MealType MealType { get; set; }
     public bool IsActive { get; set; }
+    public bool IsWaitlisted { get; set; }
     public string? Remarks { get; set; }
+    public string? AllergyWarning { get; set; }
 }
 
 public class DailyMealCountReportDto
@@ -52,6 +54,9 @@ public class ClassMealSummaryDto
     public int InitialRegistered { get; set; }
     public int CancelledCount { get; set; }
     public int ActualCount { get; set; }
+    public int StandardCount { get; set; }
+    public int VegetarianCount { get; set; }
+    public int SpecialDietCount { get; set; }
 }
 
 public class MealAuditLogDto
@@ -77,7 +82,9 @@ public class StudentMealOperationItemDto
     public int Grade { get; set; }
     public MealType MealType { get; set; }
     public bool IsActive { get; set; }
+    public bool IsWaitlisted { get; set; }
     public string? Remarks { get; set; }
+    public string? AllergyWarning { get; set; }
     public LunchCancellationSource? CancellationSource { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
@@ -137,6 +144,7 @@ public class StudentLunchDayDto
     public string? ServiceRemarks { get; set; }
     public int? RegistrationId { get; set; }
     public bool IsRegistered { get; set; }
+    public bool IsWaitlisted { get; set; }
     public MealType? MealType { get; set; }
     public string? StudentRemarks { get; set; }
     public LunchCancellationSource? CancellationSource { get; set; }
@@ -171,6 +179,9 @@ public class BatchLunchRegistrationResultDto
     public int RegisteredCount { get; set; }
     public List<DateTime> RegisteredDates { get; set; } = new();
     public List<DateTime> SkippedDuplicateDates { get; set; } = new();
+    public int WaitlistedCount { get; set; }
+    public List<DateTime> WaitlistedDates { get; set; } = new();
+    public bool IsWaitlisted { get; set; }
 }
 
 // ---- UC-30: Phụ huynh hủy đăng ký còn hiệu lực ----
@@ -179,4 +190,68 @@ public class CancelLunchRegistrationRequestDto
     public int StudentId { get; set; }
     public DateTime Date { get; set; }
     public string? Reason { get; set; }
+}
+
+public class UpdateLunchRegistrationMealTypeDto
+{
+    public int StudentId { get; set; }
+    public DateTime Date { get; set; }
+    public MealType MealType { get; set; } = MealType.StandardLunch;
+    public string? Remarks { get; set; }
+}
+
+public class LunchPeriodReportDto
+{
+    public DateTime FromDate { get; set; }
+    public DateTime ToDate { get; set; }
+    public int TotalServiceDays { get; set; }
+    public int TotalInitialRegistered { get; set; }
+    public int TotalCancelled { get; set; }
+    public int TotalActualMeals { get; set; }
+    public int TotalStandard { get; set; }
+    public int TotalVegetarian { get; set; }
+    public int TotalSpecialDiet { get; set; }
+    public List<ClassMealSummaryDto> ClassSummaries { get; set; } = new();
+}
+
+// ---- Monthly Boarding Quota & Waitlist (TC_BDS_34) ----
+public class MonthlyBoardingQuotaDto
+{
+    public string Month { get; set; } = string.Empty; // YYYY-MM
+    public int? Quota { get; set; }
+    public int RegisteredCount { get; set; }
+    public int WaitlistedCount { get; set; }
+    public bool IsFull { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+}
+
+public class UpsertMonthlyBoardingQuotaRequestDto
+{
+    public string Month { get; set; } = string.Empty; // YYYY-MM
+    public int Quota { get; set; }
+}
+
+// ---- Daily Boarding Incident Log (TC_BDS_36) ----
+public class BoardingIncidentDto
+{
+    public int Id { get; set; }
+    public int StudentId { get; set; }
+    public string StudentCode { get; set; } = string.Empty;
+    public string StudentName { get; set; } = string.Empty;
+    public int? ClassId { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+    public DateTime Date { get; set; }
+    public string IncidentType { get; set; } = "General";
+    public string Note { get; set; } = string.Empty;
+    public int RecordedByUserId { get; set; }
+    public string RecordedByName { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class CreateBoardingIncidentRequestDto
+{
+    public int StudentId { get; set; }
+    public DateTime Date { get; set; }
+    public string? IncidentType { get; set; }
+    public string Note { get; set; } = string.Empty;
 }

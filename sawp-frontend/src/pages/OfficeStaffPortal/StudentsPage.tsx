@@ -71,10 +71,12 @@ export default function StudentsPage() {
   const loadStudents = async () => {
     setLoading(true);
     try {
+      const trimmedSearch = keyword.trim() || undefined;
       const filter: StudentFilterDto = {
         pageIndex,
         pageSize,
-        keyword: keyword.trim() || undefined,
+        keyword: trimmedSearch,
+        searchTerm: trimmedSearch,
         classId: selectedClassId,
         status: selectedStatus,
       };

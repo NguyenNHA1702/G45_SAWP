@@ -77,7 +77,7 @@ public class AttendanceServiceTests : TestBase
         // Assert
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
-        result.Data.Should().HaveCount(2);
+        result.Data.Should().HaveCount(1);
     }
 
     [Fact]

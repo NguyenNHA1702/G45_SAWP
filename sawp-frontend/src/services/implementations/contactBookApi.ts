@@ -9,6 +9,7 @@ import type {
   CreateStudentEvaluationDto,
   AcknowledgeEvaluationDto,
   StudentEvaluationRosterItemDto,
+  ContactAttachmentUploadResultDto,
 } from '../../types/contactBook.types';
 
 export const contactBookApi = {
@@ -20,6 +21,21 @@ export const contactBookApi = {
 
   createClassPost: async (payload: CreateClassPostDto): Promise<ApiResponse<ClassPostDto>> => {
     const res = await apiClient.post<ApiResponse<ClassPostDto>>('/contact-book/posts', payload);
+    return res.data;
+  },
+
+  uploadAttachment: async (file: File): Promise<ApiResponse<ContactAttachmentUploadResultDto>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post<ApiResponse<ContactAttachmentUploadResultDto>>(
+      '/contact-book/upload-attachment',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
     return res.data;
   },
 

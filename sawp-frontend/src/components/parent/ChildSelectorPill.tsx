@@ -2,18 +2,18 @@ import { useParentChild } from '../../contexts/ParentChildContext';
 import './ChildSelectorPill.css';
 
 export function ChildSelectorPill() {
-  const { children, activeChild, selectChild, loading } = useParentChild();
+  const { children, activeChild, selectChild, loading, isParent } = useParentChild();
+
+  if (!isParent) {
+    return null;
+  }
 
   if (loading && !activeChild) {
     return <span className="child-selector__label" style={{ padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>⏳ Đang tải...</span>;
   }
 
   if (children.length === 0) {
-    return (
-      <span className="badge badge--pink" style={{ padding: '4px 8px', fontSize: 12 }}>
-        👶 Đang kết nối con...
-      </span>
-    );
+    return null;
   }
 
   return (

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   Award,
-  BookOpen,
   CalendarCheck2,
   CheckCircle2,
   Clock,
@@ -19,6 +18,7 @@ import toast from 'react-hot-toast';
 import { useParentChild } from '../../contexts/ParentChildContext';
 import { contactBookApi } from '../../services/implementations/contactBookApi';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
+import { PostAttachmentsRenderer } from '../../components/contactBook/PostAttachmentsRenderer';
 import type { ClassPostDto, StudentEvaluationDto } from '../../types/contactBook.types';
 import type { AttendanceDay } from '../../types/attendance.types';
 import { getSystemMessage } from '../../constants/messages';
@@ -300,49 +300,8 @@ export default function EContactBookPage() {
                     {post.content}
                   </p>
 
-                  {/* Attachments / Images Gallery */}
-                  {post.attachments && post.attachments.length > 0 && (
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                        gap: 12,
-                        marginBottom: 16,
-                      }}
-                    >
-                      {post.attachments.map((att) => (
-                        <div
-                          key={att.id}
-                          style={{
-                            border: '2px solid var(--color-border)',
-                            borderRadius: 12,
-                            overflow: 'hidden',
-                            background: '#F8FAFC',
-                          }}
-                        >
-                          {att.fileType === 'Image' ? (
-                            <img
-                              src={att.fileUrl}
-                              alt={att.fileName}
-                              style={{ width: '100%', height: 140, objectFit: 'cover' }}
-                            />
-                          ) : (
-                            <div style={{ padding: 16, textAlign: 'center' }}>
-                              <BookOpen size={28} color="var(--color-accent)" style={{ margin: '0 auto 8px' }} />
-                              <a
-                                href={att.fileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ fontSize: '0.85rem', fontWeight: 600, wordBreak: 'break-all' }}
-                              >
-                                {att.fileName}
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Attachments / Images / Video Gallery */}
+                  <PostAttachmentsRenderer attachments={post.attachments} />
 
                   {/* Reaction & Comments stats */}
                   <div
@@ -513,22 +472,27 @@ export default function EContactBookPage() {
                     </div>
                   </div>
 
-                  {/* Rating display */}
+                  {/* Rating display (TC_CTB_20: hỗ trợ cả mã tiếng Anh và nhãn tiếng Việt) */}
                   <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Đánh giá chung:</span>
-                    {ev.rating === 'Excellent' && (
+                    {(ev.rating === 'Excellent' || ev.rating === 'Tốt' || ev.rating === 'Xuất sắc') && (
                       <span className="badge badge--pink" style={{ fontSize: '0.85rem' }}>
-                        ⭐⭐⭐ Tích cực & Tiến bộ vượt bậc
+                        ⭐⭐⭐ Tốt / Tích cực & Tiến bộ
                       </span>
                     )}
-                    {ev.rating === 'Good' && (
+                    {(ev.rating === 'Good' || ev.rating === 'Khá' || ev.rating === 'Đạt' || ev.rating === 'Đạt yêu cầu') && (
                       <span className="badge badge--green" style={{ fontSize: '0.85rem' }}>
                         ⭐⭐ Đạt yêu cầu chăm ngoan
                       </span>
                     )}
-                    {ev.rating === 'NeedsAttention' && (
+                    {(ev.rating === 'NeedsAttention' || ev.rating === 'Cần nhắc nhở' || ev.rating === 'Cần lưu ý') && (
                       <span className="badge badge--yellow" style={{ fontSize: '0.85rem' }}>
                         ⭐ Cần lưu ý nhắc nhở
+                      </span>
+                    )}
+                    {!['Excellent', 'Tốt', 'Xuất sắc', 'Good', 'Khá', 'Đạt', 'Đạt yêu cầu', 'NeedsAttention', 'Cần nhắc nhở', 'Cần lưu ý'].includes(ev.rating) && (
+                      <span className="badge badge--green" style={{ fontSize: '0.85rem' }}>
+                        ⭐ {ev.rating}
                       </span>
                     )}
                   </div>

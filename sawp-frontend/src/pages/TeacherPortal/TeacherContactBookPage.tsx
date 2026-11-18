@@ -13,16 +13,18 @@ import {
   Sparkles,
   Trash2,
   Users,
-  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { contactBookApi } from '../../services/implementations/contactBookApi';
 import { classApi } from '../../services/implementations/classApi';
+import { GeometricModal } from '../../components/common/GeometricModal';
+import { PostAttachmentsRenderer } from '../../components/contactBook/PostAttachmentsRenderer';
 import type {
   ClassPostDto,
   CreateClassPostDto,
   StudentEvaluationRosterItemDto,
   CreateStudentEvaluationDto,
+  PostAttachmentInputDto,
 } from '../../types/contactBook.types';
 import type { ClassRosterDto } from '../../types/class.types';
 import { getSystemMessage } from '../../constants/messages';
@@ -55,6 +57,8 @@ export default function TeacherContactBookPage() {
   const [postIsPinned, setPostIsPinned] = useState(false);
   const [postAllowComments, setPostAllowComments] = useState(true);
   const [postImageUrl, setPostImageUrl] = useState('');
+  const [postAttachments, setPostAttachments] = useState<PostAttachmentInputDto[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [submittingPost, setSubmittingPost] = useState(false);
 
   // Tab 2: Evaluations
@@ -116,9 +120,60 @@ export default function TeacherContactBookPage() {
     }
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+    const newAttachments: PostAttachmentInputDto[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+
+      // BR-50: Giới hạn kích thước tệp đính kèm <= 5MB
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(getSystemMessage('MSG41')?.content || 'Tệp không hợp lệ, không đúng định dạng hoặc vượt quá dung lượng cho phép.');
+        e.target.value = '';
+        return;
+      }
+
+      // BR-50: Chặn các định dạng tệp nguy hại hoặc không hỗ trợ (ví dụ: .exe)
+      if (!allowedExtensions.includes(ext)) {
+        toast.error(getSystemMessage('MSG41')?.content || 'Tệp không hợp lệ, không đúng định dạng hoặc vượt quá dung lượng cho phép.');
+        e.target.value = '';
+        return;
+      }
+    }
+
+    setUploadingFiles(true);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const res = await contactBookApi.uploadAttachment(file);
+        if (res.success && res.data) {
+          newAttachments.push({
+            fileUrl: res.data.url,
+            fileName: res.data.fileName,
+            fileType: res.data.fileType,
+            fileSizeBytes: res.data.fileSize,
+          });
+        } else {
+          toast.error(res.message || 'Lỗi khi tải tệp lên');
+        }
+      }
+      setPostAttachments((prev) => [...prev, ...newAttachments]);
+    } catch {
+      toast.error('Lỗi khi tải tệp lên');
+    } finally {
+      setUploadingFiles(false);
+      e.target.value = '';
+    }
+  };
+
   const handleCreatePost = async () => {
     if (!postTitle.trim() || !postContent.trim()) {
-      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng nhập đầy đủ tiêu đề và nội dung.');
+      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ.');
       return;
     }
     if (!homeroom) return;
@@ -132,16 +187,18 @@ export default function TeacherContactBookPage() {
         category: postCategory,
         isPinned: postIsPinned,
         allowComments: postAllowComments,
-        attachmentUrls: postImageUrl.trim() ? [postImageUrl.trim()] : [],
+        attachmentUrls: postImageUrl.trim() ? [postImageUrl.trim()] : undefined,
+        attachments: postAttachments.length > 0 ? postAttachments : undefined,
       };
 
       const res = await contactBookApi.createClassPost(payload);
       if (res.success) {
-        toast.success(getSystemMessage('MSG51')?.content || 'Đăng bài viết thành công!');
+        toast.success(getSystemMessage('MSG51')?.content || 'Đăng bài viết lên bảng tin lớp thành công.');
         setShowCreateModal(false);
         setPostTitle('');
         setPostContent('');
         setPostImageUrl('');
+        setPostAttachments([]);
         loadPosts(homeroom.classId);
       } else {
         toast.error(res.message || 'Lỗi khi đăng bài');
@@ -177,6 +234,9 @@ export default function TeacherContactBookPage() {
   };
 
   const handleDeleteComment = async (commentId: number) => {
+    if (!window.confirm(getSystemMessage('MSG45')?.content || 'Bạn có chắc chắn muốn thực hiện thao tác này?')) {
+      return;
+    }
     try {
       await contactBookApi.deleteComment(commentId);
       toast.success('Đã xóa bình luận.');
@@ -209,14 +269,15 @@ export default function TeacherContactBookPage() {
 
   const handleSaveEvaluation = async () => {
     if (!selectedStudent || !homeroom) return;
-    if (!evalNote.trim()) {
-      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng nhập lời nhận xét cho học sinh.');
+    if (!evalRating || !evalNote.trim()) {
+      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ.');
       return;
     }
 
     setSubmittingEval(true);
     try {
       const payload: CreateStudentEvaluationDto = {
+        id: selectedStudent.evaluation?.id,
         studentId: selectedStudent.studentId,
         classId: homeroom.classId,
         weekNumber,
@@ -229,7 +290,7 @@ export default function TeacherContactBookPage() {
 
       const res = await contactBookApi.createOrUpdateEvaluation(payload);
       if (res.success) {
-        toast.success(getSystemMessage('MSG52')?.content || 'Đã gửi phiếu nhận xét rèn luyện thành công!');
+        toast.success(getSystemMessage('MSG52')?.content || 'Đã lưu và gửi phiếu đánh giá rèn luyện của học sinh.');
         setSelectedStudent(null);
         loadRoster(homeroom.classId, weekNumber);
       } else {
@@ -397,24 +458,7 @@ export default function TeacherContactBookPage() {
                   </p>
 
                   {/* Attachments */}
-                  {post.attachments && post.attachments.length > 0 && (
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-                      {post.attachments.map((att) => (
-                        <img
-                          key={att.id}
-                          src={att.fileUrl}
-                          alt={att.fileName}
-                          style={{
-                            width: 140,
-                            height: 100,
-                            objectFit: 'cover',
-                            borderRadius: 12,
-                            border: '1.5px solid var(--color-border)',
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  <PostAttachmentsRenderer attachments={post.attachments} />
 
                   {/* Reaction & Comments bar */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingTop: 10, borderTop: '1px solid var(--color-border)' }}>
@@ -597,160 +641,193 @@ export default function TeacherContactBookPage() {
       )}
 
       {/* MODAL 1: CREATE CLASS POST */}
-      {showCreateModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-        >
-          <div className="card pop-in" style={{ width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0 }}>Đăng bài viết mới cho lớp</h3>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
+      <GeometricModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Đăng bài viết mới cho lớp"
+        subtitle={`Lớp ${homeroom?.className} · Năm học ${homeroom?.schoolYearName}`}
+        badgeText="Bảng tin lớp"
+        badgeColor="violet"
+        icon={<Newspaper size={24} color="#1E293B" />}
+        maxWidth="md"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
+              Phân loại bài viết
+            </label>
+            <select
+              className="input"
+              value={postCategory}
+              onChange={(e) => setPostCategory(e.target.value)}
+            >
+              <option value="Dặn dò bài vở">Dặn dò bài vở & Đồ dùng học tập</option>
+              <option value="Hoạt động lớp">Hoạt động trải nghiệm / Ngoại khóa</option>
+              <option value="Bán trú">Nhật ký giờ ăn & Ngủ bán trú</option>
+              <option value="Thông báo chung">Thông báo chung của lớp</option>
+            </select>
+          </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
-                  Phân loại bài viết
-                </label>
-                <select
-                  className="input"
-                  value={postCategory}
-                  onChange={(e) => setPostCategory(e.target.value)}
-                >
-                  <option value="Dặn dò bài vở">Dặn dò bài vở & Đồ dùng học tập</option>
-                  <option value="Hoạt động lớp">Hoạt động trải nghiệm / Ngoại khóa</option>
-                  <option value="Bán trú">Nhật ký giờ ăn & Ngủ bán trú</option>
-                  <option value="Thông báo chung">Thông báo chung của lớp</option>
-                </select>
-              </div>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
+              Tiêu đề bài viết (*)
+            </label>
+            <input
+              type="text"
+              className="input"
+              placeholder="Ví dụ: Chuẩn bị dụng cụ môn Mỹ thuật ngày mai..."
+              value={postTitle}
+              onChange={(e) => setPostTitle(e.target.value)}
+            />
+          </div>
 
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
-                  Tiêu đề bài viết (*)
-                </label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="Ví dụ: Chuẩn bị dụng cụ môn Mỹ thuật ngày mai..."
-                  value={postTitle}
-                  onChange={(e) => setPostTitle(e.target.value)}
-                />
-              </div>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
+              Nội dung chi tiết (*)
+            </label>
+            <textarea
+              className="input"
+              rows={4}
+              placeholder="Nhập nội dung dặn dò chi tiết cho phụ huynh..."
+              value={postContent}
+              onChange={(e) => setPostContent(e.target.value)}
+            />
+          </div>
 
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
-                  Nội dung chi tiết (*)
-                </label>
-                <textarea
-                  className="input"
-                  rows={4}
-                  placeholder="Nhập nội dung dặn dò chi tiết cho phụ huynh..."
-                  value={postContent}
-                  onChange={(e) => setPostContent(e.target.value)}
-                />
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
+              Tải lên tệp đính kèm (Ảnh hoặc PDF / Word / Excel ≤ 5MB) (BR-50)
+            </label>
+            <input
+              type="file"
+              multiple
+              accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx"
+              className="input"
+              disabled={uploadingFiles}
+              onChange={handleFileChange}
+            />
+            {uploadingFiles && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-accent)', marginTop: 4 }}>
+                Đang tải tệp lên máy chủ...
               </div>
+            )}
+            {postAttachments.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                {postAttachments.map((att, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#F1F5F9',
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}>
+                      📎 {att.fileName} ({(att.fileSizeBytes / (1024 * 1024)).toFixed(2)} MB)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPostAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                      style={{ background: 'transparent', border: 'none', color: '#DC2626', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-              <div>
-                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
-                  Đính kèm URL hình ảnh (nếu có)
-                </label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="https://example.com/photo.jpg"
-                  value={postImageUrl}
-                  onChange={(e) => setPostImageUrl(e.target.value)}
-                />
-              </div>
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
+              Đính kèm liên kết ngoài (Video YouTube / Ảnh / Tài liệu Drive)
+            </label>
+            <input
+              type="text"
+              className="input"
+              placeholder="https://... (Ví dụ: Link video YouTube, ảnh, tài liệu)"
+              value={postImageUrl}
+              onChange={(e) => setPostImageUrl(e.target.value)}
+            />
+          </div>
 
-              <div style={{ display: 'flex', gap: 20, marginTop: 4 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={postIsPinned}
-                    onChange={(e) => setPostIsPinned(e.target.checked)}
-                  />
-                  Ghim bài viết lên đầu trang
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={postAllowComments}
-                    onChange={(e) => setPostAllowComments(e.target.checked)}
-                  />
-                  Cho phép phụ huynh bình luận
-                </label>
-              </div>
+          <div style={{ display: 'flex', gap: 20, marginTop: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input
+                type="checkbox"
+                checked={postIsPinned}
+                onChange={(e) => setPostIsPinned(e.target.checked)}
+              />
+              Ghim bài viết lên đầu trang
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input
+                type="checkbox"
+                checked={postAllowComments}
+                onChange={(e) => setPostAllowComments(e.target.checked)}
+              />
+              Cho phép phụ huynh bình luận
+            </label>
+          </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-                <button
-                  type="button"
-                  className="btn btn--outline"
-                  onClick={() => setShowCreateModal(false)}
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={submittingPost}
-                  onClick={handleCreatePost}
-                >
-                  <Send size={15} /> Đăng bài ngay
-                </button>
-              </div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+            <button
+              type="button"
+              className="btn btn--outline"
+              onClick={() => setShowCreateModal(false)}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={submittingPost}
+              onClick={handleCreatePost}
+            >
+              <Send size={15} /> Đăng bài ngay
+            </button>
           </div>
         </div>
-      )}
+      </GeometricModal>
 
       {/* MODAL 2: EVALUATION FORM */}
-      {selectedStudent && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-        >
-          <div className="card pop-in" style={{ width: '100%', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
-                <h3 style={{ margin: 0 }}>Nhận xét nề nếp - Tuần {weekNumber}</h3>
-                <div style={{ fontSize: '0.85rem', color: 'var(--color-muted-fg)' }}>
-                  Học sinh: <strong>{selectedStudent.studentName}</strong> ({selectedStudent.studentCode})
+      <GeometricModal
+        open={!!selectedStudent}
+        onClose={() => setSelectedStudent(null)}
+        title={`Nhận xét nề nếp - Tuần ${weekNumber}`}
+        subtitle={selectedStudent ? `Học sinh: ${selectedStudent.studentName} (${selectedStudent.studentCode})` : undefined}
+        badgeText="Sổ nhận xét"
+        badgeColor="pink"
+        icon={<Award size={24} color="#1E293B" />}
+        maxWidth="md"
+      >
+        {selectedStudent && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Parent Acknowledgment & Feedback Notice (BR-59 & TC_CTB_24) */}
+              {selectedStudent.evaluation?.isAcknowledged && (
+                <div style={{ background: '#F0FDF4', padding: 14, borderRadius: 12, border: '1.5px solid #86EFAC' }}>
+                  <div style={{ fontWeight: 800, color: '#166534', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={16} /> Đã được phụ huynh ký nhận lúc{' '}
+                    {selectedStudent.evaluation?.acknowledgedAt
+                      ? new Date(selectedStudent.evaluation.acknowledgedAt).toLocaleString('vi-VN')
+                      : ''}
+                  </div>
+                  {selectedStudent.evaluation?.parentFeedback && (
+                    <div style={{ marginTop: 8, fontSize: '0.875rem', color: '#14532D', background: '#DCFCE7', padding: '8px 12px', borderRadius: 8 }}>
+                      <strong>Ý kiến phản hồi từ phụ huynh:</strong>
+                      <div style={{ fontStyle: 'italic', marginTop: 2 }}>"{selectedStudent.evaluation.parentFeedback}"</div>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#15803D' }}>
+                    🔒 Theo BR-59, phiếu đánh giá đã khóa (Read-only). Không thể chỉnh sửa sau khi phụ huynh đã ký nhận.
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedStudent(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
+              )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Rating selection */}
               <div>
                 <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 6 }}>
@@ -759,6 +836,7 @@ export default function TeacherContactBookPage() {
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button
                     type="button"
+                    disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                     onClick={() => setEvalRating('Excellent')}
                     style={{
                       flex: 1,
@@ -768,14 +846,16 @@ export default function TeacherContactBookPage() {
                       borderColor: evalRating === 'Excellent' ? 'var(--color-accent)' : '#E2E8F0',
                       background: evalRating === 'Excellent' ? '#EDE9FE' : '#FFFFFF',
                       fontWeight: 700,
-                      cursor: 'pointer',
+                      cursor: selectedStudent.evaluation?.isAcknowledged ? 'not-allowed' : 'pointer',
                       fontSize: '0.8rem',
+                      opacity: selectedStudent.evaluation?.isAcknowledged ? 0.75 : 1,
                     }}
                   >
                     ⭐⭐⭐ Tích cực
                   </button>
                   <button
                     type="button"
+                    disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                     onClick={() => setEvalRating('Good')}
                     style={{
                       flex: 1,
@@ -785,14 +865,16 @@ export default function TeacherContactBookPage() {
                       borderColor: evalRating === 'Good' ? 'var(--color-accent)' : '#E2E8F0',
                       background: evalRating === 'Good' ? '#EDE9FE' : '#FFFFFF',
                       fontWeight: 700,
-                      cursor: 'pointer',
+                      cursor: selectedStudent.evaluation?.isAcknowledged ? 'not-allowed' : 'pointer',
                       fontSize: '0.8rem',
+                      opacity: selectedStudent.evaluation?.isAcknowledged ? 0.75 : 1,
                     }}
                   >
                     ⭐⭐ Đạt yêu cầu
                   </button>
                   <button
                     type="button"
+                    disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                     onClick={() => setEvalRating('NeedsAttention')}
                     style={{
                       flex: 1,
@@ -802,8 +884,9 @@ export default function TeacherContactBookPage() {
                       borderColor: evalRating === 'NeedsAttention' ? 'var(--color-accent)' : '#E2E8F0',
                       background: evalRating === 'NeedsAttention' ? '#EDE9FE' : '#FFFFFF',
                       fontWeight: 700,
-                      cursor: 'pointer',
+                      cursor: selectedStudent.evaluation?.isAcknowledged ? 'not-allowed' : 'pointer',
                       fontSize: '0.8rem',
+                      opacity: selectedStudent.evaluation?.isAcknowledged ? 0.75 : 1,
                     }}
                   >
                     ⭐ Cần nhắc nhở
@@ -823,6 +906,7 @@ export default function TeacherContactBookPage() {
                       <button
                         key={badge}
                         type="button"
+                        disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                         onClick={() => toggleBadge(badge)}
                         style={{
                           background: isSelected ? '#DDD6FE' : '#F1F5F9',
@@ -833,7 +917,8 @@ export default function TeacherContactBookPage() {
                           borderRadius: 999,
                           fontSize: '0.8rem',
                           fontWeight: 700,
-                          cursor: 'pointer',
+                          cursor: selectedStudent.evaluation?.isAcknowledged ? 'not-allowed' : 'pointer',
+                          opacity: selectedStudent.evaluation?.isAcknowledged ? 0.75 : 1,
                         }}
                       >
                         {isSelected ? '✓ ' : '+ '}
@@ -852,6 +937,7 @@ export default function TeacherContactBookPage() {
                 <textarea
                   className="input"
                   rows={3}
+                  disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                   placeholder="Ghi nhận xét về nề nếp, sinh hoạt, sự tiến bộ của em..."
                   value={evalNote}
                   onChange={(e) => setEvalNote(e.target.value)}
@@ -866,6 +952,7 @@ export default function TeacherContactBookPage() {
                 <input
                   type="text"
                   className="input"
+                  disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                   placeholder="Ví dụ: Nhắc phụ huynh bọc lại vở bài tập Toán của con..."
                   value={evalRemind}
                   onChange={(e) => setEvalRemind(e.target.value)}
@@ -878,21 +965,22 @@ export default function TeacherContactBookPage() {
                   className="btn btn--outline"
                   onClick={() => setSelectedStudent(null)}
                 >
-                  Hủy
+                  {selectedStudent.evaluation?.isAcknowledged ? 'Đóng' : 'Hủy'}
                 </button>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={submittingEval}
-                  onClick={handleSaveEvaluation}
-                >
-                  <Check size={16} /> Lưu & Gửi phiếu nhận xét
-                </button>
+                {!selectedStudent.evaluation?.isAcknowledged && (
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    disabled={submittingEval}
+                    onClick={handleSaveEvaluation}
+                  >
+                    <Check size={16} /> Lưu & Gửi phiếu nhận xét
+                  </button>
+                )}
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
+      </GeometricModal>
     </div>
   );
 }

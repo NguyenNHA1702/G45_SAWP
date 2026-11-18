@@ -73,10 +73,14 @@ public class StudentService : IStudentService
                         .ThenInclude(t => t!.User)
             .AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
+        var searchTerm = !string.IsNullOrWhiteSpace(filter.SearchTerm) ? filter.SearchTerm : filter.Keyword;
+        if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            var term = filter.SearchTerm.Trim().ToLower();
-            query = query.Where(s => s.StudentCode.ToLower().Contains(term) || s.FullName.ToLower().Contains(term));
+            var term = searchTerm.Trim().ToLower();
+            query = query.Where(s => s.StudentCode.ToLower().Contains(term) 
+                || s.FullName.ToLower().Contains(term)
+                || (s.ResidentialArea != null && s.ResidentialArea.ToLower().Contains(term))
+                || s.StudentGuardians.Any(sg => sg.Guardian.User != null && sg.Guardian.User.FullName.ToLower().Contains(term)));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Status))
@@ -306,15 +310,31 @@ public class StudentService : IStudentService
         int? actorUserId = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.StudentCode))
+        var studentCode = !string.IsNullOrWhiteSpace(request.StudentCode)
+            ? request.StudentCode
+            : (request.ProfileData?.StudentCode ?? request.NewStudentData?.StudentCode);
+
+        if (string.IsNullOrWhiteSpace(studentCode) && request.ExistingStudentId.HasValue)
+        {
+            var existingById = await _unitOfWork.Students.GetByIdAsync(request.ExistingStudentId.Value, cancellationToken);
+            if (existingById != null)
+            {
+                studentCode = existingById.StudentCode;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(studentCode))
         {
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Mã học sinh là bắt buộc." });
         }
 
-        var normalizedCode = request.StudentCode.Trim().ToUpperInvariant();
+        var normalizedCode = studentCode.Trim().ToUpperInvariant();
         var existing = await _unitOfWork.Students.GetByStudentCodeAsync(normalizedCode, cancellationToken);
 
-        if (string.Equals(request.Action, "Rename", StringComparison.OrdinalIgnoreCase))
+        var action = !string.IsNullOrWhiteSpace(request.Action) ? request.Action : (request.ResolutionAction ?? "Merge");
+        var profileData = request.ProfileData ?? request.NewStudentData ?? new CreateStudentDto();
+
+        if (string.Equals(action, "Rename", StringComparison.OrdinalIgnoreCase))
         {
             if (string.IsNullOrWhiteSpace(request.NewStudentCode))
             {
@@ -329,7 +349,7 @@ public class StudentService : IStudentService
             }
 
             // Create new student with renamed code
-            var createDto = request.ProfileData ?? new CreateStudentDto();
+            var createDto = profileData;
             createDto.StudentCode = newNormalizedCode;
             return await CreateStudentAsync(createDto, actorUserId, cancellationToken);
         }
@@ -337,7 +357,7 @@ public class StudentService : IStudentService
         if (existing == null)
         {
             // No conflict in DB, can create fresh
-            var createDto = request.ProfileData ?? new CreateStudentDto();
+            var createDto = profileData;
             createDto.StudentCode = normalizedCode;
             return await CreateStudentAsync(createDto, actorUserId, cancellationToken);
         }
@@ -345,44 +365,49 @@ public class StudentService : IStudentService
         // Action: "Merge" or "Overwrite"
         var oldValues = $"Name: {existing.FullName}, DOB: {existing.DateOfBirth:yyyy-MM-dd}, Gender: {existing.Gender}, Status: {existing.Status}";
 
-        if (request.ProfileData != null)
+        if (profileData != null)
         {
-            if (!string.IsNullOrWhiteSpace(request.ProfileData.FullName))
+            if (!string.IsNullOrWhiteSpace(profileData.FullName))
             {
-                existing.FullName = request.ProfileData.FullName.Trim();
+                existing.FullName = profileData.FullName.Trim();
             }
 
-            if (request.ProfileData.DateOfBirth != default)
+            if (profileData.DateOfBirth != default)
             {
-                existing.DateOfBirth = request.ProfileData.DateOfBirth;
+                existing.DateOfBirth = profileData.DateOfBirth;
             }
 
-            if (!string.IsNullOrWhiteSpace(request.ProfileData.Gender))
+            if (!string.IsNullOrWhiteSpace(profileData.Gender))
             {
-                existing.Gender = request.ProfileData.Gender.Trim();
+                existing.Gender = profileData.Gender.Trim();
             }
 
-            if (!string.IsNullOrWhiteSpace(request.ProfileData.AvatarUrl))
+            if (!string.IsNullOrWhiteSpace(profileData.AvatarUrl))
             {
-                existing.AvatarUrl = request.ProfileData.AvatarUrl;
+                existing.AvatarUrl = profileData.AvatarUrl;
+            }
+
+            if (!string.IsNullOrWhiteSpace(profileData.ResidentialArea))
+            {
+                existing.ResidentialArea = profileData.ResidentialArea.Trim();
             }
 
             // Set Student Status = 'Active' per workflow diagram
             existing.Status = "Active";
 
             // If guardian info provided, merge guardian
-            if (request.ProfileData.InitialGuardian != null && !string.IsNullOrWhiteSpace(request.ProfileData.InitialGuardian.FullName))
+            if (profileData.InitialGuardian != null && !string.IsNullOrWhiteSpace(profileData.InitialGuardian.FullName))
             {
-                await CreateOrLinkGuardianAsync(existing.Id, request.ProfileData.InitialGuardian, cancellationToken);
+                await CreateOrLinkGuardianAsync(existing.Id, profileData.InitialGuardian, cancellationToken);
             }
 
             // If initialClassId provided, assign class if not already assigned
-            if (request.ProfileData.InitialClassId.HasValue)
+            if (profileData.InitialClassId.HasValue)
             {
                 var activeClass = existing.ClassAssignments.FirstOrDefault(ca => ca.IsActive);
                 if (activeClass == null)
                 {
-                    var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.ProfileData.InitialClassId.Value, cancellationToken);
+                    var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(profileData.InitialClassId.Value, cancellationToken);
                     if (targetClass != null)
                     {
                         var assignment = new ClassAssignment
@@ -408,7 +433,7 @@ public class StudentService : IStudentService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            $"ResolveDuplicate_{request.Action}",
+            $"ResolveDuplicate_{action}",
             nameof(Student),
             existing.Id.ToString(),
             oldValues,

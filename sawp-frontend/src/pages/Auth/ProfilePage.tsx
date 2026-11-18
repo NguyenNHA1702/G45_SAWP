@@ -24,6 +24,7 @@ import { ChangePasswordModal } from '../../components/auth/ChangePasswordModal';
 import { USER_KEY } from '../../services/apiClient';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import { asApiError } from '../../utils/apiError';
+import { formatRelationship } from '../../utils/formatters';
 import type { UserProfile } from '../../types/profile.types';
 
 export default function ProfilePage() {
@@ -97,6 +98,7 @@ export default function ProfilePage() {
           storedUser.fullName = updated.fullName;
           storedUser.email = updated.email;
           localStorage.setItem(USER_KEY, JSON.stringify(storedUser));
+          window.dispatchEvent(new CustomEvent('user-updated'));
           window.dispatchEvent(new Event('storage'));
         }
       } catch {
@@ -182,17 +184,25 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      {/* Main 2-column Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: 24,
-          alignItems: 'start',
-        }}
-      >
-        {/* Left Column: Identity Sticker Card */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Responsive 2-column Grid */}
+      <style>{`
+        .profile-layout-grid {
+          display: grid;
+          grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+          gap: 24px;
+          align-items: start;
+        }
+        @media (max-width: 992px) {
+          .profile-layout-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
+      <div className="profile-layout-grid">
+        {/* Left Column: Account Identity Sticker & Personal Contact Form */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Card: Account Sticker */}
           <div
             className="card"
             style={{
@@ -315,11 +325,8 @@ export default function ProfilePage() {
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Right Column: Profile Form & Role Details */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, minWidth: 0 }}>
-          {/* Card 1: Editable Contact Info */}
+          {/* Card: Editable Contact Info (Đưa sang cột trái) */}
           <div
             className="card"
             style={{
@@ -370,8 +377,9 @@ export default function ProfilePage() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Nhập họ và tên đầy đủ"
-                    required
                     style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
                       borderRadius: 'var(--radius-full)',
                       border: '2px solid var(--color-fg)',
                       padding: '9px 18px',
@@ -381,54 +389,57 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Grid 2 cột: Điện thoại & Email */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-                <div className="field">
-                  <label className="label" htmlFor="profile-phone" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
-                    <Phone size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
-                    SỐ ĐIỆN THOẠI
-                  </label>
-                  <input
-                    id="profile-phone"
-                    type="tel"
-                    className="input"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="09xxxxxxxx"
-                    style={{
-                      borderRadius: 'var(--radius-full)',
-                      border: '2px solid var(--color-fg)',
-                      padding: '9px 18px',
-                      fontWeight: 700,
-                    }}
-                  />
-                </div>
+              {/* Điện thoại */}
+              <div className="field">
+                <label className="label" htmlFor="profile-phone" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
+                  <Phone size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
+                  SỐ ĐIỆN THOẠI
+                </label>
+                <input
+                  id="profile-phone"
+                  type="tel"
+                  className="input"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="09xxxxxxxx"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    padding: '9px 18px',
+                    fontWeight: 700,
+                  }}
+                />
+              </div>
 
-                <div className="field">
-                  <label className="label" htmlFor="profile-email" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
-                    <Mail size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
-                    ĐỊA CHỈ EMAIL
-                  </label>
-                  <input
-                    id="profile-email"
-                    type="email"
-                    className="input"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="user@school.edu.vn"
-                    style={{
-                      borderRadius: 'var(--radius-full)',
-                      border: '2px solid var(--color-fg)',
-                      padding: '9px 18px',
-                      fontWeight: 700,
-                    }}
-                  />
-                </div>
+              {/* Địa chỉ Email */}
+              <div className="field">
+                <label className="label" htmlFor="profile-email" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
+                  <Mail size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
+                  ĐỊA CHỈ EMAIL
+                </label>
+                <input
+                  id="profile-email"
+                  type="email"
+                  className="input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@school.edu.vn"
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    padding: '9px 18px',
+                    fontWeight: 700,
+                  }}
+                />
               </div>
 
               {/* Nếu là Phụ huynh: thêm Địa chỉ và Nghề nghiệp */}
               {profile.guardianProfile && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+                <>
                   <div className="field">
                     <label className="label" htmlFor="profile-address" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
                       <MapPin size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
@@ -441,7 +452,10 @@ export default function ProfilePage() {
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       placeholder="Số nhà, đường, quận/huyện..."
+                      maxLength={255}
                       style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
                         borderRadius: 'var(--radius-full)',
                         border: '2px solid var(--color-fg)',
                         padding: '9px 18px',
@@ -462,7 +476,10 @@ export default function ProfilePage() {
                       value={occupation}
                       onChange={(e) => setOccupation(e.target.value)}
                       placeholder="Nghề nghiệp / Đơn vị công tác"
+                      maxLength={255}
                       style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
                         borderRadius: 'var(--radius-full)',
                         border: '2px solid var(--color-fg)',
                         padding: '9px 18px',
@@ -470,7 +487,7 @@ export default function ProfilePage() {
                       }}
                     />
                   </div>
-                </div>
+                </>
               )}
 
               {/* Save Button */}
@@ -507,8 +524,10 @@ export default function ProfilePage() {
               </div>
             </form>
           </div>
+        </div>
 
-          {/* Card 2: Role Details (Staff Profile) */}
+        {/* Right Column: Institutional Records (Staff Profile & Guardian Records) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, minWidth: 0 }}>
           {profile.staffProfile && (
             <div
               className="card"
@@ -752,7 +771,7 @@ export default function ProfilePage() {
                                 ? new Date(child.dateOfBirth).toLocaleDateString('vi-VN')
                                 : 'N/A'}
                             </td>
-                            <td style={{ padding: '10px 12px', fontWeight: 600 }}>{child.relationship || 'Phụ huynh'}</td>
+                            <td style={{ padding: '10px 12px', fontWeight: 600 }}>{formatRelationship(child.relationship)}</td>
                             <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                               {child.isPrimaryContact ? (
                                 <span className="badge badge--amber" style={{ fontSize: 'var(--fs-xs)', border: '1px solid var(--color-fg)', fontWeight: 700 }}>

@@ -74,8 +74,11 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
       } else {
         toast.error(res.message || 'Không thể tạo năm học mới.');
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Lỗi khi khởi tạo năm học mới.';
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.errors?.[0] ||
+        err?.response?.data?.message ||
+        (err instanceof Error ? err.message : 'Lỗi khi khởi tạo năm học mới.');
       toast.error(message);
     } finally {
       setLoading(false);

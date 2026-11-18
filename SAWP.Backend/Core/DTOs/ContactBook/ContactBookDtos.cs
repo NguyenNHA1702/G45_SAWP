@@ -44,6 +44,23 @@ public class PostCommentDto
     public bool CanDelete { get; set; }
 }
 
+public class PostAttachmentInputDto
+{
+    public string FileUrl { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string FileType { get; set; } = "Image";
+    public long FileSizeBytes { get; set; }
+}
+
+public class ContactAttachmentUploadResultDto
+{
+    public string Url { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string FileType { get; set; } = "Image";
+    public long FileSize { get; set; }
+    public string SavedPath { get; set; } = string.Empty;
+}
+
 public class CreateClassPostDto
 {
     public int ClassId { get; set; }
@@ -53,6 +70,7 @@ public class CreateClassPostDto
     public bool IsPinned { get; set; }
     public bool AllowComments { get; set; } = true;
     public List<string>? AttachmentUrls { get; set; }
+    public List<PostAttachmentInputDto>? Attachments { get; set; }
 }
 
 public class CreatePostCommentDto
@@ -92,6 +110,7 @@ public class StudentEvaluationDto
 
 public class CreateStudentEvaluationDto
 {
+    public int? Id { get; set; }
     public int StudentId { get; set; }
     public int ClassId { get; set; }
     public DateTime EvaluationDate { get; set; }

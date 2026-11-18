@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { guardianApi } from '../../services/implementations/guardianApi';
+import { formatRelationship } from '../../utils/formatters';
 import type { ChildLinkRequestItemDto } from '../../types/guardian.types';
 
 export default function LinkRequestsPage() {
@@ -53,13 +54,14 @@ export default function LinkRequestsPage() {
     try {
       const res = await guardianApi.verifyLinkRequest(id, {
         isApproved,
+        reviewerNotes: rejectionReason || (isApproved ? 'Đã duyệt yêu cầu liên kết phụ huynh/người giám hộ.' : ''),
         rejectionReason,
       });
 
       if (res.success) {
         toast.success(
           isApproved
-            ? 'Đã duyệt yêu cầu liên kết học sinh thành công!'
+            ? 'Đã duyệt yêu cầu liên kết học sinh thành công (MSG13)!'
             : 'Đã từ chối yêu cầu liên kết.'
         );
         loadRequests();
@@ -183,7 +185,7 @@ export default function LinkRequestsPage() {
                       <strong style={{ fontSize: 'var(--fs-base)' }}>
                         Phụ huynh: {req.parentFullName}
                       </strong>
-                      <span className="badge badge--pink badge--sm">{req.relationship}</span>
+                      <span className="badge badge--pink badge--sm">{formatRelationship(req.relationship)}</span>
                     </div>
                     <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2, display: 'flex', gap: 12 }}>
                       <span>

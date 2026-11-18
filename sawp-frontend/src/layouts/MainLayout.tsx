@@ -84,6 +84,12 @@ const NAV_ITEMS: NavItem[] = [
         path: '/service/headcount?tab=logs',
         icon: Clock,
       },
+      {
+        id: 'kitchen-report',
+        label: 'Báo cáo thống kê (Lunch Report)',
+        path: '/service/headcount?tab=report',
+        icon: ClipboardList,
+      },
     ],
   },
   // --- Quản lý Giáo vụ: Học sinh & Xếp lớp (OfficeStaff, SchoolBoard, Admin) ---
@@ -116,12 +122,12 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  // --- Giáo viên: Điểm danh & Lớp học (Teacher, SchoolBoard) ---
+  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard, Admin) ---
   {
     id: 'teacher-group',
     label: 'Điểm danh & Lớp học',
     icon: CalendarCheck2,
-    roles: ['Teacher', 'SchoolBoard'],
+    roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard', 'Admin'],
     children: [
       {
         id: 'teacher-roster',
@@ -131,22 +137,29 @@ const NAV_ITEMS: NavItem[] = [
         icon: GraduationCap,
       },
       {
-        id: 'teacher-attendance',
-        label: 'Điểm danh lớp',
-        path: '/teacher/attendance',
+        id: 'teacher-boarding',
+        label: 'Bán trú & Sự cố lớp',
+        path: '/teacher/boarding',
         roles: ['Teacher'],
+        icon: UtensilsCrossed,
+      },
+      {
+        id: 'teacher-attendance',
+        label: 'Điểm danh & Tình trạng chuyên cần',
+        path: '/teacher/attendance',
+        roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard', 'Admin'],
         icon: CalendarCheck2,
       },
       {
         id: 'teacher-leave',
         label: 'Duyệt đơn xin nghỉ',
         path: '/teacher/leave-requests',
-        roles: ['Teacher', 'SchoolBoard'],
+        roles: ['Teacher', 'SchoolBoard', 'Admin'],
         icon: FileCheck,
       },
       {
         id: 'teacher-contact-book',
-        label: 'Sổ liên lạc lớp (WF6)',
+        label: 'Sổ liên lạc lớp',
         path: '/teacher/contact-book',
         roles: ['Teacher'],
         icon: Newspaper,
@@ -168,7 +181,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'parent-contact-book',
-        label: 'Sổ liên lạc điện tử (WF6)',
+        label: 'Sổ liên lạc điện tử',
         path: '/parent/contact-book',
         icon: Newspaper,
       },
@@ -177,6 +190,12 @@ const NAV_ITEMS: NavItem[] = [
         label: 'Đăng ký bán trú',
         path: '/parent/lunch',
         icon: UtensilsCrossed,
+      },
+      {
+        id: 'parent-boarding-incidents',
+        label: 'Sự cố bán trú',
+        path: '/parent/boarding-incidents',
+        icon: Bell,
       },
       {
         id: 'parent-leave',
@@ -285,7 +304,11 @@ export function MainLayout() {
       setCurrentUser(userJson ? JSON.parse(userJson) : null);
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('user-updated', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('user-updated', handleStorageChange);
+    };
   }, []);
 
   const userRoles: string[] = currentUser?.roles ?? [];
@@ -521,7 +544,7 @@ export function MainLayout() {
               <span className="badge badge--violet header-pill">
                 Hệ thống Quản trị & Bán trú Tiểu học
               </span>
-              <ChildSelectorPill />
+              {userRoles.includes('Parent') && <ChildSelectorPill />}
             </div>
 
             <div className="header-right">
@@ -530,11 +553,36 @@ export function MainLayout() {
                 <button
                   type="button"
                   className="header-btn"
-                  aria-label="Thông báo"
+                  aria-label={`Thông báo, ${unreadCount} chưa đọc`}
                   onClick={() => setShowNotifs((v) => !v)}
+                  style={{ position: 'relative' }}
                 >
                   <Bell size={18} />
-                  {unreadCount > 0 && <span className="header-badge-dot" />}
+                  {unreadCount > 0 && (
+                    <span
+                      className="badge badge--pink"
+                      style={{
+                        position: 'absolute',
+                        top: -5,
+                        right: -5,
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 'var(--radius-full)',
+                        padding: '0 4px',
+                        fontSize: '0.65rem',
+                        fontWeight: 900,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1.5px solid var(--color-fg)',
+                        background: 'var(--color-secondary)',
+                        color: '#FFFFFF',
+                        lineHeight: 1,
+                      }}
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {showNotifs && (

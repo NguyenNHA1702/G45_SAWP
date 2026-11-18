@@ -901,4 +901,219 @@ public class LunchServiceTests : TestBase
         result.Data!.IsServiceDay.Should().BeFalse();
         result.Data.TotalMeals.Should().Be(0);
     }
+
+    // ==================== 68. Monthly Quota & Waitlist (TC_BDS_34) ====================
+
+    [Fact]
+    public async Task UpsertMonthlyQuota_ValidMonthAndQuota_SavesAndLogsAudit()
+    {
+        // Arrange
+        SetupRepository(new List<LunchMonthlyQuota>());
+        SetupRepository(new List<LunchRegistration>());
+
+        // Act
+        var result = await _service.UpsertMonthlyQuotaAsync(5, new UpsertMonthlyBoardingQuotaRequestDto
+        {
+            Month = "2026-12",
+            Quota = 80
+        });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Data!.Month.Should().Be("2026-12");
+        result.Data.Quota.Should().Be(80);
+        AuditServiceMock.Verify(a => a.LogActionAsync(
+            5,
+            "CONFIGURE_BOARDING_QUOTA",
+            "LunchMonthlyQuota",
+            "2026-12",
+            null,
+            It.Is<string>(s => s.Contains("Quota=80")),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RegisterLunchBatch_WhenMonthlyQuotaIsFull_WaitlistsWritesAuditAndNotifiesParent()
+    {
+        // Arrange
+        var targetDate = new DateTime(2026, 12, 15);
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 12, 1, 7, 30, 0));
+
+        var hs001 = new Student { Id = 1, StudentCode = "HS001", FullName = "Trần Gia Bảo" };
+        SetupRepository(new List<Student> { hs001 });
+        SetupRepository(new List<Guardian>
+        {
+            new()
+            {
+                Id = 10,
+                UserId = 100,
+                StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 10 } }
+            }
+        });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<LunchMonthlyQuota>
+        {
+            new() { Id = 1, Month = "2026-12", Quota = 2 }
+        });
+        // 2 distinct students (Id 2, Id 3) already active in 2026-12 -> quota=2 is full
+        var existingRegs = new List<LunchRegistration>
+        {
+            new() { Id = 11, StudentId = 2, Date = new DateTime(2026, 12, 10), IsActive = true, IsWaitlisted = false },
+            new() { Id = 12, StudentId = 3, Date = new DateTime(2026, 12, 10), IsActive = true, IsWaitlisted = false }
+        };
+        var regRepoMock = SetupRepository(existingRegs);
+        var notifRepoMock = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.RegisterLunchBatchAsync(
+            100,
+            new[] { UserRoles.Parent },
+            new BatchLunchRegistrationRequestDto
+            {
+                StudentId = 1,
+                Dates = new List<DateTime> { targetDate },
+                MealType = MealType.StandardLunch
+            });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be("BOARDING_WAITLISTED");
+        result.Data!.IsWaitlisted.Should().BeTrue();
+        result.Data.WaitlistedCount.Should().Be(1);
+
+        regRepoMock.Verify(r => r.AddAsync(
+            It.Is<LunchRegistration>(lr => lr.StudentId == 1 && !lr.IsActive && lr.IsWaitlisted),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        notifRepoMock.Verify(n => n.AddAsync(
+            It.Is<Notification>(nf => nf.UserId == 100 && nf.Title == "Registration Waitlisted"),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        AuditServiceMock.Verify(a => a.LogActionAsync(
+            100,
+            "BOARDING_REGISTRATION_WAITLISTED",
+            "LunchRegistration",
+            "1",
+            null,
+            It.Is<string>(s => s.Contains("HS001") && s.Contains("Quota=2")),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ==================== 69. Class Boarding Roster & Allergy Warning (TC_BDS_35) ====================
+
+    [Fact]
+    public async Task GetDailyMealBoard_ForClass1A_IncludesAllergyWarningForHS001()
+    {
+        // Arrange
+        var targetDate = new DateTime(2026, 11, 16);
+        var class1A = new Class { Id = 1, ClassName = "1A", Grade = 1, HomeroomTeacherId = 50, Status = "Active" };
+        var hs001 = new Student
+        {
+            Id = 1,
+            StudentCode = "HS001",
+            FullName = "Trần Gia Bảo",
+            Status = "Active",
+            SpecialNeedsNotes = "Dị ứng hải sản (tôm, cua, sò)",
+            ClassAssignments = new List<ClassAssignment>
+            {
+                new() { StudentId = 1, ClassId = 1, Class = class1A, IsActive = true }
+            }
+        };
+
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<StaffProfile> { new() { Id = 50, UserId = 200 } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<Student> { hs001 });
+        SetupRepository(new List<LunchRegistration>
+        {
+            new()
+            {
+                Id = 1,
+                StudentId = 1,
+                Student = hs001,
+                Date = targetDate,
+                MealType = MealType.SpecialDiet,
+                IsActive = true,
+                Remarks = "Cơm mềm dẻo | Ghi chú: Dị ứng hải sản (tôm, cua, sò)"
+            }
+        });
+        SetupRepository(new List<LeaveRequest>());
+        SetupRepository(new List<AttendanceRecord>());
+
+        // Act
+        var result = await _service.GetDailyMealBoardAsync(targetDate, 200, new[] { UserRoles.Teacher });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Data!.StudentMeals.Should().ContainSingle(m => m.StudentCode == "HS001");
+        var item = result.Data.StudentMeals.First(m => m.StudentCode == "HS001");
+        item.AllergyWarning.Should().Contain("Dị ứng hải sản");
+    }
+
+    // ==================== 70. Boarding Incident Log & Alert (TC_BDS_36) ====================
+
+    [Fact]
+    public async Task CreateBoardingIncident_ValidRequest_SavesIncidentAndAlertsParent()
+    {
+        // Arrange
+        var targetDate = new DateTime(2026, 11, 16);
+        var class1A = new Class { Id = 1, ClassName = "1A", Grade = 1, HomeroomTeacherId = 50, Status = "Active" };
+        var hs001 = new Student
+        {
+            Id = 1,
+            StudentCode = "HS001",
+            FullName = "Trần Gia Bảo",
+            ClassAssignments = new List<ClassAssignment>
+            {
+                new() { StudentId = 1, ClassId = 1, Class = class1A, IsActive = true }
+            },
+            StudentGuardians = new List<StudentGuardian>
+            {
+                new() { StudentId = 1, GuardianId = 10, Guardian = new Guardian { Id = 10, UserId = 100 } }
+            }
+        };
+
+        SetupRepository(new List<Student> { hs001 });
+        SetupRepository(new List<StaffProfile> { new() { Id = 50, UserId = 200 } });
+        SetupRepository(new List<User> { new() { Id = 200, Username = "teacher1", FullName = "Nguyễn Thị Lan" } });
+        var incidentRepoMock = SetupRepository(new List<BoardingIncident>());
+        var notifRepoMock = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.CreateBoardingIncidentAsync(
+            200,
+            new[] { UserRoles.Teacher },
+            new CreateBoardingIncidentRequestDto
+            {
+                StudentId = 1,
+                Date = targetDate,
+                IncidentType = "Health",
+                Note = "Cháu bị nôn nhẹ sau bữa trưa, đã cho nghỉ tại phòng y tế"
+            });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Data!.StudentCode.Should().Be("HS001");
+        result.Data.Note.Should().Be("Cháu bị nôn nhẹ sau bữa trưa, đã cho nghỉ tại phòng y tế");
+
+        incidentRepoMock.Verify(r => r.AddAsync(
+            It.Is<BoardingIncident>(bi => bi.StudentId == 1 && bi.Note.Contains("phòng y tế")),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        notifRepoMock.Verify(n => n.AddAsync(
+            It.Is<Notification>(nf => nf.UserId == 100 && nf.Title == "Boarding Incident" && nf.Content.Contains("phòng y tế")),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        AuditServiceMock.Verify(a => a.LogActionAsync(
+            200,
+            "BOARDING_INCIDENT_LOGGED",
+            "BoardingIncident",
+            It.IsAny<string>(),
+            null,
+            It.Is<string>(s => s.Contains("HS001")),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

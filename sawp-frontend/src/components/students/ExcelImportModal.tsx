@@ -69,7 +69,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         toast.error(res.message || 'Lỗi khi đọc file Excel.');
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Không thể xử lý tệp Excel này.');
+      const msg =
+        err.response?.data?.errors?.[0] ||
+        err.response?.data?.message ||
+        'Không thể xử lý tệp Excel này.';
+      toast.error(msg);
     } finally {
       setParsing(false);
     }

@@ -23,7 +23,7 @@ import { useParentChild } from '../../contexts/ParentChildContext';
 import { GeometricModal } from '../../components/common/GeometricModal';
 import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
-import type { StudentLunchDay, StudentLunchSchedule } from '../../types/lunch.types';
+import type { MonthlyBoardingQuota, StudentLunchDay, StudentLunchSchedule } from '../../types/lunch.types';
 
 const MEAL_TYPE_LABELS: Record<string, string> = {
   StandardLunch: 'Suất tiêu chuẩn',
@@ -66,7 +66,8 @@ export default function ParentLunchPage() {
   const [params, setParams] = useSearchParams();
 
   const queryStudentId = Number(params.get('studentId'));
-  const studentId = activeChildId || queryStudentId || (children[0]?.studentId ?? 1);
+  const queryMonth = params.get('month');
+  const studentId = (queryStudentId && children.some((c) => c.studentId === queryStudentId) ? queryStudentId : activeChildId) || (children[0]?.studentId ?? 1);
 
   const [month, setMonth] = useState<string>(() => {
     const fromParam = params.get('month');
@@ -90,21 +91,68 @@ export default function ParentLunchPage() {
   const [cancelReason, setCancelReason] = useState<string>('');
   const [submittingCancel, setSubmittingCancel] = useState<boolean>(false);
 
+  // Modal Đổi chế độ ăn / ghi chú dị ứng trước giờ chốt 08:15
+  const [editTargetDay, setEditTargetDay] = useState<StudentLunchDay | null>(null);
+  const [editMealType, setEditMealType] = useState<number>(1);
+  const [editRemarks, setEditRemarks] = useState<string>('');
+  const [submittingEdit, setSubmittingEdit] = useState<boolean>(false);
+
+  const openEditDietModal = (day: StudentLunchDay) => {
+    setEditTargetDay(day);
+    const mt = day.mealType === 'VegetarianLunch' || day.mealType === 2 ? 2 : day.mealType === 'SpecialDiet' || day.mealType === 3 ? 3 : 1;
+    setEditMealType(mt);
+    setEditRemarks(day.studentRemarks || '');
+  };
+
+  const handleConfirmEditDiet = async () => {
+    if (!studentId || !editTargetDay) return;
+    try {
+      setSubmittingEdit(true);
+      const res = await lunchApi.updateRegistrationMealType({
+        studentId,
+        date: toDateKey(editTargetDay.date),
+        mealType: editMealType,
+        remarks: editRemarks.trim() || undefined,
+      });
+      toast.success(res.message || 'Đã cập nhật chế độ ăn thành công.');
+      setEditTargetDay(null);
+      await fetchSchedule();
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string } } })?.response?.data;
+      toast.error(apiErr?.message || 'Không thể cập nhật chế độ ăn.');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
+
   // Modal Xem chi tiết ngày / thực đơn
   const [detailDay, setDetailDay] = useState<StudentLunchDay | null>(null);
+  const [monthlyQuota, setMonthlyQuota] = useState<MonthlyBoardingQuota | null>(null);
 
   useEffect(() => {
-    if (activeChildId && activeChildId !== queryStudentId) {
+    if (queryStudentId && queryStudentId !== activeChildId && children.some((c) => c.studentId === queryStudentId)) {
+      selectChild(queryStudentId);
+    } else if (activeChildId && !queryStudentId) {
       setParams({ studentId: String(activeChildId), month });
     }
-  }, [activeChildId, month, queryStudentId, setParams]);
+  }, [activeChildId, children, month, queryStudentId, selectChild, setParams]);
+
+  useEffect(() => {
+    if (queryMonth && /^\d{4}-\d{2}$/.test(queryMonth) && queryMonth !== month) {
+      setMonth(queryMonth);
+    }
+  }, [queryMonth, month]);
 
   const fetchSchedule = async () => {
     if (!studentId) return;
     try {
       setLoading(true);
-      const data = await lunchApi.getStudentSchedule(studentId, month);
+      const [data, quota] = await Promise.all([
+        lunchApi.getStudentSchedule(studentId, month),
+        lunchApi.getMonthlyQuota(month).catch(() => null),
+      ]);
       setSchedule(data);
+      setMonthlyQuota(quota);
       // Giữ lại những ngày đang chọn nếu vẫn còn hợp lệ để đăng ký
       setSelectedDates((prev) =>
         prev.filter((dKey) => {
@@ -195,6 +243,14 @@ export default function ParentLunchPage() {
       await fetchSchedule();
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { code?: string; message?: string; errors?: string[] } } })?.response?.data;
+      if (apiErr?.code === 'BOARDING_WAITLISTED') {
+        toast.error(apiErr.message || 'Registration Waitlisted: Đã đủ chỉ tiêu bán trú tháng.');
+        setShowRegisterModal(false);
+        setSelectedDates([]);
+        setStudentRemarks('');
+        await fetchSchedule();
+        return;
+      }
       const sysMsg = apiErr?.code ? getSystemMessage(apiErr.code) : undefined;
       const detail = apiErr?.errors?.[0];
       toast.error(detail || sysMsg?.content || apiErr?.message || SYSTEM_MESSAGES.MSG09.content);
@@ -485,6 +541,39 @@ export default function ParentLunchPage() {
           )}
         </div>
       </div>
+
+      {/* Monthly Boarding Quota Banner */}
+      {monthlyQuota?.quota != null && (
+        <div
+          style={{
+            marginBottom: 18,
+            padding: '12px 18px',
+            borderRadius: 16,
+            border: '2px solid var(--color-fg)',
+            boxShadow: '3px 3px 0 0 var(--color-fg)',
+            background: monthlyQuota.isFull ? '#FEF3C7' : '#EFF6FF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
+            <Users size={18} />
+            <span>
+              Chỉ tiêu bán trú tháng <strong>{monthlyQuota.month}</strong>:{' '}
+              <strong>{monthlyQuota.registeredCount} / {monthlyQuota.quota}</strong> học sinh
+            </span>
+          </div>
+          <span
+            className={monthlyQuota.isFull ? 'badge badge--amber' : 'badge badge--mint'}
+            style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}
+          >
+            {monthlyQuota.isFull ? 'Đã đủ chỉ tiêu (Waitlist)' : 'Còn chỗ đăng ký'}
+          </span>
+        </div>
+      )}
 
       {/* 4 Sticker KPI Summary Cards */}
       {schedule && (
@@ -914,18 +1003,54 @@ export default function ParentLunchPage() {
                     >
                       <Check size={11} /> Đã chọn
                     </span>
-                  ) : day.isRegistered ? (
+                  ) : day.isWaitlisted ? (
                     <span
-                      className="badge badge--mint"
+                      className="badge badge--amber"
                       style={{
                         fontSize: '10px',
                         border: '1.5px solid var(--color-fg)',
                         fontWeight: 800,
-                        padding: '2px 8px',
+                        padding: '2px 7px',
                       }}
                     >
-                      ✓ Đã đăng ký
+                      ⏳ Danh sách chờ (Waitlist)
                     </span>
+                  ) : day.isRegistered ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      <span
+                        className="badge badge--mint"
+                        style={{
+                          fontSize: '10px',
+                          border: '1.5px solid var(--color-fg)',
+                          fontWeight: 800,
+                          padding: '2px 7px',
+                        }}
+                      >
+                        ✓ Đã đăng ký
+                      </span>
+                      <span
+                        className="badge"
+                        style={{
+                          fontSize: '9.5px',
+                          border: '1px solid var(--color-fg)',
+                          fontWeight: 800,
+                          padding: '1px 6px',
+                          background:
+                            day.mealType === 'VegetarianLunch' || day.mealType === 2
+                              ? '#FEF3C7'
+                              : day.mealType === 'SpecialDiet' || day.mealType === 3
+                              ? '#FCE7F3'
+                              : '#E0F2FE',
+                          color: 'var(--color-fg)',
+                        }}
+                      >
+                        {day.mealType === 'VegetarianLunch' || day.mealType === 2
+                          ? '🥗 Chay'
+                          : day.mealType === 'SpecialDiet' || day.mealType === 3
+                          ? '⚕️ Đặc biệt'
+                          : '🍱 Tiêu chuẩn'}
+                      </span>
+                    </div>
                   ) : isCancelled ? (
                     <span
                       className="badge badge--pink"
@@ -1017,26 +1142,46 @@ export default function ParentLunchPage() {
                   )}
 
                   {canCancel && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCancelTargetDay(day);
-                        setCancelReason('');
-                      }}
-                      style={{
-                        background: '#FFE4E6',
-                        border: '1.5px solid #F43F5E',
-                        borderRadius: 'var(--radius-full)',
-                        boxShadow: '1px 1px 0 0 var(--color-fg)',
-                        padding: '2px 8px',
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        color: '#E11D48',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Hủy
-                    </button>
+                    <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => openEditDietModal(day)}
+                        style={{
+                          background: '#FEF3C7',
+                          border: '1.5px solid var(--color-fg)',
+                          borderRadius: 'var(--radius-full)',
+                          boxShadow: '1px 1px 0 0 var(--color-fg)',
+                          padding: '2px 7px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          color: 'var(--color-fg)',
+                          cursor: 'pointer',
+                        }}
+                        title="Đổi chế độ ăn (Mặn / Chay / Đặc biệt)"
+                      >
+                        Đổi suất
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelTargetDay(day);
+                          setCancelReason('');
+                        }}
+                        style={{
+                          background: '#FFE4E6',
+                          border: '1.5px solid #F43F5E',
+                          borderRadius: 'var(--radius-full)',
+                          boxShadow: '1px 1px 0 0 var(--color-fg)',
+                          padding: '2px 7px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          color: '#E11D48',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Hủy
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1110,6 +1255,11 @@ export default function ParentLunchPage() {
                       </td>
                       <td style={{ padding: '14px', color: 'var(--color-fg)', maxWidth: 360 }}>
                         <div style={{ fontWeight: 600 }}>{cleanedRemarks || 'Thực đơn tiêu chuẩn nhà bếp'}</div>
+                        {day.studentRemarks && (
+                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-accent)', marginTop: 4, fontWeight: 700 }}>
+                            Ghi chú PH: {day.studentRemarks}
+                          </div>
+                        )}
                         {day.cancellationReason && (
                           <div style={{ fontSize: 'var(--fs-xs)', color: '#E11D48', marginTop: 4, fontWeight: 700 }}>
                             Lý do hủy: {day.cancellationReason}
@@ -1146,30 +1296,50 @@ export default function ParentLunchPage() {
                       </td>
                       <td style={{ padding: '14px', textAlign: 'right' }}>
                         {canCancel ? (
-                          <button
-                            type="button"
-                            className="btn btn--sm"
-                            onClick={() => {
-                              setCancelTargetDay(day);
-                              setCancelReason('');
-                            }}
-                            style={{
-                              borderRadius: 'var(--radius-full)',
-                              border: '1.5px solid #F43F5E',
-                              boxShadow: '2px 2px 0 0 var(--color-fg)',
-                              background: '#FFE4E6',
-                              color: '#E11D48',
-                              fontWeight: 800,
-                              fontSize: 'var(--fs-xs)',
-                              padding: '6px 14px',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 6,
-                            }}
-                          >
-                            <Trash2 size={13} /> Hủy đăng ký
-                          </button>
+                          <div style={{ display: 'inline-flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              onClick={() => openEditDietModal(day)}
+                              style={{
+                                borderRadius: 'var(--radius-full)',
+                                border: '1.5px solid var(--color-fg)',
+                                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                background: '#FEF3C7',
+                                color: 'var(--color-fg)',
+                                fontWeight: 800,
+                                fontSize: 'var(--fs-xs)',
+                                padding: '6px 12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Đổi chế độ ăn
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--sm"
+                              onClick={() => {
+                                setCancelTargetDay(day);
+                                setCancelReason('');
+                              }}
+                              style={{
+                                borderRadius: 'var(--radius-full)',
+                                border: '1.5px solid #F43F5E',
+                                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                                background: '#FFE4E6',
+                                color: '#E11D48',
+                                fontWeight: 800,
+                                fontSize: 'var(--fs-xs)',
+                                padding: '6px 14px',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              <Trash2 size={13} /> Hủy đăng ký
+                            </button>
+                          </div>
                         ) : day.isRegistered ? (
                           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
                             Đã qua hạn {day.cutoffTime}
@@ -1411,6 +1581,103 @@ export default function ParentLunchPage() {
               >
                 <Trash2 size={16} />
                 {submittingCancel ? 'Đang hủy...' : 'Xác nhận hủy suất ăn'}
+              </button>
+            </div>
+          </div>
+        )}
+      </GeometricModal>
+
+      {/* MODAL Đổi chế độ ăn & ghi chú dị ứng trước 08h15 */}
+      <GeometricModal
+        open={Boolean(editTargetDay)}
+        onClose={() => setEditTargetDay(null)}
+        title={`Đổi chế độ ăn ngày ${editTargetDay ? new Date(editTargetDay.date).toLocaleDateString('vi-VN') : ''}`}
+        badgeText={`Trước giờ chốt ${editTargetDay?.cutoffTime ?? LUNCH_CUTOFF_LABEL}`}
+        badgeColor="amber"
+        icon={<UtensilsCrossed size={22} color="var(--color-fg)" />}
+        iconBg="var(--color-tertiary)"
+        maxWidth="md"
+      >
+        {editTargetDay && (
+          <div>
+            <p style={{ marginTop: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Cập nhật chế độ ăn hoặc ghi chú dị ứng thực phẩm cho bé <strong>{schedule?.studentName}</strong> trước giờ chốt bếp ({editTargetDay.cutoffTime}):
+            </p>
+
+            <div className="field" style={{ marginBottom: 14 }}>
+              <label className="label" htmlFor="edit-meal-type" style={{ fontWeight: 800 }}>
+                CHẾ ĐỘ SUẤT ĂN
+              </label>
+              <select
+                id="edit-meal-type"
+                className="select"
+                value={editMealType}
+                onChange={(e) => setEditMealType(Number(e.target.value))}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              >
+                <option value={1}>Suất tiêu chuẩn (Mặn)</option>
+                <option value={2}>Suất ăn chay</option>
+                <option value={3}>Chế độ ăn đặc biệt (Dị ứng / Kiêng)</option>
+              </select>
+            </div>
+
+            <div className="field" style={{ marginBottom: 20 }}>
+              <label className="label" htmlFor="edit-meal-remarks" style={{ fontWeight: 800 }}>
+                GHI CHÚ DỊ ỨNG / DẶN DÒ NHÀ BẾP
+              </label>
+              <input
+                id="edit-meal-remarks"
+                type="text"
+                className="input"
+                placeholder="VD: Bé dị ứng hải sản, xin đổi món trứng..."
+                value={editRemarks}
+                onChange={(e) => setEditRemarks(e.target.value)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setEditTargetDay(null)}
+                disabled={submittingEdit}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '10px 20px',
+                }}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={handleConfirmEditDiet}
+                disabled={submittingEdit}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '10px 24px',
+                  background: 'var(--color-accent)',
+                  color: '#FFFFFF',
+                }}
+              >
+                {submittingEdit ? 'Đang lưu...' : 'Lưu thay đổi'}
               </button>
             </div>
           </div>
