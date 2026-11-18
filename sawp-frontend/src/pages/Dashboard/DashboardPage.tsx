@@ -8,6 +8,9 @@ import {
   Sparkles,
   Users,
   UtensilsCrossed,
+  Settings,
+  ShieldAlert,
+  UserCog,
 } from 'lucide-react';
 import { USER_KEY } from '../../services/apiClient';
 
@@ -291,6 +294,90 @@ export default function DashboardPage() {
             </p>
             <span className="badge badge--amber">Xem thống kê bếp →</span>
           </Link>
+        )}
+
+        {(roles.includes('OfficeStaff') || roles.includes('SchoolBoard') || roles.includes('Admin')) && (
+          <Link
+            to="/system/audit-logs"
+            className="card card--hover"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'var(--color-accent-soft)',
+                border: 'var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <ShieldAlert size={22} color="var(--color-accent)" />
+            </div>
+            <h3>Nhật ký hệ thống</h3>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Tra cứu lịch sử thao tác, thay đổi phân quyền, điều chỉnh điểm danh và cấu hình hệ thống.
+            </p>
+            <span className="badge badge--violet">Xem Audit Logs →</span>
+          </Link>
+        )}
+
+        {roles.includes('Admin') && (
+          <>
+            <Link
+              to="/admin/users"
+              className="card card--hover"
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'var(--color-quaternary-soft)',
+                  border: 'var(--border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <UserCog size={22} color="var(--color-quaternary)" />
+              </div>
+              <h3>Quản lý tài khoản</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                Tạo tài khoản, phân vai trò RBAC, khóa/mở khóa, đặt lại mật khẩu và nhập nhân sự Excel.
+              </p>
+              <span className="badge badge--mint">Quản lý người dùng →</span>
+            </Link>
+
+            <Link
+              to="/admin/config"
+              className="card card--hover"
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'var(--color-tertiary-soft)',
+                  border: 'var(--border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <Settings size={22} color="var(--color-fg)" />
+              </div>
+              <h3>Cấu hình hệ thống</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                Thiết lập lịch ngày học / ngày nghỉ lễ và mốc giờ chốt suất ăn bán trú theo ngày.
+              </p>
+              <span className="badge badge--amber">Mở cấu hình →</span>
+            </Link>
+          </>
         )}
       </div>
 

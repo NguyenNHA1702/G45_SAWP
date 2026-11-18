@@ -19,6 +19,9 @@ import ParentLunchPage from './pages/ParentPortal/ParentLunchPage';
 import ProfilePage from './pages/Auth/ProfilePage';
 import EContactBookPage from './pages/ParentPortal/EContactBookPage';
 import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
+import AuditLogsPage from './pages/SystemPortal/AuditLogsPage';
+import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
+import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
 import { MainLayout } from './layouts/MainLayout';
 import { TOKEN_KEY } from './services/apiClient';
 
@@ -73,6 +76,9 @@ export default function App() {
           <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
           <Route path="/parent/children" element={<ChildDashboardPage />} />
+          <Route path="/system/audit-logs" element={<AuditLogsPage />} />
+          <Route path="/admin/users" element={<UsersManagementPage />} />
+          <Route path="/admin/config" element={<SystemConfigPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 

@@ -7,4 +7,5 @@ public interface IAuditService
 {
     Task LogActionAsync(int? userId, string action, string entityName, string? entityId, string? oldValues, string? newValues, string? ipAddress, CancellationToken cancellationToken = default);
     Task<ApiResponse<PaginatedResult<AuditLog>>> GetAuditLogsPagedAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+    Task<ApiResponse<PaginatedResult<AuditLogDto>>> GetAuditLogDtosPagedAsync(AuditLogFilterDto filter, CancellationToken cancellationToken = default);
 }

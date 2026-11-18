@@ -43,6 +43,7 @@ builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 builder.Services.AddScoped<ILunchService, LunchService>();
 builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IStudentImporter, StudentImporter>();
 builder.Services.AddScoped<IStaffImporter, StaffImporter>();
 builder.Services.AddScoped<IPlacementPlanService, PlacementPlanService>();

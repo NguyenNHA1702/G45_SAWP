@@ -20,6 +20,9 @@ import {
   ShieldCheck,
   FileSpreadsheet,
   Clock,
+  Settings,
+  UserCog,
+  ShieldAlert,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
@@ -216,6 +219,43 @@ const NAV_ITEMS: NavItem[] = [
         path: '/board/requests',
         roles: ['SchoolBoard', 'Admin'],
         icon: ShieldCheck,
+      },
+      {
+        id: 'office-audit-logs',
+        label: 'Nhật ký hệ thống',
+        path: '/system/audit-logs',
+        roles: ['OfficeStaff', 'SchoolBoard'],
+        icon: ShieldAlert,
+      },
+    ],
+  },
+  // --- Quản trị hệ thống (Admin) ---
+  {
+    id: 'admin-system-group',
+    label: 'Quản trị hệ thống',
+    icon: Settings,
+    roles: ['Admin'],
+    children: [
+      {
+        id: 'admin-users',
+        label: 'Quản lý tài khoản',
+        path: '/admin/users',
+        roles: ['Admin'],
+        icon: UserCog,
+      },
+      {
+        id: 'admin-config',
+        label: 'Cấu hình hệ thống',
+        path: '/admin/config',
+        roles: ['Admin'],
+        icon: Settings,
+      },
+      {
+        id: 'admin-audit-logs',
+        label: 'Nhật ký hệ thống',
+        path: '/system/audit-logs',
+        roles: ['Admin'],
+        icon: ShieldAlert,
       },
     ],
   },
