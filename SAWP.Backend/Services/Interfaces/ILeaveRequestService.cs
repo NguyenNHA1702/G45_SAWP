@@ -33,4 +33,14 @@ public interface ILeaveRequestService
     /// Phụ huynh hủy đơn khi đơn còn ở trạng thái Pending
     /// </summary>
     Task<ApiResponse<bool>> CancelLeaveRequestAsync(int requestId, int parentUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Kiểm tra (dung lượng, định dạng) và lưu tệp đính kèm của đơn xin nghỉ
+    /// </summary>
+    Task<ApiResponse<AttachmentUploadResultDto>> UploadAttachmentAsync(Stream content, string fileName, long length, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mở tệp đính kèm đã lưu; trả về null nếu không tồn tại
+    /// </summary>
+    Task<AttachmentFileDto?> GetAttachmentAsync(string path, CancellationToken cancellationToken = default);
 }

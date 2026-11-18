@@ -31,7 +31,7 @@ public class LeaveRequestServiceTests : TestBase
         _clockMock.Setup(c => c.Now).Returns(DateTime.Now);
 
         var options = Options.Create(new SchoolOptions { LunchCutoffTime = "08:15" });
-        _service = new LeaveRequestService(UnitOfWorkMock.Object, _lunchServiceMock.Object, _clockMock.Object, options);
+        _service = new LeaveRequestService(UnitOfWorkMock.Object, _lunchServiceMock.Object, _clockMock.Object, options, new Mock<Infrastructure.ExternalServices.IFileStorageService>().Object);
     }
 
     // ==================== 46. SubmitLeaveRequestAsync (7 TCs) ====================

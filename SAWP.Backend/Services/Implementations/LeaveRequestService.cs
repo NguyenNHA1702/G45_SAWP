@@ -4,6 +4,7 @@ using Core.DTOs;
 using Core.Entities;
 using Core.Enums;
 using Core.Interfaces;
+using Infrastructure.ExternalServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Services.Interfaces;
@@ -16,13 +17,19 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ILunchService _lunchService;
     private readonly ISchoolClock _clock;
     private readonly SchoolOptions _options;
+    private readonly IFileStorageService _fileStorage;
+
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+    private static readonly string[] AllowedAttachmentExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx" };
 
     public LeaveRequestService(
         IUnitOfWork unitOfWork,
         ILunchService lunchService,
         ISchoolClock clock,
-        IOptions<SchoolOptions> schoolOptions)
+        IOptions<SchoolOptions> schoolOptions,
+        IFileStorageService fileStorage)
     {
+        _fileStorage = fileStorage;
         _unitOfWork = unitOfWork;
         _lunchService = lunchService;
         _clock = clock;
@@ -688,6 +695,64 @@ public class LeaveRequestService : ILeaveRequestService
             ReviewerName = req.ReviewerUser?.FullName,
             ProcessedDate = req.ProcessedDate,
             ReviewerNotes = req.ReviewerNotes
+        };
+    }
+
+    public async Task<ApiResponse<AttachmentUploadResultDto>> UploadAttachmentAsync(Stream content, string fileName, long length, CancellationToken cancellationToken = default)
+    {
+        if (length <= 0)
+        {
+            return ApiResponse<AttachmentUploadResultDto>.Fail("Vui lòng chọn tệp tin cần tải lên.");
+        }
+
+        if (length > MaxAttachmentBytes)
+        {
+            return ApiResponse<AttachmentUploadResultDto>.Fail("Kích thước tệp không được vượt quá 10MB.");
+        }
+
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedAttachmentExtensions.Contains(ext))
+        {
+            return ApiResponse<AttachmentUploadResultDto>.Fail("Định dạng tệp không được hỗ trợ. Vui lòng chọn ảnh (.jpg, .png, .webp) hoặc tài liệu (.pdf, .doc, .docx).");
+        }
+
+        var relativePath = await _fileStorage.SaveFileAsync(content, fileName, "attachments", cancellationToken);
+        var normalizedPath = relativePath.Replace('\\', '/');
+        var fileUrl = $"/api/LeaveRequests/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
+
+        return ApiResponse<AttachmentUploadResultDto>.Ok(new AttachmentUploadResultDto
+        {
+            Url = fileUrl,
+            FileName = fileName,
+            FileSize = length,
+            SavedPath = normalizedPath
+        }, "Tải lên tệp đính kèm thành công.");
+    }
+
+    public async Task<AttachmentFileDto?> GetAttachmentAsync(string path, CancellationToken cancellationToken = default)
+    {
+        var cleanPath = path.Replace("..", "").TrimStart('/', '\\');
+        var stream = await _fileStorage.GetFileAsync(cleanPath, cancellationToken);
+        if (stream == null)
+        {
+            return null;
+        }
+
+        var ext = Path.GetExtension(cleanPath).ToLowerInvariant();
+        return new AttachmentFileDto
+        {
+            Content = stream,
+            FileName = Path.GetFileName(cleanPath),
+            ContentType = ext switch
+            {
+                ".pdf" => "application/pdf",
+                ".png" => "image/png",
+                ".webp" => "image/webp",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".doc" => "application/msword",
+                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                _ => "application/octet-stream"
+            }
         };
     }
 }
