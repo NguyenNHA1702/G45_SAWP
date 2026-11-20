@@ -35,6 +35,7 @@ builder.Services.AddScoped<ILunchRepository, LunchRepository>();
 builder.Services.AddScoped<IClassScheduleRepository, ClassScheduleRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.Configure<SchoolOptions>(builder.Configuration.GetSection(SchoolOptions.SectionName));
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 
 builder.Services.AddSingleton<ISchoolClock, SchoolClock>();
 
