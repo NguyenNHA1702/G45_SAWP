@@ -190,6 +190,7 @@ public class GuardianService : IGuardianService
             $"Request: {requestNumber}, Student: {student.StudentCode}, AutoVerified: {autoVerified}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var resultDto = new ChildLinkRequestResultDto
         {
@@ -362,6 +363,7 @@ public class GuardianService : IGuardianService
             $"Status: {request.Status}, Notes: {request.ReviewerNotes}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, review.IsApproved ? SystemMessages.MSG13 : SystemMessages.MSG32);
     }

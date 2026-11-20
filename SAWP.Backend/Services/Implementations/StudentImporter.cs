@@ -293,9 +293,6 @@ public class StudentImporter : IStudentImporter
                 result.ImportedStudentCodes.Add(code);
             }
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _unitOfWork.CommitTransactionAsync(cancellationToken);
-
             await _auditService.LogActionAsync(
                 actorUserId,
                 "BulkImportStudents",
@@ -305,6 +302,9 @@ public class StudentImporter : IStudentImporter
                 $"Imported {result.SuccessCount} students successfully, skipped {result.SkippedCount}",
                 null,
                 cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
             return ApiResponse<ImportStudentsResultDto>.Ok(result, SystemMessages.MSG48);
         }

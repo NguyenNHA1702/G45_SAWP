@@ -196,6 +196,7 @@ public class StudentService : IStudentService
             $"Created Master Profile: {student.StudentCode} - {student.FullName}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(student.Id, cancellationToken);
         return ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded ?? student), SystemMessages.MSG08);
@@ -268,6 +269,7 @@ public class StudentService : IStudentService
             $"Name: {student.FullName}, Status: {student.Status}, Gender: {student.Gender}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(student.Id, cancellationToken);
         return ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded ?? student), SystemMessages.MSG08);
@@ -440,6 +442,7 @@ public class StudentService : IStudentService
             $"Resolved duplicate profile for code {normalizedCode} via {request.Action}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(existing.Id, cancellationToken);
         return ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded ?? existing), SystemMessages.MSG08);
@@ -469,6 +472,7 @@ public class StudentService : IStudentService
             $"Set status = 'Active' for {student.StudentCode}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }

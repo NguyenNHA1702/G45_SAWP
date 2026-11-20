@@ -1322,6 +1322,7 @@ public class LunchService : ILunchService
             $"Month={normalizedMonth};Quota={request.Quota}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return await GetMonthlyQuotaAsync(normalizedMonth, cancellationToken);
     }
@@ -1556,6 +1557,7 @@ public class LunchService : ILunchService
             $"StudentCode={student.StudentCode};Date={targetDate:yyyy-MM-dd};Note={note}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var recorder = userId > 0
             ? await _unitOfWork.Repository<User>().Query().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)

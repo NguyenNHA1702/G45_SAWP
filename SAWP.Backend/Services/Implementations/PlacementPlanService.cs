@@ -190,6 +190,7 @@ public class PlacementPlanService : IPlacementPlanService
             $"Generated draft placement plan '{plan.PlanName}' (v{plan.Version}) with {assignments.Count} students across {targetClasses.Count} classes",
             null,
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return await GetPlanByIdAsync(plan.Id, cancellationToken);
     }
@@ -401,6 +402,7 @@ public class PlacementPlanService : IPlacementPlanService
             $"Moved student {request.StudentId} to class {targetClass.ClassName} in plan {plan.PlanName}",
             null,
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return await GetPlanByIdAsync(planId, cancellationToken);
     }
@@ -452,6 +454,7 @@ public class PlacementPlanService : IPlacementPlanService
             $"Swapped student {request.Student1Id} and {request.Student2Id} in plan {plan.PlanName}",
             null,
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return await GetPlanByIdAsync(planId, cancellationToken);
     }
@@ -510,6 +513,7 @@ public class PlacementPlanService : IPlacementPlanService
             $"Submitted placement plan {plan.PlanName} for School Board approval",
             null,
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<PlacementPlanSummaryDto>.Ok(new PlacementPlanSummaryDto
         {
@@ -649,9 +653,6 @@ public class PlacementPlanService : IPlacementPlanService
                 });
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
             await _auditService.LogActionAsync(
                 reviewerUserId,
                 request.IsApproved ? "ApprovePlacementPlan" : "RejectPlacementPlan",
@@ -661,6 +662,9 @@ public class PlacementPlanService : IPlacementPlanService
                 $"School Board review for plan {plan.PlanName}: {(request.IsApproved ? "Approved" : "Rejected")}. Notes: {plan.ReviewNotes}",
                 null,
                 cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return ApiResponse<PlacementPlanSummaryDto>.Ok(new PlacementPlanSummaryDto
             {

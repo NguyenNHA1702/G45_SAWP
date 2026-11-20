@@ -80,6 +80,7 @@ public class ClassService : IClassService
             $"Year: {schoolYear.YearName}, Active: {schoolYear.IsActive}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<SchoolYearDto>.Ok(new SchoolYearDto
         {
@@ -153,6 +154,7 @@ public class ClassService : IClassService
             $"Activated Year: {target.YearName}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
@@ -203,6 +205,7 @@ public class ClassService : IClassService
             $"Class: {newClass.ClassName}, Grade: {newClass.Grade}, Capacity: {newClass.Capacity}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<ClassSummaryDto>.Ok(new ClassSummaryDto
         {
@@ -363,6 +366,7 @@ public class ClassService : IClassService
             $"Khởi tạo/cập nhật {affectedClasses.Count} lớp (Tạo mới: {createdCount}, Cập nhật: {updatedCount}) cho năm học {schoolYear.YearName}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var message = createdCount > 0 || updatedCount > 0
             ? $"Đã xử lý danh mục lớp học: Tạo mới {createdCount} lớp, Cập nhật sĩ số {updatedCount} lớp."
@@ -477,6 +481,7 @@ public class ClassService : IClassService
             $"Name: {c.ClassName}, Capacity: {c.Capacity}, Status: {c.Status}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<ClassSummaryDto>.Ok(new ClassSummaryDto
         {
@@ -604,6 +609,7 @@ public class ClassService : IClassService
             $"NewTeacherProfileId: {request.StaffProfileId}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
@@ -703,6 +709,7 @@ public class ClassService : IClassService
             $"Assigned {request.StudentIds.Count} students to Class {targetClass.ClassName}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG16);
     }
@@ -734,6 +741,7 @@ public class ClassService : IClassService
             "Deactivated assignment",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
@@ -790,6 +798,7 @@ public class ClassService : IClassService
             $"Published placement for Class {targetClass.ClassName} with {enrolledCount} students",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var result = new PublishPlacementResultDto
         {
@@ -863,6 +872,7 @@ public class ClassService : IClassService
             $"Published {results.Count} class placements for SchoolYearId {schoolYearId}",
             null,
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<List<PublishPlacementResultDto>>.Ok(results, SystemMessages.MSG08);
     }

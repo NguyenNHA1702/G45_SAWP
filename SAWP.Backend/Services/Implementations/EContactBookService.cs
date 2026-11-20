@@ -455,6 +455,7 @@ public class EContactBookService : IEContactBookService
             null,
             cancellationToken
         );
+        await _context.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
