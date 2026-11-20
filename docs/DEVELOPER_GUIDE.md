@@ -272,8 +272,39 @@ This section documents all available, pre-implemented methods across the Unit of
 
 | Method | Parameters | Return Type | Description |
 | :--- | :--- | :--- | :--- |
-| `LogActionAsync` | `int? userId`, `string action`, `string entityName`, `string? entityId`, `string? oldValues`, `string? newValues`, `string? ipAddress`, `CancellationToken cancellationToken = default` | `Task` | Records an immutable administrative or security audit event in the database. |
+| `LogActionAsync` | `int? userId`, `string action`, `string entityName`, `string? entityId`, `object? oldValues`, `object? newValues`, `string? ipAddress`, `CancellationToken cancellationToken = default` | `Task` | Stages an immutable audit event on the shared `DbContext`. Does **not** save: call `SaveChangesAsync` afterwards. |
 | `GetAuditLogsPagedAsync` | `int pageIndex`, `int pageSize`, `CancellationToken cancellationToken = default` | `Task<ApiResponse<PaginatedResult<AuditLog>>>` | Queries paginated audit logs for system administrator inspection. |
+
+**Audit log rules** (every new or changed audit entry must follow them):
+
+- Write audit entries only through `IAuditService.LogActionAsync`. Never create `AuditLog` rows directly.
+- `action`: a constant from `Core.Constants.AuditActions`. Names are UPPER_SNAKE_CASE, business object
+  first, then the verb in present tense (`CLASS_CREATE`, `LEAVE_REQUEST_APPROVE`). Add a new constant
+  for a new action; never pass a string literal. Put details such as the resolution type or the review
+  level in the values, not in the action name.
+- `entityName`: `nameof(<Entity>)` of the record that was changed. `entityId`: that record's `Id`, or
+  `null` when the action covers several records (list them in the values).
+- `oldValues` / `newValues`: an anonymous object or a collection, e.g.
+  `new { c.ClassName, c.Capacity }`. `AuditService` serializes it to ASCII-only JSON: non-ASCII
+  characters such as Vietnamese are escaped as `\uXXXX` and decode back to the original text; enums are
+  stored by name. Read values with a JSON parser, never as plain text. Never pass a pre-built string: it throws `ArgumentException`. Capture old values
+  before changing the entity; use `null` when there is nothing before (create) or after (delete).
+- `ipAddress`: the client IP is not recorded yet. Pass `null` with the comment
+  `// TODO: pass the client IP address; it is not recorded yet.` so every call site is easy to find later.
+- Save: the entry is written only by the next `SaveChangesAsync`. Log before the save that stores the
+  change whenever the entity already has its `Id`; for a new entity, log after the save that assigns the
+  `Id` and save again.
+- Example:
+
+```csharp
+var oldValues = new { c.ClassName, c.Capacity, c.Status };
+c.Capacity = request.Capacity;
+await _auditService.LogActionAsync(actorUserId, AuditActions.ClassUpdate, nameof(Class), c.Id.ToString(),
+    oldValues, new { c.ClassName, c.Capacity, c.Status },
+    null, // TODO: pass the client IP address; it is not recorded yet.
+    cancellationToken);
+await _unitOfWork.SaveChangesAsync(cancellationToken);
+```
 
 #### `IStudentImporter` & `IStaffImporter`
 - **File:** `Services/Interfaces/IStudentImporter.cs` & `IStaffImporter.cs`

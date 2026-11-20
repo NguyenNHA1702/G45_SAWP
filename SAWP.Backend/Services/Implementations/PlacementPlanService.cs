@@ -183,13 +183,14 @@ public class PlacementPlanService : IPlacementPlanService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "GeneratePlacementPlanDraft",
+            AuditActions.PlacementPlanGenerateDraft,
             nameof(PlacementPlan),
             plan.Id.ToString(),
             null,
-            $"Generated draft placement plan '{plan.PlanName}' (v{plan.Version}) with {assignments.Count} students across {targetClasses.Count} classes",
-            null,
+            new { plan.PlanName, plan.Version, StudentCount = assignments.Count, ClassCount = targetClasses.Count },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return await GetPlanByIdAsync(plan.Id, cancellationToken);
     }
@@ -386,6 +387,7 @@ public class PlacementPlanService : IPlacementPlanService
             return ApiResponse<PlacementPlanDetailDto>.Fail(SystemMessages.MSG01, new List<string> { "Lớp chuyển đến không tồn tại." });
         }
 
+        var fromClassId = item.ClassId;
         item.ClassId = request.ToClassId;
         item.IsManualOverride = true;
         item.Notes = request.Notes ?? "Điều chỉnh chuyển lớp thủ công";
@@ -394,13 +396,14 @@ public class PlacementPlanService : IPlacementPlanService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "MoveStudentInPlan",
+            AuditActions.PlacementPlanMoveStudent,
             nameof(PlacementPlan),
             plan.Id.ToString(),
-            null,
-            $"Moved student {request.StudentId} to class {targetClass.ClassName} in plan {plan.PlanName}",
-            null,
+            new { request.StudentId, ClassId = fromClassId },
+            new { request.StudentId, ClassId = request.ToClassId, targetClass.ClassName },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return await GetPlanByIdAsync(planId, cancellationToken);
     }
@@ -445,13 +448,14 @@ public class PlacementPlanService : IPlacementPlanService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "SwapStudentsInPlan",
+            AuditActions.PlacementPlanSwapStudents,
             nameof(PlacementPlan),
             plan.Id.ToString(),
             null,
-            $"Swapped student {request.Student1Id} and {request.Student2Id} in plan {plan.PlanName}",
-            null,
+            new { request.Student1Id, request.Student2Id },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return await GetPlanByIdAsync(planId, cancellationToken);
     }
@@ -503,13 +507,14 @@ public class PlacementPlanService : IPlacementPlanService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "SubmitPlacementPlan",
+            AuditActions.PlacementPlanSubmit,
             nameof(PlacementPlan),
             plan.Id.ToString(),
             null,
-            $"Submitted placement plan {plan.PlanName} for School Board approval",
-            null,
+            new { plan.PlanName, plan.Status },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<PlacementPlanSummaryDto>.Ok(new PlacementPlanSummaryDto
         {
@@ -649,18 +654,18 @@ public class PlacementPlanService : IPlacementPlanService
                 });
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
             await _auditService.LogActionAsync(
                 reviewerUserId,
-                request.IsApproved ? "ApprovePlacementPlan" : "RejectPlacementPlan",
+                request.IsApproved ? AuditActions.PlacementPlanApprove : AuditActions.PlacementPlanReject,
                 nameof(PlacementPlan),
                 plan.Id.ToString(),
                 null,
-                $"School Board review for plan {plan.PlanName}: {(request.IsApproved ? "Approved" : "Rejected")}. Notes: {plan.ReviewNotes}",
-                null,
+                new { plan.PlanName, plan.Status, plan.ReviewNotes },
+                null, // TODO: pass the client IP address; it is not recorded yet.
                 cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return ApiResponse<PlacementPlanSummaryDto>.Ok(new PlacementPlanSummaryDto
             {

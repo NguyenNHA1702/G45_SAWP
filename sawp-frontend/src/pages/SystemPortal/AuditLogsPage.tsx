@@ -96,7 +96,7 @@ export default function AuditLogsPage() {
     const upper = action.toUpperCase();
     if (upper.includes('DELETE') || upper.includes('DEACTIVATE') || upper.includes('REJECT')) return 'badge badge--pink';
     if (upper.includes('CREATE') || upper.includes('APPROVE') || upper.includes('ACTIVATE')) return 'badge badge--mint';
-    if (upper.includes('CORRECTION') || upper.includes('CONFIG') || upper.includes('RESET')) return 'badge badge--amber';
+    if (upper.includes('CORRECT') || upper.includes('CONFIG') || upper.includes('RESET')) return 'badge badge--amber';
     return 'badge badge--violet';
   };
 
@@ -146,12 +146,19 @@ export default function AuditLogsPage() {
             }}
           >
             <option value="">Tất cả đối tượng</option>
-            <option value="AttendanceRecord">Điểm danh (AttendanceRecord)</option>
-            <option value="LeaveRequest">Đơn xin nghỉ (LeaveRequest)</option>
             <option value="User">Tài khoản (User)</option>
+            <option value="SchoolYear">Năm học (SchoolYear)</option>
             <option value="SchoolCalendarDay">Lịch năm học (SchoolCalendarDay)</option>
-            <option value="LunchServiceDay">Bán trú (LunchServiceDay)</option>
-            <option value="AdministrativeRequest">Đơn hành chính</option>
+            <option value="Class">Lớp học (Class)</option>
+            <option value="PlacementPlan">Phương án xếp lớp (PlacementPlan)</option>
+            <option value="Student">Học sinh (Student)</option>
+            <option value="AttendanceRecord">Điểm danh (AttendanceRecord)</option>
+            <option value="AdministrativeRequest">Đơn từ, yêu cầu (AdministrativeRequest)</option>
+            <option value="LunchServiceDay">Ngày phục vụ bán trú (LunchServiceDay)</option>
+            <option value="LunchRegistration">Đăng ký bán trú (LunchRegistration)</option>
+            <option value="LunchMonthlyQuota">Chỉ tiêu bán trú (LunchMonthlyQuota)</option>
+            <option value="BoardingIncident">Sự cố bán trú (BoardingIncident)</option>
+            <option value="PostComment">Bình luận sổ liên lạc (PostComment)</option>
           </select>
 
           <select

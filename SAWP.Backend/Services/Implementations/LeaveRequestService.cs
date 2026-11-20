@@ -18,6 +18,7 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ISchoolClock _clock;
     private readonly SchoolOptions _options;
     private readonly IFileStorageService _fileStorage;
+    private readonly IAuditService _auditService;
 
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
     private static readonly string[] AllowedAttachmentExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx" };
@@ -27,9 +28,11 @@ public class LeaveRequestService : ILeaveRequestService
         ILunchService lunchService,
         ISchoolClock clock,
         IOptions<SchoolOptions> schoolOptions,
-        IFileStorageService fileStorage)
+        IFileStorageService fileStorage,
+        IAuditService auditService)
     {
         _fileStorage = fileStorage;
+        _auditService = auditService;
         _unitOfWork = unitOfWork;
         _lunchService = lunchService;
         _clock = clock;
@@ -127,19 +130,15 @@ public class LeaveRequestService : ILeaveRequestService
         };
 
         await _unitOfWork.Repository<LeaveRequest>().AddAsync(leaveDetail, cancellationToken);
-        var auditRepo = _unitOfWork.Repository<AuditLog>();
-        if (auditRepo != null)
-        {
-            await auditRepo.AddAsync(new AuditLog
-            {
-                UserId = parentUserId,
-                Action = "Parent_Submit_LeaveRequest",
-                EntityName = "AdministrativeRequest",
-                EntityId = adminRequest.Id.ToString(),
-                NewValues = $"Mã đơn: {requestNumber}, Học sinh ID: {request.StudentId}, Từ {request.StartDate:dd/MM/yyyy} đến {request.EndDate:dd/MM/yyyy}, Buổi: {request.Session}, Giữ suất ăn: {request.KeepLunchService}",
-                Timestamp = DateTime.UtcNow
-            }, cancellationToken);
-        }
+        await _auditService.LogActionAsync(
+            parentUserId,
+            AuditActions.LeaveRequestSubmit,
+            nameof(AdministrativeRequest),
+            adminRequest.Id.ToString(),
+            null,
+            new { RequestNumber = requestNumber, request.StudentId, request.StartDate, request.EndDate, request.Session, request.KeepLunchService },
+            null, // TODO: pass the client IP address; it is not recorded yet.
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 6. Notify Homeroom Teacher if exists
@@ -443,17 +442,16 @@ public class LeaveRequestService : ILeaveRequestService
             req.Status = RequestStatus.Rejected;
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // Ghi lý do từ chối vào nhật ký hệ thống (AuditLog)
-            var audit = new AuditLog
-            {
-                UserId = reviewerUserId,
-                Action = isEscalatedDecision ? "SchoolBoard_Reject_LeaveRequest" : "Teacher_Reject_LeaveRequest",
-                EntityName = "AdministrativeRequest",
-                EntityId = req.Id.ToString(),
-                NewValues = $"Lý do từ chối: {review.ReviewerNotes.Trim()}",
-                Timestamp = DateTime.UtcNow
-            };
-            await _unitOfWork.Repository<AuditLog>().AddAsync(audit, cancellationToken);
+            // Record the rejection reason in the audit log
+            await _auditService.LogActionAsync(
+                reviewerUserId,
+                AuditActions.LeaveRequestReject,
+                nameof(AdministrativeRequest),
+                req.Id.ToString(),
+                null,
+                new { req.Status, ReviewLevel = isEscalatedDecision ? "SchoolBoard" : "Teacher", Reason = review.ReviewerNotes.Trim() },
+                null, // TODO: pass the client IP address; it is not recorded yet.
+                cancellationToken);
 
             var rejectTitle = isEscalatedDecision
                 ? "Thông báo từ chối đơn chuyển cấp"
@@ -573,17 +571,16 @@ public class LeaveRequestService : ILeaveRequestService
 
         req.LeaveRequest.IsLunchCancelled = cancelledDates.Any();
 
-        // Ghi nhật ký phê duyệt vào AuditLog
-        var approveAudit = new AuditLog
-        {
-            UserId = reviewerUserId,
-            Action = isEscalatedDecision ? "SchoolBoard_Approve_LeaveRequest" : "Teacher_Approve_LeaveRequest",
-            EntityName = "AdministrativeRequest",
-            EntityId = req.Id.ToString(),
-            NewValues = $"Đã phê duyệt. Ghi chú: {review.ReviewerNotes?.Trim() ?? "Đồng ý"}",
-            Timestamp = DateTime.UtcNow
-        };
-        await _unitOfWork.Repository<AuditLog>().AddAsync(approveAudit, cancellationToken);
+        // Record the approval in the audit log
+        await _auditService.LogActionAsync(
+            reviewerUserId,
+            AuditActions.LeaveRequestApprove,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            null,
+            new { req.Status, ReviewLevel = isEscalatedDecision ? "SchoolBoard" : "Teacher", Notes = review.ReviewerNotes?.Trim() },
+            null, // TODO: pass the client IP address; it is not recorded yet.
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var approveTitle = isEscalatedDecision
@@ -634,20 +631,15 @@ public class LeaveRequestService : ILeaveRequestService
         req.Status = RequestStatus.Cancelled;
         req.ProcessedDate = DateTime.UtcNow;
         req.ReviewerNotes = "Phụ huynh tự hủy đơn.";
-        var cancelAuditRepo = _unitOfWork.Repository<AuditLog>();
-        if (cancelAuditRepo != null)
-        {
-            await cancelAuditRepo.AddAsync(new AuditLog
-            {
-                UserId = parentUserId,
-                Action = "Parent_Cancel_LeaveRequest",
-                EntityName = "AdministrativeRequest",
-                EntityId = req.Id.ToString(),
-                OldValues = RequestStatus.Submitted.ToString(),
-                NewValues = "Phụ huynh tự hủy đơn chờ duyệt.",
-                Timestamp = DateTime.UtcNow
-            }, cancellationToken);
-        }
+        await _auditService.LogActionAsync(
+            parentUserId,
+            AuditActions.LeaveRequestCancel,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            new { Status = RequestStatus.Submitted },
+            new { req.Status, req.ReviewerNotes },
+            null, // TODO: pass the client IP address; it is not recorded yet.
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, "Đã hủy đơn xin nghỉ học thành công.");

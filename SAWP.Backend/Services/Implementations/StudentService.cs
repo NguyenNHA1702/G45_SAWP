@@ -189,13 +189,14 @@ public class StudentService : IStudentService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "CreateStudent",
+            AuditActions.StudentCreate,
             nameof(Student),
             student.Id.ToString(),
             null,
-            $"Created Master Profile: {student.StudentCode} - {student.FullName}",
-            null,
+            new { student.StudentCode, student.FullName, student.DateOfBirth, student.Gender, student.Status },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(student.Id, cancellationToken);
         return ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded ?? student), SystemMessages.MSG08);
@@ -213,7 +214,7 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
         }
 
-        var oldValues = $"Name: {student.FullName}, Status: {student.Status}, Gender: {student.Gender}";
+        var oldValues = new { student.FullName, student.DateOfBirth, student.Gender, student.Status };
 
         student.FullName = request.FullName.Trim();
         student.DateOfBirth = request.DateOfBirth;
@@ -261,13 +262,14 @@ public class StudentService : IStudentService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "UpdateStudent",
+            AuditActions.StudentUpdate,
             nameof(Student),
             student.Id.ToString(),
             oldValues,
-            $"Name: {student.FullName}, Status: {student.Status}, Gender: {student.Gender}",
-            null,
+            new { student.FullName, student.DateOfBirth, student.Gender, student.Status },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(student.Id, cancellationToken);
         return ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded ?? student), SystemMessages.MSG08);
@@ -363,7 +365,7 @@ public class StudentService : IStudentService
         }
 
         // Action: "Merge" or "Overwrite"
-        var oldValues = $"Name: {existing.FullName}, DOB: {existing.DateOfBirth:yyyy-MM-dd}, Gender: {existing.Gender}, Status: {existing.Status}";
+        var oldValues = new { existing.FullName, existing.DateOfBirth, existing.Gender, existing.Status };
 
         if (profileData != null)
         {
@@ -433,13 +435,14 @@ public class StudentService : IStudentService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            $"ResolveDuplicate_{action}",
+            AuditActions.StudentResolveDuplicate,
             nameof(Student),
             existing.Id.ToString(),
             oldValues,
-            $"Resolved duplicate profile for code {normalizedCode} via {request.Action}",
-            null,
+            new { Resolution = action, StudentCode = normalizedCode, existing.FullName, existing.DateOfBirth, existing.Gender, existing.Status },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(existing.Id, cancellationToken);
         return ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded ?? existing), SystemMessages.MSG08);
@@ -462,13 +465,14 @@ public class StudentService : IStudentService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "ActivateStudent",
+            AuditActions.StudentActivate,
             nameof(Student),
             student.Id.ToString(),
             null,
-            $"Set status = 'Active' for {student.StudentCode}",
-            null,
+            new { student.StudentCode, student.Status },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }

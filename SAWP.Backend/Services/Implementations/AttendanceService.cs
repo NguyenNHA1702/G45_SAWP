@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core.Configuration;
 using Core.Constants;
 using Core.DTOs;
@@ -548,10 +547,11 @@ public class AttendanceService : IAttendanceService
             // T5: Audit log
             if (changes.Count > 0)
             {
-                var action = existingRecords.Count == 0 ? "ATTENDANCE_SUBMIT" : "ATTENDANCE_UPDATE";
-                var oldValuesJson = JsonSerializer.Serialize(changes.Select(c => new { c.StudentId, Status = c.OldStatus?.ToString() }));
-                var newValuesJson = JsonSerializer.Serialize(changes.Select(c => new { c.StudentId, Status = c.NewStatus.ToString() }));
-                await _auditService.LogActionAsync(userId, action, "AttendanceRecord", $"{classId}:{targetDate:yyyy-MM-dd}:{session}", oldValuesJson, newValuesJson, null, ct);
+                var action = existingRecords.Count == 0 ? AuditActions.AttendanceSubmit : AuditActions.AttendanceUpdate;
+                var oldValues = changes.Select(c => new { c.StudentId, Status = c.OldStatus?.ToString() }).ToList();
+                var newValues = changes.Select(c => new { c.StudentId, Status = c.NewStatus.ToString() }).ToList();
+                // TODO: pass the client IP address; it is not recorded yet.
+                await _auditService.LogActionAsync(userId, action, nameof(AttendanceRecord), $"{classId}:{targetDate:yyyy-MM-dd}:{session}", oldValues, newValues, null, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
             }
 
@@ -696,9 +696,10 @@ public class AttendanceService : IAttendanceService
 
             await _unitOfWork.SaveChangesAsync(ct);
 
-            var oldJson = JsonSerializer.Serialize(new { Status = oldStatus.ToString(), Remarks = oldRemarks });
-            var newJson = JsonSerializer.Serialize(new { Status = dto.Status.ToString(), Remarks = dto.Remarks, CorrectionReason = reason });
-            await _auditService.LogActionAsync(userId, "ATTENDANCE_CORRECTION", "AttendanceRecord", rec.Id.ToString(), oldJson, newJson, null, ct);
+            var oldValues = new { Status = oldStatus.ToString(), Remarks = oldRemarks };
+            var newValues = new { Status = dto.Status.ToString(), Remarks = dto.Remarks, CorrectionReason = reason };
+            // TODO: pass the client IP address; it is not recorded yet.
+            await _auditService.LogActionAsync(userId, AuditActions.AttendanceCorrect, nameof(AttendanceRecord), rec.Id.ToString(), oldValues, newValues, null, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             await _unitOfWork.CommitTransactionAsync(ct);

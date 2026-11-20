@@ -114,6 +114,27 @@ To send through a real SMTP server instead, put its `Smtp` settings in `appsetti
 For production, see [docs/EMAIL_SERVER_SETUP.md](docs/EMAIL_SERVER_SETUP.md) (one-script setup:
 `deploy/mail-server/sawp-mail-server.sh`).
 
+### Startup Data and Secrets (outside Development)
+
+On every start the API applies pending migrations and seeds the roles. What else it needs depends on the environment:
+
+| Setting | Development | Any other environment |
+|---|---|---|
+| `Jwt:Key` (signs login tokens) | Taken from `appsettings.Development.json` | **Required**, at least 32 bytes, e.g. `Jwt__Key=$(openssl rand -base64 48)`. The app stops if it is missing. |
+| `Seed:DemoData` | Always seeded (demo accounts use `Password@123`) | `false` by default. Set `true` only on a demo server, never in production. |
+| `Seed:Admin:Username`, `Seed:Admin:Email`, `Seed:Admin:Password` | Not needed (the demo `admin` exists) | Creates the first Admin account while none exists. The password must meet the password policy. |
+
+First production start:
+
+1. Set `Jwt__Key`, `Seed__Admin__Username`, `Seed__Admin__Email` and `Seed__Admin__Password` as environment variables
+   (or in a secret store). Never put them in a committed file.
+2. Start the API. The log shows `Created the first admin account ...`.
+3. Remove `Seed__Admin__Password` and restart. Log in as that admin and create the other accounts in the app.
+
+If no Admin exists and `Seed:Admin` is not set, the log warns `No admin account exists ...`.
+
+Full procedure, security checklist and lockout recovery: [docs/FIRST_ADMIN_SETUP.md](docs/FIRST_ADMIN_SETUP.md).
+
 ### Frontend Setup
 ```bash
 # Navigate to Frontend folder

@@ -561,12 +561,12 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         // 5. Audit Log
         await _auditService.LogActionAsync(
             staffUserId,
-            "ExecuteClassTransfer",
+            AuditActions.ClassTransferRequestExecute,
             nameof(AdministrativeRequest),
             req.Id.ToString(),
-            $"FromClass: {req.ClassTransferDetail.FromClass?.ClassName}",
-            $"ToClass: {req.ClassTransferDetail.ToClass?.ClassName}",
-            null,
+            new { FromClass = req.ClassTransferDetail.FromClass?.ClassName },
+            new { ToClass = req.ClassTransferDetail.ToClass?.ClassName },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -718,12 +718,12 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             // Audit Log rejection reason
             await _auditService.LogActionAsync(
                 boardUserId,
-                "RejectAdministrativeRequest",
+                AuditActions.AdministrativeRequestReject,
                 nameof(AdministrativeRequest),
                 req.Id.ToString(),
                 null,
-                $"Type: {req.RequestType}, Rejection Reason: {request.DecisionNotes.Trim()}",
-                null,
+                new { req.RequestType, Reason = request.DecisionNotes.Trim() },
+                null, // TODO: pass the client IP address; it is not recorded yet.
                 cancellationToken);
 
             // Notify Parent

@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -93,7 +91,7 @@ public class AdminService : IAdminService
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập đầy đủ Tên đăng nhập, Email và Họ tên." });
         }
 
-        if (!ValidatePasswordPolicy(request.Password))
+        if (!PasswordPolicy.IsValid(request.Password))
         {
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu phải có ít nhất 8 ký tự gồm chữ hoa, chữ thường, số và ký tự đặc biệt." });
         }
@@ -159,12 +157,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_CREATE_USER",
-            "User",
+            AuditActions.UserCreate,
+            nameof(User),
             user.Id.ToString(),
             null,
-            JsonSerializer.Serialize(new { user.Username, user.FullName, user.Email, Roles = dbRoles.Select(r => r.Name) }),
-            null,
+            new { user.Username, user.FullName, user.Email, Roles = dbRoles.Select(r => r.Name) },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -236,12 +234,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_UPDATE_ROLES",
-            "User",
+            AuditActions.UserUpdateRoles,
+            nameof(User),
             user.Id.ToString(),
-            JsonSerializer.Serialize(new { Roles = oldRoles }),
-            JsonSerializer.Serialize(new { Roles = dbRoles.Select(r => r.Name) }),
-            null,
+            new { Roles = oldRoles },
+            new { Roles = dbRoles.Select(r => r.Name) },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -267,12 +265,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            isActive ? "ADMIN_ACTIVATE_USER" : "ADMIN_DEACTIVATE_USER",
-            "User",
+            isActive ? AuditActions.UserActivate : AuditActions.UserDeactivate,
+            nameof(User),
             user.Id.ToString(),
-            JsonSerializer.Serialize(new { IsActive = oldActive }),
-            JsonSerializer.Serialize(new { IsActive = isActive }),
-            null,
+            new { IsActive = oldActive },
+            new { IsActive = isActive },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -281,7 +279,7 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<bool>> ResetUserPasswordAsync(int adminUserId, int targetUserId, string newPassword, CancellationToken ct = default)
     {
-        if (!ValidatePasswordPolicy(newPassword))
+        if (!PasswordPolicy.IsValid(newPassword))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu mới chưa đáp ứng yêu cầu bảo mật (tối thiểu 8 ký tự, gồm hoa, thường, số, ký tự đặc biệt)." });
         }
@@ -297,12 +295,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_RESET_PASSWORD",
-            "User",
+            AuditActions.UserResetPassword,
+            nameof(User),
             user.Id.ToString(),
             null,
-            JsonSerializer.Serialize(new { user.Username, ResetAt = DateTime.UtcNow }),
-            null,
+            new { user.Username, ResetAt = DateTime.UtcNow },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -386,7 +384,7 @@ public class AdminService : IAdminService
             .Include(d => d.SchoolYear)
             .FirstOrDefaultAsync(d => d.SchoolYearId == yearId && d.Date.Date == date, ct);
 
-        string? oldValues = null;
+        object? oldValues = null;
         if (existing == null)
         {
             existing = new SchoolCalendarDay
@@ -400,7 +398,7 @@ public class AdminService : IAdminService
         }
         else
         {
-            oldValues = JsonSerializer.Serialize(new { existing.IsSchoolDay, existing.Note });
+            oldValues = new { existing.IsSchoolDay, existing.Note };
             existing.IsSchoolDay = request.IsSchoolDay;
             existing.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         }
@@ -409,12 +407,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_CONFIG_CALENDAR_DAY",
-            "SchoolCalendarDay",
+            AuditActions.SchoolCalendarDayConfigure,
+            nameof(SchoolCalendarDay),
             existing.Id.ToString(),
             oldValues,
-            JsonSerializer.Serialize(new { Date = date.ToString("yyyy-MM-dd"), existing.IsSchoolDay, existing.Note }),
-            null,
+            new { Date = date.ToString("yyyy-MM-dd"), existing.IsSchoolDay, existing.Note },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -465,7 +463,7 @@ public class AdminService : IAdminService
             .Query()
             .FirstOrDefaultAsync(d => d.Date.Date == date, ct);
 
-        string? oldValues = null;
+        object? oldValues = null;
         if (existing == null)
         {
             existing = new LunchServiceDay
@@ -479,7 +477,7 @@ public class AdminService : IAdminService
         }
         else
         {
-            oldValues = JsonSerializer.Serialize(new { existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks });
+            oldValues = new { existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks };
             existing.IsServing = request.IsServing;
             existing.CutoffTime = cutoff;
             existing.Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
@@ -489,12 +487,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_CONFIG_LUNCH_CUTOFF",
-            "LunchServiceDay",
+            AuditActions.LunchServiceDayConfigureCutoff,
+            nameof(LunchServiceDay),
             existing.Id.ToString(),
             oldValues,
-            JsonSerializer.Serialize(new { Date = date.ToString("yyyy-MM-dd"), existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks }),
-            null,
+            new { Date = date.ToString("yyyy-MM-dd"), existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -523,13 +521,4 @@ public class AdminService : IAdminService
         Position = u.StaffProfile?.Position,
         Department = u.StaffProfile?.Department
     };
-
-    private static bool ValidatePasswordPolicy(string? password)
-    {
-        if (string.IsNullOrEmpty(password) || password.Length < 8) return false;
-        return password.Any(char.IsUpper)
-            && password.Any(char.IsLower)
-            && password.Any(char.IsDigit)
-            && Regex.IsMatch(password, @"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]");
-    }
 }

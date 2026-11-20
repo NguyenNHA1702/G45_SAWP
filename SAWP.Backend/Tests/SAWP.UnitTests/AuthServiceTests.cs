@@ -9,6 +9,7 @@ using Core.Entities;
 using Core.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using MockQueryable;
 using MockQueryable.Moq;
 using Moq;
@@ -29,7 +30,7 @@ public class AuthServiceTests : TestBase
         _configurationMock.Setup(c => c["Jwt:Issuer"]).Returns("SAWP.Backend");
         _configurationMock.Setup(c => c["Jwt:Audience"]).Returns("SAWP.Client");
 
-        _authService = new AuthService(UnitOfWorkMock.Object, _configurationMock.Object);
+        _authService = new AuthService(UnitOfWorkMock.Object, _configurationMock.Object, NullLogger<AuthService>.Instance);
     }
 
     [Fact]
@@ -312,6 +313,90 @@ public class AuthServiceTests : TestBase
         result.Data.PhoneNumber.Should().Be("0922222222");
         result.Data.GuardianProfile.Should().BeNull();
 
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static User CreateUser(string passwordHash) => new()
+    {
+        Id = 7,
+        Username = "teacher1",
+        Email = "teacher1@sawp.edu.vn",
+        FullName = "Teacher One",
+        PasswordHash = passwordHash,
+        IsActive = true,
+        UserRoles = new List<UserRole> { new() { Role = new Role { Name = "Teacher" } } }
+    };
+
+    [Fact]
+    public async Task LoginAsync_WhenPasswordMatchesBcryptHash_ReturnsToken()
+    {
+        // Arrange
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Password@123", 4));
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        // Act
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = "Password@123" });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Data!.Token.Should().NotBeNullOrEmpty();
+    }
+
+    [Theory]
+    [InlineData("Password@123", "Password@123")]
+    [InlineData("", "Password@123")]
+    public async Task LoginAsync_WhenStoredPasswordIsNotBcryptHash_ReturnsMSG02(string storedValue, string typedPassword)
+    {
+        // Arrange: the stored value equals the typed password but is plain text
+        var user = CreateUser(storedValue);
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        // Act
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = typedPassword });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG02.Code);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WhenStoredPasswordIsNotBcryptHash_ReturnsMSG02AndKeepsStoredValue()
+    {
+        // Arrange
+        var user = CreateUser("Password@123");
+        UserRepoMock.Setup(r => r.GetByIdAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        // Act
+        var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto
+        {
+            CurrentPassword = "Password@123",
+            NewPassword = "NewPassword@456"
+        });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG02.Code);
+        user.PasswordHash.Should().Be("Password@123");
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WhenCurrentPasswordMatches_StoresNewBcryptHash()
+    {
+        // Arrange
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Password@123", 4));
+        UserRepoMock.Setup(r => r.GetByIdAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        // Act
+        var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto
+        {
+            CurrentPassword = "Password@123",
+            NewPassword = "NewPassword@456"
+        });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        BCrypt.Net.BCrypt.Verify("NewPassword@456", user.PasswordHash).Should().BeTrue();
         UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

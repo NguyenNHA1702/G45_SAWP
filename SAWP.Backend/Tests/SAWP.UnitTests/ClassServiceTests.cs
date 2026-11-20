@@ -413,7 +413,7 @@ public class ClassServiceTests : TestBase
 
     #endregion
 
-    #region Method 15: InitializeBatchClassesAsync (UTCID01 - UTCID03)
+    #region Method 15: InitializeBatchClassesAsync (UTCID01 - UTCID04)
 
     [Fact]
     public async Task UTCID01_InitializeBatchClasses_Success_NewSections()
@@ -488,6 +488,43 @@ public class ClassServiceTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task UTCID04_InitializeBatchClasses_SavesAuditLogAfterLogging()
+    {
+        // Arrange: SSAWP-106 - the audit entry must be saved, not only staged
+        var schoolYear = new SchoolYear { Id = 1, YearName = "2026-2027" };
+        SetupRepository(new List<SchoolYear> { schoolYear });
+        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(1, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Class>());
+        ClassRepoMock.Setup(r => r.AddAsync(It.IsAny<Class>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Class c, CancellationToken _) => c);
+
+        var calls = new List<string>();
+        AuditServiceMock
+            .Setup(a => a.LogActionAsync(It.IsAny<int?>(), AuditActions.ClassInitializeBatch, nameof(Class), It.IsAny<string?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("log"))
+            .Returns(Task.CompletedTask);
+        UnitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("save"))
+            .ReturnsAsync(1);
+
+        var request = new InitializeBatchClassesDto
+        {
+            SchoolYearId = 1,
+            TargetGrade = 2,
+            SectionNames = new List<string> { "A", "B", "C" },
+            CapacityPerClass = 35
+        };
+
+        // Act
+        var result = await _service.InitializeBatchClassesAsync(request, 10);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        calls.Should().Contain("log");
+        calls.Last().Should().Be("save");
     }
 
     #endregion

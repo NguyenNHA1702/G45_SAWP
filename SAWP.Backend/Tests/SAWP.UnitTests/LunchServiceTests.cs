@@ -924,11 +924,11 @@ public class LunchServiceTests : TestBase
         result.Data.Quota.Should().Be(80);
         AuditServiceMock.Verify(a => a.LogActionAsync(
             5,
-            "CONFIGURE_BOARDING_QUOTA",
-            "LunchMonthlyQuota",
-            "2026-12",
+            AuditActions.LunchMonthlyQuotaConfigure,
+            nameof(LunchMonthlyQuota),
+            It.IsAny<string?>(),
             null,
-            It.Is<string>(s => s.Contains("Quota=80")),
+            It.Is<object>(o => AuditService.SerializeValues(o)!.Contains("\"Month\":\"2026-12\"") && AuditService.SerializeValues(o)!.Contains("\"Quota\":80")),
             null,
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -992,11 +992,11 @@ public class LunchServiceTests : TestBase
 
         AuditServiceMock.Verify(a => a.LogActionAsync(
             100,
-            "BOARDING_REGISTRATION_WAITLISTED",
-            "LunchRegistration",
-            "1",
+            AuditActions.LunchRegistrationWaitlist,
+            nameof(LunchRegistration),
             null,
-            It.Is<string>(s => s.Contains("HS001") && s.Contains("Quota=2")),
+            null,
+            It.Is<object>(o => AuditService.SerializeValues(o)!.Contains("HS001") && AuditService.SerializeValues(o)!.Contains("\"Quota\":2")),
             null,
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -1108,11 +1108,11 @@ public class LunchServiceTests : TestBase
 
         AuditServiceMock.Verify(a => a.LogActionAsync(
             200,
-            "BOARDING_INCIDENT_LOGGED",
-            "BoardingIncident",
+            AuditActions.BoardingIncidentCreate,
+            nameof(BoardingIncident),
             It.IsAny<string>(),
             null,
-            It.Is<string>(s => s.Contains("HS001")),
+            It.Is<object>(o => AuditService.SerializeValues(o)!.Contains("HS001")),
             null,
             It.IsAny<CancellationToken>()), Times.Once);
     }
