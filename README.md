@@ -46,6 +46,7 @@
 - [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or higher
 - [Node.js](https://nodejs.org/) (v18+ or v20+) and `npm`
 - Microsoft SQL Server LocalDB (`(localdb)\mssqllocaldb`) or SQL Server Express
+- [MailHog](https://github.com/mailhog/MailHog) – local SMTP server that catches outgoing email (see [Email (MailHog)](#email-mailhog))
 
 ### Local Configuration (`appsettings`)
 
@@ -90,6 +91,28 @@ dotnet ef database update --project Infrastructure --startup-project API
 dotnet run --project API
 ```
 - Swagger UI will be available at: `https://localhost:7001/swagger` (or configured HTTP port).
+
+### Email (MailHog)
+
+In Development the backend sends all email to MailHog, which keeps it in memory and shows it in a web inbox.
+Nothing reaches real recipients. The settings are in `appsettings.Development.json` (`Smtp` section:
+`localhost:1025`, no TLS, no login). Run MailHog natively; do not use Docker for it.
+
+1. Download the binary for your OS from the [MailHog v1.0.1 release](https://github.com/mailhog/MailHog/releases/tag/v1.0.1):
+   - Windows: `MailHog_windows_amd64.exe`
+   - Linux: `MailHog_linux_amd64` (then `chmod +x MailHog_linux_amd64`)
+   - macOS: `brew install mailhog`
+2. Start it before running the API (no arguments needed):
+   ```bash
+   ./MailHog_linux_amd64
+   ```
+   SMTP listens on port `1025`, the web inbox on port `8025`.
+3. Open `http://localhost:8025` to read the emails the API sent.
+
+If MailHog is not running, `IEmailService.SendEmailAsync` fails with a connection error.
+To send through a real SMTP server instead, put its `Smtp` settings in `appsettings.Local.json`.
+For production, see [docs/EMAIL_SERVER_SETUP.md](docs/EMAIL_SERVER_SETUP.md) (one-script setup:
+`deploy/mail-server/sawp-mail-server.sh`).
 
 ### Frontend Setup
 ```bash

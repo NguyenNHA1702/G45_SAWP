@@ -298,6 +298,19 @@ This section documents all available, pre-implemented methods across the Unit of
 | :--- | :--- | :--- | :--- |
 | `SendEmailAsync` | `string toEmail`, `string subject`, `string body`, `bool isHtml = true`, `CancellationToken cancellationToken = default` | `Task` | Sends an email notification or OTP to a recipient using MailKit / SMTP protocol. |
 
+Configured by the `Smtp` section (`Core/Configuration/SmtpOptions.cs`). Throws `InvalidOperationException` if `Host` or `FromAddress` is empty, and MailKit exceptions if the server cannot be reached or rejects the login.
+
+| Key | Development (MailHog) | Production (own mail server) |
+| :--- | :--- | :--- |
+| `Host` | `localhost` | `mail.<domain>` (must match the TLS certificate) |
+| `Port` | `1025` | `587` |
+| `Security` | `None` | `StartTls` (`SslOnConnect` for port 465, `Auto` lets MailKit choose) |
+| `Username` / `Password` | empty (no login) | SMTP account; set via environment variables `Smtp__Username` / `Smtp__Password` |
+| `FromAddress` / `FromName` | `no-reply@sawp.local` / `SAWP` | `no-reply@<domain>` / school name |
+| `TimeoutSeconds` | `30` | `30` |
+
+See `docs/EMAIL_SERVER_SETUP.md` for setting up the mail server on a VPS.
+
 #### `IFileStorageService`
 - **File:** `Infrastructure/ExternalServices/IFileStorageService.cs`
 - **Implementation:** `Infrastructure/ExternalServices/FileStorageService.cs`
@@ -334,6 +347,39 @@ Always run these commands from the `SAWP.Backend` directory:
   ```
 
 ---
+
+### 2.4. Links Back to the Website in Emails
+
+**Rule:** a link in an email (reset password, view a leave request, open a notice, ...) must use the
+origin (scheme + host + port) the user is browsing SAWP on. Never hard-code `localhost`, an IP address or a
+domain name, and never put the origin in `appsettings*.json` as the main source. The same build is reached in
+different ways, and each needs working links:
+
+| How the site is opened | Example origin |
+| :--- | :--- |
+| Developer machine | `http://localhost:5173`, `http://127.0.0.1:5173` |
+| Another device on the LAN (phone testing) | `http://192.168.1.25:5173` |
+| Real domain through an frp tunnel or reverse proxy | `https://sawp.example.edu.vn` |
+
+**How:**
+- Take the origin from the request that triggers the email, in the controller, and pass it down to the
+  service as a parameter. Services do not read `HttpContext`.
+- Use the `Origin` request header. Browsers send it on every `POST`/`PUT`/`PATCH`/`DELETE`, and it keeps the
+  browser's real origin through the Vite dev proxy and frp. Do **not** use `Request.Host`: the Vite proxy
+  (`changeOrigin: true`) rewrites it to the API's own `localhost:5299`, and a tunnel or proxy may rewrite it
+  too.
+- If `Origin` is missing (e.g. a `GET`), fall back to `X-Forwarded-Proto`/`X-Forwarded-Host` (enable
+  `app.UseForwardedHeaders()` and trust only the known proxy), then to `Request.Scheme` + `Request.Host`.
+- Emails sent without a request (scheduled jobs) have no origin; those are the only case that may use a
+  configured base URL.
+- Build the URL from the origin plus a relative path (`$"{origin}/leave-requests/{id}"`), and URL-encode
+  values such as tokens (`Uri.EscapeDataString`).
+
+**Security:** the `Origin` header is supplied by the client. An attacker could request a password reset for
+someone else with `Origin: https://evil.example` and send the victim a link to the attacker's site. Outside
+Development, accept an origin only if its host is in an allowlist of the school's real host names; otherwise
+reject the request or fall back to the configured base URL. Never put the origin into an email without this
+check.
 
 ## 3. Standard System Messages & Error Codes (SRS MSG01 - MSG50)
 
