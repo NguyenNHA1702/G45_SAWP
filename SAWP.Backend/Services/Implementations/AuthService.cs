@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using System.Text.RegularExpressions;
 using BCrypt.Net;
 using Core.Constants;
 using Core.DTOs;
@@ -10,6 +9,7 @@ using Core.Enums;
 using Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Services.Interfaces;
 
@@ -19,11 +19,13 @@ public class AuthService : IAuthService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(IUnitOfWork unitOfWork, IConfiguration configuration)
+    public AuthService(IUnitOfWork unitOfWork, IConfiguration configuration, ILogger<AuthService> logger)
     {
         _unitOfWork = unitOfWork;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task<ApiResponse<LoginResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
@@ -40,18 +42,7 @@ public class AuthService : IAuthService
         }
 
         // BR-01: Verify password using BCrypt
-        bool passwordValid = false;
-        try
-        {
-            passwordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
-        }
-        catch
-        {
-            // Fallback for plain text seeded in early dev
-            passwordValid = (user.PasswordHash == request.Password);
-        }
-
-        if (!passwordValid)
+        if (!VerifyPassword(user, request.Password))
         {
             return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG02);
         }
@@ -93,7 +84,7 @@ public class AuthService : IAuthService
         }
 
         // BR-02: Validate new password policy (at least 8 chars, uppercase, lowercase, numeric, special char)
-        if (!ValidatePasswordPolicy(request.NewPassword))
+        if (!PasswordPolicy.IsValid(request.NewPassword))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG04, new List<string>
             {
@@ -108,17 +99,7 @@ public class AuthService : IAuthService
         }
 
         // Verify current password
-        bool currentPasswordValid = false;
-        try
-        {
-            currentPasswordValid = BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash);
-        }
-        catch
-        {
-            currentPasswordValid = (user.PasswordHash == request.CurrentPassword);
-        }
-
-        if (!currentPasswordValid)
+        if (!VerifyPassword(user, request.CurrentPassword))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG02);
         }
@@ -133,9 +114,24 @@ public class AuthService : IAuthService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG46);
     }
 
+    // Checks a password against the stored BCrypt hash. A stored value that is not a BCrypt hash never
+    // matches: it is a data error (e.g. a password written to the database as plain text), so it is logged.
+    private bool VerifyPassword(User user, string password)
+    {
+        try
+        {
+            return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+        }
+        catch (Exception ex) when (ex is SaltParseException or ArgumentException)
+        {
+            _logger.LogWarning("User {UserId} has a stored password that is not a BCrypt hash; the password was rejected.", user.Id);
+            return false;
+        }
+    }
+
     private string GenerateJwtToken(User user, List<string> roles, DateTime expiresAt)
     {
-        var secretKey = _configuration["Jwt:Key"] ?? "SAWP_SUPER_SECRET_SECURITY_KEY_2026_PRIMARY_SCHOOL_PLATFORM!";
+        var secretKey = _configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is not configured.");
         var issuer = _configuration["Jwt:Issuer"] ?? "SAWP.Backend";
         var audience = _configuration["Jwt:Audience"] ?? "SAWP.Client";
 
@@ -180,16 +176,6 @@ public class AuthService : IAuthService
         var tokenHandler = new JwtSecurityTokenHandler();
         var token = tokenHandler.CreateToken(tokenDescriptor);
         return tokenHandler.WriteToken(token);
-    }
-
-    private static bool ValidatePasswordPolicy(string password)
-    {
-        if (string.IsNullOrEmpty(password) || password.Length < 8) return false;
-        bool hasUpper = password.Any(char.IsUpper);
-        bool hasLower = password.Any(char.IsLower);
-        bool hasDigit = password.Any(char.IsDigit);
-        bool hasSpecial = Regex.IsMatch(password, @"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]");
-        return hasUpper && hasLower && hasDigit && hasSpecial;
     }
 
     public async Task<ApiResponse<UserProfileDto>> GetProfileAsync(int userId, CancellationToken ct = default)

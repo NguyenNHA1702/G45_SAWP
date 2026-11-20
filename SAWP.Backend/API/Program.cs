@@ -61,7 +61,14 @@ builder.Services.AddTransient<IEmailService, EmailService>();
 builder.Services.AddTransient<IFileStorageService, FileStorageService>();
 
 // 5. Authentication & Authorization (JWT Bearer)
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "SAWP_SUPER_SECRET_SECURITY_KEY_2026_PRIMARY_SCHOOL_PLATFORM!";
+// Jwt:Key signs every login token, so it must be a secret supplied per environment:
+// appsettings.Development.json for local development, an environment variable (Jwt__Key) or a
+// secret store elsewhere. There is no fallback: a missing or short key stops the app.
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+{
+    throw new InvalidOperationException("Jwt:Key must be set to a secret of at least 32 bytes (e.g. environment variable Jwt__Key).");
+}
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SAWP.Backend";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "SAWP.Client";
 
@@ -160,12 +167,41 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseCors("AllowAll");
 
-// Auto apply pending migrations and seed demo data if needed
+// Auto apply pending migrations and seed reference data.
+// Demo data (accounts with a shared default password, sample students) is seeded only in
+// Development, or when Seed:DemoData is true (e.g. a demo server); never enable it in production.
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await dbContext.Database.MigrateAsync();
-    await DbInitializer.SeedAsync(dbContext);
+    await DbInitializer.SeedRolesAsync(dbContext);
+
+    if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Seed:DemoData"))
+    {
+        await DbInitializer.SeedDemoDataAsync(dbContext);
+    }
+
+    var firstAdmin = app.Configuration.GetSection(FirstAdminOptions.SectionName).Get<FirstAdminOptions>();
+    var firstAdminSection = FirstAdminOptions.SectionName;
+    switch (await DbInitializer.SeedFirstAdminAsync(dbContext, firstAdmin))
+    {
+        case FirstAdminResult.Created:
+            app.Logger.LogWarning(
+                "Created the first admin account '{Username}' from {Section}. Remove {Section}:Password from the configuration now.",
+                firstAdmin!.Username, firstAdminSection, firstAdminSection);
+            break;
+        case FirstAdminResult.AdminExists when !string.IsNullOrEmpty(firstAdmin?.Password):
+            app.Logger.LogWarning(
+                "An admin account already exists, so {Section} is ignored. Remove {Section}:Password from the configuration.",
+                firstAdminSection, firstAdminSection);
+            break;
+        case FirstAdminResult.NotConfigured:
+            app.Logger.LogWarning(
+                "No admin account exists. Set {Section}:Username, {Section}:Email and {Section}:Password " +
+                "(e.g. environment variables Seed__Admin__Username, Seed__Admin__Email, Seed__Admin__Password) to create one.",
+                firstAdminSection, firstAdminSection, firstAdminSection);
+            break;
+    }
 }
 
 // Authentication must precede Authorization

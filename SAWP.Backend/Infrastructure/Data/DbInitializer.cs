@@ -1,3 +1,4 @@
+using Core.Configuration;
 using Core.Constants;
 using Core.Entities;
 using Core.Enums;
@@ -5,9 +6,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Data;
 
+public enum FirstAdminResult
+{
+    AdminExists,
+    NotConfigured,
+    Created
+}
+
 public static class DbInitializer
 {
-    public static async Task SeedAsync(ApplicationDbContext context)
+    // Reference data every environment needs. Safe to run on every startup.
+    public static async Task SeedRolesAsync(ApplicationDbContext context)
     {
         // ====================================================================
         // 1. ROLES
@@ -21,6 +30,64 @@ public static class DbInitializer
             }
         }
         await context.SaveChangesAsync();
+    }
+
+    // Creates the first Admin account from configuration while no Admin account exists.
+    // Throws when the settings are incomplete, the password breaks the password policy,
+    // or the username/email already belongs to another account.
+    public static async Task<FirstAdminResult> SeedFirstAdminAsync(ApplicationDbContext context, FirstAdminOptions? options)
+    {
+        var adminRoleName = UserRoles.Admin.ToString();
+        if (await context.UserRoles.AnyAsync(ur => ur.Role.Name == adminRoleName))
+        {
+            return FirstAdminResult.AdminExists;
+        }
+
+        if (options == null || !options.IsConfigured)
+        {
+            return FirstAdminResult.NotConfigured;
+        }
+
+        var section = FirstAdminOptions.SectionName;
+        var username = options.Username?.Trim();
+        var email = options.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(options.Password))
+        {
+            throw new InvalidOperationException($"{section}: Username, Email and Password are all required to create the first admin account.");
+        }
+
+        if (!PasswordPolicy.IsValid(options.Password))
+        {
+            throw new InvalidOperationException($"{section}:Password must have at least {PasswordPolicy.MinLength} characters with an upper-case letter, a lower-case letter, a digit and a special character.");
+        }
+
+        var taken = await context.Users.AnyAsync(u => u.Username.ToLower() == username.ToLower() || u.Email.ToLower() == email.ToLower());
+        if (taken)
+        {
+            throw new InvalidOperationException($"{section}: the username or email already belongs to another account.");
+        }
+
+        var adminRoleId = await context.Roles.Where(r => r.Name == adminRoleName).Select(r => r.Id).SingleAsync();
+        var admin = new User
+        {
+            Username = username,
+            Email = email,
+            FullName = string.IsNullOrWhiteSpace(options.FullName) ? username : options.FullName.Trim(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(options.Password),
+            IsActive = true
+        };
+        admin.UserRoles.Add(new UserRole { RoleId = adminRoleId });
+        context.Users.Add(admin);
+        await context.SaveChangesAsync();
+
+        return FirstAdminResult.Created;
+    }
+
+    // Demo accounts (shared default password) and sample school data.
+    // Development and demo environments only; never run against production.
+    public static async Task SeedDemoDataAsync(ApplicationDbContext context)
+    {
+        await SeedRolesAsync(context);
 
         var rolesMap = await context.Roles.ToDictionaryAsync(r => r.Name, r => r.Id);
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("Password@123");

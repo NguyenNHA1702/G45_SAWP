@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -93,7 +92,7 @@ public class AdminService : IAdminService
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập đầy đủ Tên đăng nhập, Email và Họ tên." });
         }
 
-        if (!ValidatePasswordPolicy(request.Password))
+        if (!PasswordPolicy.IsValid(request.Password))
         {
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu phải có ít nhất 8 ký tự gồm chữ hoa, chữ thường, số và ký tự đặc biệt." });
         }
@@ -281,7 +280,7 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<bool>> ResetUserPasswordAsync(int adminUserId, int targetUserId, string newPassword, CancellationToken ct = default)
     {
-        if (!ValidatePasswordPolicy(newPassword))
+        if (!PasswordPolicy.IsValid(newPassword))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu mới chưa đáp ứng yêu cầu bảo mật (tối thiểu 8 ký tự, gồm hoa, thường, số, ký tự đặc biệt)." });
         }
@@ -523,13 +522,4 @@ public class AdminService : IAdminService
         Position = u.StaffProfile?.Position,
         Department = u.StaffProfile?.Department
     };
-
-    private static bool ValidatePasswordPolicy(string? password)
-    {
-        if (string.IsNullOrEmpty(password) || password.Length < 8) return false;
-        return password.Any(char.IsUpper)
-            && password.Any(char.IsLower)
-            && password.Any(char.IsDigit)
-            && Regex.IsMatch(password, @"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]");
-    }
 }

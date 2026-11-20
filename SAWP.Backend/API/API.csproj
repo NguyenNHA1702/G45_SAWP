@@ -16,6 +16,13 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Per-developer settings (appsettings.Local.json) and their template never go into a published build:
+       Program.cs loads the local file after environment variables, so a shipped copy would override the
+       server's own secrets. -->
+  <ItemGroup>
+    <Content Update="appsettings.Local*.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
