@@ -196,19 +196,14 @@ public class LunchService : ILunchService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var auditEntityId = targetDates.Count == 1
-            ? targetDates[0].ToString("yyyy-MM-dd")
-            : $"{targetDates.First():yyyy-MM-dd}..{targetDates.Last():yyyy-MM-dd} ({targetDates.Count}d)";
-        var allDatesStr = string.Join(",", targetDates.Select(d => d.ToString("yyyy-MM-dd")));
-
         await _auditService.LogActionAsync(
             userId,
-            "LUNCH_SERVICE_DAY_CONFIG",
-            "LunchServiceDay",
-            auditEntityId,
+            AuditActions.LunchServiceDayConfigure,
+            nameof(LunchServiceDay),
             null,
-            $"Dates=[{allDatesStr}], IsServing={request.IsServing}, CutoffTime={parsedCutoff:hh\\:mm}, Remarks={normalizedRemarks}",
             null,
+            new { Dates = targetDates.Select(d => d.ToString("yyyy-MM-dd")).ToList(), request.IsServing, CutoffTime = parsedCutoff.ToString(@"hh\:mm"), Remarks = normalizedRemarks },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -502,12 +497,12 @@ public class LunchService : ILunchService
 
             await _auditService.LogActionAsync(
                 userId > 0 ? userId : null,
-                "BOARDING_REGISTRATION_WAITLISTED",
-                "LunchRegistration",
-                student.Id.ToString(),
+                AuditActions.LunchRegistrationWaitlist,
+                nameof(LunchRegistration),
                 null,
-                $"Month={firstMonth};Quota={qVal};CurrentActive={aVal};StudentCode={student.StudentCode};Dates={string.Join(",", waitlistedDates.Select(x => x.ToString("yyyy-MM-dd")))}",
                 null,
+                new { StudentId = student.Id, student.StudentCode, Month = firstMonth, Quota = qVal, CurrentActive = aVal, Dates = waitlistedDates.Select(x => x.ToString("yyyy-MM-dd")).ToList() },
+                null, // TODO: pass the client IP address; it is not recorded yet.
                 cancellationToken);
 
             var notifRepo = _unitOfWork.Repository<Notification>();
@@ -1090,18 +1085,18 @@ public class LunchService : ILunchService
             return ApiResponse<bool>.Fail(SystemMessages.MSG27);
         }
 
-        var oldVal = $"{reg.MealType} | {reg.Remarks}";
+        var oldVal = new { reg.MealType, reg.Remarks };
         reg.MealType = request.MealType;
         reg.Remarks = request.Remarks?.Trim();
 
         await _auditService.LogActionAsync(
             userId,
-            "LUNCH_UPDATE_MEAL_TYPE",
-            "LunchRegistration",
+            AuditActions.LunchRegistrationUpdateMealType,
+            nameof(LunchRegistration),
             reg.Id.ToString(),
             oldVal,
-            $"{reg.MealType} | {reg.Remarks}",
-            null,
+            new { reg.MealType, reg.Remarks },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -1292,7 +1287,7 @@ public class LunchService : ILunchService
         var existing = await quotaRepo.Query()
             .FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken);
 
-        string? oldValue = existing != null ? $"Quota={existing.Quota}" : null;
+        object? oldValue = existing != null ? new { Month = normalizedMonth, existing.Quota } : null;
         if (existing != null)
         {
             existing.Quota = request.Quota;
@@ -1315,12 +1310,12 @@ public class LunchService : ILunchService
 
         await _auditService.LogActionAsync(
             userId > 0 ? userId : null,
-            "CONFIGURE_BOARDING_QUOTA",
-            "LunchMonthlyQuota",
-            normalizedMonth,
+            AuditActions.LunchMonthlyQuotaConfigure,
+            nameof(LunchMonthlyQuota),
+            existing.Id.ToString(),
             oldValue,
-            $"Month={normalizedMonth};Quota={request.Quota}",
-            null,
+            new { Month = normalizedMonth, request.Quota },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -1550,12 +1545,12 @@ public class LunchService : ILunchService
 
         await _auditService.LogActionAsync(
             userId > 0 ? userId : null,
-            "BOARDING_INCIDENT_LOGGED",
-            "BoardingIncident",
+            AuditActions.BoardingIncidentCreate,
+            nameof(BoardingIncident),
             incident.Id.ToString(),
             null,
-            $"StudentCode={student.StudentCode};Date={targetDate:yyyy-MM-dd};Note={note}",
-            null,
+            new { StudentId = student.Id, student.StudentCode, Date = targetDate.ToString("yyyy-MM-dd"), Note = note },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

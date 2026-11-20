@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Core.Constants;
 using Core.DTOs.ContactBook;
@@ -20,6 +21,13 @@ public class EContactBookServiceTests
     private readonly ApplicationDbContext _context;
     private readonly Mock<IAuditService> _auditServiceMock;
     private readonly EContactBookService _service;
+
+    // Decodes one property of the audit values exactly as AuditService stores them.
+    private static string? AuditValue(object values, string property)
+    {
+        using var doc = JsonDocument.Parse(AuditService.SerializeValues(values)!);
+        return doc.RootElement.GetProperty(property).GetString();
+    }
 
     public EContactBookServiceTests()
     {
@@ -145,10 +153,10 @@ public class EContactBookServiceTests
         result.Success.Should().BeTrue();
         _auditServiceMock.Verify(a => a.LogActionAsync(
             teacherUserId,
-            "DELETE_COMMENT",
-            "PostComment",
+            AuditActions.PostCommentDelete,
+            nameof(PostComment),
             "100",
-            "Bình luận không phù hợp",
+            It.Is<object>(o => AuditValue(o, "Content") == "Bình luận không phù hợp"),
             null,
             null,
             It.IsAny<CancellationToken>()

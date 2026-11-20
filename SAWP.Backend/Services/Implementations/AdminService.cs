@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -158,12 +157,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_CREATE_USER",
-            "User",
+            AuditActions.UserCreate,
+            nameof(User),
             user.Id.ToString(),
             null,
-            JsonSerializer.Serialize(new { user.Username, user.FullName, user.Email, Roles = dbRoles.Select(r => r.Name) }),
-            null,
+            new { user.Username, user.FullName, user.Email, Roles = dbRoles.Select(r => r.Name) },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -235,12 +234,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_UPDATE_ROLES",
-            "User",
+            AuditActions.UserUpdateRoles,
+            nameof(User),
             user.Id.ToString(),
-            JsonSerializer.Serialize(new { Roles = oldRoles }),
-            JsonSerializer.Serialize(new { Roles = dbRoles.Select(r => r.Name) }),
-            null,
+            new { Roles = oldRoles },
+            new { Roles = dbRoles.Select(r => r.Name) },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -266,12 +265,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            isActive ? "ADMIN_ACTIVATE_USER" : "ADMIN_DEACTIVATE_USER",
-            "User",
+            isActive ? AuditActions.UserActivate : AuditActions.UserDeactivate,
+            nameof(User),
             user.Id.ToString(),
-            JsonSerializer.Serialize(new { IsActive = oldActive }),
-            JsonSerializer.Serialize(new { IsActive = isActive }),
-            null,
+            new { IsActive = oldActive },
+            new { IsActive = isActive },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -296,12 +295,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_RESET_PASSWORD",
-            "User",
+            AuditActions.UserResetPassword,
+            nameof(User),
             user.Id.ToString(),
             null,
-            JsonSerializer.Serialize(new { user.Username, ResetAt = DateTime.UtcNow }),
-            null,
+            new { user.Username, ResetAt = DateTime.UtcNow },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -385,7 +384,7 @@ public class AdminService : IAdminService
             .Include(d => d.SchoolYear)
             .FirstOrDefaultAsync(d => d.SchoolYearId == yearId && d.Date.Date == date, ct);
 
-        string? oldValues = null;
+        object? oldValues = null;
         if (existing == null)
         {
             existing = new SchoolCalendarDay
@@ -399,7 +398,7 @@ public class AdminService : IAdminService
         }
         else
         {
-            oldValues = JsonSerializer.Serialize(new { existing.IsSchoolDay, existing.Note });
+            oldValues = new { existing.IsSchoolDay, existing.Note };
             existing.IsSchoolDay = request.IsSchoolDay;
             existing.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         }
@@ -408,12 +407,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_CONFIG_CALENDAR_DAY",
-            "SchoolCalendarDay",
+            AuditActions.SchoolCalendarDayConfigure,
+            nameof(SchoolCalendarDay),
             existing.Id.ToString(),
             oldValues,
-            JsonSerializer.Serialize(new { Date = date.ToString("yyyy-MM-dd"), existing.IsSchoolDay, existing.Note }),
-            null,
+            new { Date = date.ToString("yyyy-MM-dd"), existing.IsSchoolDay, existing.Note },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -464,7 +463,7 @@ public class AdminService : IAdminService
             .Query()
             .FirstOrDefaultAsync(d => d.Date.Date == date, ct);
 
-        string? oldValues = null;
+        object? oldValues = null;
         if (existing == null)
         {
             existing = new LunchServiceDay
@@ -478,7 +477,7 @@ public class AdminService : IAdminService
         }
         else
         {
-            oldValues = JsonSerializer.Serialize(new { existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks });
+            oldValues = new { existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks };
             existing.IsServing = request.IsServing;
             existing.CutoffTime = cutoff;
             existing.Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
@@ -488,12 +487,12 @@ public class AdminService : IAdminService
 
         await _auditService.LogActionAsync(
             adminUserId,
-            "ADMIN_CONFIG_LUNCH_CUTOFF",
-            "LunchServiceDay",
+            AuditActions.LunchServiceDayConfigureCutoff,
+            nameof(LunchServiceDay),
             existing.Id.ToString(),
             oldValues,
-            JsonSerializer.Serialize(new { Date = date.ToString("yyyy-MM-dd"), existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks }),
-            null,
+            new { Date = date.ToString("yyyy-MM-dd"), existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 

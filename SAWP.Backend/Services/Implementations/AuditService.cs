@@ -1,3 +1,6 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Core.DTOs;
 using Core.Entities;
 using Core.Interfaces;
@@ -15,7 +18,15 @@ public class AuditService : IAuditService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task LogActionAsync(int? userId, string action, string entityName, string? entityId, string? oldValues, string? newValues, string? ipAddress, CancellationToken cancellationToken = default)
+    // Stored JSON is ASCII only: every non-ASCII character (e.g. Vietnamese) is escaped as \uXXXX
+    // and comes back unchanged when the JSON is parsed. Enums are stored by name.
+    private static readonly JsonSerializerOptions ValuesJsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.Default,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public async Task LogActionAsync(int? userId, string action, string entityName, string? entityId, object? oldValues, object? newValues, string? ipAddress, CancellationToken cancellationToken = default)
     {
         var log = new AuditLog
         {
@@ -23,12 +34,30 @@ public class AuditService : IAuditService
             Action = action,
             EntityName = entityName,
             EntityId = entityId,
-            OldValues = oldValues,
-            NewValues = newValues,
+            OldValues = SerializeValues(oldValues),
+            NewValues = SerializeValues(newValues),
             IpAddress = ipAddress,
             Timestamp = DateTime.UtcNow
         };
         await _unitOfWork.Repository<AuditLog>().AddAsync(log, cancellationToken);
+    }
+
+    // Public so tests can check stored values in the same format.
+    public static string? SerializeValues(object? values)
+    {
+        if (values == null) return null;
+        if (values is string)
+        {
+            throw new ArgumentException("Audit values must be an object or a collection, not a string.", nameof(values));
+        }
+        return JsonSerializer.Serialize(values, ValuesJsonOptions);
+    }
+
+    // The search text as it appears inside stored values (escaped, lower case, without quotes).
+    private static string EscapeForValues(string text)
+    {
+        var json = JsonSerializer.Serialize(text, ValuesJsonOptions);
+        return json[1..^1].ToLowerInvariant();
     }
 
     public async Task<ApiResponse<PaginatedResult<AuditLog>>> GetAuditLogsPagedAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default)
@@ -74,11 +103,13 @@ public class AuditService : IAuditService
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var q = filter.Search.Trim().ToLower();
+            // Values are stored as ASCII-escaped JSON, so match them against the escaped search text.
+            var qInValues = EscapeForValues(q);
             query = query.Where(x =>
                 x.Action.ToLower().Contains(q) ||
                 x.EntityName.ToLower().Contains(q) ||
                 (x.EntityId != null && x.EntityId.ToLower().Contains(q)) ||
-                (x.NewValues != null && x.NewValues.ToLower().Contains(q)) ||
+                (x.NewValues != null && x.NewValues.ToLower().Contains(qInValues)) ||
                 (x.User != null && (x.User.Username.ToLower().Contains(q) || x.User.FullName.ToLower().Contains(q))));
         }
 

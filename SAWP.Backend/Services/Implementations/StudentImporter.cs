@@ -295,12 +295,12 @@ public class StudentImporter : IStudentImporter
 
             await _auditService.LogActionAsync(
                 actorUserId,
-                "BulkImportStudents",
+                AuditActions.StudentBulkImport,
                 nameof(Student),
                 null,
                 null,
-                $"Imported {result.SuccessCount} students successfully, skipped {result.SkippedCount}",
-                null,
+                new { result.SuccessCount, result.SkippedCount },
+                null, // TODO: pass the client IP address; it is not recorded yet.
                 cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);

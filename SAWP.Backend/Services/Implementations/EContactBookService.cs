@@ -447,14 +447,13 @@ public class EContactBookService : IEContactBookService
         // BR-58: Ghi nhật ký hệ thống khi xóa bình luận
         await _auditService.LogActionAsync(
             currentUserId,
-            "DELETE_COMMENT",
-            "PostComment",
+            AuditActions.PostCommentDelete,
+            nameof(PostComment),
             commentId.ToString(),
-            commentContent,
+            new { comment.PostId, comment.UserId, Content = commentContent },
             null,
-            null,
-            cancellationToken
-        );
+            null, // TODO: pass the client IP address; it is not recorded yet.
+            cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);

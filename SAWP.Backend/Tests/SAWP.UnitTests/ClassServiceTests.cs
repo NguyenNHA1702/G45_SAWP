@@ -503,7 +503,7 @@ public class ClassServiceTests : TestBase
 
         var calls = new List<string>();
         AuditServiceMock
-            .Setup(a => a.LogActionAsync(It.IsAny<int?>(), "InitializeBatchClasses", nameof(Class), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.LogActionAsync(It.IsAny<int?>(), AuditActions.ClassInitializeBatch, nameof(Class), It.IsAny<string?>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback(() => calls.Add("log"))
             .Returns(Task.CompletedTask);
         UnitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))

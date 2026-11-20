@@ -183,12 +183,12 @@ public class GuardianService : IGuardianService
 
         await _auditService.LogActionAsync(
             parentUserId,
-            "SubmitChildLinkRequest",
+            AuditActions.ChildLinkRequestSubmit,
             nameof(AdministrativeRequest),
             adminRequest.Id.ToString(),
             null,
-            $"Request: {requestNumber}, Student: {student.StudentCode}, AutoVerified: {autoVerified}",
-            null,
+            new { RequestNumber = requestNumber, student.StudentCode, AutoVerified = autoVerified },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -356,12 +356,12 @@ public class GuardianService : IGuardianService
 
         await _auditService.LogActionAsync(
             reviewerUserId,
-            review.IsApproved ? "ApproveChildLink" : "RejectChildLink",
+            review.IsApproved ? AuditActions.ChildLinkRequestApprove : AuditActions.ChildLinkRequestReject,
             nameof(AdministrativeRequest),
             request.Id.ToString(),
-            $"Status: UnderReview",
-            $"Status: {request.Status}, Notes: {request.ReviewerNotes}",
-            null,
+            new { Status = "UnderReview" },
+            new { request.Status, request.ReviewerNotes },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

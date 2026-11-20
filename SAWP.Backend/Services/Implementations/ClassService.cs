@@ -73,12 +73,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "CreateSchoolYear",
+            AuditActions.SchoolYearCreate,
             nameof(SchoolYear),
             schoolYear.Id.ToString(),
             null,
-            $"Year: {schoolYear.YearName}, Active: {schoolYear.IsActive}",
-            null,
+            new { schoolYear.YearName, schoolYear.StartDate, schoolYear.EndDate, schoolYear.IsActive },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -147,12 +147,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "ActivateSchoolYear",
+            AuditActions.SchoolYearActivate,
             nameof(SchoolYear),
             schoolYearId.ToString(),
             null,
-            $"Activated Year: {target.YearName}",
-            null,
+            new { target.YearName, IsActive = true },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -198,12 +198,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "CreateClass",
+            AuditActions.ClassCreate,
             nameof(Class),
             newClass.Id.ToString(),
             null,
-            $"Class: {newClass.ClassName}, Grade: {newClass.Grade}, Capacity: {newClass.Capacity}",
-            null,
+            new { newClass.SchoolYearId, newClass.ClassName, newClass.Grade, newClass.RoomNumber, newClass.Capacity },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -359,12 +359,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "InitializeBatchClasses",
+            AuditActions.ClassInitializeBatch,
             nameof(Class),
             null,
             null,
-            $"Khởi tạo/cập nhật {affectedClasses.Count} lớp (Tạo mới: {createdCount}, Cập nhật: {updatedCount}) cho năm học {schoolYear.YearName}",
-            null,
+            new { SchoolYearId = schoolYear.Id, schoolYear.YearName, CreatedCount = createdCount, UpdatedCount = updatedCount, Capacity = capacity, Classes = affectedClasses.Select(x => x.ClassName).ToList() },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -461,7 +461,7 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG15, new List<string> { $"Không thể giảm sĩ số tối đa ({request.Capacity}) nhỏ hơn số học sinh hiện tại đang có ({enrolledCount})." });
         }
 
-        var oldInfo = $"Name: {c.ClassName}, Capacity: {c.Capacity}, Status: {c.Status}";
+        var oldValues = new { c.ClassName, c.Grade, c.RoomNumber, c.Capacity, c.Status };
 
         c.ClassName = request.ClassName.Trim();
         c.Grade = request.Grade;
@@ -474,12 +474,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "UpdateClass",
+            AuditActions.ClassUpdate,
             nameof(Class),
             c.Id.ToString(),
-            oldInfo,
-            $"Name: {c.ClassName}, Capacity: {c.Capacity}, Status: {c.Status}",
-            null,
+            oldValues,
+            new { c.ClassName, c.Grade, c.RoomNumber, c.Capacity, c.Status },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -602,12 +602,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "AssignHomeroomTeacher",
+            AuditActions.ClassAssignHomeroomTeacher,
             nameof(Class),
             targetClass.Id.ToString(),
-            $"PriorTeacherId: {priorTeacherId}",
-            $"NewTeacherProfileId: {request.StaffProfileId}",
-            null,
+            new { HomeroomTeacherId = priorTeacherId },
+            new { HomeroomTeacherId = request.StaffProfileId },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -702,12 +702,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "AssignStudentsToClass",
-            nameof(ClassAssignment),
+            AuditActions.ClassAssignStudents,
+            nameof(Class),
             classId.ToString(),
             null,
-            $"Assigned {request.StudentIds.Count} students to Class {targetClass.ClassName}",
-            null,
+            new { targetClass.ClassName, request.StudentIds },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -734,12 +734,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "RemoveStudentFromClass",
-            nameof(ClassAssignment),
-            assignment.Id.ToString(),
-            $"ClassId: {classId}, StudentId: {studentId}",
-            "Deactivated assignment",
-            null,
+            AuditActions.ClassRemoveStudent,
+            nameof(Class),
+            classId.ToString(),
+            new { StudentId = studentId, AssignmentId = assignment.Id, IsActive = true },
+            new { StudentId = studentId, AssignmentId = assignment.Id, assignment.IsActive, assignment.EndDate },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -791,12 +791,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "PublishPlacement",
+            AuditActions.ClassPublishPlacement,
             nameof(Class),
             targetClass.Id.ToString(),
             null,
-            $"Published placement for Class {targetClass.ClassName} with {enrolledCount} students",
-            null,
+            new { targetClass.ClassName, EnrolledCount = enrolledCount },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -865,12 +865,12 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            "PublishAllPlacements",
+            AuditActions.SchoolYearPublishPlacements,
             nameof(SchoolYear),
             schoolYearId.ToString(),
             null,
-            $"Published {results.Count} class placements for SchoolYearId {schoolYearId}",
-            null,
+            new { ClassCount = results.Count, Classes = results.Select(r => r.ClassName).ToList() },
+            null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
