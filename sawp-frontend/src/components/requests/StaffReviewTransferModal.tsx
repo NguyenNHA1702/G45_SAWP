@@ -3,6 +3,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, Send, Users } from 'lucide-react
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 interface StaffReviewTransferModalProps {
@@ -148,7 +149,7 @@ export function StaffReviewTransferModal({
               Phụ huynh nộp: <strong>{request.requesterName}</strong>
             </div>
             <div style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
-              Ngày nộp: {new Date(request.submissionDate).toLocaleDateString('vi-VN')}
+              Ngày nộp: {formatDDMMYYYY(request.submissionDate)}
             </div>
           </div>
 

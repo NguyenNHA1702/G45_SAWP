@@ -10,6 +10,7 @@ import {
   PlusCircle,
   RefreshCw,
   Sparkles,
+  Trash2,
   UserCheck,
   UserPlus,
   Users,
@@ -197,6 +198,31 @@ export default function ClassesPage() {
       toast.error('Có lỗi xảy ra khi công bố danh sách lớp.');
     } finally {
       setPublishingAll(false);
+    }
+  };
+
+  const handleDeleteClass = async (c: ClassSummaryDto) => {
+    const enrolled = c.enrolledCount ?? c.enrolledStudentsCount ?? 0;
+    if (enrolled > 0) {
+      toast.error(`Không thể xóa lớp học vì lớp đang có ${enrolled} học sinh. Chỉ có thể xóa lớp học khi sĩ số bằng 0.`);
+      return;
+    }
+
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa Lớp ${c.className}? Hành động này sẽ xóa lớp khỏi danh sách năm học.`)) {
+      return;
+    }
+
+    try {
+      const res = await classApi.deleteClass(c.id);
+      if (res.success) {
+        toast.success(`Đã xóa lớp ${c.className} thành công!`);
+        loadClasses();
+      } else {
+        toast.error(res.message || 'Xóa lớp học thất bại.');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.errors?.[0] || err.response?.data?.message || 'Có lỗi xảy ra khi xóa lớp học.';
+      toast.error(msg);
     }
   };
 
@@ -414,7 +440,7 @@ export default function ClassesPage() {
                   {totalEnrolled} / {totalCapacity}
                 </div>
                 <div style={{ fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-muted-fg)', fontWeight: 700, marginBottom: 4 }}>
-                  Học sinh đã xếp lớp ({fillRate}%)
+                  Sĩ số / Chỉ tiêu lớp học ({fillRate}%)
                 </div>
                 <div className="progress-track" style={{ height: 8 }}>
                   <div
@@ -511,41 +537,69 @@ export default function ClassesPage() {
 
                 return (
                   <div key={c.id} className="class-card">
-                    {/* Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                      <div>
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <span
-                            className="class-badge"
-                            style={{
-                              background: 'var(--color-accent)',
-                              color: 'var(--color-ink)',
-                              fontFamily: 'var(--font-heading)',
-                              fontWeight: 900,
-                              fontSize: 'var(--fs-lg)',
-                              padding: '2px 10px',
-                            }}
-                          >
-                            Lớp {c.className}
-                          </span>
-                          <span className="badge badge--yellow" style={{ fontSize: 'var(--fs-xs)' }}>
-                            Khối {c.grade}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 4 }}>
-                          Phòng: <strong>{c.roomNumber || 'Chưa xếp'}</strong>
-                        </div>
+                    {/* Header Row 1: Tên lớp, Khối, Trạng thái Công bố */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
+                        <span
+                          style={{
+                            background: 'var(--color-accent)',
+                            color: 'var(--color-ink)',
+                            fontFamily: 'var(--font-heading)',
+                            fontWeight: 900,
+                            fontSize: 'var(--fs-base)',
+                            padding: '3px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1.5px solid var(--color-ink)',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-block',
+                          }}
+                        >
+                          Lớp {c.className}
+                        </span>
+                        <span
+                          className="badge badge--yellow"
+                          style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap', height: 'fit-content' }}
+                        >
+                          Khối {c.grade}
+                        </span>
                       </div>
 
                       {c.isPlacementPublished ? (
-                        <span className="badge badge--green" style={{ fontSize: '0.7rem' }}>
+                        <span className="badge badge--green" style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
                           <CheckCircle2 size={12} /> Đã công bố
                         </span>
                       ) : (
-                        <span className="badge badge--orange" style={{ fontSize: '0.7rem' }}>
+                        <span className="badge badge--orange" style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
                           Chờ công bố
                         </span>
                       )}
+                    </div>
+
+                    {/* Header Row 2: Phòng học & Nút Xóa lớp học */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, minHeight: 28 }}>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                        Phòng: <strong>{c.roomNumber || 'Chưa xếp'}</strong>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        style={{
+                          padding: '3px 8px',
+                          minHeight: 24,
+                          color: '#DC2626',
+                          borderColor: '#FECACA',
+                          backgroundColor: '#FEF2F2',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          gap: 4,
+                          borderRadius: 6,
+                        }}
+                        onClick={() => handleDeleteClass(c)}
+                        title="Xóa lớp học (chỉ khi sĩ số = 0)"
+                      >
+                        <Trash2 size={12} /> Xóa lớp học
+                      </button>
                     </div>
 
                     {/* Capacity and Enrollment Progress */}

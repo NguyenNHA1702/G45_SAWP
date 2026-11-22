@@ -8,8 +8,8 @@ export const authApi: IAuthApi = {
   login: async (payload: LoginRequest): Promise<ApiResponse<LoginResponse>> => {
     const res = await unwrap(apiClient.post<ApiResponse<LoginResponse>>('/auth/login', payload));
     if (res.data?.token) {
-      localStorage.setItem(TOKEN_KEY, res.data.token);
-      localStorage.setItem(
+      sessionStorage.setItem(TOKEN_KEY, res.data.token);
+      sessionStorage.setItem(
         USER_KEY,
         JSON.stringify({
           username: res.data.username,
@@ -17,6 +17,8 @@ export const authApi: IAuthApi = {
           roles: res.data.roles,
         }),
       );
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
     }
     return res;
   },

@@ -57,12 +57,15 @@ export const studentApi = {
     formData.append('file', file);
     const res = await apiClient.post<ApiResponse<ImportStudentRowDto[]>>('/students/import/parse', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
     });
     return res.data;
   },
 
   async confirmImport(payload: ImportStudentsConfirmDto): Promise<ApiResponse<ImportStudentsResultDto>> {
-    const res = await apiClient.post<ApiResponse<ImportStudentsResultDto>>('/students/import/confirm', payload);
+    const res = await apiClient.post<ApiResponse<ImportStudentsResultDto>>('/students/import/confirm', payload, {
+      timeout: 300000,
+    });
     return res.data;
   },
 

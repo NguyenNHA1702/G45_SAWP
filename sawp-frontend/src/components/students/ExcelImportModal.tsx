@@ -2,13 +2,13 @@ import React, { useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
-  Download,
   FileSpreadsheet,
   UploadCloud,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { studentApi } from '../../services/implementations/studentApi';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { ImportStudentRowDto, ImportStudentsResultDto } from '../../types/student.types';
 
 interface ExcelImportModalProps {
@@ -27,27 +27,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [parsedRows, setParsedRows] = useState<ImportStudentRowDto[]>([]);
   const [parsing, setParsing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownloadTemplate = async () => {
-    setDownloading(true);
-    try {
-      const blob = await studentApi.downloadTemplate();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Mau_Danh_Sach_Hoc_Sinh_SAWP.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success('Đã tải tệp mẫu Excel thành công!');
-    } catch {
-      toast.error('Lỗi khi tải tệp mẫu Excel.');
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,7 +81,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         toast.error(res.message || 'Lỗi khi nhập dữ liệu.');
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi xác nhận nhập dữ liệu.');
+      const msg =
+        err.response?.data?.errors?.[0] ||
+        err.response?.data?.message ||
+        'Lỗi khi xác nhận nhập dữ liệu.';
+      toast.error(msg);
     } finally {
       setConfirming(false);
     }
@@ -120,39 +103,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       maxWidth="xl"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {/* Step 1: Download template & upload file */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'var(--color-muted)',
-            padding: '14px 18px',
-            borderRadius: 'var(--radius-md)',
-            border: 'var(--border)',
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
-              1. Tải tệp mẫu & Chuẩn bị dữ liệu
-            </div>
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-              Điền danh sách học sinh theo đúng cấu trúc cột để hệ thống tự động nhận diện.
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn--secondary btn--sm"
-            onClick={handleDownloadTemplate}
-            disabled={downloading}
-          >
-            <Download size={16} />
-            {downloading ? 'Đang tải...' : 'Tải tệp mẫu (.xlsx)'}
-          </button>
-        </div>
-
         {/* Upload Drop Zone */}
         <div
           className="card"
@@ -180,7 +130,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             {selectedFile ? selectedFile.name : 'Bấm vào đây để chọn tệp Excel (.xlsx)'}
           </div>
           <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', margin: '4px 0 0' }}>
-            Hệ thống sẽ tự động quét trùng mã định danh (MSG12) và kiểm tra tính hợp lệ của từng dòng.
+            Hệ thống sẽ tự động quét trùng mã định danh học sinh và kiểm tra tính hợp lệ của từng dòng.
           </p>
         </div>
 
@@ -194,8 +144,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               <CheckCircle2 size={14} /> Hợp lệ sẵn sàng nhập: <strong>{validRows.length}</strong>
             </span>
             {duplicateRows.length > 0 && (
-              <span className="badge badge--pink">
-                <AlertCircle size={14} /> Trùng lặp (MSG12): <strong>{duplicateRows.length}</strong>
+              <span className="badge badge--pink" title="Mã học sinh đã tồn tại trong cơ sở dữ liệu hệ thống">
+                <AlertCircle size={14} /> Đã có trong hệ thống: <strong>{duplicateRows.length}</strong>
               </span>
             )}
             {invalidRows.length > 0 && (
@@ -237,7 +187,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     <td>{r.rowNumber}</td>
                     <td style={{ fontWeight: 700 }}>{r.studentCode}</td>
                     <td>{r.fullName}</td>
-                    <td>{r.dateOfBirth}</td>
+                    <td>{formatDDMMYYYY(r.dateOfBirth)}</td>
                     <td>{r.gender}</td>
                     <td>{r.className || '-'}</td>
                     <td>
@@ -245,8 +195,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     </td>
                     <td>
                       {r.isDuplicate ? (
-                        <span className="badge badge--pink" title={r.errorMessage}>
-                          Trùng mã (MSG12)
+                        <span className="badge badge--pink" title={r.errorMessage || 'Mã học sinh đã tồn tại trong cơ sở dữ liệu hệ thống'}>
+                          {r.errorMessage?.includes('tệp Excel') ? 'Trùng trong file' : 'Đã có trong hệ thống'}
                         </span>
                       ) : !r.isValid ? (
                         <span className="badge badge--amber" title={r.errorMessage}>

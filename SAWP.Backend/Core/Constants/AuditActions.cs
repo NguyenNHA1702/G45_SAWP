@@ -23,6 +23,7 @@ public static class AuditActions
     public const string ClassAssignHomeroomTeacher = "CLASS_ASSIGN_HOMEROOM_TEACHER";
     public const string ClassAssignStudents = "CLASS_ASSIGN_STUDENTS";
     public const string ClassRemoveStudent = "CLASS_REMOVE_STUDENT";
+    public const string ClassDelete = "CLASS_DELETE";
     public const string ClassPublishPlacement = "CLASS_PUBLISH_PLACEMENT";
     public const string PlacementPlanGenerateDraft = "PLACEMENT_PLAN_GENERATE_DRAFT";
     public const string PlacementPlanMoveStudent = "PLACEMENT_PLAN_MOVE_STUDENT";

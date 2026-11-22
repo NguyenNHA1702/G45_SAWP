@@ -25,6 +25,7 @@ import { USER_KEY } from '../../services/apiClient';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import { asApiError } from '../../utils/apiError';
 import { formatRelationship } from '../../utils/formatters';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { UserProfile } from '../../types/profile.types';
 
 export default function ProfilePage() {
@@ -156,11 +157,7 @@ export default function ProfilePage() {
     : profile.username.substring(0, 2).toUpperCase();
 
   const formattedJoinDate = profile.createdAt
-    ? new Date(profile.createdAt).toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      })
+    ? formatDDMMYYYY(profile.createdAt)
     : 'N/A';
 
   return (
@@ -587,7 +584,7 @@ export default function ProfilePage() {
                   }}
                 >
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>
-                    Mã số cán bộ (Staff Code)
+                    Mã số cán bộ
                   </div>
                   <div style={{ fontWeight: 800, fontSize: 'var(--fs-base)', fontFamily: 'var(--font-heading)', color: 'var(--color-accent)' }}>
                     {profile.staffProfile.staffCode || 'Chưa cập nhật'}
@@ -767,9 +764,7 @@ export default function ProfilePage() {
                             </td>
                             <td style={{ padding: '10px 12px', color: 'var(--color-muted-fg)' }}>
                               <Calendar size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
-                              {child.dateOfBirth
-                                ? new Date(child.dateOfBirth).toLocaleDateString('vi-VN')
-                                : 'N/A'}
+                              {formatDDMMYYYY(child.dateOfBirth)}
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 600 }}>{formatRelationship(child.relationship)}</td>
                             <td style={{ padding: '10px 12px', textAlign: 'center' }}>

@@ -20,6 +20,7 @@ import { administrativeRequestApi } from '../../services/implementations/adminis
 import { classApi } from '../../services/implementations/classApi';
 import { ResubmitModal } from '../../components/requests/ResubmitModal';
 import { DirectFileUploader } from '../../components/common/DirectFileUploader';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
@@ -602,11 +603,11 @@ export default function AdministrativeRequestsPage() {
                       <div>
                         <div style={{ fontSize: 13, color: '#64748B', marginBottom: 4 }}>Thông tin thời gian:</div>
                         <div style={{ fontSize: 13, color: '#334155' }}>
-                          Ngày nộp: <strong>{new Date(req.submissionDate).toLocaleDateString('vi-VN')}</strong>
+                          Ngày nộp: <strong>{formatDDMMYYYY(req.submissionDate)}</strong>
                         </div>
                         {req.processedDate && (
                           <div style={{ fontSize: 13, color: '#334155', marginTop: 4 }}>
-                            Ngày xử lý: <strong>{new Date(req.processedDate).toLocaleDateString('vi-VN')}</strong>
+                            Ngày xử lý: <strong>{formatDDMMYYYY(req.processedDate)}</strong>
                           </div>
                         )}
                         {req.attachmentUrl && (

@@ -12,6 +12,7 @@ import {
 import toast from 'react-hot-toast';
 import { guardianApi } from '../../services/implementations/guardianApi';
 import { formatRelationship } from '../../utils/formatters';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { ChildLinkRequestItemDto } from '../../types/guardian.types';
 
 export default function LinkRequestsPage() {
@@ -193,7 +194,7 @@ export default function LinkRequestsPage() {
                       </span>
                       <span>
                         <Clock size={12} style={{ verticalAlign: -1 }} /> Ngày gửi:{' '}
-                        {new Date(req.requestDate).toLocaleDateString('vi-VN')}
+                        {formatDDMMYYYY(req.requestDate)}
                       </span>
                     </div>
                   </div>
@@ -254,7 +255,7 @@ export default function LinkRequestsPage() {
                     </span>
                   </div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
-                    Ngày sinh khai báo: {new Date(req.studentDateOfBirth).toLocaleDateString('vi-VN')}
+                    Ngày sinh khai báo: {formatDDMMYYYY(req.studentDateOfBirth)}
                   </div>
                 </div>
 

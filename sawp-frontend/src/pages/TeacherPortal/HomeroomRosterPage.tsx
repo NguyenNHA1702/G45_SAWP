@@ -25,6 +25,7 @@ import { lunchApi } from '../../services/implementations/lunchApi';
 import type { ClassRosterDto, RosterStudentItemDto } from '../../types/class.types';
 import type { StudentMealOperationItem } from '../../types/lunch.types';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { formatDDMMYYYY } from '../../utils/date';
 
 const MEAL_TYPE_BADGE: Record<string, { label: string; cls: string; bg: string; desc: string }> = {
   StandardLunch: { label: '🍱 Tiêu chuẩn', cls: 'badge--mint', bg: '#ECFDF5', desc: 'Suất ăn tiêu chuẩn đầy đủ dinh dưỡng theo thực đơn bếp nhà trường' },
@@ -197,7 +198,7 @@ export default function HomeroomRosterPage() {
         String(idx + 1),
         s.studentCode,
         s.fullName,
-        new Date(s.dateOfBirth).toLocaleDateString('vi-VN'),
+        formatDDMMYYYY(s.dateOfBirth),
         s.gender,
         s.primaryGuardianName || 'Chưa cập nhật',
         s.primaryGuardianPhone || '',
@@ -619,7 +620,7 @@ export default function HomeroomRosterPage() {
                           </button>
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
-                          {new Date(s.dateOfBirth).toLocaleDateString('vi-VN')}
+                          {formatDDMMYYYY(s.dateOfBirth)}
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                           {s.gender === 'Nam' ? (

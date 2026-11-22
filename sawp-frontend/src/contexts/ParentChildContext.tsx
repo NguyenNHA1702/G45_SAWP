@@ -37,7 +37,7 @@ export function ParentChildProvider({ children, userId, userRoles }: ParentChild
       return userRoles.includes('Parent');
     }
     try {
-      const userJson = localStorage.getItem(USER_KEY);
+      const userJson = sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY);
       if (!userJson) return false;
       const user = JSON.parse(userJson);
       return Array.isArray(user.roles) && user.roles.includes('Parent');
