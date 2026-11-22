@@ -1,4 +1,5 @@
 using Core.DTOs;
+using Core.Enums;
 
 namespace Services.Interfaces;
 
@@ -27,7 +28,7 @@ public interface ILeaveRequestService
     /// <summary>
     /// GVCN duyệt (Approve) hoặc từ chối (Reject) đơn xin nghỉ kèm kích hoạt đồng bộ
     /// </summary>
-    Task<ApiResponse<SyncLeaveResultDto>> ReviewLeaveRequestAsync(int requestId, int reviewerUserId, ReviewLeaveRequestDto review, CancellationToken cancellationToken = default);
+    Task<ApiResponse<SyncLeaveResultDto>> ReviewLeaveRequestAsync(int requestId, int reviewerUserId, ReviewLeaveRequestDto review, IReadOnlyList<UserRoles>? reviewerRoles = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Phụ huynh hủy đơn khi đơn còn ở trạng thái Pending

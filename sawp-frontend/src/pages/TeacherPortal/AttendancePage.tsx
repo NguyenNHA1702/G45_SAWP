@@ -377,6 +377,28 @@ export default function AttendancePage() {
               Đã gửi thông báo tới <strong>{result.parentsNotifiedCount}</strong> phụ huynh
             </li>
           </ul>
+          {result.warnings && result.warnings.length > 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-md)',
+                background: '#FEF3C7',
+                border: '1.5px solid #D97706',
+                color: '#92400E',
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 600,
+              }}
+              role="alert"
+            >
+              <div style={{ fontWeight: 800, marginBottom: 4 }}>⚠️ Cảnh báo đồng bộ suất ăn:</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {result.warnings.map((w, idx) => (
+                  <li key={idx}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 

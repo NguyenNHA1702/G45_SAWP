@@ -456,7 +456,7 @@ public class AttendanceService : IAttendanceService
                 // Hủy suất ăn CHỈ cho HS mới chuyển sang vắng có phép (nếu trước giờ chốt và chưa khóa sổ bếp)
                 foreach (var id in newlyExcused)
                 {
-                    if (lunchRegs.TryGetValue(id, out var r) && r.IsActive && !isMealLocked && now <= targetDate.Add(cutoff))
+                    if (lunchRegs.TryGetValue(id, out var r) && r.IsActive && !isMealLocked && now < targetDate.Add(cutoff))
                     {
                         r.IsActive = false;
                         r.CancellationSource = LunchCancellationSource.Attendance;
@@ -483,7 +483,7 @@ public class AttendanceService : IAttendanceService
                             result.Warnings.Add($"{studentName}: có đơn nghỉ đã hủy suất ăn nhưng thực tế đi học.");
                         }
 
-                        if (!isMealLocked && now.TimeOfDay < cutoff)
+                        if (!isMealLocked && now < targetDate.Add(cutoff))
                         {
                             r.IsActive = true;
                             r.CancellationSource = null;
@@ -634,7 +634,12 @@ public class AttendanceService : IAttendanceService
             rec.UpdatedByUserId = userId;
 
             // Xử lý suất ăn bán trú (Chỉ hủy khi VẮNG CÓ PHÉP; Vắng không phép bếp vẫn nấu ăn bình thường)
-            var cutoff = _options.LunchCutoff;
+            var lunchDayRepo = _unitOfWork.Repository<LunchServiceDay>();
+            var correctServiceDay = lunchDayRepo != null
+                ? (await lunchDayRepo.FindAsync(d => d.Date == rec.Date, ct)).FirstOrDefault()
+                : null;
+            var cutoff = (correctServiceDay != null && correctServiceDay.CutoffTime != TimeSpan.Zero) ? correctServiceDay.CutoffTime : _options.LunchCutoff;
+            var isMealLocked = correctServiceDay?.IsLocked ?? false;
             var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(new[] { rec.StudentId }, rec.Date, track: true, ct);
 
             if (rec.Session == AttendanceSession.Morning && lunchRegs.TryGetValue(rec.StudentId, out var lunch))
@@ -654,7 +659,7 @@ public class AttendanceService : IAttendanceService
                 {
                     if (!lunch.IsActive && (lunch.CancellationSource == LunchCancellationSource.Attendance || lunch.CancellationSource == LunchCancellationSource.Staff))
                     {
-                        if (rec.Date == _clock.Today && _clock.Now.TimeOfDay < cutoff)
+                        if (!isMealLocked && _clock.Now < rec.Date.Add(cutoff))
                         {
                             lunch.IsActive = true;
                             lunch.CancellationSource = null;
@@ -951,6 +956,12 @@ public class AttendanceService : IAttendanceService
     /// </summary>
     private async Task<bool> ValidateSchoolDayAsync(DateTime date, CancellationToken ct = default)
     {
+        // Thứ 7 và Chủ nhật không phải ngày học (TC_ATT_13 / SSAWP-20)
+        if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+        {
+            return false;
+        }
+
         var calendarDays = await _unitOfWork.Repository<SchoolCalendarDay>()
             .FindAsync(d => d.Date == date, ct);
         var calendarDay = calendarDays.FirstOrDefault();
@@ -961,7 +972,7 @@ public class AttendanceService : IAttendanceService
         }
 
         // Mặc định Thứ 2 đến Thứ 6 là ngày học
-        return date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday;
+        return true;
     }
 
     #endregion

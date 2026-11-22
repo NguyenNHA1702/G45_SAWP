@@ -3,9 +3,7 @@ import { unwrapData } from '../../utils/apiError';
 import type {
   BatchLunchRegistrationPayload,
   BatchLunchRegistrationResult,
-  BoardingIncident,
   CancelLunchRegistrationPayload,
-  CreateBoardingIncidentPayload,
   DailyMealBoard,
   LockMealDayPayload,
   LunchPeriodReport,
@@ -35,6 +33,11 @@ export const lunchApi = {
 
   lockDailyMeal: async (payload: LockMealDayPayload): Promise<boolean> => {
     const res = await apiClient.post<{ success: boolean; data: boolean; message: string }>('/lunch/lock-day', payload);
+    return res.data.data ?? res.data.success;
+  },
+
+  unlockDailyMeal: async (payload: { date: string; reason: string }): Promise<boolean> => {
+    const res = await apiClient.post<{ success: boolean; data: boolean; message: string }>('/lunch/unlock-day', payload);
     return res.data.data ?? res.data.success;
   },
 
@@ -127,27 +130,10 @@ export const lunchApi = {
     return res.data.data;
   },
 
-  getBoardingIncidents: async (
-    date?: string,
-    classId?: number,
-    month?: string,
-    studentId?: number,
-    from?: string,
-    to?: string
-  ): Promise<BoardingIncident[]> => {
-    const params: Record<string, string | number> = {};
-    if (date) params.date = date;
-    if (classId) params.classId = classId;
-    if (month) params.month = month;
-    if (studentId) params.studentId = studentId;
-    if (from) params.from = from;
-    if (to) params.to = to;
-    const res = await apiClient.get<{ success: boolean; data: BoardingIncident[] }>('/lunch/incidents', { params });
-    return res.data.data ?? [];
-  },
-
-  createBoardingIncident: async (payload: CreateBoardingIncidentPayload): Promise<BoardingIncident> => {
-    const res = await apiClient.post<{ success: boolean; data: BoardingIncident }>('/lunch/incidents', payload);
+  clearMonthlyQuota: async (month: string): Promise<MonthlyBoardingQuota> => {
+    const res = await apiClient.delete<{ success: boolean; data: MonthlyBoardingQuota }>('/lunch/monthly-quota', {
+      params: { month },
+    });
     return res.data.data;
   },
 };

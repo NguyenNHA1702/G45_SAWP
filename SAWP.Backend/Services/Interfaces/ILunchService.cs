@@ -42,7 +42,13 @@ public interface ILunchService
     /// <summary>
     /// Khôi phục hoặc tạo cảnh báo bổ sung suất ăn khi học sinh có đơn nghỉ nhưng thực tế vẫn đi học
     /// </summary>
-    Task<ApiResponse<bool>> RestoreMealForStudentAsync(int studentId, DateTime mealDate, string reason, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> RestoreMealForStudentAsync(
+        int studentId,
+        DateTime mealDate,
+        string reason,
+        int userId = 0,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// UC-33: Lấy bảng vận hành & báo cáo bán trú theo ngày (phân quyền theo role và lọc lớp)
@@ -57,7 +63,12 @@ public interface ILunchService
     /// <summary>
     /// Chốt số lượng suất ăn trong ngày gửi bếp ăn (giờ chốt: CutoffTime của ngày hoặc School:LunchCutoffTime)
     /// </summary>
-    Task<ApiResponse<bool>> LockDailyMealAsync(LockMealDayRequestDto request, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> LockDailyMealAsync(LockMealDayRequestDto request, int userId = 0, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mở khóa ngày đã chốt (chỉ ServiceStaff/Admin, bắt buộc ghi lý do & AuditLog)
+    /// </summary>
+    Task<ApiResponse<bool>> UnlockDailyMealAsync(int userId, UnlockMealDayRequestDto request, CancellationToken cancellationToken = default);
 
     Task<ApiResponse<bool>> UpdateRegistrationMealTypeAsync(int userId, IReadOnlyList<UserRoles> roles, UpdateLunchRegistrationMealTypeDto request, CancellationToken cancellationToken = default);
 
@@ -71,6 +82,5 @@ public interface ILunchService
 
     Task<ApiResponse<MonthlyBoardingQuotaDto>> GetMonthlyQuotaAsync(string month, CancellationToken cancellationToken = default);
     Task<ApiResponse<MonthlyBoardingQuotaDto>> UpsertMonthlyQuotaAsync(int userId, UpsertMonthlyBoardingQuotaRequestDto request, CancellationToken cancellationToken = default);
-    Task<ApiResponse<List<BoardingIncidentDto>>> GetBoardingIncidentsAsync(DateTime? date, string? month, DateTime? from, DateTime? to, int? classId, int? studentId, int? userId, IReadOnlyList<UserRoles>? roles, CancellationToken cancellationToken = default);
-    Task<ApiResponse<BoardingIncidentDto>> CreateBoardingIncidentAsync(int userId, IReadOnlyList<UserRoles> roles, CreateBoardingIncidentRequestDto request, CancellationToken cancellationToken = default);
+    Task<ApiResponse<MonthlyBoardingQuotaDto>> ClearMonthlyQuotaAsync(int userId, string month, CancellationToken cancellationToken = default);
 }

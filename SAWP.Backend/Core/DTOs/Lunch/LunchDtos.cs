@@ -96,6 +96,7 @@ public class DailyMealBoardDto
     public bool IsServing { get; set; } = true;
     public bool IsLocked { get; set; }
     public DateTime? LockedAt { get; set; }
+    public string? LockedByName { get; set; }
     public string CutoffTime { get; set; } = "08:15";
     public string? ServiceRemarks { get; set; }
     public bool CanManage { get; set; }
@@ -112,6 +113,12 @@ public class LockMealDayRequestDto
 {
     public DateTime Date { get; set; }
     public string? Notes { get; set; }
+}
+
+public class UnlockMealDayRequestDto
+{
+    public DateTime Date { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }
 
 // ---- UC-32: Cấu hình ngày phục vụ, hạn đăng ký/hủy và ghi chú/thực đơn ----
@@ -228,30 +235,5 @@ public class MonthlyBoardingQuotaDto
 public class UpsertMonthlyBoardingQuotaRequestDto
 {
     public string Month { get; set; } = string.Empty; // YYYY-MM
-    public int Quota { get; set; }
-}
-
-// ---- Daily Boarding Incident Log (TC_BDS_36) ----
-public class BoardingIncidentDto
-{
-    public int Id { get; set; }
-    public int StudentId { get; set; }
-    public string StudentCode { get; set; } = string.Empty;
-    public string StudentName { get; set; } = string.Empty;
-    public int? ClassId { get; set; }
-    public string ClassName { get; set; } = string.Empty;
-    public DateTime Date { get; set; }
-    public string IncidentType { get; set; } = "General";
-    public string Note { get; set; } = string.Empty;
-    public int RecordedByUserId { get; set; }
-    public string RecordedByName { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-}
-
-public class CreateBoardingIncidentRequestDto
-{
-    public int StudentId { get; set; }
-    public DateTime Date { get; set; }
-    public string? IncidentType { get; set; }
-    public string Note { get; set; } = string.Empty;
+    public int? Quota { get; set; }
 }

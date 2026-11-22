@@ -21,7 +21,7 @@ import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
 import { useParentChild } from '../../contexts/ParentChildContext';
 import { GeometricModal } from '../../components/common/GeometricModal';
-import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
+import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY, formatWeekdayDateDDMMYYYY } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import type { MonthlyBoardingQuota, StudentLunchDay, StudentLunchSchedule } from '../../types/lunch.types';
 
@@ -235,8 +235,14 @@ export default function ParentLunchPage() {
         remarks: studentRemarks.trim() || undefined,
       });
 
-      const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG25.content;
-      toast.success(`${msg} (${res.data.registeredCount} ngày)`);
+      if (res.data.isWaitlisted && res.data.registeredCount === 0) {
+        toast(res.message || 'Đăng ký đã được chuyển vào danh sách chờ do đã đủ chỉ tiêu tháng.', { icon: '⏳', duration: 6000 });
+      } else if (res.data.isWaitlisted) {
+        toast.success(`Đã đăng ký ${res.data.registeredCount} ngày và chuyển ${res.data.waitlistedCount ?? 0} ngày vào danh sách chờ.`);
+      } else {
+        const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG25.content;
+        toast.success(`${msg} (${res.data.registeredCount} ngày)`);
+      }
       setShowRegisterModal(false);
       setSelectedDates([]);
       setStudentRemarks('');
@@ -772,7 +778,7 @@ export default function ParentLunchPage() {
             <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--color-fg)' }}>
               {selectedDates
                 .slice(0, 6)
-                .map((d) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }))
+                .map((d) => formatDateDDMMYYYY(d))
                 .join(', ')}
               {selectedDates.length > 6 ? ` (+${selectedDates.length - 6} ngày khác)` : ''}
             </span>
@@ -1228,18 +1234,13 @@ export default function ParentLunchPage() {
               <tbody>
                 {registeredOrCancelledDays.map((day) => {
                   const dKey = toDateKey(day.date);
-                  const canCancel = day.isRegistered && !day.isCutoffPassed;
+                  const canCancel = (day.isRegistered || Boolean(day.isWaitlisted)) && !day.isCutoffPassed;
                   const cleanedRemarks = cleanText(day.serviceRemarks);
 
                   return (
                     <tr key={dKey} style={{ borderBottom: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '14px', fontWeight: 800 }}>
-                        {new Date(day.date).toLocaleDateString('vi-VN', {
-                          weekday: 'short',
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        })}
+                        {formatWeekdayDateDDMMYYYY(day.date)}
                       </td>
                       <td style={{ padding: '14px' }}>
                         <span
@@ -1418,7 +1419,7 @@ export default function ParentLunchPage() {
                   fontWeight: 800,
                 }}
               >
-                {new Date(d).toLocaleDateString('vi-VN')}
+                {formatDateDDMMYYYY(d)}
               </span>
             ))}
           </div>
@@ -1521,7 +1522,7 @@ export default function ParentLunchPage() {
           <div>
             <p style={{ marginTop: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
               {SYSTEM_MESSAGES.MSG45.content} Bạn đang yêu cầu hủy suất ăn ngày{' '}
-              <strong>{new Date(cancelTargetDay.date).toLocaleDateString('vi-VN')}</strong> của bé{' '}
+              <strong>{formatDateDDMMYYYY(cancelTargetDay.date)}</strong> của bé{' '}
               <strong>{schedule?.studentName}</strong>.
             </p>
 
@@ -1591,7 +1592,7 @@ export default function ParentLunchPage() {
       <GeometricModal
         open={Boolean(editTargetDay)}
         onClose={() => setEditTargetDay(null)}
-        title={`Đổi chế độ ăn ngày ${editTargetDay ? new Date(editTargetDay.date).toLocaleDateString('vi-VN') : ''}`}
+        title={`Đổi chế độ ăn ngày ${editTargetDay ? formatDateDDMMYYYY(editTargetDay.date) : ''}`}
         badgeText={`Trước giờ chốt ${editTargetDay?.cutoffTime ?? LUNCH_CUTOFF_LABEL}`}
         badgeColor="amber"
         icon={<UtensilsCrossed size={22} color="var(--color-fg)" />}
@@ -1688,7 +1689,7 @@ export default function ParentLunchPage() {
       <GeometricModal
         open={Boolean(detailDay)}
         onClose={() => setDetailDay(null)}
-        title={`Thông tin Bán trú ngày ${detailDay ? new Date(detailDay.date).toLocaleDateString('vi-VN') : ''}`}
+        title={`Thông tin Bán trú ngày ${detailDay ? formatDateDDMMYYYY(detailDay.date) : ''}`}
         badgeText="Chi tiết ngày phục vụ"
         badgeColor="amber"
         icon={<Soup size={22} color="var(--color-fg)" />}

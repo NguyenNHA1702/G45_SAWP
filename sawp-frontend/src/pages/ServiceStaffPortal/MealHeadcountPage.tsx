@@ -26,7 +26,7 @@ import {
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
 import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, MonthlyBoardingQuota, StudentMealOperationItem } from '../../types/lunch.types';
-import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
+import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
@@ -166,6 +166,8 @@ export default function MealHeadcountPage() {
 
   // Modal Chốt suất ăn (08h15)
   const [showLockModal, setShowLockModal] = useState<boolean>(false);
+  const [showUnlockModal, setShowUnlockModal] = useState<boolean>(false);
+  const [unlockReason, setUnlockReason] = useState<string>('');
   const [lockNotes, setLockNotes] = useState<string>(
     `Đã kiểm tra đối chiếu danh sách điểm danh và đơn nghỉ lúc ${LUNCH_CUTOFF_LABEL}`
   );
@@ -192,11 +194,10 @@ export default function MealHeadcountPage() {
     try {
       const info = await lunchApi.getMonthlyQuota(month);
       setQuotaInfo(info);
-      if (info.quota) {
-        setQuotaValue(String(info.quota));
-      }
+      setQuotaValue(info.quota ? String(info.quota) : '');
     } catch {
       setQuotaInfo(null);
+      setQuotaValue('');
     }
   };
 
@@ -208,9 +209,10 @@ export default function MealHeadcountPage() {
   };
 
   const handleSaveQuota = async () => {
-    const parsed = Number(quotaValue);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      toast.error('Chỉ tiêu phải là số nguyên dương.');
+    const trimmed = quotaValue.trim();
+    const parsed = Number(trimmed);
+    if (!trimmed || !Number.isInteger(parsed) || parsed <= 0 || parsed > 10000) {
+      toast.error('Chỉ tiêu bán trú tháng phải là số nguyên từ 1 đến 10.000.');
       return;
     }
     try {
@@ -219,8 +221,26 @@ export default function MealHeadcountPage() {
       setQuotaInfo(updated);
       toast.success(`Đã lưu chỉ tiêu bán trú tháng ${quotaMonth}: ${parsed} học sinh.`);
       setShowQuotaModal(false);
-    } catch {
-      toast.error('Không thể lưu chỉ tiêu bán trú tháng.');
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      const errMsg = apiErr?.errors?.[0] || apiErr?.message || 'Không thể lưu chỉ tiêu bán trú tháng.';
+      toast.error(errMsg);
+    } finally {
+      setSavingQuota(false);
+    }
+  };
+
+  const handleClearQuota = async () => {
+    try {
+      setSavingQuota(true);
+      const updated = await lunchApi.clearMonthlyQuota(quotaMonth);
+      setQuotaInfo(updated);
+      setQuotaValue('');
+      toast.success(`Đã gỡ chỉ tiêu bán trú tháng ${quotaMonth} và tự động duyệt danh sách chờ (nếu có).`);
+      setShowQuotaModal(false);
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      toast.error(apiErr?.errors?.[0] || apiErr?.message || 'Không thể gỡ chỉ tiêu bán trú tháng.');
     } finally {
       setSavingQuota(false);
     }
@@ -404,7 +424,7 @@ export default function MealHeadcountPage() {
         });
         const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG44.content;
         toast.success(msg);
-        setMessage({ text: `${msg} (Ngày ${selectedDate})`, type: 'success' });
+        setMessage({ text: `${msg} (Ngày ${formatDateDDMMYYYY(selectedDate)})`, type: 'success' });
       }
       setShowConfigModal(false);
       await fetchBoard(selectedDate);
@@ -432,9 +452,37 @@ export default function MealHeadcountPage() {
       setShowLockModal(false);
       await fetchBoard(selectedDate);
     } catch (err: unknown) {
-      const errorMsg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Chốt suất ăn thất bại.';
+      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      const errorMsg = apiErr?.errors?.[0] || apiErr?.message || 'Chốt suất ăn thất bại.';
+      toast.error(errorMsg);
       setMessage({ text: errorMsg, type: 'error' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnlockDay = async () => {
+    if (!unlockReason.trim()) {
+      toast.error('Bắt buộc phải nhập lý do mở khóa ngày bán trú.');
+      return;
+    }
+    try {
+      setActionLoading(true);
+      await lunchApi.unlockDailyMeal({
+        date: selectedDate,
+        reason: unlockReason.trim(),
+      });
+      toast.success(`Đã mở khóa ngày bán trú ${formatDateDDMMYYYY(selectedDate)} thành công.`);
+      setMessage({
+        text: `Đã mở khóa ngày bán trú ${formatDateDDMMYYYY(selectedDate)} thành công.`,
+        type: 'success',
+      });
+      setShowUnlockModal(false);
+      setUnlockReason('');
+      await fetchBoard(selectedDate);
+    } catch (err: unknown) {
+      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      toast.error(apiErr?.errors?.[0] || apiErr?.message || 'Mở khóa ngày bán trú thất bại.');
     } finally {
       setActionLoading(false);
     }
@@ -683,12 +731,35 @@ export default function MealHeadcountPage() {
                   alignItems: 'center',
                   gap: 8,
                 }}
-                title="Bảng số liệu đã được chốt và gửi sang nhà bếp"
+                title={board.lockedByName ? `Đã chốt bởi ${board.lockedByName}` : 'Bảng số liệu đã được chốt và gửi sang nhà bếp'}
               >
                 <CheckCircle2 size={16} />
-                Đã chốt suất ({effectiveCutoffLabel})
+                Đã chốt suất ({effectiveCutoffLabel}){board.lockedByName ? ` • ${board.lockedByName}` : ''}
               </div>
             ) : null}
+            {board && board.isLocked && board.canManage && (
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => {
+                  setUnlockReason('');
+                  setShowUnlockModal(true);
+                }}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  fontSize: 'var(--fs-sm)',
+                  padding: '0 16px',
+                  height: 42,
+                  background: '#FEF3C7',
+                  color: '#92400E',
+                }}
+              >
+                Mở khóa ngày
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -1775,7 +1846,7 @@ export default function MealHeadcountPage() {
                             </span>
                           ) : isAuto ? (
                             <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
-                              Tự hủy (Đơn nghỉ)
+                              Tự hủy từ đơn xin nghỉ
                             </span>
                           ) : (
                             <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
@@ -2033,7 +2104,7 @@ export default function MealHeadcountPage() {
         open={Boolean(detailClass)}
         onClose={() => setDetailClass(null)}
         title={`Chi Tiết Suất Ăn Lớp ${detailClass?.className ?? ''}`}
-        subtitle={`Ngày ${new Date(selectedDate).toLocaleDateString('vi-VN')} • Danh sách học sinh và chế độ ăn của lớp`}
+        subtitle={`Ngày ${formatDateDDMMYYYY(selectedDate)} • Danh sách học sinh và chế độ ăn của lớp`}
         badgeText={`Thực ăn: ${detailClass?.actualCount ?? 0}/${detailClass?.initialRegistered ?? 0} suất`}
         badgeColor="mint"
         icon={<Soup size={22} color="var(--color-fg)" />}
@@ -2151,7 +2222,7 @@ export default function MealHeadcountPage() {
         open={Boolean(selectedStudentTray)}
         onClose={() => setSelectedStudentTray(null)}
         title={`Khay Ăn Bán Trú • ${selectedStudentTray?.studentName ?? ''}`}
-        subtitle={`Lớp ${selectedStudentTray?.className ?? ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${new Date(selectedDate).toLocaleDateString('vi-VN')}`}
+        subtitle={`Lớp ${selectedStudentTray?.className ?? ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${formatDateDDMMYYYY(selectedDate)}`}
         badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn') : ''}
         badgeColor="mint"
         icon={<Soup size={22} color="var(--color-fg)" strokeWidth={2.5} />}
@@ -2288,7 +2359,7 @@ export default function MealHeadcountPage() {
         onClose={() => setShowConfigModal(false)}
         title="Cấu hình Ngày Phục Vụ Bán Trú"
         subtitle="Thiết lập trạng thái phục vụ, giờ chốt suất ăn và thực đơn trưa của trường"
-        badgeText={`Ngày ${new Date(selectedDate).toLocaleDateString('vi-VN')}`}
+        badgeText={`Ngày ${formatDateDDMMYYYY(selectedDate)}`}
         badgeColor="mint"
         icon={<Settings size={22} color="var(--color-fg)" />}
         iconBg="var(--color-quaternary)"
@@ -2587,7 +2658,7 @@ export default function MealHeadcountPage() {
                 return (
                   <div key={d} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <label style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-accent)' }}>
-                      {dayNames[idx]} ({new Date(d).toLocaleDateString('vi-VN')}):
+                      {dayNames[idx]} ({formatDateDDMMYYYY(d)}):
                     </label>
                     <input
                       type="text"
@@ -2764,7 +2835,7 @@ export default function MealHeadcountPage() {
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
               <div style={{ fontSize: '0.75rem', fontStyle: 'italic' }}>Độc lập — Tự do — Hạnh phúc</div>
-              <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Ngày: {new Date(selectedDate).toLocaleDateString('vi-VN')}</div>
+              <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Ngày: {formatDateDDMMYYYY(selectedDate)}</div>
             </div>
           </div>
 
@@ -2939,21 +3010,83 @@ export default function MealHeadcountPage() {
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+            {quotaInfo?.quota != null ? (
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={handleClearQuota}
+                disabled={savingQuota}
+                style={{ color: '#E11D48', borderColor: '#F43F5E' }}
+              >
+                Gỡ chỉ tiêu tháng
+              </button>
+            ) : (
+              <span />
+            )}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setShowQuotaModal(false)}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={handleSaveQuota}
+                disabled={savingQuota}
+              >
+                {savingQuota ? 'Đang lưu...' : 'Lưu chỉ tiêu'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </GeometricModal>
+
+      {/* Modal Mở khóa ngày bán trú (SSAWP-134) */}
+      <GeometricModal
+        open={showUnlockModal}
+        onClose={() => setShowUnlockModal(false)}
+        title={`Mở khóa ngày bán trú (${formatDateDDMMYYYY(selectedDate)})`}
+        maxWidth="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ padding: 12, borderRadius: 12, background: '#FEF3C7', border: '1.5px solid #F59E0B', fontSize: 'var(--fs-xs)', color: '#92400E', lineHeight: 1.5 }}>
+            Thao tác mở khóa sẽ được ghi lại trong <strong>Nhật ký hệ thống (Audit Log)</strong> kèm người thực hiện và lý do.
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 800, fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
+              Lý do mở khóa *
+            </label>
+            <textarea
+              className="input"
+              rows={3}
+              value={unlockReason}
+              onChange={(e) => setUnlockReason(e.target.value)}
+              placeholder="Ví dụ: Bấm nhầm khóa sớm, cần mở lại để điều chỉnh suất ăn..."
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button
               type="button"
               className="btn btn--secondary"
-              onClick={() => setShowQuotaModal(false)}
+              onClick={() => setShowUnlockModal(false)}
+              disabled={actionLoading}
             >
               Hủy
             </button>
             <button
               type="button"
               className="btn btn--primary"
-              onClick={handleSaveQuota}
-              disabled={savingQuota}
+              onClick={handleUnlockDay}
+              disabled={actionLoading}
             >
-              {savingQuota ? 'Đang lưu...' : 'Lưu chỉ tiêu'}
+              {actionLoading ? 'Đang mở khóa...' : 'Xác nhận mở khóa'}
             </button>
           </div>
         </div>

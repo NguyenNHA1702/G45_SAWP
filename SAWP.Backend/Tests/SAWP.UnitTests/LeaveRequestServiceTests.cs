@@ -658,4 +658,163 @@ public class LeaveRequestServiceTests : TestBase
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("Chỉ có thể hủy đơn khi đơn đang ở trạng thái Chờ duyệt");
     }
+
+    [Fact]
+    public async Task UTCID08_ReviewLeaveRequest_TeacherCannotDecideEscalatedRequest_Fails()
+    {
+        // Arrange (TC_LEV_30 / SSAWP-40)
+        var req = new AdministrativeRequest
+        {
+            Id = 50,
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.UnderReview,
+            LeaveRequest = new LeaveRequest { StartDate = DateTime.Today, EndDate = DateTime.Today.AddDays(3) }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        var review = new ReviewLeaveRequestDto { IsApproved = true };
+
+        // Act
+        var result = await _service.ReviewLeaveRequestAsync(50, 30, review, new[] { UserRoles.Teacher });
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("Chỉ Ban Giám Hiệu");
+    }
+
+    [Fact]
+    public async Task UTCID09_ReviewLeaveRequest_ApproveAndReject_NotificationsContainMsg22AndMsg23()
+    {
+        // Arrange (TC_LEV_15 / SSAWP-30 & TC_LEV_20 / SSAWP-35)
+        var notifRepoMock = SetupRepository(new List<Notification>());
+        var class1A = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 50, Status = "Active" };
+        SetupRepository(new List<StaffProfile> { new() { Id = 50, UserId = 30 } });
+        SetupRepository(new List<ClassAssignment> { new() { Id = 1, StudentId = 1, ClassId = 1, Class = class1A, IsActive = true } });
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<LunchServiceDay>());
+        _lunchServiceMock
+            .Setup(l => l.CancelMealForLeaveAsync(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ApiResponse<bool>.Ok(true));
+
+        var approveReq = new AdministrativeRequest
+        {
+            Id = 51,
+            RequestNumber = "LV-051",
+            RequesterUserId = 20,
+            StudentId = 1,
+            Student = new Student { Id = 1, FullName = "Trần Gia Bảo" },
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Submitted,
+            LeaveRequest = new LeaveRequest { Id = 51, StartDate = DateTime.Today, EndDate = DateTime.Today, Session = LeaveSession.FullDay }
+        };
+        var rejectReq = new AdministrativeRequest
+        {
+            Id = 52,
+            RequestNumber = "LV-052",
+            RequesterUserId = 20,
+            StudentId = 1,
+            Student = new Student { Id = 1, FullName = "Trần Gia Bảo" },
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Submitted,
+            LeaveRequest = new LeaveRequest { Id = 52, StartDate = DateTime.Today, EndDate = DateTime.Today, Session = LeaveSession.FullDay }
+        };
+        SetupRepository(new List<AdministrativeRequest> { approveReq, rejectReq });
+
+        // Act
+        var approveRes = await _service.ReviewLeaveRequestAsync(51, 30, new ReviewLeaveRequestDto { IsApproved = true, ReviewerNotes = "Đồng ý" }, new[] { UserRoles.Teacher });
+        var rejectRes = await _service.ReviewLeaveRequestAsync(52, 30, new ReviewLeaveRequestDto { IsApproved = false, ReviewerNotes = "Có bài khảo sát" }, new[] { UserRoles.Teacher });
+
+        // Assert
+        approveRes.Success.Should().BeTrue();
+        rejectRes.Success.Should().BeTrue();
+        notifRepoMock.Verify(n => n.AddAsync(
+            It.Is<Notification>(nf => nf.UserId == 20 && nf.Content.Contains(SystemMessages.MSG22.Content)),
+            It.IsAny<CancellationToken>()), Times.Once);
+        notifRepoMock.Verify(n => n.AddAsync(
+            It.Is<Notification>(nf => nf.UserId == 20 && nf.Content.Contains(SystemMessages.MSG23.Content) && nf.Content.Contains("Có bài khảo sát")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID10_ReviewLeaveRequest_ParentOrNonHomeroomTeacher_BlockedWithMsg10()
+    {
+        // Arrange (SSAWP-133)
+        var class1B = new Class { Id = 2, ClassName = "1B", HomeroomTeacherId = 99, Status = "Active" };
+        SetupRepository(new List<StaffProfile> { new() { Id = 50, UserId = 30 } }); // teacher1 is homeroom of 1A (50 != 99)
+        SetupRepository(new List<ClassAssignment> { new() { Id = 2, StudentId = 31, ClassId = 2, Class = class1B, IsActive = true } });
+
+        var req = new AdministrativeRequest
+        {
+            Id = 60,
+            RequestNumber = "LV-060",
+            RequesterUserId = 20,
+            StudentId = 31,
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Submitted,
+            LeaveRequest = new LeaveRequest { Id = 60, StartDate = DateTime.Today, EndDate = DateTime.Today, Session = LeaveSession.FullDay }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        // Act
+        var parentRes = await _service.ReviewLeaveRequestAsync(60, 20, new ReviewLeaveRequestDto { IsApproved = true }, new[] { UserRoles.Parent });
+        var wrongTeacherRes = await _service.ReviewLeaveRequestAsync(60, 30, new ReviewLeaveRequestDto { IsApproved = true }, new[] { UserRoles.Teacher });
+
+        // Assert
+        parentRes.Success.Should().BeFalse();
+        parentRes.Code.Should().Be(SystemMessages.MSG10.Code);
+        wrongTeacherRes.Success.Should().BeFalse();
+        wrongTeacherRes.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    [Fact]
+    public async Task UTCID11_SubmitLeaveRequest_AfternoonAllowedWhenMorningExistsSameDay_DuplicateMorningBlocked()
+    {
+        // Arrange (SSAWP-138)
+        var targetDate = DateTime.Today;
+        var student = new Student { Id = 1, StudentCode = "HS001", FullName = "Trần Gia Bảo" };
+        var guardian = new Guardian
+        {
+            Id = 1,
+            UserId = 20,
+            StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, Student = student } }
+        };
+        SetupRepository(new List<Guardian> { guardian });
+        SetupRepository(new List<ClassAssignment>());
+        SetupRepository(new List<Notification>());
+        SetupRepository(new List<LeaveRequest>());
+        SetupRepository(new List<AdministrativeRequest>
+        {
+            new()
+            {
+                Id = 70,
+                StudentId = 1,
+                RequestType = RequestTypes.Leave,
+                Status = RequestStatus.Approved,
+                LeaveRequest = new LeaveRequest { StartDate = targetDate, EndDate = targetDate, Session = LeaveSession.Morning }
+            }
+        });
+
+        // Act
+        var afternoonRes = await _service.SubmitLeaveRequestAsync(20, new CreateLeaveRequestDto
+        {
+            StudentId = 1,
+            StartDate = targetDate,
+            EndDate = targetDate,
+            Session = LeaveSession.Afternoon,
+            Reason = "Buổi chiều cháu sốt lại"
+        });
+        var dupMorningRes = await _service.SubmitLeaveRequestAsync(20, new CreateLeaveRequestDto
+        {
+            StudentId = 1,
+            StartDate = targetDate,
+            EndDate = targetDate,
+            Session = LeaveSession.Morning,
+            Reason = "Trùng buổi sáng"
+        });
+
+        // Assert
+        afternoonRes.Success.Should().BeTrue();
+        dupMorningRes.Success.Should().BeFalse();
+        dupMorningRes.Message.Should().Contain("trùng khoảng thời gian");
+    }
 }

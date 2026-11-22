@@ -279,9 +279,20 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Ngày học hôm nay
+        // Ngày học hôm nay (chỉ seed khi là Thứ 2 - Thứ 6; dọn bản ghi cuối tuần nếu trước đó bị seed nhầm)
         var today = DateTime.Today;
-        if (!await context.SchoolCalendarDays.AnyAsync(d => d.Date == today && d.SchoolYearId == schoolYear.Id))
+        var existingTodayCal = await context.SchoolCalendarDays
+            .FirstOrDefaultAsync(d => d.Date == today && d.SchoolYearId == schoolYear.Id);
+        if (today.DayOfWeek == DayOfWeek.Saturday || today.DayOfWeek == DayOfWeek.Sunday)
+        {
+            if (existingTodayCal != null && existingTodayCal.IsSchoolDay)
+            {
+                existingTodayCal.IsSchoolDay = false;
+                existingTodayCal.Note = "Ngày nghỉ cuối tuần";
+                await context.SaveChangesAsync();
+            }
+        }
+        else if (existingTodayCal == null)
         {
             context.SchoolCalendarDays.Add(new SchoolCalendarDay
             {

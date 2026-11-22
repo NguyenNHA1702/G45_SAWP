@@ -100,6 +100,7 @@ public class LeaveRequestsController : ControllerBase
     /// GVCN duyệt (Approve) hoặc từ chối (Reject) đơn xin nghỉ kèm đồng bộ bán trú & điểm danh
     /// </summary>
     [HttpPut("{id}/review")]
+    [Authorize(Roles = "Teacher,SchoolBoard,Admin")]
     public async Task<IActionResult> ReviewLeaveRequest(int id, [FromBody] ReviewLeaveRequestDto review, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -108,7 +109,8 @@ public class LeaveRequestsController : ControllerBase
             return Unauthorized(ApiResponse<SyncLeaveResultDto>.Fail("Vui lòng đăng nhập lại."));
         }
 
-        var result = await _leaveRequestService.ReviewLeaveRequestAsync(id, userId.Value, review, cancellationToken);
+        var roles = User.GetRoles();
+        var result = await _leaveRequestService.ReviewLeaveRequestAsync(id, userId.Value, review, roles, cancellationToken);
         if (!result.Success)
         {
             return BadRequest(result);

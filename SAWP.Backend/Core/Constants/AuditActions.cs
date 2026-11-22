@@ -57,9 +57,13 @@ public static class AuditActions
     // Lunch and boarding
     public const string LunchServiceDayConfigure = "LUNCH_SERVICE_DAY_CONFIGURE";
     public const string LunchServiceDayConfigureCutoff = "LUNCH_SERVICE_DAY_CONFIGURE_CUTOFF";
+    public const string LunchServiceDayLock = "LUNCH_SERVICE_DAY_LOCK";
+    public const string LunchServiceDayUnlock = "LUNCH_SERVICE_DAY_UNLOCK";
+    public const string LunchMealRestore = "LUNCH_MEAL_RESTORE";
     public const string LunchRegistrationWaitlist = "LUNCH_REGISTRATION_WAITLIST";
     public const string LunchRegistrationUpdateMealType = "LUNCH_REGISTRATION_UPDATE_MEAL_TYPE";
     public const string LunchMonthlyQuotaConfigure = "LUNCH_MONTHLY_QUOTA_CONFIGURE";
+    public const string LunchMonthlyQuotaClear = "LUNCH_MONTHLY_QUOTA_CLEAR";
     public const string BoardingIncidentCreate = "BOARDING_INCIDENT_CREATE";
 
     // E-contact book
