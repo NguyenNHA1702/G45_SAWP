@@ -117,6 +117,16 @@ public class ClassesController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> DeleteClass(int id, CancellationToken cancellationToken)
+    {
+        var result = await _classService.DeleteClassAsync(id, User.GetUserId(), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     #endregion
 
     #region Homeroom Teacher Assignment (UC-15)

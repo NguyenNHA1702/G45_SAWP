@@ -22,6 +22,7 @@ import { PostAttachmentsRenderer } from '../../components/contactBook/PostAttach
 import type { ClassPostDto, StudentEvaluationDto } from '../../types/contactBook.types';
 import type { AttendanceDay } from '../../types/attendance.types';
 import { getSystemMessage } from '../../constants/messages';
+import { formatDDMMYYYY } from '../../utils/date';
 
 type TabKey = 'feed' | 'evaluation' | 'overview';
 
@@ -427,7 +428,7 @@ export default function EContactBookPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
                     <div>
                       <span className="badge badge--yellow" style={{ marginBottom: 6 }}>
-                        Tuần {ev.weekNumber} · {new Date(ev.evaluationDate).toLocaleDateString('vi-VN')}
+                        Tuần {ev.weekNumber} · {formatDDMMYYYY(ev.evaluationDate)}
                       </span>
                       <h3 style={{ margin: '4px 0' }}>Phiếu nhận xét rèn luyện & nề nếp</h3>
                       <div style={{ fontSize: '0.85rem', color: 'var(--color-muted-fg)' }}>

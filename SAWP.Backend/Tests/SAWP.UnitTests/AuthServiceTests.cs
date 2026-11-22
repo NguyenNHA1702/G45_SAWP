@@ -160,7 +160,7 @@ public class AuthServiceTests : TestBase
         child.StudentCode.Should().Be("HS001");
         child.FullName.Should().Be("Nguyen Con");
         child.ClassName.Should().Be("1A1");
-        child.Relationship.Should().Be("Father");
+        child.Relationship.Should().Be("Bố (Cha)");
         child.IsPrimaryContact.Should().BeTrue();
     }
 

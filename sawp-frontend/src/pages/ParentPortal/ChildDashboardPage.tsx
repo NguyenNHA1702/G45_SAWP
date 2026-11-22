@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { guardianApi } from '../../services/implementations/guardianApi';
 import { LinkChildModal } from '../../components/parent/LinkChildModal';
 import { formatRelationship } from '../../utils/formatters';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { LinkedChildSummaryDto } from '../../types/guardian.types';
 
 export default function ChildDashboardPage() {
@@ -138,7 +139,7 @@ export default function ChildDashboardPage() {
                   </div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
                     Mã định danh: <strong>{child.studentCode}</strong> • Ngày sinh:{' '}
-                    {new Date(child.dateOfBirth).toLocaleDateString('vi-VN')}
+                    {formatDDMMYYYY(child.dateOfBirth)}
                   </div>
                 </div>
               </div>

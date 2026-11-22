@@ -69,6 +69,11 @@ export const classApi = {
     return res.data;
   },
 
+  async deleteClass(id: number): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/classes/${id}`);
+    return res.data;
+  },
+
   // Homeroom Teacher
   async getEligibleTeachers(schoolYearId?: number): Promise<ApiResponse<TeacherOptionDto[]>> {
     const res = await apiClient.get<ApiResponse<TeacherOptionDto[]>>('/classes/eligible-teachers', {

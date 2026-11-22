@@ -25,7 +25,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
+import { clearAuthSession, getAuthUser } from '../services/apiClient';
 import { notificationApi } from '../services/implementations/notificationApi';
 import { SYSTEM_MESSAGES } from '../constants/messages';
 import { ParentChildProvider } from '../contexts/ParentChildContext';
@@ -286,15 +286,15 @@ export function MainLayout() {
     'kitchen-reports': true,
   });
 
-  // Lấy thông tin user hiện tại từ localStorage và phản hồi khi cập nhật hồ sơ
+  // Lấy thông tin user hiện tại từ session/local storage và phản hồi khi cập nhật hồ sơ
   const [currentUser, setCurrentUser] = useState(() => {
-    const userJson = localStorage.getItem(USER_KEY);
+    const userJson = getAuthUser();
     return userJson ? JSON.parse(userJson) : null;
   });
 
   useEffect(() => {
     const handleStorageChange = () => {
-      const userJson = localStorage.getItem(USER_KEY);
+      const userJson = getAuthUser();
       setCurrentUser(userJson ? JSON.parse(userJson) : null);
     };
     window.addEventListener('storage', handleStorageChange);
@@ -370,8 +370,7 @@ export function MainLayout() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    clearAuthSession();
     toast.success(SYSTEM_MESSAGES.MSG06.content);
     navigate('/login');
   };

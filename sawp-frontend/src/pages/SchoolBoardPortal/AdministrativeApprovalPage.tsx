@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { BoardDecisionModal } from '../../components/requests/BoardDecisionModal';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 export default function AdministrativeApprovalPage() {
@@ -494,7 +495,7 @@ export default function AdministrativeApprovalPage() {
                       {req.requestNumber}
                     </span>
                     <span style={{ fontSize: 13, color: '#64748B' }}>
-                      (Ngày trình: {new Date(req.submissionDate).toLocaleDateString('vi-VN')})
+                      (Ngày trình: {formatDDMMYYYY(req.submissionDate)})
                     </span>
 
                     {/* Status Badge */}

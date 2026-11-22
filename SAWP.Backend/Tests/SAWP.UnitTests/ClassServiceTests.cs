@@ -1304,4 +1304,79 @@ public class ClassServiceTests : TestBase
     }
 
     #endregion
+
+    #region Method 15: DeleteClassAsync
+
+    [Fact]
+    public async Task UTCID01_DeleteClass_WithEnrolledStudents_Fails()
+    {
+        // Arrange
+        var targetClass = new Class
+        {
+            Id = 50,
+            ClassName = "1A",
+            Grade = 1,
+            ClassAssignments = new List<ClassAssignment>
+            {
+                new() { Id = 1, ClassId = 50, StudentId = 101, IsActive = true }
+            }
+        };
+
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetClass);
+
+        // Act
+        var result = await _service.DeleteClassAsync(50, 1);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Contains("Chỉ có thể xóa lớp học khi sĩ số bằng 0"));
+    }
+
+    [Fact]
+    public async Task UTCID02_DeleteClass_EmptyClass_Success()
+    {
+        // Arrange
+        var targetClass = new Class
+        {
+            Id = 51,
+            ClassName = "1B",
+            Grade = 1,
+            ClassAssignments = new List<ClassAssignment>()
+        };
+
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(51, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetClass);
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<ClassSchedule>());
+        SetupRepository(new List<PlacementPlanItem>());
+        SetupRepository(new List<ClassAssignment>());
+
+        // Act
+        var result = await _service.DeleteClassAsync(51, 1);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        ClassRepoMock.Verify(r => r.DeleteAsync(targetClass, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID03_DeleteClass_NotFound_Fails()
+    {
+        // Arrange
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(999, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Class?)null);
+
+        // Act
+        var result = await _service.DeleteClassAsync(999, 1);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    #endregion
 }

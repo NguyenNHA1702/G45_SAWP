@@ -79,7 +79,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     } catch (err: any) {
       // 409 Conflict - MSG12 duplicate detection
       if (err.response?.status === 409) {
-        toast.error('Mã học sinh đã tồn tại (MSG12). Chuyển sang màn hình giải quyết trùng lặp.');
+        toast.error('Mã học sinh đã tồn tại trong hệ thống. Đang chuyển sang màn hình giải quyết trùng lặp.');
         // fetch existing info
         const dupRes = await studentApi.checkDuplicate(formData.studentCode.trim().toUpperCase());
         if (dupRes.data?.existingStudent) {

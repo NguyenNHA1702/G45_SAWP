@@ -10,6 +10,7 @@ import {
   Send,
   Sparkles,
 } from 'lucide-react';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { PlacementPlanSummaryDto } from '../../types/placement.types';
 
 interface PlacementPlanHistoryListProps {
@@ -274,7 +275,7 @@ export const PlacementPlanHistoryList: React.FC<PlacementPlanHistoryListProps> =
                       <span>Khối: <strong>{p.grade}</strong></span>
                       <span>Quy mô: <strong>{p.totalStudents} học sinh / {p.targetClassCount} lớp</strong></span>
                       <span>Người tạo: <strong>{p.createdByName}</strong></span>
-                      <span>Ngày tạo: {new Date(p.createdAt).toLocaleDateString('vi-VN')}</span>
+                      <span>Ngày tạo: {formatDDMMYYYY(p.createdAt)}</span>
                     </div>
 
                     {p.reviewNotes && (
