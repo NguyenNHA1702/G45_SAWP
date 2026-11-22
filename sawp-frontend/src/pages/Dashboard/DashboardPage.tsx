@@ -130,7 +130,7 @@ export default function DashboardPage() {
           </Link>
         )}
 
-        {(roles.includes('OfficeStaff') || roles.includes('Admin')) && (
+        {roles.includes('OfficeStaff') && (
           <>
             <Link
               to="/students"
