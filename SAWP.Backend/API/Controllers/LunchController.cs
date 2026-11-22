@@ -159,8 +159,21 @@ public class LunchController : BaseApiController
     [Authorize(Roles = "ServiceStaff,Admin")]
     public async Task<IActionResult> LockDay([FromBody] LockMealDayRequestDto request, CancellationToken cancellationToken)
     {
-        var result = await _lunchService.LockDailyMealAsync(request, cancellationToken);
-        return Ok(result);
+        var userId = User.GetRequiredUserId();
+        var result = await _lunchService.LockDailyMealAsync(request, userId, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Mở khóa ngày đã chốt suất ăn (chỉ ServiceStaff/Admin, bắt buộc nhập lý do)
+    /// </summary>
+    [HttpPost("unlock-day")]
+    [Authorize(Roles = "ServiceStaff,Admin")]
+    public async Task<IActionResult> UnlockDay([FromBody] UnlockMealDayRequestDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _lunchService.UnlockDailyMealAsync(userId, request, cancellationToken);
+        return ToActionResult(result);
     }
 
     /// <summary>
@@ -170,8 +183,10 @@ public class LunchController : BaseApiController
     [Authorize(Roles = "ServiceStaff,Teacher,OfficeStaff,Admin")]
     public async Task<IActionResult> RestoreMeal([FromBody] RestoreMealRequest request, CancellationToken cancellationToken)
     {
-        var result = await _lunchService.RestoreMealForStudentAsync(request.StudentId, request.Date, request.Reason, cancellationToken);
-        return Ok(result);
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _lunchService.RestoreMealForStudentAsync(request.StudentId, request.Date, request.Reason, userId, roles, cancellationToken);
+        return ToActionResult(result);
     }
 
     /// <summary>
@@ -199,35 +214,14 @@ public class LunchController : BaseApiController
     }
 
     /// <summary>
-    /// Lấy danh sách sự cố bán trú theo ngày hoặc tháng (TC_BDS_36)
+    /// Nhân viên bán trú gỡ bỏ chỉ tiêu bán trú của tháng
     /// </summary>
-    [HttpGet("incidents")]
-    [Authorize(Roles = "Parent,Teacher,ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
-    public async Task<IActionResult> GetBoardingIncidents(
-        [FromQuery] DateTime? date,
-        [FromQuery] string? month,
-        [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to,
-        [FromQuery] int? classId,
-        [FromQuery] int? studentId,
-        CancellationToken cancellationToken)
+    [HttpDelete("monthly-quota")]
+    [Authorize(Roles = "ServiceStaff,Admin")]
+    public async Task<IActionResult> ClearMonthlyQuota([FromQuery] string month, CancellationToken cancellationToken)
     {
         var userId = User.GetRequiredUserId();
-        var roles = User.GetRoles();
-        var result = await _lunchService.GetBoardingIncidentsAsync(date, month, from, to, classId, studentId, userId, roles, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    /// <summary>
-    /// Giáo viên / Nhân viên bán trú ghi nhận sự cố bán trú và gửi cảnh báo cho phụ huynh (TC_BDS_36)
-    /// </summary>
-    [HttpPost("incidents")]
-    [Authorize(Roles = "Teacher,ServiceStaff,OfficeStaff,Admin")]
-    public async Task<IActionResult> CreateBoardingIncident([FromBody] CreateBoardingIncidentRequestDto request, CancellationToken cancellationToken)
-    {
-        var userId = User.GetRequiredUserId();
-        var roles = User.GetRoles();
-        var result = await _lunchService.CreateBoardingIncidentAsync(userId, roles, request, cancellationToken);
+        var result = await _lunchService.ClearMonthlyQuotaAsync(userId, month, cancellationToken);
         return ToActionResult(result);
     }
 }

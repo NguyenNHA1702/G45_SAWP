@@ -17,7 +17,7 @@ import {
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { apiClient } from '../../services/apiClient';
-import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
+import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
 interface LinkedChild {
@@ -196,12 +196,16 @@ export default function LeaveRequestPage() {
       toast.error('Vui lòng chọn ngày bắt đầu và ngày kết thúc nghỉ.');
       return;
     }
-    if (startDate < todayStr) {
-      toast.error('Không thể xin nghỉ học cho ngày trong quá khứ.');
+    if (endDate < startDate) {
+      toast.error('Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.');
       return;
     }
-    if (endDate < startDate) {
-      toast.error('Ngày kết thúc không được nhỏ hơn ngày bắt đầu.');
+    if (!reason.trim()) {
+      toast.error('Vui lòng nhập lý do xin nghỉ.');
+      return;
+    }
+    if (startDate < todayStr) {
+      toast.error('Không thể xin nghỉ học cho ngày trong quá khứ.');
       return;
     }
     let hasWeekday = false;
@@ -216,19 +220,25 @@ export default function LeaveRequestPage() {
       toast.error('Khoảng ngày chọn chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.');
       return;
     }
+    const sessionOverlaps = (existingSession: string | number, newSession: number) => {
+      const normalized =
+        existingSession === 'Morning' || existingSession === 1
+          ? 1
+          : existingSession === 'Afternoon' || existingSession === 2
+            ? 2
+            : 3;
+      return normalized === 3 || newSession === 3 || normalized === newSession;
+    };
     const overlapping = requests.some(
       (r) =>
         r.studentId === selectedStudentId &&
         (r.status === 'Submitted' || r.status === 'UnderReview' || r.status === 'Approved') &&
         r.startDate.slice(0, 10) <= endDate &&
-        r.endDate.slice(0, 10) >= startDate
+        r.endDate.slice(0, 10) >= startDate &&
+        sessionOverlaps(r.session, session)
     );
     if (overlapping) {
       toast.error('Học sinh đã có đơn xin nghỉ trùng khoảng thời gian này đang chờ duyệt hoặc đã duyệt.');
-      return;
-    }
-    if (!reason.trim()) {
-      toast.error('Vui lòng nhập lý do xin nghỉ.');
       return;
     }
 
@@ -447,8 +457,8 @@ export default function LeaveRequestPage() {
                   <div>
                     <span style={{ color: 'var(--color-muted-fg)' }}>Thời gian nghỉ:</span>{' '}
                     <strong>
-                      {new Date(r.startDate).toLocaleDateString('vi-VN')}
-                      {r.startDate !== r.endDate && ` → ${new Date(r.endDate).toLocaleDateString('vi-VN')}`}
+                      {formatDateDDMMYYYY(r.startDate)}
+                      {r.startDate !== r.endDate && ` → ${formatDateDDMMYYYY(r.endDate)}`}
                     </strong>{' '}
                     <span className={`badge ${isLongLeave ? 'badge--violet' : 'badge--mint'}`} style={{ fontSize: 'var(--fs-xs)', marginLeft: 4 }}>
                       {r.totalDays || 1} ngày {isLongLeave ? '(Chuyển BGH)' : '(Thông thường)'}
@@ -565,7 +575,7 @@ export default function LeaveRequestPage() {
         icon={<Calendar size={24} color="var(--color-fg)" />}
         maxWidth="lg"
       >
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div className="modal-grid-2col">
             {/* CỘT TRÁI: THÔNG TIN NGHỈ HỌC */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
@@ -579,6 +589,7 @@ export default function LeaveRequestPage() {
                     value={selectedStudentId}
                     onChange={(e) => setSelectedStudentId(Number(e.target.value))}
                   >
+                    <option value={0}>-- Chọn học sinh --</option>
                     {children.map((c) => (
                       <option key={c.studentId} value={c.studentId}>
                         {c.fullName} ({c.studentCode}) {c.currentClassName ? `— Lớp ${c.currentClassName}` : ''}
@@ -593,7 +604,6 @@ export default function LeaveRequestPage() {
                     placeholder="Nhập mã ID học sinh (VD: 1)"
                     value={selectedStudentId || ''}
                     onChange={(e) => setSelectedStudentId(Number(e.target.value))}
-                    required
                   />
                 )}
               </div>
@@ -607,12 +617,7 @@ export default function LeaveRequestPage() {
                     type="date"
                     className="input"
                     value={startDate}
-                    min={todayStr}
-                    onChange={(e) => {
-                      setStartDate(e.target.value);
-                      if (e.target.value > endDate) setEndDate(e.target.value);
-                    }}
-                    required
+                    onChange={(e) => setStartDate(e.target.value)}
                   />
                 </div>
                 <div className="field">
@@ -622,9 +627,7 @@ export default function LeaveRequestPage() {
                     type="date"
                     className="input"
                     value={endDate}
-                    min={startDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    required
                   />
                 </div>
               </div>

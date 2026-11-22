@@ -17,7 +17,6 @@ import AdministrativeRequestsPage from './pages/ParentPortal/AdministrativeReque
 import AdminRequestsManagementPage from './pages/OfficeStaffPortal/AdminRequestsManagementPage';
 import AdministrativeApprovalPage from './pages/SchoolBoardPortal/AdministrativeApprovalPage';
 import ParentLunchPage from './pages/ParentPortal/ParentLunchPage';
-import ParentBoardingIncidentsPage from './pages/ParentPortal/ParentBoardingIncidentsPage';
 import ProfilePage from './pages/Auth/ProfilePage';
 import EContactBookPage from './pages/ParentPortal/EContactBookPage';
 import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
@@ -69,7 +68,6 @@ export default function App() {
           <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
           <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
           <Route path="/parent/lunch" element={<ParentLunchPage />} />
-          <Route path="/parent/boarding-incidents" element={<ParentBoardingIncidentsPage />} />
           <Route path="/parent/contact-book" element={<EContactBookPage />} />
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />

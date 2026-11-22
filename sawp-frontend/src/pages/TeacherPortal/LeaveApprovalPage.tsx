@@ -17,7 +17,7 @@ import {
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { USER_KEY } from '../../services/apiClient';
-import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
+import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
 export default function LeaveApprovalPage() {
@@ -373,7 +373,7 @@ export default function LeaveApprovalPage() {
                   <div>
                     <span style={{ color: 'var(--color-muted-fg)' }}>Thời gian:</span>{' '}
                     <strong>
-                      {new Date(r.startDate).toLocaleDateString('vi-VN')} {r.startDate !== r.endDate && `→ ${new Date(r.endDate).toLocaleDateString('vi-VN')}`}
+                      {formatDateDDMMYYYY(r.startDate)} {r.startDate !== r.endDate && `→ ${formatDateDDMMYYYY(r.endDate)}`}
                     </strong>{' '}
                     <span className={`badge ${isEscalated ? 'badge--violet' : 'badge--mint'}`} style={{ fontSize: 'var(--fs-xs)', marginLeft: 4 }}>
                       {r.totalDays || 1} ngày
@@ -403,11 +403,12 @@ export default function LeaveApprovalPage() {
                   </p>
                   {r.doctorNoteAttachmentUrl && (
                     <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {r.doctorNoteAttachmentUrl
-                        .split('|')
-                        .map((u) => u.trim())
-                        .filter(Boolean)
-                        .map((urlItem, idx) =>
+                      {(() => {
+                        const urls = r.doctorNoteAttachmentUrl
+                          .split('|')
+                          .map((u) => u.trim())
+                          .filter(Boolean);
+                        return urls.map((urlItem, idx) =>
                           urlItem.startsWith('/') || urlItem.startsWith('http') ? (
                             <a
                               key={idx}
@@ -425,7 +426,7 @@ export default function LeaveApprovalPage() {
                               }}
                             >
                               <Paperclip size={14} />
-                              <span>Xem minh chứng {idx + 1}</span>
+                              <span>{urls.length > 1 ? `Xem minh chứng của phụ huynh (${idx + 1})` : 'Xem minh chứng của phụ huynh'}</span>
                               <ExternalLink size={12} />
                             </a>
                           ) : (
@@ -434,7 +435,8 @@ export default function LeaveApprovalPage() {
                               <strong>Minh chứng:</strong> {urlItem}
                             </div>
                           )
-                        )}
+                        );
+                      })()}
                     </div>
                   )}
                   {r.reviewerNotes && (

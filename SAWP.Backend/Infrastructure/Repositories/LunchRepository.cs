@@ -42,13 +42,52 @@ public class LunchRepository : Repository<LunchRegistration>, ILunchRepository
 
     public async Task<IReadOnlyList<HeadcountRow>> GetHeadcountRowsAsync(DateTime date, CancellationToken ct = default)
     {
-        var query = from r in _context.LunchRegistrations.AsNoTracking()
-                    where r.Date == date
-                    join ca in _context.ClassAssignments.AsNoTracking() on r.StudentId equals ca.StudentId
-                    where ca.IsActive && ca.StartDate <= date && (ca.EndDate == null || ca.EndDate >= date)
-                    select new HeadcountRow(r.StudentId, ca.ClassId, ca.Class.ClassName, r.MealType, r.IsActive, r.CancellationSource);
+        var targetDate = date.Date;
 
-        return await query.ToListAsync(ct);
+        // Lấy danh sách đăng ký không nằm trong hàng chờ, gom duy nhất 1 dòng / học sinh
+        var regs = await _context.LunchRegistrations
+            .AsNoTracking()
+            .Where(r => r.Date == targetDate && !r.IsWaitlisted)
+            .ToListAsync(ct);
+
+        if (regs.Count == 0)
+        {
+            return Array.Empty<HeadcountRow>();
+        }
+
+        var studentIds = regs.Select(r => r.StudentId).Distinct().ToList();
+
+        // Mỗi học sinh chỉ lấy duy nhất 1 bản ghi xếp lớp còn hiệu lực mới nhất theo StartDate / Id (chống đếm trùng)
+        var assignments = await _context.ClassAssignments
+            .AsNoTracking()
+            .Include(ca => ca.Class)
+            .Where(ca => studentIds.Contains(ca.StudentId)
+                && ca.IsActive
+                && ca.StartDate <= targetDate
+                && (ca.EndDate == null || ca.EndDate >= targetDate))
+            .ToListAsync(ct);
+
+        var latestClassByStudent = assignments
+            .GroupBy(ca => ca.StudentId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(ca => ca.StartDate).ThenByDescending(ca => ca.Id).First());
+
+        var rows = new List<HeadcountRow>(regs.Count);
+        foreach (var group in regs.GroupBy(r => r.StudentId))
+        {
+            var r = group.OrderByDescending(x => x.IsActive).ThenByDescending(x => x.Id).First();
+            if (latestClassByStudent.TryGetValue(r.StudentId, out var ca))
+            {
+                rows.Add(new HeadcountRow(r.StudentId, ca.ClassId, ca.Class?.ClassName ?? "Chưa phân lớp", r.MealType, r.IsActive, r.CancellationSource));
+            }
+            else
+            {
+                rows.Add(new HeadcountRow(r.StudentId, 0, "Chưa phân lớp", r.MealType, r.IsActive, r.CancellationSource));
+            }
+        }
+
+        return rows;
     }
 }
 

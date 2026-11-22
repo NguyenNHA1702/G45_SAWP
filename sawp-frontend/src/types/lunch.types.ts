@@ -70,6 +70,7 @@ export interface DailyMealBoard {
   isServing: boolean;
   isLocked: boolean;
   lockedAt?: string;
+  lockedByName?: string | null;
   cutoffTime: string;
   serviceRemarks?: string | null;
   canManage: boolean;
@@ -85,6 +86,11 @@ export interface DailyMealBoard {
 export interface LockMealDayPayload {
   date: string;
   notes?: string;
+}
+
+export interface UnlockMealDayPayload {
+  date: string;
+  reason: string;
 }
 
 export interface RestoreMealPayload {
@@ -195,27 +201,5 @@ export interface MonthlyBoardingQuota {
 
 export interface UpsertMonthlyBoardingQuotaPayload {
   month: string;
-  quota: number;
-}
-
-export interface BoardingIncident {
-  id: number;
-  studentId: number;
-  studentCode: string;
-  studentName: string;
-  classId?: number | null;
-  className: string;
-  date: string;
-  incidentType: string;
-  note: string;
-  recordedByUserId: number;
-  recordedByName: string;
-  createdAt: string;
-}
-
-export interface CreateBoardingIncidentPayload {
-  studentId: number;
-  date: string;
-  incidentType?: string;
-  note: string;
+  quota: number | null;
 }

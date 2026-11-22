@@ -87,7 +87,7 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<LeaveRequestItemDto>.Fail("Vui lòng nhập lý do xin nghỉ học.");
         }
 
-        // 3. Check duplicate pending or approved leave request
+        // 3. Check duplicate pending or approved leave request (chỉ tính trùng khi cùng buổi hoặc có đơn Cả ngày; cho phép nghỉ Sáng + bổ sung nghỉ Chiều cùng ngày)
         var duplicate = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
             .Include(ar => ar.LeaveRequest)
@@ -95,7 +95,10 @@ public class LeaveRequestService : ILeaveRequestService
             .Where(ar => ar.Status == RequestStatus.Submitted || ar.Status == RequestStatus.Approved || ar.Status == RequestStatus.UnderReview)
             .AnyAsync(ar => ar.LeaveRequest != null &&
                             ar.LeaveRequest.StartDate.Date <= request.EndDate.Date &&
-                            ar.LeaveRequest.EndDate.Date >= request.StartDate.Date, cancellationToken);
+                            ar.LeaveRequest.EndDate.Date >= request.StartDate.Date &&
+                            (ar.LeaveRequest.Session == LeaveSession.FullDay ||
+                             request.Session == LeaveSession.FullDay ||
+                             ar.LeaveRequest.Session == request.Session), cancellationToken);
 
         if (duplicate)
         {
@@ -337,7 +340,7 @@ public class LeaveRequestService : ILeaveRequestService
         return ApiResponse<LeaveRequestItemDto>.Ok(dto);
     }
 
-    public async Task<ApiResponse<SyncLeaveResultDto>> ReviewLeaveRequestAsync(int requestId, int reviewerUserId, ReviewLeaveRequestDto review, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<SyncLeaveResultDto>> ReviewLeaveRequestAsync(int requestId, int reviewerUserId, ReviewLeaveRequestDto review, IReadOnlyList<UserRoles>? reviewerRoles = null, CancellationToken cancellationToken = default)
     {
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
@@ -348,6 +351,38 @@ public class LeaveRequestService : ILeaveRequestService
         if (req == null || req.LeaveRequest == null)
         {
             return ApiResponse<SyncLeaveResultDto>.Fail("Không tìm thấy đơn xin nghỉ học.");
+        }
+
+        // Kiểm tra phân quyền duyệt đơn (SSAWP-133): chỉ GVCN của đúng lớp học sinh, Ban Giám Hiệu hoặc Admin được duyệt
+        if (reviewerRoles != null)
+        {
+            var isBoardOrAdmin = reviewerRoles.Contains(UserRoles.SchoolBoard) || reviewerRoles.Contains(UserRoles.Admin);
+            var isTeacher = reviewerRoles.Contains(UserRoles.Teacher);
+            if (!isBoardOrAdmin && !isTeacher)
+            {
+                return ApiResponse<SyncLeaveResultDto>.Fail(SystemMessages.MSG10, new List<string> { "Bạn không có quyền phê duyệt hoặc từ chối đơn xin nghỉ học." });
+            }
+
+            if (!isBoardOrAdmin && isTeacher && req.StudentId.HasValue)
+            {
+                var staffProfile = await _unitOfWork.Repository<StaffProfile>()
+                    .Query()
+                    .FirstOrDefaultAsync(sp => sp.UserId == reviewerUserId, cancellationToken);
+
+                var studentClasses = await _unitOfWork.Repository<ClassAssignment>()
+                    .Query()
+                    .Include(ca => ca.Class)
+                    .Where(ca => ca.StudentId == req.StudentId.Value && ca.IsActive)
+                    .OrderByDescending(ca => ca.StartDate)
+                    .ThenByDescending(ca => ca.Id)
+                    .ToListAsync(cancellationToken);
+
+                var currentClass = studentClasses.FirstOrDefault()?.Class;
+                if (staffProfile == null || currentClass == null || currentClass.HomeroomTeacherId != staffProfile.Id)
+                {
+                    return ApiResponse<SyncLeaveResultDto>.Fail(SystemMessages.MSG10, new List<string> { "Bạn không phải giáo viên chủ nhiệm của lớp học sinh này." });
+                }
+            }
         }
 
         if (req.Status != RequestStatus.Submitted && req.Status != RequestStatus.UnderReview)
@@ -423,9 +458,14 @@ public class LeaveRequestService : ILeaveRequestService
         }
 
         // QUYẾT ĐỊNH: Phê duyệt hoặc Từ chối (bởi GVCN đối với đơn < 3 ngày, hoặc bởi BGH đối với đơn >= 3 ngày)
+        var isEscalatedDecision = req.Status == RequestStatus.UnderReview || durationDays >= 3;
+        if (isEscalatedDecision && reviewerRoles != null && !reviewerRoles.Contains(UserRoles.SchoolBoard) && !reviewerRoles.Contains(UserRoles.Admin))
+        {
+            return ApiResponse<SyncLeaveResultDto>.Fail("Chỉ Ban Giám Hiệu mới có quyền phê duyệt hoặc từ chối đơn xin nghỉ từ 3 ngày trở lên.");
+        }
+
         req.ReviewerUserId = reviewerUserId;
         req.ProcessedDate = DateTime.UtcNow;
-        var isEscalatedDecision = req.Status == RequestStatus.UnderReview || durationDays >= 3;
 
         // 1. Case REJECT (Từ chối)
         if (!review.IsApproved)
@@ -458,8 +498,8 @@ public class LeaveRequestService : ILeaveRequestService
                 : "Thông báo từ chối đơn thông thường";
 
             var rejectContent = isEscalatedDecision
-                ? $"Đơn xin nghỉ {durationDays} ngày của con bạn ({req.Student?.FullName}) đã bị Ban Giám Hiệu từ chối. Lý do: {review.ReviewerNotes}"
-                : $"Đơn xin nghỉ học của con bạn ({req.Student?.FullName}) đã bị GVCN từ chối. Lý do: {review.ReviewerNotes}";
+                ? $"{SystemMessages.MSG23.Content} Đơn xin nghỉ {durationDays} ngày của con bạn ({req.Student?.FullName}) đã bị Ban Giám Hiệu từ chối. Lý do: {review.ReviewerNotes}"
+                : $"{SystemMessages.MSG23.Content} Đơn xin nghỉ học của con bạn ({req.Student?.FullName}) đã bị GVCN từ chối. Lý do: {review.ReviewerNotes}";
 
             var notif = new Notification
             {
@@ -587,13 +627,23 @@ public class LeaveRequestService : ILeaveRequestService
             ? "Thông báo phê duyệt đơn chuyển cấp"
             : "Thông báo phê duyệt đơn thông thường";
 
+        // Đọc giờ chốt thực tế của ngày đầu tiên trong đơn nghỉ (tránh hardcode 08:15 khi trường cấu hình giờ khác)
+        var lunchDayRepo = _unitOfWork.Repository<LunchServiceDay>();
+        var firstLeaveDate = req.LeaveRequest.StartDate.Date;
+        var firstServiceDay = lunchDayRepo != null
+            ? await lunchDayRepo.Query().FirstOrDefaultAsync(d => d.Date == firstLeaveDate, cancellationToken)
+            : null;
+        var effectiveCutoffLabel = (firstServiceDay != null && firstServiceDay.CutoffTime != TimeSpan.Zero)
+            ? firstServiceDay.CutoffTime.ToString(@"hh\:mm")
+            : _options.LunchCutoffTime;
+
         var mealNote = cancelledDates.Any()
-            ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd/MM")))}) đã được tự động ghi nhận hủy trước {_options.LunchCutoffTime}."
-            : (req.LeaveRequest.KeepLunchService ? "Suất ăn bán trú được giữ nguyên theo yêu cầu trên đơn." : $"Suất ăn không bị hủy (sau giờ chốt {_options.LunchCutoffTime} hoặc học sinh không đăng ký bán trú).");
+            ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd-MM-yyyy")))}) đã được tự động ghi nhận hủy trước {effectiveCutoffLabel}."
+            : (req.LeaveRequest.KeepLunchService ? "Suất ăn bán trú được giữ nguyên theo yêu cầu trên đơn." : $"Suất ăn không bị hủy (sau giờ chốt {effectiveCutoffLabel} hoặc học sinh không đăng ký bán trú).");
 
         var approveContent = isEscalatedDecision
-            ? $"Ban Giám Hiệu đã phê duyệt đơn xin nghỉ {durationDays} ngày của con bạn ({req.Student?.FullName}). {mealNote}"
-            : $"Giáo viên đã phê duyệt đơn xin nghỉ học của con bạn ({req.Student?.FullName}). {mealNote}";
+            ? $"{SystemMessages.MSG22.Content} Ban Giám Hiệu đã phê duyệt đơn xin nghỉ {durationDays} ngày của con bạn ({req.Student?.FullName}). {mealNote}"
+            : $"{SystemMessages.MSG22.Content} Giáo viên đã phê duyệt đơn xin nghỉ học của con bạn ({req.Student?.FullName}). {mealNote}";
 
         var approveNotif = new Notification
         {

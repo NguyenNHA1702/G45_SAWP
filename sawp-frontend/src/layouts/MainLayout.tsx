@@ -138,7 +138,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'teacher-boarding',
-        label: 'Bán trú & Sự cố lớp',
+        label: 'Bán trú lớp học',
         path: '/teacher/boarding',
         roles: ['Teacher'],
         icon: UtensilsCrossed,
@@ -190,12 +190,6 @@ const NAV_ITEMS: NavItem[] = [
         label: 'Đăng ký bán trú',
         path: '/parent/lunch',
         icon: UtensilsCrossed,
-      },
-      {
-        id: 'parent-boarding-incidents',
-        label: 'Sự cố bán trú',
-        path: '/parent/boarding-incidents',
-        icon: Bell,
       },
       {
         id: 'parent-leave',
