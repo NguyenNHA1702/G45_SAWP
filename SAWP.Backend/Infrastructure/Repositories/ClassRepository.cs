@@ -115,7 +115,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
         return await _context.StaffProfiles
             .Include(sp => sp.User)
             .Include(sp => sp.HomeroomClasses.Where(c => c.SchoolYear.IsActive))
-            .Where(sp => sp.User.IsActive && _context.UserRoles.Any(ur => ur.UserId == sp.UserId && ur.RoleId == teacherRoleId))
+            .Where(sp => sp.User.Status == AccountStatus.Active && _context.UserRoles.Any(ur => ur.UserId == sp.UserId && ur.RoleId == teacherRoleId))
             .OrderBy(sp => sp.User.FullName)
             .ToListAsync(cancellationToken);
     }

@@ -22,6 +22,113 @@ namespace Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Core.Entities.AccountRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("FollowsUpRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("Reason")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RequestedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FollowsUpRequestId");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("AccountRequests");
+                });
+
+            modelBuilder.Entity("Core.Entities.AccountRequestItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AccountRequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CheckResult")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DecidedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("GuardianId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedUserId");
+
+                    b.HasIndex("DecidedByUserId");
+
+                    b.HasIndex("GuardianId");
+
+                    b.HasIndex("AccountRequestId", "GuardianId")
+                        .IsUnique();
+
+                    b.ToTable("AccountRequestItems");
+                });
+
             modelBuilder.Entity("Core.Entities.AdministrativeRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -561,6 +668,15 @@ namespace Infrastructure.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
                     b.Property<string>("IdentityCardNumber")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -570,64 +686,22 @@ namespace Infrastructure.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("Guardians");
-                });
-
-            modelBuilder.Entity("Core.Entities.GuardianLinkDetail", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AdministrativeRequestId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("AutoVerificationPassed")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("GuardianIdentityCard")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("GuardianPhone")
+                    b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("ProofDocumentUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<int>("Relationship")
+                    b.Property<int?>("UserId")
                         .HasColumnType("int");
-
-                    b.Property<string>("StudentCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime?>("StudentDateOfBirth")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("VerificationDetails")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AdministrativeRequestId")
-                        .IsUnique();
+                    b.HasIndex("Email");
 
-                    b.ToTable("GuardianLinkDetails");
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("[UserId] IS NOT NULL");
+
+                    b.ToTable("Guardians");
                 });
 
             modelBuilder.Entity("Core.Entities.LeaveRequest", b =>
@@ -1339,13 +1413,13 @@ namespace Infrastructure.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTime?>("EmailVerifiedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -1354,6 +1428,11 @@ namespace Infrastructure.Data.Migrations
                     b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(2);
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -1364,6 +1443,9 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
 
                     b.HasIndex("Username")
                         .IsUnique();
@@ -1387,6 +1469,99 @@ namespace Infrastructure.Data.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("UserRoles");
+                });
+
+            modelBuilder.Entity("Core.Entities.VerificationToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("NewEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Purpose");
+
+                    b.ToTable("VerificationTokens");
+                });
+
+            modelBuilder.Entity("Core.Entities.AccountRequest", b =>
+                {
+                    b.HasOne("Core.Entities.AccountRequest", "FollowsUpRequest")
+                        .WithMany()
+                        .HasForeignKey("FollowsUpRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Core.Entities.User", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FollowsUpRequest");
+
+                    b.Navigation("RequestedByUser");
+                });
+
+            modelBuilder.Entity("Core.Entities.AccountRequestItem", b =>
+                {
+                    b.HasOne("Core.Entities.AccountRequest", "AccountRequest")
+                        .WithMany("Items")
+                        .HasForeignKey("AccountRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.User", "CreatedUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Core.Entities.User", "DecidedByUser")
+                        .WithMany()
+                        .HasForeignKey("DecidedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Core.Entities.Guardian", "Guardian")
+                        .WithMany()
+                        .HasForeignKey("GuardianId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AccountRequest");
+
+                    b.Navigation("CreatedUser");
+
+                    b.Navigation("DecidedByUser");
+
+                    b.Navigation("Guardian");
                 });
 
             modelBuilder.Entity("Core.Entities.AdministrativeRequest", b =>
@@ -1624,21 +1799,9 @@ namespace Infrastructure.Data.Migrations
                     b.HasOne("Core.Entities.User", "User")
                         .WithOne("Guardian")
                         .HasForeignKey("Core.Entities.Guardian", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Core.Entities.GuardianLinkDetail", b =>
-                {
-                    b.HasOne("Core.Entities.AdministrativeRequest", "AdministrativeRequest")
-                        .WithOne("GuardianLinkDetail")
-                        .HasForeignKey("Core.Entities.GuardianLinkDetail", "AdministrativeRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AdministrativeRequest");
                 });
 
             modelBuilder.Entity("Core.Entities.LeaveRequest", b =>
@@ -1887,13 +2050,27 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Core.Entities.VerificationToken", b =>
+                {
+                    b.HasOne("Core.Entities.User", "User")
+                        .WithMany("VerificationTokens")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Core.Entities.AccountRequest", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Core.Entities.AdministrativeRequest", b =>
                 {
                     b.Navigation("ClassTransferDetail");
 
                     b.Navigation("DocumentRequestDetail");
-
-                    b.Navigation("GuardianLinkDetail");
 
                     b.Navigation("LeaveRequest");
                 });
@@ -1969,6 +2146,8 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("StaffProfile");
 
                     b.Navigation("UserRoles");
+
+                    b.Navigation("VerificationTokens");
                 });
 #pragma warning restore 612, 618
         }

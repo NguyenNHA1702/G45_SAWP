@@ -47,8 +47,8 @@ public class AuthService : IAuthService
             return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG02);
         }
 
-        // BR-03, BR-48: Check if account is active
-        if (!user.IsActive)
+        // BR-01, BR-63: only Active accounts sign in (not Pending Activation or Deactivated)
+        if (user.Status != AccountStatus.Active)
         {
             return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG03);
         }
@@ -93,7 +93,7 @@ public class AuthService : IAuthService
         }
 
         var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
-        if (user == null || !user.IsActive)
+        if (user == null || user.Status != AccountStatus.Active)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG03);
         }
@@ -198,7 +198,7 @@ public class AuthService : IAuthService
             FullName = user.FullName,
             Email = user.Email,
             PhoneNumber = user.PhoneNumber,
-            IsActive = user.IsActive,
+            IsActive = user.Status == AccountStatus.Active,
             CreatedAt = user.CreatedAt,
             Roles = user.UserRoles.Where(ur => ur.Role != null).Select(ur => ur.Role.Name).ToList()
         };
@@ -274,12 +274,25 @@ public class AuthService : IAuthService
         }
         if (!string.IsNullOrWhiteSpace(request.Email))
         {
-            user.Email = request.Email.Trim();
+            var newEmail = request.Email.Trim();
+            // Login emails are unique (BR-64). TODO SSAWP-154: users no longer change their own email (BR-69).
+            var emailTaken = await _unitOfWork.Users.Query()
+                .AnyAsync(u => u.Id != user.Id && u.Email.ToLower() == newEmail.ToLower(), ct);
+            if (emailTaken)
+            {
+                return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Email đã được sử dụng bởi một tài khoản khác." });
+            }
+            user.Email = newEmail;
+            if (user.Guardian != null) user.Guardian.Email = newEmail; // only an address the Parent typed, never a placeholder
         }
         user.UpdatedAt = DateTime.UtcNow;
 
         if (user.Guardian != null)
         {
+            // Keep the linked guardian record's contact details in step with the Parent's own profile, as before
+            // they moved to the guardian record. TODO SSAWP-154: decide whether Parents may still edit them.
+            user.Guardian.FullName = user.FullName;
+            user.Guardian.PhoneNumber = user.PhoneNumber;
             if (request.Address != null) user.Guardian.Address = request.Address.Trim();
             if (request.Occupation != null) user.Guardian.Occupation = request.Occupation.Trim();
         }

@@ -15,6 +15,8 @@ public class AdminUserDto
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; }
+    /// <summary>Account state: PendingActivation, Active or Deactivated (BR-63).</summary>
+    public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public List<string> Roles { get; set; } = new();
     public string? StaffCode { get; set; }

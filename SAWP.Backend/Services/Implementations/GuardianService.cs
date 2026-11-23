@@ -166,9 +166,9 @@ public class GuardianService : IGuardianService
             {
                 GuardianId = sg.GuardianId,
                 UserId = sg.Guardian.UserId,
-                FullName = sg.Guardian.User?.FullName ?? string.Empty,
-                PhoneNumber = sg.Guardian.User?.PhoneNumber,
-                Email = sg.Guardian.User?.Email,
+                FullName = sg.Guardian.FullName,
+                PhoneNumber = sg.Guardian.PhoneNumber,
+                Email = sg.Guardian.Email,
                 IdentityCardNumber = sg.Guardian.IdentityCardNumber,
                 Occupation = sg.Guardian.Occupation,
                 Address = sg.Guardian.Address,

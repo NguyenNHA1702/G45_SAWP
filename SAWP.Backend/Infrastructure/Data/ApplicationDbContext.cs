@@ -15,6 +15,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<StaffProfile> StaffProfiles => Set<StaffProfile>();
     public DbSet<Guardian> Guardians => Set<Guardian>();
+    public DbSet<VerificationToken> VerificationTokens => Set<VerificationToken>();
+    public DbSet<AccountRequest> AccountRequests => Set<AccountRequest>();
+    public DbSet<AccountRequestItem> AccountRequestItems => Set<AccountRequestItem>();
     public DbSet<Student> Students => Set<Student>();
     public DbSet<StudentGuardian> StudentGuardians => Set<StudentGuardian>();
     public DbSet<SchoolYear> SchoolYears => Set<SchoolYear>();
@@ -31,7 +34,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<AdministrativeRequest> AdministrativeRequests => Set<AdministrativeRequest>();
     public DbSet<ClassTransferDetail> ClassTransferDetails => Set<ClassTransferDetail>();
     public DbSet<DocumentRequestDetail> DocumentRequestDetails => Set<DocumentRequestDetail>();
-    public DbSet<GuardianLinkDetail> GuardianLinkDetails => Set<GuardianLinkDetail>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<PlacementPlan> PlacementPlans => Set<PlacementPlan>();

@@ -719,10 +719,10 @@ public class ClassService : IClassService
                 IsSpecialNeeds = s.IsSpecialNeeds,
                 SpecialNeedsNotes = s.SpecialNeedsNotes,
                 EnrolledDate = s.EnrollmentDate,
-                PrimaryGuardianName = primaryGuardian?.User?.FullName,
-                PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
+                PrimaryGuardianName = primaryGuardian?.FullName,
+                PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
                 PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString(),
-                EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.User?.PhoneNumber ?? primaryGuardian?.User?.PhoneNumber
+                EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.PhoneNumber ?? primaryGuardian?.PhoneNumber
             };
         }).ToList();
 
@@ -1005,10 +1005,10 @@ public class ClassService : IClassService
                     IsSpecialNeeds = s.IsSpecialNeeds,
                     SpecialNeedsNotes = s.SpecialNeedsNotes,
                     EnrolledDate = s.EnrollmentDate,
-                    PrimaryGuardianName = primaryGuardian?.User?.FullName,
-                    PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
+                    PrimaryGuardianName = primaryGuardian?.FullName,
+                    PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
                     PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString(),
-                    EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.User?.PhoneNumber ?? primaryGuardian?.User?.PhoneNumber
+                    EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.PhoneNumber ?? primaryGuardian?.PhoneNumber
                 };
             }).OrderBy(s => s.FullName).ToList()
         };

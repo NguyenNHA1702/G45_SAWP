@@ -1,3 +1,4 @@
+using Core.Enums;
 using Core.Entities;
 using Core.Interfaces;
 using Infrastructure.Data;
@@ -67,8 +68,8 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     public async Task<Dictionary<int, List<int>>> GetGuardianUserIdsAsync(IEnumerable<int> studentIds, CancellationToken ct = default)
     {
         var rawPairs = await _context.StudentGuardians.AsNoTracking()
-            .Where(sg => studentIds.Contains(sg.StudentId) && sg.Guardian.User.IsActive)
-            .Select(sg => new { sg.StudentId, sg.Guardian.UserId })
+            .Where(sg => studentIds.Contains(sg.StudentId) && sg.Guardian.User != null && sg.Guardian.User.Status == AccountStatus.Active)
+            .Select(sg => new { sg.StudentId, UserId = sg.Guardian.UserId!.Value })
             .ToListAsync(ct);
 
         return rawPairs

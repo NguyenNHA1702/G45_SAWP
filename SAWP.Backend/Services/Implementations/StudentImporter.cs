@@ -177,7 +177,7 @@ public class StudentImporter : IStudentImporter
         var guardianRepo = _unitOfWork.Repository<Guardian>();
         var allGuardians = guardianRepo != null ? await guardianRepo.GetAllAsync(cancellationToken) : null;
         var guardianByUserId = allGuardians != null
-            ? allGuardians.ToDictionary(g => g.UserId, g => g)
+            ? allGuardians.Where(g => g.UserId != null).ToDictionary(g => g.UserId!.Value, g => g)
             : new Dictionary<int, Guardian>();
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -257,7 +257,7 @@ public class StudentImporter : IStudentImporter
                             FullName = CapitalizeWords(row.GuardianName),
                             PhoneNumber = phone,
                             PasswordHash = defaultPasswordHash,
-                            IsActive = true,
+                            Status = AccountStatus.Active,
                             CreatedAt = DateTime.UtcNow
                         };
 
@@ -290,6 +290,9 @@ public class StudentImporter : IStudentImporter
                         var g = new Guardian
                         {
                             UserId = newUser.Id,
+                            // Contact details live on the guardian record; the placeholder login email is not copied.
+                            FullName = newUser.FullName,
+                            PhoneNumber = string.IsNullOrWhiteSpace(newUser.PhoneNumber) ? null : newUser.PhoneNumber,
                             IdentityCardNumber = idCard,
                             CreatedAt = DateTime.UtcNow
                         };
