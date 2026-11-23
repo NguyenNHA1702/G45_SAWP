@@ -1,4 +1,4 @@
-// Standard System Messages defined in SRS (MSG01 to MSG55)
+// Standard System Messages defined in SRS (MSG01 to MSG59)
 
 export interface SystemMessage {
   code: string;
@@ -337,6 +337,30 @@ export const SYSTEM_MESSAGES = {
     messageType: "Toast (Success)",
     context: "Absence notice sent",
     content: "Đã gửi thông báo vắng mặt cho phụ huynh.",
+  },
+  MSG56: {
+    code: "MSG56",
+    messageType: "Toast (Info)",
+    context: "Recovery or activation link requested",
+    content: "Nếu địa chỉ email đã được đăng ký, một đường liên kết sẽ được gửi đến hộp thư của bạn. Vui lòng kiểm tra email.",
+  },
+  MSG57: {
+    code: "MSG57",
+    messageType: "Inline / Toast (Error)",
+    context: "Link invalid, expired, or already used",
+    content: "Liên kết không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu liên kết mới.",
+  },
+  MSG58: {
+    code: "MSG58",
+    messageType: "Toast (Error)",
+    context: "Too many link requests",
+    content: "Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau ít phút.",
+  },
+  MSG59: {
+    code: "MSG59",
+    messageType: "Toast (Error)",
+    context: "Activation or recovery email could not be sent",
+    content: "Không thể gửi email lúc này. Vui lòng thử lại sau.",
   },
 } as const;
 

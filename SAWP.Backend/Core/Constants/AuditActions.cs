@@ -11,6 +11,10 @@ public static class AuditActions
     public const string UserActivate = "USER_ACTIVATE";
     public const string UserDeactivate = "USER_DEACTIVATE";
     public const string UserResetPassword = "USER_RESET_PASSWORD";
+    public const string UserChangePassword = "USER_CHANGE_PASSWORD";
+    public const string UserRecoverPassword = "USER_RECOVER_PASSWORD"; // new password set through an emailed link (UC-66)
+    public const string UserActivateByLink = "USER_ACTIVATE_BY_LINK"; // first password set through the activation link (UC-66 A3)
+    public const string UserActivationLinkSent = "USER_ACTIVATION_LINK_SENT";
     public const string SchoolCalendarDayConfigure = "SCHOOL_CALENDAR_DAY_CONFIGURE";
 
     // School years, classes and placement

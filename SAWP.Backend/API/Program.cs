@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Text;
+using API.Common;
 using API.Middlewares;
 using Core.Configuration;
 using Core.Interfaces;
@@ -41,6 +43,24 @@ builder.Services.AddSingleton<ISchoolClock, SchoolClock>();
 
 // 3. Business Logic Services (Services -> Services Interfaces)
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAccountLinkService, AccountLinkService>();
+builder.Services.AddScoped<ISessionValidator, SessionValidator>();
+builder.Services.AddSingleton<IBackgroundWorkQueue, BackgroundWorkQueue>();
+builder.Services.AddHostedService<BackgroundWorkService>();
+builder.Services.AddMemoryCache();
+builder.Services.Configure<AccountLinkOptions>(builder.Configuration.GetSection(AccountLinkOptions.SectionName));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IRequestOriginSource, HttpRequestOriginSource>();
+
+// Emailed activation / recovery links point to the web client. Its addresses must be listed
+// (AccountLinks:FrontendOrigins, e.g. environment variables AccountLinks__FrontendOrigins__0, __1, ...);
+// a link uses the address the user is on only if it is in this list.
+var frontendOrigins = builder.Configuration.GetSection($"{AccountLinkOptions.SectionName}:FrontendOrigins").Get<List<string>>() ?? new();
+if (frontendOrigins.Count == 0 || frontendOrigins.Any(o => AccountLinkService.NormalizeOrigin(o) == null))
+{
+    throw new InvalidOperationException(
+        "AccountLinks:FrontendOrigins must list the web client addresses as http(s)://host[:port], e.g. https://sawp.example.edu.vn.");
+}
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<IClassService, ClassService>();
 builder.Services.AddScoped<IGuardianService, GuardianService>();
@@ -92,6 +112,32 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
+
+    // BR-03, BR-48: a token is accepted only while the account is Active and its session version is current,
+    // so deactivation and password changes end existing sessions at once.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var principal = context.Principal;
+            if (!int.TryParse(principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+            {
+                context.Fail("Missing user id.");
+                return;
+            }
+            // Tokens issued before session versions existed carry none; they match version 0 until the first change
+            _ = int.TryParse(principal!.FindFirst(AuthService.SessionVersionClaim)?.Value, out var sessionVersion);
+
+            var validator = context.HttpContext.RequestServices.GetRequiredService<ISessionValidator>();
+            var state = await validator.CheckAsync(userId, sessionVersion, context.HttpContext.RequestAborted);
+            if (!state.IsValid)
+            {
+                context.Fail("The session has ended.");
+                return;
+            }
+            context.HttpContext.Items[PasswordChangeGate.ItemKey] = state.MustChangePassword;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
@@ -142,7 +188,8 @@ builder.Services.AddCors(options =>
     {
         policy.AllowAnyOrigin()
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .WithExposedHeaders(PasswordChangeGate.HeaderName); // read by the web client (UC-60 A1)
     });
 });
 
@@ -206,6 +253,7 @@ using (var scope = app.Services.CreateScope())
 
 // Authentication must precede Authorization
 app.UseAuthentication();
+app.UseMiddleware<PasswordChangeGate>();
 app.UseAuthorization();
 
 app.MapControllers();
