@@ -25,7 +25,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { TOKEN_KEY, USER_KEY } from '../services/apiClient';
+import { clearAuthSession, getAuthUser } from '../services/apiClient';
 import { notificationApi } from '../services/implementations/notificationApi';
 import { SYSTEM_MESSAGES } from '../constants/messages';
 import { ParentChildProvider } from '../contexts/ParentChildContext';
@@ -59,12 +59,12 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard/Admin xem) ---
+  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard xem) ---
   {
     id: 'kitchen-reports',
     label: 'Báo cáo suất ăn Bếp',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff', 'OfficeStaff', 'SchoolBoard', 'Admin'],
+    roles: ['ServiceStaff', 'OfficeStaff', 'SchoolBoard'],
     children: [
       {
         id: 'kitchen-summary',
@@ -92,42 +92,35 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  // --- Quản lý Giáo vụ: Học sinh & Xếp lớp (OfficeStaff, SchoolBoard, Admin) ---
+  // --- Quản lý Giáo vụ: Học sinh & Xếp lớp (OfficeStaff, SchoolBoard) ---
   {
     id: 'office-students-group',
     label: 'Học sinh & Lớp học',
     icon: Users,
-    roles: ['OfficeStaff', 'SchoolBoard', 'Admin'],
+    roles: ['OfficeStaff', 'SchoolBoard'],
     children: [
       {
         id: 'office-students',
         label: 'Hồ sơ học sinh',
         path: '/students',
-        roles: ['OfficeStaff', 'Admin'],
+        roles: ['OfficeStaff'],
         icon: Users,
       },
       {
         id: 'office-classes',
         label: 'Lớp học & Xếp lớp',
         path: '/classes',
-        roles: ['OfficeStaff', 'SchoolBoard', 'Admin'],
+        roles: ['OfficeStaff', 'SchoolBoard'],
         icon: GraduationCap,
-      },
-      {
-        id: 'office-link-requests',
-        label: 'Duyệt liên kết phụ huynh',
-        path: '/link-requests',
-        roles: ['OfficeStaff', 'Admin'],
-        icon: HeartHandshake,
       },
     ],
   },
-  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard, Admin) ---
+  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard) ---
   {
     id: 'teacher-group',
     label: 'Điểm danh & Lớp học',
     icon: CalendarCheck2,
-    roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard', 'Admin'],
+    roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard'],
     children: [
       {
         id: 'teacher-roster',
@@ -147,14 +140,14 @@ const NAV_ITEMS: NavItem[] = [
         id: 'teacher-attendance',
         label: 'Điểm danh & Tình trạng chuyên cần',
         path: '/teacher/attendance',
-        roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard', 'Admin'],
+        roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard'],
         icon: CalendarCheck2,
       },
       {
         id: 'teacher-leave',
         label: 'Duyệt đơn xin nghỉ',
         path: '/teacher/leave-requests',
-        roles: ['Teacher', 'SchoolBoard', 'Admin'],
+        roles: ['Teacher', 'SchoolBoard'],
         icon: FileCheck,
       },
       {
@@ -205,12 +198,12 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  // --- Đơn hành chính & Giấy tờ (Parent, OfficeStaff, SchoolBoard, Admin) ---
+  // --- Đơn hành chính & Giấy tờ (Parent, OfficeStaff, SchoolBoard) ---
   {
     id: 'administrative-requests-group',
     label: 'Đơn từ & Hành chính',
     icon: FileCheck,
-    roles: ['Parent', 'OfficeStaff', 'SchoolBoard', 'Admin'],
+    roles: ['Parent', 'OfficeStaff', 'SchoolBoard'],
     children: [
       {
         id: 'parent-requests',
@@ -223,14 +216,14 @@ const NAV_ITEMS: NavItem[] = [
         id: 'office-requests',
         label: 'Xử lý đơn hành chính',
         path: '/office/requests',
-        roles: ['OfficeStaff', 'Admin'],
+        roles: ['OfficeStaff'],
         icon: FileCheck,
       },
       {
         id: 'board-requests',
         label: 'Phê duyệt đơn cấp trường',
         path: '/board/requests',
-        roles: ['SchoolBoard', 'Admin'],
+        roles: ['SchoolBoard'],
         icon: ShieldCheck,
       },
       {
@@ -286,15 +279,15 @@ export function MainLayout() {
     'kitchen-reports': true,
   });
 
-  // Lấy thông tin user hiện tại từ localStorage và phản hồi khi cập nhật hồ sơ
+  // Lấy thông tin user hiện tại từ session/local storage và phản hồi khi cập nhật hồ sơ
   const [currentUser, setCurrentUser] = useState(() => {
-    const userJson = localStorage.getItem(USER_KEY);
+    const userJson = getAuthUser();
     return userJson ? JSON.parse(userJson) : null;
   });
 
   useEffect(() => {
     const handleStorageChange = () => {
-      const userJson = localStorage.getItem(USER_KEY);
+      const userJson = getAuthUser();
       setCurrentUser(userJson ? JSON.parse(userJson) : null);
     };
     window.addEventListener('storage', handleStorageChange);
@@ -370,8 +363,7 @@ export function MainLayout() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    clearAuthSession();
     toast.success(SYSTEM_MESSAGES.MSG06.content);
     navigate('/login');
   };

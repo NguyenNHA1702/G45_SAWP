@@ -20,6 +20,7 @@ import { CreateStudentModal } from '../../components/students/CreateStudentModal
 import { DuplicateResolveModal } from '../../components/students/DuplicateResolveModal';
 import { ExcelImportModal } from '../../components/students/ExcelImportModal';
 import { StudentDetailModal } from '../../components/students/StudentDetailModal';
+import { formatDDMMYYYY } from '../../utils/date';
 import type {
   CreateStudentDto,
   StudentFilterDto,
@@ -341,7 +342,7 @@ export default function StudentsPage() {
                   <td>
                     <strong style={{ fontSize: 'var(--fs-base)' }}>{s.fullName}</strong>
                   </td>
-                  <td>{new Date(s.dateOfBirth).toLocaleDateString('vi-VN')}</td>
+                  <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
                   <td>{s.gender}</td>
                   <td>
                     {s.currentClassName ? (

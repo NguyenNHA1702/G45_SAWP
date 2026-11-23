@@ -17,4 +17,5 @@ public class DocumentRequestDetail
     public string? IssuedDocumentUrl { get; set; }
     public string? CertificateNumber { get; set; }
     public string? DigitalSignatureInfo { get; set; }
+    public bool IsPaperCopyRequested { get; set; }
 }

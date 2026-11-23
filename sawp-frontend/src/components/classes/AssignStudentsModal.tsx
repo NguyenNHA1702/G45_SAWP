@@ -3,6 +3,7 @@ import { AlertCircle, Check, UserPlus, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { classApi } from '../../services/implementations/classApi';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { ClassSummaryDto, RosterStudentItemDto } from '../../types/class.types';
 
 interface AssignStudentsModalProps {
@@ -202,7 +203,7 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
                       </td>
                       <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
                       <td>{s.fullName}</td>
-                      <td>{new Date(s.dateOfBirth).toLocaleDateString('vi-VN')}</td>
+                      <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
                       <td>{s.gender}</td>
                       <td>{s.primaryGuardianName || '-'}</td>
                     </tr>

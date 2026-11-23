@@ -49,11 +49,11 @@ public class StudentImporter : IStudentImporter
             {
                 var row = worksheet.Row(r);
                 var studentCode = row.Cell(1).GetString()?.Trim().ToUpperInvariant() ?? string.Empty;
-                var fullName = row.Cell(2).GetString()?.Trim() ?? string.Empty;
+                var fullName = CapitalizeWords(row.Cell(2).GetString()?.Trim());
                 var dobRaw = row.Cell(3).GetString()?.Trim() ?? string.Empty;
                 var gender = row.Cell(4).GetString()?.Trim() ?? "Nam";
                 var className = row.Cell(5).GetString()?.Trim() ?? string.Empty;
-                var guardianName = row.Cell(6).GetString()?.Trim() ?? string.Empty;
+                var guardianName = CapitalizeWords(row.Cell(6).GetString()?.Trim());
                 var guardianPhone = row.Cell(7).GetString()?.Trim() ?? string.Empty;
                 var guardianIdCard = row.Cell(8).GetString()?.Trim() ?? string.Empty;
                 var relationship = row.Cell(9).GetString()?.Trim() ?? "Phụ huynh";
@@ -102,7 +102,7 @@ public class StudentImporter : IStudentImporter
                 {
                     // Duplicate in DB (Workflow: Duplicate Student Identifier Detected)
                     item.IsDuplicate = true;
-                    item.ErrorMessage = $"Mã học sinh '{studentCode}' đã tồn tại trong cơ sở dữ liệu hệ thống (MSG12).";
+                    item.ErrorMessage = $"Mã học sinh '{studentCode}' đã tồn tại trong cơ sở dữ liệu hệ thống.";
                 }
                 else
                 {
@@ -152,145 +152,228 @@ public class StudentImporter : IStudentImporter
             : new List<Class>();
 
         var classMap = classesInYear.ToDictionary(c => c.ClassName, c => c, StringComparer.OrdinalIgnoreCase);
+        var enrolledCountByClassId = classesInYear.ToDictionary(c => c.Id, c => c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0);
 
         var parentRole = (await _unitOfWork.Repository<Role>().FindAsync(r => r.Name == UserRoles.Parent.ToString(), cancellationToken)).FirstOrDefault();
         var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("Password@123");
 
+        // Tối ưu hóa hiệu năng: Cache dữ liệu kiểm tra trùng lặp để xử lý mượt mà lên tới 5,000 học sinh
+        var studentRepo = _unitOfWork.Repository<Student>();
+        var existingStudents = studentRepo != null ? await studentRepo.GetAllAsync(cancellationToken) : null;
+        var existingCodesInDb = existingStudents != null
+            ? existingStudents.Select(s => s.StudentCode.ToUpperInvariant()).ToHashSet()
+            : new HashSet<string>();
+        bool checkCodeWithRepo = existingStudents == null;
+
+        var userRepo = _unitOfWork.Repository<User>();
+        var existingParents = userRepo != null ? await userRepo.GetAllAsync(cancellationToken) : null;
+        var userByPhone = existingParents != null
+            ? existingParents.Where(u => !string.IsNullOrEmpty(u.PhoneNumber)).ToDictionary(u => u.PhoneNumber!, u => u, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, User>(StringComparer.OrdinalIgnoreCase);
+        var userByUsername = existingParents != null
+            ? existingParents.ToDictionary(u => u.Username, u => u, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, User>(StringComparer.OrdinalIgnoreCase);
+
+        var guardianRepo = _unitOfWork.Repository<Guardian>();
+        var allGuardians = guardianRepo != null ? await guardianRepo.GetAllAsync(cancellationToken) : null;
+        var guardianByUserId = allGuardians != null
+            ? allGuardians.Where(g => g.UserId != null).ToDictionary(g => g.UserId!.Value, g => g)
+            : new Dictionary<int, Guardian>();
+
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
-            foreach (var row in request.ValidRows)
+            const int chunkSize = 500;
+            var validRowsList = request.ValidRows.Where(r => r.IsValid && !r.IsDuplicate).ToList();
+
+            for (int i = 0; i < validRowsList.Count; i += chunkSize)
             {
-                if (!row.IsValid || row.IsDuplicate)
-                {
-                    result.SkippedCount++;
-                    continue;
-                }
+                var chunk = validRowsList.Skip(i).Take(chunkSize).ToList();
+                var createdStudents = new List<(ImportStudentRowDto Row, Student Student)>();
 
-                var code = row.StudentCode.Trim().ToUpperInvariant();
-                var exists = await _unitOfWork.Students.ExistsByStudentCodeAsync(code, null, cancellationToken);
-                if (exists)
+                // 1. Thêm danh sách Student trong chunk
+                foreach (var row in chunk)
                 {
-                    result.SkippedCount++;
-                    result.Errors.Add($"Dòng {row.RowNumber}: Mã {code} đã tồn tại, bỏ qua.");
-                    continue;
-                }
+                    var code = row.StudentCode.Trim().ToUpperInvariant();
+                    var isCodeExisting = existingCodesInDb.Contains(code) || (checkCodeWithRepo && await _unitOfWork.Students.ExistsByStudentCodeAsync(code, null, cancellationToken));
+                    if (isCodeExisting)
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: Mã {code} đã tồn tại trong hệ thống, bỏ qua.");
+                        continue;
+                    }
+                    existingCodesInDb.Add(code);
 
-                DateTime dob = DateTime.UtcNow.AddYears(-6);
-                if (!string.IsNullOrWhiteSpace(row.DateOfBirth))
-                {
-                    if (DateTime.TryParse(row.DateOfBirth, out var parsedDob))
+                    DateTime dob = DateTime.UtcNow.AddYears(-6);
+                    if (!string.IsNullOrWhiteSpace(row.DateOfBirth) && DateTime.TryParse(row.DateOfBirth, out var parsedDob))
                     {
                         dob = parsedDob;
                     }
+
+                    var student = new Student
+                    {
+                        StudentCode = code,
+                        FullName = CapitalizeWords(row.FullName),
+                        DateOfBirth = dob,
+                        Gender = string.IsNullOrWhiteSpace(row.Gender) ? "Nam" : row.Gender.Trim(),
+                        EnrollmentDate = DateTime.UtcNow,
+                        Status = "Active", // Workflow step: Save Profiles & Set Student Status = 'Active'
+                        ResidentialArea = row.ResidentialArea?.Trim(),
+                        IsSpecialNeeds = row.IsSpecialNeeds,
+                        SpecialNeedsNotes = row.SpecialNeedsNotes?.Trim(),
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    await _unitOfWork.Students.AddAsync(student, cancellationToken);
+                    createdStudents.Add((row, student));
                 }
 
-                var student = new Student
+                if (!createdStudents.Any())
                 {
-                    StudentCode = code,
-                    FullName = row.FullName.Trim(),
-                    DateOfBirth = dob,
-                    Gender = string.IsNullOrWhiteSpace(row.Gender) ? "Nam" : row.Gender.Trim(),
-                    EnrollmentDate = DateTime.UtcNow,
-                    Status = "Active", // Workflow step: Save Profiles & Set Student Status = 'Active'
-                    ResidentialArea = row.ResidentialArea?.Trim(),
-                    IsSpecialNeeds = row.IsSpecialNeeds,
-                    SpecialNeedsNotes = row.SpecialNeedsNotes?.Trim(),
-                    CreatedAt = DateTime.UtcNow
-                };
+                    continue;
+                }
 
-                await _unitOfWork.Students.AddAsync(student, cancellationToken);
+                // Lưu các Student để nhận về student.Id từ DB
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                // Initial Class Assignment if ClassName provided and exists in target school year
-                if (!string.IsNullOrWhiteSpace(row.ClassName) && classMap.TryGetValue(row.ClassName.Trim(), out var targetClass))
+                // 2. Tạo User cho phụ huynh mới trong chunk
+                var newUsersToCreate = new List<(User User, string IdCard)>();
+                foreach (var (row, student) in createdStudents)
                 {
-                    var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
-                    if (enrolledCount < targetClass.Capacity)
-                    {
-                        var assignment = new ClassAssignment
-                        {
-                            ClassId = targetClass.Id,
-                            StudentId = student.Id,
-                            AcademicYear = schoolYearName,
-                            StartDate = DateTime.UtcNow,
-                            IsActive = true
-                        };
-                        await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
-                    }
-                }
-
-                // Initial Guardian creation and linking
-                if (!string.IsNullOrWhiteSpace(row.GuardianName))
-                {
+                    if (string.IsNullOrWhiteSpace(row.GuardianName)) continue;
                     var phone = row.GuardianPhone?.Trim() ?? string.Empty;
-                    var parentUser = !string.IsNullOrWhiteSpace(phone)
-                        ? (await _unitOfWork.Repository<User>().FindAsync(u => u.PhoneNumber == phone, cancellationToken)).FirstOrDefault()
-                        : null;
+                    var code = student.StudentCode;
+                    var defaultUsername = !string.IsNullOrWhiteSpace(phone) ? phone : $"parent_{code.ToLowerInvariant()}";
 
-                    Guardian guardian;
-                    if (parentUser != null)
-                    {
-                        var existingGuardian = (await _unitOfWork.Repository<Guardian>().FindAsync(g => g.UserId == parentUser.Id, cancellationToken)).FirstOrDefault();
-                        if (existingGuardian != null)
-                        {
-                            guardian = existingGuardian;
-                        }
-                        else
-                        {
-                            guardian = new Guardian
-                            {
-                                UserId = parentUser.Id,
-                                IdentityCardNumber = row.GuardianIdentityCard?.Trim() ?? string.Empty,
-                                CreatedAt = DateTime.UtcNow
-                            };
-                            await _unitOfWork.Repository<Guardian>().AddAsync(guardian, cancellationToken);
-                            await _unitOfWork.SaveChangesAsync(cancellationToken);
-                        }
-                    }
-                    else
+                    bool userExists = (!string.IsNullOrWhiteSpace(phone) && userByPhone.ContainsKey(phone))
+                                   || userByUsername.ContainsKey(defaultUsername);
+
+                    if (!userExists)
                     {
                         var newUser = new User
                         {
-                            Username = !string.IsNullOrWhiteSpace(phone) ? phone : $"parent_{code.ToLowerInvariant()}",
+                            Username = defaultUsername,
                             Email = !string.IsNullOrWhiteSpace(phone) ? $"{phone}@parent.sawp.edu.vn" : $"{code.ToLowerInvariant()}@parent.sawp.edu.vn",
-                            FullName = row.GuardianName.Trim(),
+                            FullName = CapitalizeWords(row.GuardianName),
                             PhoneNumber = phone,
                             PasswordHash = defaultPasswordHash,
-                            IsActive = true,
+                            Status = AccountStatus.Active,
                             CreatedAt = DateTime.UtcNow
                         };
+
                         await _unitOfWork.Repository<User>().AddAsync(newUser, cancellationToken);
-                        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                        if (parentRole != null)
+                        userByUsername[defaultUsername] = newUser;
+                        if (!string.IsNullOrWhiteSpace(phone))
                         {
-                            await _unitOfWork.Repository<UserRole>().AddAsync(new UserRole { UserId = newUser.Id, RoleId = parentRole.Id }, cancellationToken);
+                            userByPhone[phone] = newUser;
                         }
-
-                        guardian = new Guardian
-                        {
-                            UserId = newUser.Id,
-                            IdentityCardNumber = row.GuardianIdentityCard?.Trim() ?? string.Empty,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        await _unitOfWork.Repository<Guardian>().AddAsync(guardian, cancellationToken);
-                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                        newUsersToCreate.Add((newUser, row.GuardianIdentityCard?.Trim() ?? string.Empty));
                     }
-
-                    // Link
-                    var link = new StudentGuardian
-                    {
-                        StudentId = student.Id,
-                        GuardianId = guardian.Id,
-                        Relationship = ParseRelationship(row.Relationship),
-                        IsPrimaryContact = true
-                    };
-                    await _unitOfWork.Repository<StudentGuardian>().AddAsync(link, cancellationToken);
                 }
 
-                result.SuccessCount++;
-                result.ImportedStudentCodes.Add(code);
+                // Lưu các User mới để nhận về newUser.Id
+                if (newUsersToCreate.Any())
+                {
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                    foreach (var (newUser, idCard) in newUsersToCreate)
+                    {
+                        if (parentRole != null)
+                        {
+                            await _unitOfWork.Repository<UserRole>().AddAsync(new UserRole
+                            {
+                                UserId = newUser.Id,
+                                RoleId = parentRole.Id
+                            }, cancellationToken);
+                        }
+
+                        var g = new Guardian
+                        {
+                            UserId = newUser.Id,
+                            // Contact details live on the guardian record; the placeholder login email is not copied.
+                            FullName = newUser.FullName,
+                            PhoneNumber = string.IsNullOrWhiteSpace(newUser.PhoneNumber) ? null : newUser.PhoneNumber,
+                            IdentityCardNumber = idCard,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await _unitOfWork.Repository<Guardian>().AddAsync(g, cancellationToken);
+                        guardianByUserId[newUser.Id] = g;
+                    }
+
+                    // Lưu các Guardian và UserRole mới để nhận về guardian.Id
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                }
+
+                // 3. Phân lớp (ClassAssignment) và liên kết phụ huynh (StudentGuardian) với ID thực tế
+                foreach (var (row, student) in createdStudents)
+                {
+                    // ClassAssignment
+                    if (!string.IsNullOrWhiteSpace(row.ClassName) && classMap.TryGetValue(row.ClassName.Trim(), out var targetClass))
+                    {
+                        enrolledCountByClassId.TryGetValue(targetClass.Id, out var currentEnrolled);
+                        if (currentEnrolled < targetClass.Capacity)
+                        {
+                            var assignment = new ClassAssignment
+                            {
+                                ClassId = targetClass.Id,
+                                StudentId = student.Id,
+                                AcademicYear = schoolYearName,
+                                StartDate = DateTime.UtcNow,
+                                IsActive = true
+                            };
+                            await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
+                            enrolledCountByClassId[targetClass.Id] = currentEnrolled + 1;
+                        }
+                    }
+
+                    // StudentGuardian
+                    if (!string.IsNullOrWhiteSpace(row.GuardianName))
+                    {
+                        var phone = row.GuardianPhone?.Trim() ?? string.Empty;
+                        Guardian? guardian = null;
+
+                        if (!string.IsNullOrWhiteSpace(phone) && userByPhone.TryGetValue(phone, out var user))
+                        {
+                            guardianByUserId.TryGetValue(user.Id, out guardian);
+                        }
+                        else if (userByUsername.TryGetValue($"parent_{student.StudentCode.ToLowerInvariant()}", out var userByName))
+                        {
+                            guardianByUserId.TryGetValue(userByName.Id, out guardian);
+                        }
+
+                        if (guardian == null && userRepo != null)
+                        {
+                            var u = (await userRepo.FindAsync(x => x.Username == $"parent_{student.StudentCode.ToLowerInvariant()}", cancellationToken)).FirstOrDefault();
+                            if (u != null)
+                            {
+                                guardianByUserId.TryGetValue(u.Id, out guardian);
+                            }
+                        }
+
+                        if (guardian != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(row.GuardianIdentityCard) && string.IsNullOrEmpty(guardian.IdentityCardNumber))
+                            {
+                                guardian.IdentityCardNumber = row.GuardianIdentityCard.Trim();
+                            }
+
+                            var link = new StudentGuardian
+                            {
+                                StudentId = student.Id,
+                                GuardianId = guardian.Id,
+                                Relationship = ParseRelationship(row.Relationship),
+                                IsPrimaryContact = true
+                            };
+                            await _unitOfWork.Repository<StudentGuardian>().AddAsync(link, cancellationToken);
+                        }
+                    }
+
+                    result.SuccessCount++;
+                    result.ImportedStudentCodes.Add(student.StudentCode);
+                }
+
+                // Lưu các Assignment và StudentGuardian của chunk
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
 
             await _auditService.LogActionAsync(
@@ -310,7 +393,7 @@ public class StudentImporter : IStudentImporter
         }
         catch (Exception ex)
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             return ApiResponse<ImportStudentsResultDto>.Fail(SystemMessages.MSG50, new List<string> { $"Lỗi trong quá trình nhập dữ liệu: {ex.Message}" });
         }
     }
@@ -375,5 +458,20 @@ public class StudentImporter : IStudentImporter
         if (lower.Contains("bố") || lower.Contains("cha") || lower.Contains("father")) return RelationshipTypes.Father;
         if (lower.Contains("mẹ") || lower.Contains("mother")) return RelationshipTypes.Mother;
         return RelationshipTypes.Guardian;
+    }
+
+    private static string CapitalizeWords(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+        var words = input.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < words.Length; i++)
+        {
+            var w = words[i].ToLower();
+            if (w.Length > 0)
+            {
+                words[i] = char.ToUpper(w[0]) + (w.Length > 1 ? w.Substring(1) : string.Empty);
+            }
+        }
+        return string.Join(" ", words);
     }
 }

@@ -1,3 +1,4 @@
+using Core.Enums;
 using Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -12,8 +13,11 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Username).HasMaxLength(100).IsRequired();
         builder.HasIndex(u => u.Username).IsUnique();
         builder.Property(u => u.Email).HasMaxLength(256).IsRequired();
+        // Unique login email (BR-64); the database collation is case-insensitive.
+        builder.HasIndex(u => u.Email).IsUnique();
         builder.Property(u => u.FullName).HasMaxLength(150).IsRequired();
         builder.Property(u => u.PhoneNumber).HasMaxLength(20);
+        builder.Property(u => u.Status).HasDefaultValue(AccountStatus.Active);
     }
 }
 
@@ -67,14 +71,90 @@ public class GuardianConfiguration : IEntityTypeConfiguration<Guardian>
     public void Configure(EntityTypeBuilder<Guardian> builder)
     {
         builder.HasKey(g => g.Id);
+        builder.Property(g => g.FullName).HasMaxLength(150).IsRequired();
+        builder.Property(g => g.PhoneNumber).HasMaxLength(20);
+        builder.Property(g => g.Email).HasMaxLength(256);
         builder.Property(g => g.IdentityCardNumber).HasMaxLength(50);
         builder.Property(g => g.Occupation).HasMaxLength(100);
         builder.Property(g => g.Address).HasMaxLength(250);
+        builder.HasIndex(g => g.Email);
 
+        // A guardian record may exist without an account (BR-64); deleting an account keeps the record.
         builder.HasOne(g => g.User)
                .WithOne(u => u.Guardian)
                .HasForeignKey<Guardian>(g => g.UserId)
+               .IsRequired(false)
+               .OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public class VerificationTokenConfiguration : IEntityTypeConfiguration<VerificationToken>
+{
+    public void Configure(EntityTypeBuilder<VerificationToken> builder)
+    {
+        builder.HasKey(t => t.Id);
+        builder.Property(t => t.TokenHash).HasMaxLength(64).IsRequired();
+        builder.HasIndex(t => t.TokenHash).IsUnique();
+        builder.Property(t => t.NewEmail).HasMaxLength(256);
+        builder.HasIndex(t => new { t.UserId, t.Purpose });
+
+        builder.HasOne(t => t.User)
+               .WithMany(u => u.VerificationTokens)
+               .HasForeignKey(t => t.UserId)
                .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class AccountRequestConfiguration : IEntityTypeConfiguration<AccountRequest>
+{
+    public void Configure(EntityTypeBuilder<AccountRequest> builder)
+    {
+        builder.HasKey(r => r.Id);
+        builder.Property(r => r.Title).HasMaxLength(200).IsRequired();
+        builder.Property(r => r.Note).HasMaxLength(1000);
+        builder.Property(r => r.SourceReference).HasMaxLength(260);
+        builder.HasIndex(r => r.Status);
+
+        builder.HasOne(r => r.RequestedByUser)
+               .WithMany()
+               .HasForeignKey(r => r.RequestedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(r => r.FollowsUpRequest)
+               .WithMany()
+               .HasForeignKey(r => r.FollowsUpRequestId)
+               .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class AccountRequestItemConfiguration : IEntityTypeConfiguration<AccountRequestItem>
+{
+    public void Configure(EntityTypeBuilder<AccountRequestItem> builder)
+    {
+        builder.HasKey(i => i.Id);
+        builder.Property(i => i.Email).HasMaxLength(256);
+        builder.Property(i => i.Reason).HasMaxLength(500);
+        builder.HasIndex(i => new { i.AccountRequestId, i.GuardianId }).IsUnique();
+
+        builder.HasOne(i => i.AccountRequest)
+               .WithMany(r => r.Items)
+               .HasForeignKey(i => i.AccountRequestId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(i => i.Guardian)
+               .WithMany()
+               .HasForeignKey(i => i.GuardianId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(i => i.CreatedUser)
+               .WithMany()
+               .HasForeignKey(i => i.CreatedUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(i => i.DecidedByUser)
+               .WithMany()
+               .HasForeignKey(i => i.DecidedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -205,6 +285,11 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
                .WithMany()
                .HasForeignKey(ar => ar.UpdatedByUserId)
                .OnDelete(DeleteBehavior.Restrict);
+        // OVR-01: Office Staff member who sent the absence notice
+        builder.HasOne(ar => ar.AbsenceNoticeSentByUser)
+               .WithMany()
+               .HasForeignKey(ar => ar.AbsenceNoticeSentByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(ar => ar.LeaveRequest)
                .WithMany()
                .HasForeignKey(ar => ar.LeaveRequestId)
@@ -218,7 +303,7 @@ public class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRequest>
     {
         builder.HasKey(lr => lr.Id);
         builder.Property(lr => lr.Reason).HasMaxLength(500).IsRequired();
-        builder.Property(lr => lr.DoctorNoteAttachmentUrl).HasMaxLength(500);
+        builder.Property(lr => lr.DoctorNoteAttachmentUrl).HasMaxLength(4000);
 
         builder.HasOne(lr => lr.AdministrativeRequest)
                .WithOne(ar => ar.LeaveRequest)
@@ -336,7 +421,7 @@ public class AdministrativeRequestConfiguration : IEntityTypeConfiguration<Admin
         builder.HasIndex(ar => ar.RequestNumber).IsUnique();
         builder.Property(ar => ar.RequestType).HasMaxLength(100).IsRequired();
         builder.Property(ar => ar.ReviewerNotes).HasMaxLength(1000);
-        builder.Property(ar => ar.AttachmentUrl).HasMaxLength(500);
+        builder.Property(ar => ar.AttachmentUrl).HasMaxLength(4000);
         builder.Property(ar => ar.AmendmentNotes).HasMaxLength(1000);
         builder.Property(ar => ar.SchoolBoardNotes).HasMaxLength(1000);
 
@@ -438,24 +523,6 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
                .WithMany(u => u.AuditLogs)
                .HasForeignKey(al => al.UserId)
                .OnDelete(DeleteBehavior.SetNull);
-    }
-}
-
-public class GuardianLinkDetailConfiguration : IEntityTypeConfiguration<GuardianLinkDetail>
-{
-    public void Configure(EntityTypeBuilder<GuardianLinkDetail> builder)
-    {
-        builder.HasKey(gld => gld.Id);
-        builder.Property(gld => gld.StudentCode).HasMaxLength(50).IsRequired();
-        builder.Property(gld => gld.GuardianPhone).HasMaxLength(20);
-        builder.Property(gld => gld.GuardianIdentityCard).HasMaxLength(50);
-        builder.Property(gld => gld.ProofDocumentUrl).HasMaxLength(500);
-        builder.Property(gld => gld.VerificationDetails).HasMaxLength(500);
-
-        builder.HasOne(gld => gld.AdministrativeRequest)
-               .WithOne(ar => ar.GuardianLinkDetail)
-               .HasForeignKey<GuardianLinkDetail>(gld => gld.AdministrativeRequestId)
-               .OnDelete(DeleteBehavior.Cascade);
     }
 }
 

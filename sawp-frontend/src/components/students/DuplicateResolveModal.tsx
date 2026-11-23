@@ -66,7 +66,7 @@ export const DuplicateResolveModal: React.FC<DuplicateResolveModalProps> = ({
     <GeometricModal
       open={open}
       onClose={onClose}
-      title="Phát hiện trùng mã định danh (MSG12)"
+      title="Phát hiện trùng mã định danh"
       badgeText="Xung đột dữ liệu"
       badgeColor="pink"
       icon={<AlertTriangle size={24} color="#1E293B" strokeWidth={2.5} />}

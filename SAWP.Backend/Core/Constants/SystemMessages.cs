@@ -1,7 +1,7 @@
 namespace Core.Constants;
 
 /// <summary>
-/// Standard System Messages defined in SRS (MSG01 to MSG50).
+/// Standard System Messages defined in SRS (MSG01 to MSG55).
 /// </summary>
 public static class SystemMessages
 {
@@ -221,6 +221,10 @@ public static class SystemMessages
     public static readonly SystemMessage MSG54 = new("MSG54", "Toast (Info)", "Comments disabled", "Bài viết này hiện đã tắt tính năng bình luận.");
     public static readonly SystemMessage MSG54_CommentsDisabled = MSG54;
 
+    /// <summary>[Toast (Success)] Absence notice sent: Đã gửi thông báo vắng mặt cho phụ huynh.</summary>
+    public static readonly SystemMessage MSG55 = new("MSG55", "Toast (Success)", "Absence notice sent", "Đã gửi thông báo vắng mặt cho phụ huynh.");
+    public static readonly SystemMessage MSG55_AbsenceNoticeSent = MSG55;
+
     /// <summary>Map of all system messages by code</summary>
     public static readonly IReadOnlyDictionary<string, SystemMessage> All = new Dictionary<string, SystemMessage>(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -278,6 +282,7 @@ public static class SystemMessages
         { "MSG52", MSG52 },
         { "MSG53", MSG53 },
         { "MSG54", MSG54 },
+        { "MSG55", MSG55 },
     };
 
     /// <summary>Lookup a message by code (e.g. MSG01)</summary>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CalendarPlus, Check, Sparkles } from 'lucide-react';
+import { Calendar, CalendarPlus, Check, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { classApi } from '../../services/implementations/classApi';
@@ -45,6 +45,22 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
     if (start >= end) {
       toast.error('Ngày bắt đầu phải trước ngày kết thúc năm học.');
       return;
+    }
+
+    // Validate tên năm học phải trùng khớp với năm bắt đầu và năm kết thúc
+    const yearMatch = trimmedName.match(/^(\d{4})[-–/](\d{4})$/);
+    if (yearMatch) {
+      const expectedStartYear = parseInt(yearMatch[1], 10);
+      const expectedEndYear = parseInt(yearMatch[2], 10);
+      const startYear = start.getFullYear();
+      const endYear = end.getFullYear();
+
+      if (startYear !== expectedStartYear || endYear !== expectedEndYear) {
+        toast.error(
+          `Năm của ngày bắt đầu (${startYear}) và ngày kết thúc (${endYear}) phải trùng khớp với tên năm học (${expectedStartYear}-${expectedEndYear})!`
+        );
+        return;
+      }
     }
 
     const diffDays = (end.getTime() - start.getTime()) / (1000 * 3600 * 24);
@@ -96,7 +112,7 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
       iconBg="#FEF08A"
       maxWidth="md"
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form noValidate onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="banner banner--info" style={{ fontSize: 'var(--fs-sm)' }}>
           <Sparkles size={18} color="var(--color-tertiary)" style={{ flexShrink: 0, marginTop: 2 }} />
           <div>
@@ -155,6 +171,25 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
             <div style={{ fontSize: '0.75rem', color: 'var(--color-muted-fg)', marginTop: 4 }}>
               Thường là ngày bế giảng (Cuối tháng 5 năm sau)
             </div>
+          </div>
+
+          <div
+            style={{
+              gridColumn: '1 / -1',
+              fontSize: '0.8rem',
+              color: 'var(--color-fg)',
+              backgroundColor: '#F8FAFC',
+              border: '1.5px dashed #CBD5E1',
+              padding: '8px 12px',
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontWeight: 600,
+            }}
+          >
+            <Calendar size={15} color="var(--color-accent)" />
+            <span>Định dạng ngày tháng: <strong>DD/MM/YYYY (Ngày/Tháng/Năm)</strong></span>
           </div>
         </div>
 

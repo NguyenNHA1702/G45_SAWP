@@ -11,6 +11,7 @@ import {
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { classApi } from '../../services/implementations/classApi';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { ClassRosterDto, ClassSummaryDto } from '../../types/class.types';
 
 interface ClassDetailModalProps {
@@ -91,6 +92,33 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Lỗi khi gỡ học sinh.');
+    }
+  };
+
+  const handleDeleteClass = async () => {
+    if (!targetClass) return;
+    const enrolled = roster?.students?.length ?? targetClass.enrolledStudentsCount ?? 0;
+    if (enrolled > 0) {
+      toast.error(`Không thể xóa lớp học vì lớp đang có ${enrolled} học sinh. Chỉ có thể xóa lớp học khi sĩ số bằng 0.`);
+      return;
+    }
+
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa Lớp ${targetClass.className}? Hành động này sẽ xóa lớp khỏi danh sách năm học.`)) {
+      return;
+    }
+
+    try {
+      const res = await classApi.deleteClass(targetClass.id);
+      if (res.success) {
+        toast.success(`Đã xóa lớp ${targetClass.className} thành công!`);
+        onRosterUpdated();
+        onClose();
+      } else {
+        toast.error(res.message || 'Xóa lớp học thất bại.');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.errors?.[0] || err.response?.data?.message || 'Có lỗi xảy ra khi xóa lớp học.';
+      toast.error(msg);
     }
   };
 
@@ -220,7 +248,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
                     <td>{idx + 1}</td>
                     <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
                     <td>{s.fullName}</td>
-                    <td>{new Date(s.dateOfBirth).toLocaleDateString('vi-VN')}</td>
+                    <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
                     <td>{s.gender}</td>
                     <td>{s.primaryGuardianName || '-'}</td>
                     <td>{s.primaryGuardianPhone || '-'}</td>
@@ -242,7 +270,16 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            style={{ color: '#DC2626', borderColor: '#FECACA', backgroundColor: '#FEF2F2', gap: 6 }}
+            onClick={handleDeleteClass}
+            title="Xóa lớp học (chỉ khi sĩ số = 0)"
+          >
+            <Trash2 size={15} /> Xóa lớp học
+          </button>
           <button type="button" className="btn btn--secondary" onClick={onClose}>
             Đóng
           </button>

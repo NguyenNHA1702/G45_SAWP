@@ -25,6 +25,7 @@ import { USER_KEY } from '../../services/apiClient';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import { asApiError } from '../../utils/apiError';
 import { formatRelationship } from '../../utils/formatters';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { UserProfile } from '../../types/profile.types';
 
 export default function ProfilePage() {
@@ -53,8 +54,7 @@ export default function ProfilePage() {
         setOccupation(data.guardianProfile.occupation || '');
       }
     } catch (err) {
-      const apiErr = asApiError(err);
-      toast.error(apiErr.message || 'Không thể tải thông tin hồ sơ.');
+      toast.error(asApiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -107,8 +107,7 @@ export default function ProfilePage() {
 
       toast.success(SYSTEM_MESSAGES.MSG47.content);
     } catch (err) {
-      const apiErr = asApiError(err);
-      toast.error(apiErr.message || 'Cập nhật hồ sơ thất bại.');
+      toast.error(asApiError(err).message);
     } finally {
       setSaving(false);
     }
@@ -156,11 +155,7 @@ export default function ProfilePage() {
     : profile.username.substring(0, 2).toUpperCase();
 
   const formattedJoinDate = profile.createdAt
-    ? new Date(profile.createdAt).toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      })
+    ? formatDDMMYYYY(profile.createdAt)
     : 'N/A';
 
   return (
@@ -587,7 +582,7 @@ export default function ProfilePage() {
                   }}
                 >
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>
-                    Mã số cán bộ (Staff Code)
+                    Mã số cán bộ
                   </div>
                   <div style={{ fontWeight: 800, fontSize: 'var(--fs-base)', fontFamily: 'var(--font-heading)', color: 'var(--color-accent)' }}>
                     {profile.staffProfile.staffCode || 'Chưa cập nhật'}
@@ -727,7 +722,7 @@ export default function ProfilePage() {
 
                 {profile.guardianProfile.children.length === 0 ? (
                   <div className="banner banner--info" style={{ fontSize: 'var(--fs-sm)', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
-                    Chưa có học sinh nào được liên kết với tài khoản này. Vui lòng gửi yêu cầu liên kết hồ sơ con tại Cổng Phụ huynh.
+                    Chưa có học sinh nào được liên kết với tài khoản này. Vui lòng liên hệ Phòng Giáo vụ của nhà trường để được liên kết hồ sơ của con.
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
@@ -767,9 +762,7 @@ export default function ProfilePage() {
                             </td>
                             <td style={{ padding: '10px 12px', color: 'var(--color-muted-fg)' }}>
                               <Calendar size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
-                              {child.dateOfBirth
-                                ? new Date(child.dateOfBirth).toLocaleDateString('vi-VN')
-                                : 'N/A'}
+                              {formatDDMMYYYY(child.dateOfBirth)}
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 600 }}>{formatRelationship(child.relationship)}</td>
                             <td style={{ padding: '10px 12px', textAlign: 'center' }}>

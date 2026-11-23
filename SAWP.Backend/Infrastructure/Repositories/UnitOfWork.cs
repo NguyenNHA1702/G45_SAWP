@@ -69,7 +69,7 @@ public class UnitOfWork : IUnitOfWork
         }
         catch
         {
-            await RollbackTransactionAsync(cancellationToken);
+            await RollbackTransactionAsync(CancellationToken.None);
             throw;
         }
         finally
@@ -86,9 +86,19 @@ public class UnitOfWork : IUnitOfWork
     {
         if (_currentTransaction != null)
         {
-            await _currentTransaction.RollbackAsync(cancellationToken);
-            await _currentTransaction.DisposeAsync();
-            _currentTransaction = null;
+            try
+            {
+                await _currentTransaction.RollbackAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // Ignore rollback failures if transaction already aborted or connection closed
+            }
+            finally
+            {
+                await _currentTransaction.DisposeAsync();
+                _currentTransaction = null;
+            }
         }
     }
 

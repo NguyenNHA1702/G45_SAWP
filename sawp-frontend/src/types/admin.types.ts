@@ -11,6 +11,8 @@ export interface AdminUserDto {
   fullName: string;
   phoneNumber: string | null;
   isActive: boolean;
+  /** Account state (BR-63); isActive is true only for 'Active'. */
+  status: 'PendingActivation' | 'Active' | 'Deactivated';
   createdAt: string;
   roles: string[];
   staffCode: string | null;

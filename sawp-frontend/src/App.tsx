@@ -9,7 +9,6 @@ import StudentsPage from './pages/OfficeStaffPortal/StudentsPage';
 import ClassesPage from './pages/OfficeStaffPortal/ClassesPage';
 import LeaveRequestPage from './pages/ParentPortal/LeaveRequestPage';
 import LeaveApprovalPage from './pages/TeacherPortal/LeaveApprovalPage';
-import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
 import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
 import TeacherBoardingPage from './pages/TeacherPortal/TeacherBoardingPage';
 import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
@@ -24,11 +23,31 @@ import AuditLogsPage from './pages/SystemPortal/AuditLogsPage';
 import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
 import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
 import { MainLayout } from './layouts/MainLayout';
-import { TOKEN_KEY } from './services/apiClient';
+import { clearAuthSession, TOKEN_KEY } from './services/apiClient';
+
+function isTokenExpired(token: string): boolean {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return true;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const payload = JSON.parse(jsonPayload);
+    if (!payload.exp) return false;
+    return Date.now() >= payload.exp * 1000;
+  } catch {
+    return true;
+  }
+}
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  if (!token || isTokenExpired(token)) {
+    clearAuthSession();
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
@@ -50,6 +69,7 @@ export default function App() {
         }}
       />
       <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
 
         {/* Các trang sau khi đăng nhập bọc trong MainLayout */}
@@ -72,7 +92,6 @@ export default function App() {
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />
-          <Route path="/link-requests" element={<LinkRequestsPage />} />
           <Route path="/office/requests" element={<AdminRequestsManagementPage />} />
           <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
@@ -84,7 +103,7 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );

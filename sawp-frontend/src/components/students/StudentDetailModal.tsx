@@ -12,6 +12,7 @@ import {
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { studentApi } from '../../services/implementations/studentApi';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { StudentProfileDto } from '../../types/student.types';
 
 export interface StudentDetailModalProps {
@@ -154,7 +155,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
               <Calendar size={14} /> Ngày sinh
             </div>
             <div style={{ fontWeight: 700, marginTop: 4 }}>
-              {new Date(activeStudent.dateOfBirth).toLocaleDateString('vi-VN')}
+              {formatDDMMYYYY(activeStudent.dateOfBirth)}
             </div>
           </div>
 

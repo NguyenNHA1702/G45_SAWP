@@ -44,6 +44,11 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
       return;
     }
 
+    if (isNaN(capacity) || capacity < 15 || capacity > 50) {
+      toast.error('Sĩ số mỗi lớp phải từ 15 đến 50 học sinh (Quy chuẩn thông thường: 30 - 35 em/lớp).');
+      return;
+    }
+
     if (!activeSchoolYear?.id) {
       toast.error('Không tìm thấy năm học hợp lệ.');
       return;
@@ -90,7 +95,7 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
       iconBg="var(--color-accent-soft)"
       maxWidth="md"
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form noValidate onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="banner banner--info" style={{ fontSize: 'var(--fs-sm)' }}>
           <Sparkles size={18} color="var(--color-accent)" style={{ flexShrink: 0, marginTop: 2 }} />
           <div>
@@ -131,7 +136,7 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
         </div>
 
         <div className="field">
-          <label className="label">Phòng học (Room Number)</label>
+          <label className="label">Phòng học</label>
           <input
             type="text"
             className="input"
@@ -142,18 +147,16 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
         </div>
 
         <div className="field">
-          <label className="label">Sĩ số tối đa mỗi lớp (Capacity)</label>
+          <label className="label">Sĩ số tối đa</label>
           <input
             type="number"
             className="input"
-            min={15}
-            max={50}
             value={capacity}
             onChange={(e) => setCapacity(Number(e.target.value))}
             required
           />
           <small style={{ color: 'var(--color-muted-fg)' }}>
-            Tiêu chuẩn sĩ số: 30 - 35 học sinh / lớp.
+            Quy chuẩn trường tiểu học: 30 - 35 học sinh / lớp (hệ thống cho phép thiết lập linh hoạt từ 15 - 50 học sinh).
           </small>
         </div>
 

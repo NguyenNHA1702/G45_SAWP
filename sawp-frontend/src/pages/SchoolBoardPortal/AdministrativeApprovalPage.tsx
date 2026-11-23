@@ -5,6 +5,7 @@ import {
   Clock,
   Download,
   Eye,
+  History,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -14,6 +15,8 @@ import {
 import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { BoardDecisionModal } from '../../components/requests/BoardDecisionModal';
+import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
+import { formatDDMMYYYY } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 export default function AdministrativeApprovalPage() {
@@ -25,6 +28,8 @@ export default function AdministrativeApprovalPage() {
 
   const [selectedReq, setSelectedReq] = useState<AdministrativeRequestSummary | null>(null);
   const [decisionModalOpen, setDecisionModalOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [selectedHistoryReq, setSelectedHistoryReq] = useState<{ id: number; requestNumber: string } | null>(null);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -494,7 +499,7 @@ export default function AdministrativeApprovalPage() {
                       {req.requestNumber}
                     </span>
                     <span style={{ fontSize: 13, color: '#64748B' }}>
-                      (Ngày trình: {new Date(req.submissionDate).toLocaleDateString('vi-VN')})
+                      (Ngày trình: {formatDDMMYYYY(req.submissionDate)})
                     </span>
 
                     {/* Status Badge */}
@@ -516,6 +521,26 @@ export default function AdministrativeApprovalPage() {
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {/* View history button */}
+                    <button
+                      type="button"
+                      className="btn btn--outline"
+                      onClick={() => {
+                        setSelectedHistoryReq({ id: req.id, requestNumber: req.requestNumber });
+                        setHistoryModalOpen(true);
+                      }}
+                      style={{
+                        padding: '7px 12px',
+                        fontSize: 13,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      title="Xem toàn bộ lịch sử tiến trình xử lý đơn này"
+                    >
+                      <History size={15} /> Lịch sử
+                    </button>
+
                     {/* View details button for all requests */}
                     <button
                       type="button"
@@ -688,6 +713,14 @@ export default function AdministrativeApprovalPage() {
         onClose={() => setDecisionModalOpen(false)}
         request={selectedReq}
         onSuccess={fetchRequests}
+      />
+
+      {/* Modal xem lịch sử tiến trình đơn (BR-35 / UC-43) */}
+      <RequestHistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        requestId={selectedHistoryReq?.id ?? 0}
+        requestNumber={selectedHistoryReq?.requestNumber ?? ''}
       />
     </div>
   );

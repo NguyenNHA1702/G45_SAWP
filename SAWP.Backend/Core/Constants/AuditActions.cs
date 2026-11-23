@@ -23,6 +23,7 @@ public static class AuditActions
     public const string ClassAssignHomeroomTeacher = "CLASS_ASSIGN_HOMEROOM_TEACHER";
     public const string ClassAssignStudents = "CLASS_ASSIGN_STUDENTS";
     public const string ClassRemoveStudent = "CLASS_REMOVE_STUDENT";
+    public const string ClassDelete = "CLASS_DELETE";
     public const string ClassPublishPlacement = "CLASS_PUBLISH_PLACEMENT";
     public const string PlacementPlanGenerateDraft = "PLACEMENT_PLAN_GENERATE_DRAFT";
     public const string PlacementPlanMoveStudent = "PLACEMENT_PLAN_MOVE_STUDENT";
@@ -42,11 +43,9 @@ public static class AuditActions
     public const string AttendanceSubmit = "ATTENDANCE_SUBMIT";
     public const string AttendanceUpdate = "ATTENDANCE_UPDATE";
     public const string AttendanceCorrect = "ATTENDANCE_CORRECT";
+    public const string AttendanceAbsenceNoticeSend = "ATTENDANCE_ABSENCE_NOTICE_SEND";
 
     // Requests
-    public const string ChildLinkRequestSubmit = "CHILD_LINK_REQUEST_SUBMIT";
-    public const string ChildLinkRequestApprove = "CHILD_LINK_REQUEST_APPROVE";
-    public const string ChildLinkRequestReject = "CHILD_LINK_REQUEST_REJECT";
     public const string LeaveRequestSubmit = "LEAVE_REQUEST_SUBMIT";
     public const string LeaveRequestForward = "LEAVE_REQUEST_FORWARD";
     public const string LeaveRequestApprove = "LEAVE_REQUEST_APPROVE";

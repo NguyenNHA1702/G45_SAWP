@@ -16,6 +16,8 @@ interface ResubmitModalProps {
 export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitModalProps) {
   const [reason, setReason] = useState('');
   const [purpose, setPurpose] = useState('');
+  const [numberOfCopies, setNumberOfCopies] = useState<number>(1);
+  const [additionalNotes, setAdditionalNotes] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +25,8 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
     if (request) {
       setReason(request.classTransfer?.transferReason || '');
       setPurpose(request.documentRequest?.purpose || '');
+      setNumberOfCopies(request.documentRequest?.numberOfCopies || 1);
+      setAdditionalNotes('');
       setAttachmentUrl(request.attachmentUrl || '');
     }
   }, [request]);
@@ -41,12 +45,18 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
       toast.error('Vui lòng nhập mục đích xin cấp giấy tờ cập nhật.');
       return;
     }
+    if (!isClassTransfer && (numberOfCopies < 1 || numberOfCopies > 10)) {
+      toast.error('Số lượng bản sao phải từ 1 đến 10 bản.');
+      return;
+    }
 
     try {
       setLoading(true);
       const res = await administrativeRequestApi.resubmitRequest(request.id, {
         transferReason: isClassTransfer ? reason.trim() : undefined,
         purpose: !isClassTransfer ? purpose.trim() : undefined,
+        numberOfCopies: !isClassTransfer ? numberOfCopies : undefined,
+        additionalNotes: additionalNotes.trim() || undefined,
         attachmentUrl: attachmentUrl.trim() || undefined,
       });
 
@@ -113,26 +123,58 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
               />
             </div>
           ) : (
-            <div>
-              <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                Mục đích xin cấp giấy tờ (Cập nhật rõ ràng): <span style={{ color: '#EF4444' }}>*</span>
-              </label>
-              <textarea
-                className="input"
-                style={{ width: '100%', minHeight: 90, borderRadius: 10, padding: '10px 12px' }}
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-                placeholder="Ghi rõ nộp cơ quan nào, lý do xin cấp..."
-                required
-              />
-            </div>
+            <>
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                  Mục đích xin cấp giấy tờ (Cập nhật rõ ràng): <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <textarea
+                  className="input"
+                  style={{ width: '100%', minHeight: 80, borderRadius: 10, padding: '10px 12px' }}
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                  placeholder="Ghi rõ nộp cơ quan nào, lý do xin cấp..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                  Số bản cần cấp (1 - 10 bản): <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  className="input"
+                  style={{ width: 140, borderRadius: 10, padding: '8px 12px' }}
+                  value={numberOfCopies}
+                  onChange={(e) => setNumberOfCopies(Number(e.target.value))}
+                  required
+                />
+              </div>
+            </>
           )}
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+              Ý kiến / Ghi chú giải trình bổ sung (tùy chọn):
+            </label>
+            <input
+              type="text"
+              className="input"
+              style={{ width: '100%', borderRadius: 10, padding: '8px 12px' }}
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
+              placeholder="Gửi lời nhắn hoặc ghi chú thêm cho Giáo vụ..."
+            />
+          </div>
 
           <DirectFileUploader
             value={attachmentUrl}
             onChange={setAttachmentUrl}
-            label="Tệp đính kèm bổ sung (Hình ảnh hoặc PDF, Word):"
-            hint="Tải trực tiếp tài liệu bổ sung theo yêu cầu của Giáo vụ."
+            label="Tệp đính kèm bổ sung (PDF, JPG, PNG):"
+            hint="Chấp nhận tệp PDF, JPG, PNG tối đa 10MB."
           />
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
