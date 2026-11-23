@@ -124,7 +124,7 @@ export default function DashboardPage() {
             </div>
             <h3>Hồ sơ các con</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              Theo dõi kết quả xếp lớp, thông tin GVCN và gửi yêu cầu liên kết thêm con.
+              Theo dõi kết quả xếp lớp và thông tin GVCN của con.
             </p>
             <span className="badge badge--pink">Xem hồ sơ con →</span>
           </Link>
@@ -182,32 +182,6 @@ export default function DashboardPage() {
                 Khởi tạo lớp hàng loạt, phân công giáo viên chủ nhiệm và xếp lớp học sinh.
               </p>
               <span className="badge badge--mint">Quản lý lớp học →</span>
-            </Link>
-
-            <Link
-              to="/link-requests"
-              className="card card--hover"
-              style={{ textDecoration: 'none', color: 'inherit' }}
-            >
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: '50%',
-                  background: 'var(--color-secondary-soft)',
-                  border: 'var(--border)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  marginBottom: 14,
-                }}
-              >
-                <HeartHandshake size={22} color="var(--color-secondary)" />
-              </div>
-              <h3>Duyệt liên kết phụ huynh</h3>
-              <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-                Xét duyệt và phê duyệt các yêu cầu xin liên kết con của phụ huynh trên cổng trực tuyến.
-              </p>
-              <span className="badge badge--pink">Duyệt yêu cầu →</span>
             </Link>
           </>
         )}

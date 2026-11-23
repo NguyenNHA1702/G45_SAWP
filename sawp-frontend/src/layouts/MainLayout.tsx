@@ -113,13 +113,6 @@ const NAV_ITEMS: NavItem[] = [
         roles: ['OfficeStaff', 'SchoolBoard'],
         icon: GraduationCap,
       },
-      {
-        id: 'office-link-requests',
-        label: 'Duyệt liên kết phụ huynh',
-        path: '/link-requests',
-        roles: ['OfficeStaff'],
-        icon: HeartHandshake,
-      },
     ],
   },
   // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard) ---

@@ -54,8 +54,7 @@ export default function ProfilePage() {
         setOccupation(data.guardianProfile.occupation || '');
       }
     } catch (err) {
-      const apiErr = asApiError(err);
-      toast.error(apiErr.message || 'Không thể tải thông tin hồ sơ.');
+      toast.error(asApiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -108,8 +107,7 @@ export default function ProfilePage() {
 
       toast.success(SYSTEM_MESSAGES.MSG47.content);
     } catch (err) {
-      const apiErr = asApiError(err);
-      toast.error(apiErr.message || 'Cập nhật hồ sơ thất bại.');
+      toast.error(asApiError(err).message);
     } finally {
       setSaving(false);
     }
@@ -724,7 +722,7 @@ export default function ProfilePage() {
 
                 {profile.guardianProfile.children.length === 0 ? (
                   <div className="banner banner--info" style={{ fontSize: 'var(--fs-sm)', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
-                    Chưa có học sinh nào được liên kết với tài khoản này. Vui lòng gửi yêu cầu liên kết hồ sơ con tại Cổng Phụ huynh.
+                    Chưa có học sinh nào được liên kết với tài khoản này. Vui lòng liên hệ Phòng Giáo vụ của nhà trường để được liên kết hồ sơ của con.
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>

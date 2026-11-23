@@ -45,9 +45,6 @@ public static class AuditActions
     public const string AttendanceCorrect = "ATTENDANCE_CORRECT";
 
     // Requests
-    public const string ChildLinkRequestSubmit = "CHILD_LINK_REQUEST_SUBMIT";
-    public const string ChildLinkRequestApprove = "CHILD_LINK_REQUEST_APPROVE";
-    public const string ChildLinkRequestReject = "CHILD_LINK_REQUEST_REJECT";
     public const string LeaveRequestSubmit = "LEAVE_REQUEST_SUBMIT";
     public const string LeaveRequestApprove = "LEAVE_REQUEST_APPROVE";
     public const string LeaveRequestReject = "LEAVE_REQUEST_REJECT";
