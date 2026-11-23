@@ -35,8 +35,8 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("AttachmentUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<DateTime?>("ProcessedDate")
                         .HasColumnType("datetime2");
@@ -450,6 +450,9 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int>("AdministrativeRequestId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("EffectiveDate")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("ExecutedAt")
                         .HasColumnType("datetime2");
 
@@ -512,6 +515,9 @@ namespace Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
+
+                    b.Property<bool>("IsPaperCopyRequested")
+                        .HasColumnType("bit");
 
                     b.Property<DateTime?>("IssuedDate")
                         .HasColumnType("datetime2");
@@ -636,8 +642,8 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("DoctorNoteAttachmentUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("datetime2");
