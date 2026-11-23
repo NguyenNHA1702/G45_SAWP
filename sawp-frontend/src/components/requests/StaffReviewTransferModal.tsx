@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, Send, Users } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Send, Users, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
+import { AttachmentViewer } from '../common/AttachmentViewer';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
-import { formatDDMMYYYY } from '../../utils/date';
+import { formatDDMMYYYY, getNextMondayIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 interface StaffReviewTransferModalProps {
@@ -19,16 +20,23 @@ export function StaffReviewTransferModal({
   request,
   onSuccess,
 }: StaffReviewTransferModalProps) {
-  const [activeAction, setActiveAction] = useState<'endorse' | 'amendment'>('endorse');
+  const [activeAction, setActiveAction] = useState<'endorse' | 'amendment' | 'reject'>('endorse');
   const [recommendation, setRecommendation] = useState('');
+  const [proposedEffectiveDate, setProposedEffectiveDate] = useState<string>(getNextMondayIso());
   const [amendmentNotes, setAmendmentNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (request?.classTransfer) {
       setRecommendation(
         request.classTransfer.staffRecommendation ||
-          `Đã rà soát học bạ và sĩ số lớp ${request.classTransfer.toClassName}. Đề xuất Ban Giám Hiệu xem xét phê duyệt điều chuyển lớp cho học sinh.`
+        `Đã rà soát học bạ và sĩ số lớp ${request.classTransfer.toClassName}. Đề xuất Ban Giám Hiệu xem xét phê duyệt điều chuyển lớp cho học sinh.`
+      );
+      setProposedEffectiveDate(
+        request.classTransfer.effectiveDate
+          ? request.classTransfer.effectiveDate.slice(0, 10)
+          : getNextMondayIso()
       );
       setAmendmentNotes(request.amendmentNotes || '');
       if (request.requiresAmendment) {
@@ -75,6 +83,7 @@ export function StaffReviewTransferModal({
       setSubmitting(true);
       const res = await administrativeRequestApi.endorseTransfer(request.id, {
         staffRecommendation: recommendation.trim(),
+        effectiveDate: proposedEffectiveDate || undefined,
       });
 
       if (res.success) {
@@ -84,8 +93,13 @@ export function StaffReviewTransferModal({
       } else {
         toast.error(res.message || 'Không thể gửi đề xuất');
       }
-    } catch {
-      toast.error('Đã xảy ra lỗi khi gửi đề xuất lên BGH.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi gửi đề xuất lên BGH.';
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -111,8 +125,47 @@ export function StaffReviewTransferModal({
       } else {
         toast.error(res.message || 'Không thể gửi yêu cầu');
       }
-    } catch {
-      toast.error('Đã xảy ra lỗi khi gửi yêu cầu bổ sung.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi gửi yêu cầu bổ sung.';
+      toast.error(errorMsg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isClosed) {
+      toast.error('Đơn này đã hoàn tất xử lý.');
+      return;
+    }
+    if (!rejectReason.trim()) {
+      toast.error('Vui lòng nhập lý do từ chối tiếp nhận đơn.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const res = await administrativeRequestApi.staffReject(request.id, rejectReason.trim());
+
+      if (res.success) {
+        toast.success(res.message || 'Đã từ chối tiếp nhận đơn thành công!');
+        onSuccess();
+        onClose();
+      } else {
+        toast.error(res.message || 'Không thể từ chối đơn');
+      }
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi từ chối tiếp nhận đơn.';
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -203,6 +256,15 @@ export function StaffReviewTransferModal({
               <Users size={14} />
               Sĩ số lớp đích: {currentCap}/{maxCap} học sinh {isFull ? '(ĐÃ ĐỦ SĨ SỐ)' : `(Còn ${maxCap - currentCap} chỗ trống)`}
             </div>
+
+            {transfer.effectiveDate && (
+              <div style={{ marginTop: 8, fontSize: 13, color: '#1E293B' }}>
+                📅 <strong>Thời điểm phụ huynh mong muốn:</strong>{' '}
+                <span style={{ padding: '2px 8px', backgroundColor: '#FEF3C7', color: '#92400E', borderRadius: 6, fontWeight: 700 }}>
+                  {formatDDMMYYYY(transfer.effectiveDate)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -221,18 +283,7 @@ export function StaffReviewTransferModal({
           <div style={{ fontSize: 14, color: '#1E293B', lineHeight: 1.5 }}>
             "{transfer.transferReason}"
           </div>
-          {request.attachmentUrl && (
-            <div style={{ marginTop: 8 }}>
-              <a
-                href={request.attachmentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: 13, color: '#2563EB', fontWeight: 600, textDecoration: 'underline' }}
-              >
-                📎 Mở tệp tài liệu / minh chứng đính kèm của phụ huynh
-              </a>
-            </div>
-          )}
+          <AttachmentViewer url={request.attachmentUrl} />
         </div>
 
         {/* Cảnh báo trạng thái bổ sung hồ sơ */}
@@ -308,11 +359,52 @@ export function StaffReviewTransferModal({
           >
             <AlertCircle size={16} /> {isAwaitingParent ? 'Xem / Cập nhật yêu cầu bổ sung' : 'Hồ sơ chưa đủ / Yêu cầu bổ sung'}
           </button>
+
+          <button
+            type="button"
+            disabled={isAlreadyUnderReview || isClosed}
+            onClick={() => setActiveAction('reject')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 10,
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: isAlreadyUnderReview || isClosed ? 'not-allowed' : 'pointer',
+              opacity: isAlreadyUnderReview || isClosed ? 0.5 : 1,
+              border: activeAction === 'reject' ? '2px solid #1E293B' : '2px solid transparent',
+              backgroundColor: activeAction === 'reject' ? '#FEE2E2' : '#F1F5F9',
+              color: activeAction === 'reject' ? '#991B1B' : '#64748B',
+              boxShadow: activeAction === 'reject' ? '2px 2px 0 #1E293B' : 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <XCircle size={16} /> Từ chối tiếp nhận (Không hợp lệ)
+          </button>
         </div>
 
         {/* Form hành động 1: Trình BGH */}
         {activeAction === 'endorse' && (
           <form onSubmit={handleEndorse} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                Ngày đề xuất chuyển lớp (có hiệu lực): <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <input
+                type="date"
+                className="input"
+                style={{ width: '100%', borderRadius: 10, padding: '10px 12px', fontSize: 14 }}
+                value={proposedEffectiveDate}
+                onChange={(e) => setProposedEffectiveDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                required
+              />
+              <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                Mặc định gợi ý là Thứ Hai tuần tới ({formatDDMMYYYY(getNextMondayIso())}) để thuận tiện chốt suất ăn bán trú và bàn giao học bạ giữa 2 GVCN.
+              </div>
+            </div>
+
             <div>
               <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
                 Ý kiến thẩm định & Đề xuất chuyên môn gửi Ban Giám Hiệu: <span style={{ color: '#EF4444' }}>*</span>
@@ -393,6 +485,50 @@ export function StaffReviewTransferModal({
                 }}
               >
                 <Send size={16} /> {submitting ? 'Đang gửi...' : 'Gửi thông báo yêu cầu bổ sung'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Form hành động 3: Từ chối tiếp nhận (Không hợp lệ) */}
+        {activeAction === 'reject' && (
+          <form onSubmit={handleReject} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                Lý do từ chối tiếp nhận đơn chuyển lớp: <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <textarea
+                className="input"
+                style={{ width: '100%', minHeight: 90, borderRadius: 10, padding: '10px 12px' }}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ví dụ: Đơn trùng lặp với đơn trước đó, không đủ điều kiện chuyển lớp, học sinh đã rút hồ sơ..."
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+              <button
+                type="button"
+                className="btn btn--outline"
+                onClick={onClose}
+                disabled={submitting}
+              >
+                Đóng
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={submitting}
+                style={{
+                  backgroundColor: '#EF4444',
+                  borderColor: '#1E293B',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <XCircle size={16} /> {submitting ? 'Đang xử lý...' : 'Xác nhận từ chối đơn'}
               </button>
             </div>
           </form>

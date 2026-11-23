@@ -5,6 +5,7 @@ import {
   Clock,
   Download,
   FileCheck,
+  History,
   Info,
   RefreshCw,
   Search,
@@ -15,6 +16,7 @@ import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { StaffReviewTransferModal } from '../../components/requests/StaffReviewTransferModal';
 import { StaffReviewDocumentModal } from '../../components/requests/StaffReviewDocumentModal';
+import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 export default function AdminRequestsManagementPage() {
@@ -33,6 +35,9 @@ export default function AdminRequestsManagementPage() {
 
   const [selectedDocReq, setSelectedDocReq] = useState<AdministrativeRequestSummary | null>(null);
   const [docModalOpen, setDocModalOpen] = useState(false);
+
+  const [selectedHistoryRequest, setSelectedHistoryRequest] = useState<{ id: number; requestNumber: string } | null>(null);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -54,7 +59,15 @@ export default function AdminRequestsManagementPage() {
 
   // Thực thi chuyển lớp (Execute Apply Class Transfer)
   const handleExecuteTransfer = async (req: AdministrativeRequestSummary) => {
-    if (!window.confirm(`Xác nhận thực thi chuyển lớp cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName}? Hệ thống sẽ tự động gán lớp mới và lưu vết lịch sử.`)) {
+    const isFuture = req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999);
+    const effDateStr = req.classTransfer?.effectiveDate ? new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN') : '';
+
+    let confirmMsg = `Xác nhận thực thi chuyển lớp cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName}? Hệ thống sẽ tự động gán lớp mới và hoàn tất hồ sơ.`;
+    if (isFuture) {
+      confirmMsg = `⚠️ LƯU Ý NGÀY HIỆU LỰC:\nĐơn này có ngày hiệu lực mong muốn là ngày ${effDateStr} (Chưa đến hạn).\n\nBạn có chắc chắn muốn thực thi điều chuyển SỚM ngay hôm nay không?`;
+    }
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
@@ -67,8 +80,13 @@ export default function AdminRequestsManagementPage() {
       } else {
         toast.error(res.message || 'Không thể thực thi chuyển lớp');
       }
-    } catch {
-      toast.error('Đã xảy ra lỗi khi thực thi chuyển lớp.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi thực thi chuyển lớp.';
+      toast.error(errorMsg);
     } finally {
       setExecutingId(null);
     }
@@ -92,9 +110,11 @@ export default function AdminRequestsManagementPage() {
     const amendment = requests.filter((r) => r.requiresAmendment).length;
     const underReview = requests.filter((r) => r.status === 'UnderReview').length;
     const pendingExecution = requests.filter(
-      (r) => r.requestType === 'ClassTransfer' && r.schoolBoardApprovedAt && !r.classTransfer?.isExecuted
+      (r) => r.requestType === 'ClassTransfer' && r.status === 'Approved' && !r.classTransfer?.isExecuted
     ).length;
-    const completed = requests.filter((r) => r.status === 'Approved' && (r.requestType !== 'ClassTransfer' || r.classTransfer?.isExecuted)).length;
+    const completed = requests.filter(
+      (r) => r.status === 'Completed' || (r.status === 'Approved' && (r.requestType !== 'ClassTransfer' || r.classTransfer?.isExecuted))
+    ).length;
 
     return { total, submitted, amendment, underReview, pendingExecution, completed };
   }, [requests]);
@@ -426,6 +446,11 @@ export default function AdminRequestsManagementPage() {
                           <div style={{ fontSize: 13, color: '#1E293B' }}>
                             Xin chuyển sang:{' '}
                             <strong style={{ color: '#047857' }}>{req.classTransfer.toClassName}</strong>
+                            {req.classTransfer.effectiveDate && (
+                              <div style={{ fontSize: 12, color: '#B45309', marginTop: 2, fontWeight: 700 }}>
+                                📅 Hiệu lực: {new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN')}
+                              </div>
+                            )}
                             <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
                               Lý do: "{req.classTransfer.transferReason}"
                             </div>
@@ -512,7 +537,7 @@ export default function AdminRequestsManagementPage() {
                           >
                             <Info size={13} /> Đang trình BGH duyệt
                           </span>
-                        ) : req.status === 'Approved' ? (
+                        ) : req.status === 'Completed' || (req.status === 'Approved' && (req.requestType !== 'ClassTransfer' || req.classTransfer?.isExecuted)) ? (
                           <span
                             style={{
                               backgroundColor: '#DCFCE7',
@@ -527,7 +552,41 @@ export default function AdminRequestsManagementPage() {
                               gap: 4,
                             }}
                           >
-                            <CheckCircle2 size={13} /> Đã hoàn tất
+                            <CheckCircle2 size={13} /> {req.requestType === 'ClassTransfer' ? 'Đã chuyển lớp' : 'Đã phát hành'}
+                          </span>
+                        ) : req.status === 'Approved' ? (
+                          <span
+                            style={{
+                              backgroundColor: '#E0E7FF',
+                              color: '#3730A3',
+                              border: '1.5px solid #6366F1',
+                              borderRadius: 16,
+                              padding: '3px 10px',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <CheckCircle2 size={13} /> BGH đã duyệt
+                          </span>
+                        ) : req.status === 'Cancelled' ? (
+                          <span
+                            style={{
+                              backgroundColor: '#F1F5F9',
+                              color: '#475569',
+                              border: '1.5px solid #94A3B8',
+                              borderRadius: 16,
+                              padding: '3px 10px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <XCircle size={13} /> Đã hủy đơn
                           </span>
                         ) : (
                           <span
@@ -551,112 +610,140 @@ export default function AdminRequestsManagementPage() {
 
                       {/* Cột 5: Hành động */}
                       <td style={{ padding: '14px 16px', verticalAlign: 'top', textAlign: 'right' }}>
-                        {/* Nếu là đơn chuyển lớp đã được BGH duyệt -> Nút ÁP DỤNG CHUYỂN LỚP */}
-                        {isPendingExecution ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
                           <button
                             type="button"
-                            className="btn btn--primary"
-                            onClick={() => handleExecuteTransfer(req)}
-                            disabled={executingId === req.id}
-                            style={{
-                              fontSize: 12,
-                              padding: '6px 12px',
-                              backgroundColor: '#16A34A',
-                              borderColor: '#1E293B',
-                              boxShadow: '2px 2px 0 #1E293B',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                            }}
-                          >
-                            <UserCheck size={14} />
-                            {executingId === req.id ? 'Đang thực thi...' : 'Áp dụng chuyển lớp ngay'}
-                          </button>
-                        ) : req.requiresAmendment ? (
-                          <button
-                            type="button"
-                            className="btn btn--outline"
                             onClick={() => {
-                              if (isTransfer) {
-                                setSelectedTransferReq(req);
-                                setTransferModalOpen(true);
-                              } else {
-                                setSelectedDocReq(req);
-                                setDocModalOpen(true);
-                              }
+                              setSelectedHistoryRequest({ id: req.id, requestNumber: req.requestNumber });
+                              setHistoryModalOpen(true);
                             }}
                             style={{
-                              fontSize: 12,
-                              padding: '6px 12px',
-                              borderColor: '#F59E0B',
-                              backgroundColor: '#FFFBEB',
-                              color: '#B45309',
+                              fontSize: 11,
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              border: '1px solid #CBD5E1',
+                              backgroundColor: '#FFFFFF',
+                              cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: 5,
+                              gap: 4,
                             }}
+                            title="Xem toàn bộ lịch sử tiến trình xử lý đơn này"
                           >
-                            <AlertCircle size={14} color="#D97706" /> Chờ bổ sung
+                            <History size={12} /> Lịch sử
                           </button>
-                        ) : req.status === 'Submitted' ? (
-                          <button
-                            type="button"
-                            className="btn btn--primary"
-                            onClick={() => {
-                              if (isTransfer) {
-                                setSelectedTransferReq(req);
-                                setTransferModalOpen(true);
-                              } else {
-                                setSelectedDocReq(req);
-                                setDocModalOpen(true);
-                              }
-                            }}
-                            style={{
-                              fontSize: 12,
-                              padding: '6px 12px',
-                              borderColor: '#1E293B',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                            }}
-                          >
-                            <FileCheck size={14} /> Thẩm định hồ sơ
-                          </button>
-                        ) : req.status === 'Approved' && !isTransfer ? (
-                          <button
-                            type="button"
-                            className="btn btn--outline"
-                            onClick={() => handleDownloadDoc(req)}
-                            style={{
-                              fontSize: 12,
-                              padding: '6px 12px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                            }}
-                          >
-                            <Download size={14} /> Tải văn bản
-                          </button>
-                        ) : req.status === 'UnderReview' ? (
-                          <button
-                            type="button"
-                            className="btn btn--outline"
-                            onClick={() => {
-                              if (isTransfer) {
-                                setSelectedTransferReq(req);
-                                setTransferModalOpen(true);
-                              } else {
-                                setSelectedDocReq(req);
-                                setDocModalOpen(true);
-                              }
-                            }}
-                            style={{ fontSize: 12, padding: '5px 10px', color: '#6B21A8' }}
-                          >
-                            Xem đề xuất
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 12, color: '#94A3B8' }}>Đã đóng hồ sơ</span>
-                        )}
+
+                          {/* Nếu là đơn chuyển lớp đã được BGH duyệt -> Nút ÁP DỤNG CHUYỂN LỚP */}
+                          {isPendingExecution ? (
+                            <button
+                              type="button"
+                              className="btn btn--primary"
+                              onClick={() => handleExecuteTransfer(req)}
+                              disabled={executingId === req.id}
+                              style={{
+                                fontSize: 12,
+                                padding: '6px 12px',
+                                backgroundColor: req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999) ? '#D97706' : '#16A34A',
+                                borderColor: '#1E293B',
+                                boxShadow: '2px 2px 0 #1E293B',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                              }}
+                            >
+                              <UserCheck size={14} />
+                              {executingId === req.id
+                                ? 'Đang thực thi...'
+                                : req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999)
+                                ? `Chờ hiệu lực (${new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN')})`
+                                : 'Áp dụng chuyển lớp ngay'}
+                            </button>
+                          ) : req.requiresAmendment ? (
+                            <button
+                              type="button"
+                              className="btn btn--outline"
+                              onClick={() => {
+                                if (isTransfer) {
+                                  setSelectedTransferReq(req);
+                                  setTransferModalOpen(true);
+                                } else {
+                                  setSelectedDocReq(req);
+                                  setDocModalOpen(true);
+                                }
+                              }}
+                              style={{
+                                fontSize: 12,
+                                padding: '6px 12px',
+                                borderColor: '#F59E0B',
+                                backgroundColor: '#FFFBEB',
+                                color: '#B45309',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                              }}
+                            >
+                              <AlertCircle size={14} color="#D97706" /> Chờ bổ sung
+                            </button>
+                          ) : req.status === 'Submitted' ? (
+                            <button
+                              type="button"
+                              className="btn btn--primary"
+                              onClick={() => {
+                                if (isTransfer) {
+                                  setSelectedTransferReq(req);
+                                  setTransferModalOpen(true);
+                                } else {
+                                  setSelectedDocReq(req);
+                                  setDocModalOpen(true);
+                                }
+                              }}
+                              style={{
+                                fontSize: 12,
+                                padding: '6px 12px',
+                                borderColor: '#1E293B',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                              }}
+                            >
+                              <FileCheck size={14} /> Thẩm định hồ sơ
+                            </button>
+                          ) : (req.status === 'Approved' || req.status === 'Completed') && !isTransfer ? (
+                            <button
+                              type="button"
+                              className="btn btn--outline"
+                              onClick={() => handleDownloadDoc(req)}
+                              style={{
+                                fontSize: 12,
+                                padding: '6px 12px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                              }}
+                            >
+                              <Download size={14} /> Tải văn bản
+                            </button>
+                          ) : req.status === 'UnderReview' ? (
+                            <button
+                              type="button"
+                              className="btn btn--outline"
+                              onClick={() => {
+                                if (isTransfer) {
+                                  setSelectedTransferReq(req);
+                                  setTransferModalOpen(true);
+                                } else {
+                                  setSelectedDocReq(req);
+                                  setDocModalOpen(true);
+                                }
+                              }}
+                              style={{ fontSize: 12, padding: '5px 10px', color: '#6B21A8' }}
+                            >
+                              Xem đề xuất
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 12, color: '#94A3B8' }}>Đã đóng hồ sơ</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -681,6 +768,14 @@ export default function AdminRequestsManagementPage() {
         onClose={() => setDocModalOpen(false)}
         request={selectedDocReq}
         onSuccess={fetchRequests}
+      />
+
+      {/* Modal xem lịch sử tiến trình đơn (BR-35 / UC-43) */}
+      <RequestHistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        requestId={selectedHistoryRequest?.id ?? 0}
+        requestNumber={selectedHistoryRequest?.requestNumber ?? ''}
       />
     </div>
   );

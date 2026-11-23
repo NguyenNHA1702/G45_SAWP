@@ -223,7 +223,7 @@ public class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRequest>
     {
         builder.HasKey(lr => lr.Id);
         builder.Property(lr => lr.Reason).HasMaxLength(500).IsRequired();
-        builder.Property(lr => lr.DoctorNoteAttachmentUrl).HasMaxLength(500);
+        builder.Property(lr => lr.DoctorNoteAttachmentUrl).HasMaxLength(4000);
 
         builder.HasOne(lr => lr.AdministrativeRequest)
                .WithOne(ar => ar.LeaveRequest)
@@ -341,7 +341,7 @@ public class AdministrativeRequestConfiguration : IEntityTypeConfiguration<Admin
         builder.HasIndex(ar => ar.RequestNumber).IsUnique();
         builder.Property(ar => ar.RequestType).HasMaxLength(100).IsRequired();
         builder.Property(ar => ar.ReviewerNotes).HasMaxLength(1000);
-        builder.Property(ar => ar.AttachmentUrl).HasMaxLength(500);
+        builder.Property(ar => ar.AttachmentUrl).HasMaxLength(4000);
         builder.Property(ar => ar.AmendmentNotes).HasMaxLength(1000);
         builder.Property(ar => ar.SchoolBoardNotes).HasMaxLength(1000);
 

@@ -1,4 +1,4 @@
-export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled';
+export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'Completed';
 
 export interface ClassTransferRequest {
   studentId: number;
@@ -6,6 +6,7 @@ export interface ClassTransferRequest {
   targetClassId: number;
   transferReason: string;
   attachmentUrl?: string;
+  effectiveDate?: string;
 }
 
 export interface DocumentIssuanceRequest {
@@ -14,11 +15,14 @@ export interface DocumentIssuanceRequest {
   numberOfCopies: number;
   purpose: string;
   attachmentUrl?: string;
+  isPaperCopyRequested?: boolean;
 }
 
 export interface ResubmitRequest {
   transferReason?: string;
   purpose?: string;
+  numberOfCopies?: number;
+  additionalNotes?: string;
   attachmentUrl?: string;
 }
 
@@ -26,18 +30,57 @@ export interface StaffAmendmentRequest {
   amendmentNotes: string;
 }
 
+export interface StaffRejectRequest {
+  reason: string;
+}
+
+export interface StaffDirectIssueRequest {
+  certificateNumber?: string;
+  issuedDate?: string;
+  documentContent?: string;
+  digitalSignatureInfo?: string;
+  isPaperCopy?: boolean;
+  staffNotes?: string;
+}
+
 export interface StaffEndorseTransferRequest {
   staffRecommendation: string;
+  effectiveDate?: string;
 }
 
 export interface StaffEndorseDocumentRequest {
   staffEndorsement: string;
   documentContentDraft?: string;
+  certificateNumber?: string;
+  issuedDate?: string;
+  isPaperCopyRequested?: boolean;
 }
 
 export interface BoardDecisionRequest {
   isApproved: boolean;
   decisionNotes?: string;
+  effectiveDate?: string;
+}
+
+export interface RequestHistoryItem {
+  timestamp: string;
+  action: string;
+  description: string;
+  performedBy?: string;
+  status: RequestStatus;
+}
+
+export interface RequestStatistics {
+  totalRequests: number;
+  submittedCount: number;
+  underReviewCount: number;
+  approvedCount: number;
+  completedCount: number;
+  rejectedCount: number;
+  cancelledCount: number;
+  classTransferCount: number;
+  documentCount: number;
+  requiringAmendmentCount: number;
 }
 
 export interface ClassTransferSummary {
@@ -51,6 +94,7 @@ export interface ClassTransferSummary {
   targetClassMaxCapacity?: number;
   isExecuted: boolean;
   executedAt?: string;
+  effectiveDate?: string;
 }
 
 export interface DocumentRequestSummary {
@@ -63,6 +107,7 @@ export interface DocumentRequestSummary {
   issuedDocumentUrl?: string;
   certificateNumber?: string;
   digitalSignatureInfo?: string;
+  isPaperCopyRequested?: boolean;
 }
 
 export interface AdministrativeRequestSummary {

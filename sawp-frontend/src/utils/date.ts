@@ -15,6 +15,15 @@ export const formatViDate = (iso: string): string => {
 export const formatViDateTime = (iso: string): string =>
   new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 
+/** Tính ngày Thứ Hai của tuần kế tiếp (dạng YYYY-MM-DD theo giờ máy) */
+export const getNextMondayIso = (baseDate: Date = new Date()): string => {
+  const d = new Date(baseDate);
+  const day = d.getDay(); // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+  const diff = day === 0 ? 1 : 8 - day;
+  d.setDate(d.getDate() + diff);
+  return toIsoDate(d);
+};
+
 /** Chuẩn hóa hiển thị DD/MM/YYYY cho mọi ngày tháng */
 export const formatDDMMYYYY = (dateInput: string | Date | null | undefined): string => {
   if (!dateInput) return 'N/A';

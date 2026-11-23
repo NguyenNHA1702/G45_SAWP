@@ -94,6 +94,21 @@ public class RequestsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Phụ huynh hủy yêu cầu hành chính (khi đơn còn ở trạng thái Chờ thẩm định)
+    /// </summary>
+    [HttpPost("{id:int}/cancel")]
+    [Authorize(Roles = "Parent,Admin")]
+    public async Task<IActionResult> CancelRequest(int id, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _workflowEngine.CancelRequestAsync(id, userId.Value, cancellationToken);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
     #endregion
 
     #region Shared Endpoints
@@ -113,9 +128,35 @@ public class RequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Tải lên tệp/ảnh minh chứng đính kèm (ảnh, PDF, Word)
+    /// Xem lịch sử tiến trình xử lý đơn hành chính (UC-43 / BR-35)
+    /// </summary>
+    [HttpGet("{id:int}/history")]
+    public async Task<IActionResult> GetRequestHistory(int id, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _workflowEngine.GetRequestHistoryAsync(id, userId.Value, cancellationToken);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Báo cáo thống kê đơn từ hành chính (UC-52)
+    /// </summary>
+    [HttpGet("statistics")]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard,Admin")]
+    public async Task<IActionResult> GetStatistics(CancellationToken cancellationToken)
+    {
+        var result = await _workflowEngine.GetRequestStatisticsAsync(cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Tải lên tệp/ảnh minh chứng đính kèm (chỉ chấp nhận ảnh PNG/JPG hoặc PDF tối đa 10MB - BR-50)
     /// </summary>
     [HttpPost("upload-attachment")]
+    [Authorize(Roles = "Parent,OfficeStaff,Admin")]
     public async Task<IActionResult> UploadAttachment(
         IFormFile file,
         [FromServices] IFileStorageService fileStorageService,
@@ -123,19 +164,52 @@ public class RequestsController : ControllerBase
     {
         if (file == null || file.Length == 0)
         {
-            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail("Vui lòng chọn tệp tin cần tải lên."));
+            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Vui lòng chọn tệp tin cần tải lên." }));
         }
 
-        if (file.Length > 15 * 1024 * 1024)
+        if (file.Length > 10 * 1024 * 1024)
         {
-            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail("Kích thước tệp không được vượt quá 15MB."));
+            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Kích thước tệp không được vượt quá 10MB (BR-50)." }));
         }
 
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx" };
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (!allowedExtensions.Contains(ext))
         {
-            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail("Định dạng tệp không được hỗ trợ. Vui lòng chọn ảnh (.jpg, .png) hoặc tài liệu (.pdf, .doc, .docx)."));
+            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Định dạng tệp không được hỗ trợ theo quy định BR-50. Chỉ chấp nhận tệp hình ảnh (.jpg, .jpeg, .png) hoặc PDF (.pdf)." }));
+        }
+
+        // Magic bytes inspection
+        using (var headerStream = file.OpenReadStream())
+        {
+            var headerBytes = new byte[8];
+            var bytesRead = await headerStream.ReadAsync(headerBytes, 0, headerBytes.Length, cancellationToken);
+            if (bytesRead < 4)
+            {
+                return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Tệp rỗng hoặc không hợp lệ." }));
+            }
+
+            bool isValidHeader = false;
+            if (ext == ".pdf")
+            {
+                // %PDF-
+                isValidHeader = headerBytes[0] == 0x25 && headerBytes[1] == 0x50 && headerBytes[2] == 0x44 && headerBytes[3] == 0x46;
+            }
+            else if (ext == ".png")
+            {
+                // \x89PNG
+                isValidHeader = headerBytes[0] == 0x89 && headerBytes[1] == 0x50 && headerBytes[2] == 0x4E && headerBytes[3] == 0x47;
+            }
+            else if (ext == ".jpg" || ext == ".jpeg")
+            {
+                // 0xFF 0xD8 0xFF
+                isValidHeader = headerBytes[0] == 0xFF && headerBytes[1] == 0xD8 && headerBytes[2] == 0xFF;
+            }
+
+            if (!isValidHeader)
+            {
+                return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Nội dung tệp không khớp với phần mở rộng định dạng hoặc tệp đã bị hư hỏng." }));
+            }
         }
 
         using var stream = file.OpenReadStream();
@@ -167,8 +241,19 @@ public class RequestsController : ControllerBase
             return NotFound("Không tìm thấy văn bản phát hành.");
         }
 
+        // Security check: only allow download if approved/completed and issued (BUG8)
+        if (result.Data.Status != RequestStatus.Approved && result.Data.Status != RequestStatus.Completed && result.Data.DocumentRequest.IssuedDate == null)
+        {
+            return BadRequest("Văn bản chưa được thẩm định, phê duyệt và phát hành chính thức. Không thể tải về bản chính.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.Data.DocumentRequest.CertificateNumber))
+        {
+            return BadRequest("Văn bản chưa có số chứng nhận ký số chính thức.");
+        }
+
         var doc = result.Data.DocumentRequest;
-        var certNo = string.IsNullOrWhiteSpace(doc.CertificateNumber) ? "SAWP-DOC-OFFICIAL" : doc.CertificateNumber;
+        var certNo = System.Net.WebUtility.HtmlEncode(doc.CertificateNumber);
         var issuedDate = doc.IssuedDate ?? DateTime.UtcNow;
 
         var isTransferDoc = doc.DocumentType.Contains("chuyển trường", StringComparison.OrdinalIgnoreCase);
@@ -188,11 +273,20 @@ public class RequestsController : ControllerBase
             ? "Văn bản này được cấp theo đúng thẩm quyền và Điều lệ trường Tiểu học (Thông tư 28/2020/TT-BGDĐT của Bộ Giáo dục và Đào tạo) để làm căn cứ cho gia đình học sinh liên hệ thủ tục tiếp nhận tại trường học mới."
             : "Giấy xác nhận này được cấp theo đúng thẩm quyền và quy chế công tác văn thư theo Nghị định 30/2020/NĐ-CP của Chính phủ để phụ huynh và học sinh hoàn thiện các thủ tục hành chính có liên quan.";
 
+        // HTML encode all user-supplied variables to prevent script injection (BUG9)
+        var studentNameEncoded = System.Net.WebUtility.HtmlEncode(result.Data.StudentName ?? "");
+        var studentCodeEncoded = System.Net.WebUtility.HtmlEncode(result.Data.StudentCode ?? "");
+        var classNameEncoded = System.Net.WebUtility.HtmlEncode(result.Data.CurrentClassName ?? "Học sinh chính khóa");
+        var purposeEncoded = System.Net.WebUtility.HtmlEncode(doc.Purpose ?? "");
+        var docDraftEncoded = System.Net.WebUtility.HtmlEncode(doc.DocumentContentDraft ?? "Học sinh hiện đang theo học văn hóa chính khóa đầy đủ tại trường, chấp hành tốt nội quy và tham gia các hoạt động giáo dục toàn diện của nhà trường.").Replace("\n", "<br />");
+        var reqNumberEncoded = System.Net.WebUtility.HtmlEncode(result.Data.RequestNumber ?? "");
+        var sigInfoEncoded = System.Net.WebUtility.HtmlEncode(doc.DigitalSignatureInfo ?? "Ký số xác thực bởi Ban Giám Hiệu");
+
         var html = $@"<!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head>
 <meta charset='utf-8'>
-<title>{documentTitle}</title>
+<title>{System.Net.WebUtility.HtmlEncode(documentTitle)}</title>
 <style>
   @page Section1 {{
     size: 210mm 297mm;
@@ -226,9 +320,10 @@ public class RequestsController : ControllerBase
     text-transform: uppercase;
   }}
   .content-p {{
-    text-align: justify;
+    text-align: left;
     text-indent: 1.25cm;
     margin: 6px 0;
+    line-height: 1.5;
   }}
   .signature-table {{
     width: 100%;
@@ -270,34 +365,34 @@ public class RequestsController : ControllerBase
     </tr>
   </table>
 
-  <div class='title'>{documentTitle}</div>
+  <div class='title'>{System.Net.WebUtility.HtmlEncode(documentTitle)}</div>
 
   <div style='text-align: center; margin-bottom: 20px;' class='italic'>
-    {recipientLine}
+    {System.Net.WebUtility.HtmlEncode(recipientLine)}
   </div>
 
   <p class='content-p'>
     Căn cứ Thông tư số 28/2020/TT-BGDĐT ngày 04 tháng 9 năm 2020 của Bộ Giáo dục và Đào tạo ban hành Điều lệ trường Tiểu học;
   </p>
   <p class='content-p'>
-    Căn cứ hồ sơ quản lý học sinh và đề nghị của phụ huynh tại đơn số <strong>{result.Data.RequestNumber}</strong>;
+    Căn cứ hồ sơ quản lý học sinh và đề nghị của phụ huynh tại đơn số <strong>{reqNumberEncoded}</strong>;
   </p>
   <p class='content-p'>
-    <strong>{sectionTitle}</strong>
+    <strong>{System.Net.WebUtility.HtmlEncode(sectionTitle)}</strong>
   </p>
 
   <table style='width: 100%; border-collapse: collapse; margin: 10px 0 15px;'>
     <tr>
       <td style='width: 35%; padding: 4px 0;'>Họ và tên học sinh:</td>
-      <td class='bold uppercase' style='padding: 4px 0;'>{result.Data.StudentName}</td>
+      <td class='bold uppercase' style='padding: 4px 0;'>{studentNameEncoded}</td>
     </tr>
     <tr>
       <td style='padding: 4px 0;'>Mã định danh học sinh:</td>
-      <td class='bold' style='padding: 4px 0;'>{result.Data.StudentCode}</td>
+      <td class='bold' style='padding: 4px 0;'>{studentCodeEncoded}</td>
     </tr>
     <tr>
       <td style='padding: 4px 0;'>Hiện là học sinh lớp:</td>
-      <td style='padding: 4px 0;'>{result.Data.CurrentClassName ?? "Học sinh chính khóa"} - Trường Tiểu học SAWP</td>
+      <td style='padding: 4px 0;'>{classNameEncoded} - Trường Tiểu học SAWP</td>
     </tr>
     <tr>
       <td style='padding: 4px 0;'>Năm học:</td>
@@ -305,7 +400,7 @@ public class RequestsController : ControllerBase
     </tr>
     <tr>
       <td style='padding: 4px 0;'>Lý do / Mục đích:</td>
-      <td style='padding: 4px 0;'>{doc.Purpose}</td>
+      <td style='padding: 4px 0;'>{purposeEncoded}</td>
     </tr>
     <tr>
       <td style='padding: 4px 0;'>Số bản phát hành:</td>
@@ -314,12 +409,12 @@ public class RequestsController : ControllerBase
   </table>
 
   <p class='content-p'>
-    <strong>{contentHeading}</strong><br />
-    {doc.DocumentContentDraft?.Replace("\n", "<br />") ?? "Học sinh hiện đang theo học văn hóa chính khóa đầy đủ tại trường, chấp hành tốt nội quy và tham gia các hoạt động giáo dục toàn diện của nhà trường."}
+    <strong>{System.Net.WebUtility.HtmlEncode(contentHeading)}</strong><br />
+    {docDraftEncoded}
   </p>
 
   <p class='content-p'>
-    {legalFooter}
+    {System.Net.WebUtility.HtmlEncode(legalFooter)}
   </p>
 
   <table class='signature-table'>
@@ -336,7 +431,7 @@ public class RequestsController : ControllerBase
         <div style='height: 40px;'></div>
         <div class='badge-signed'>
           ✓ <strong>CHỨNG THƯ KÝ SỐ ĐIỆN TỬ BAN GIÁM HIỆU</strong><br />
-          {doc.DigitalSignatureInfo ?? "Ký số xác thực bởi Ban Giám Hiệu"}<br />
+          {sigInfoEncoded}<br />
           Ngày ký duyệt: {issuedDate:dd/MM/yyyy HH:mm}
         </div>
       </td>
@@ -346,7 +441,13 @@ public class RequestsController : ControllerBase
 </body>
 </html>";
 
-        var bytes = Encoding.UTF8.GetBytes(html);
+        // Prepend UTF-8 BOM so Microsoft Word on Windows reliably renders Vietnamese Unicode
+        var preamble = Encoding.UTF8.GetPreamble();
+        var contentBytes = Encoding.UTF8.GetBytes(html);
+        var bytes = new byte[preamble.Length + contentBytes.Length];
+        Buffer.BlockCopy(preamble, 0, bytes, 0, preamble.Length);
+        Buffer.BlockCopy(contentBytes, 0, bytes, preamble.Length, contentBytes.Length);
+
         var fileNamePrefix = isTransferDoc ? "Don_Xin_Chuyen_Truong" : "Van_Ban_Xac_Nhan";
         var fileName = $"{fileNamePrefix}_{result.Data.StudentCode}_{result.Data.RequestNumber}.doc";
         return File(bytes, "application/msword; charset=utf-8", fileName);
@@ -420,6 +521,42 @@ public class RequestsController : ControllerBase
         if (!userId.HasValue) return Unauthorized();
 
         var result = await _workflowEngine.EndorseDocumentAsync(id, userId.Value, request, cancellationToken);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Giáo vụ trực tiếp phát hành các giấy tờ theo thẩm quyền (BR-41)
+    /// </summary>
+    [HttpPost("{id:int}/direct-issue")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> DirectIssue(
+        int id,
+        [FromBody] StaffDirectIssueDocumentDto request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _workflowEngine.DirectIssueDocumentAsync(id, userId.Value, request, cancellationToken);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Giáo vụ từ chối tiếp nhận đơn không hợp lệ hoặc bị lỗi (BUG9)
+    /// </summary>
+    [HttpPost("{id:int}/staff-reject")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> StaffReject(
+        int id,
+        [FromBody] StaffRejectDto request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _workflowEngine.StaffRejectRequestAsync(id, userId.Value, request, cancellationToken);
         if (!result.Success) return BadRequest(result);
         return Ok(result);
     }

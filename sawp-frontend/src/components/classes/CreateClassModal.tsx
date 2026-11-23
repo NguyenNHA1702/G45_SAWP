@@ -147,7 +147,7 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
         </div>
 
         <div className="field">
-          <label className="label">Sĩ số tối đa mỗi lớp</label>
+          <label className="label">Sĩ số tối đa</label>
           <input
             type="number"
             className="input"
