@@ -8,13 +8,33 @@ import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
 import { formatViDate, formatViDateTime, todayIso } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
-import type { AttendanceSession, AttendanceSubmitResult, TeacherClassOption } from '../../types/attendance.types';
+import { getAuthUser } from '../../services/apiClient';
+import type {
+  AttendanceSession,
+  AttendanceSheetEntry,
+  AttendanceSubmitResult,
+  TeacherClassOption,
+} from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
 import { AttendanceRosterTable } from '../../components/attendance/AttendanceRosterTable';
 import { LockedBanner } from '../../components/attendance/LockedBanner';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
+/** Roles of the signed-in user, as stored at login (sessionStorage, or localStorage in older sessions). */
+const currentRoles = (): string[] => {
+  try {
+    const json = getAuthUser();
+    return json ? ((JSON.parse(json)?.roles as string[] | undefined) ?? []) : [];
+  } catch {
+    return [];
+  }
+};
+
 export default function AttendancePage() {
+  // OVR-01 (UC-23 A2): only Office Staff send absence notices; the API checks the role too.
+  const [isOfficeStaff] = useState(() => currentRoles().includes('OfficeStaff'));
+  const [noticeEntry, setNoticeEntry] = useState<AttendanceSheetEntry | null>(null);
+  const [noticeSending, setNoticeSending] = useState(false);
   const [date, setDate] = useState<string>(todayIso());
   const [session, setSession] = useState<AttendanceSession>('Morning');
   const [classes, setClasses] = useState<TeacherClassOption[]>([]);
@@ -66,6 +86,21 @@ export default function AttendancePage() {
     }
   };
 
+  const handleSendAbsenceNotice = async () => {
+    if (!noticeEntry?.recordId) return;
+    setNoticeSending(true);
+    try {
+      const res = await attendanceApi.sendAbsenceNotice(noticeEntry.recordId);
+      toast.success(res.message || SYSTEM_MESSAGES.MSG55.content);
+    } catch (e) {
+      toast.error(asApiError(e).message);
+    } finally {
+      setNoticeSending(false);
+      setNoticeEntry(null);
+      vm.reload(); // show the sent time, or the current state after MSG09
+    }
+  };
+
   const canEdit = vm.sheet?.canEdit ?? false;
 
   return (
@@ -81,7 +116,7 @@ export default function AttendancePage() {
           Điểm Danh <span className="squiggle">Hằng Ngày</span>
         </h1>
         <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)', maxWidth: '65ch' }}>
-          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng không phép trước giờ cắt cơm sẽ tự động hủy suất ăn và thông báo tới phụ huynh.
+          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng không phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Thông báo vắng mặt cho phụ huynh do Phòng Giáo vụ gửi.
         </p>
       </header>
 
@@ -264,6 +299,8 @@ export default function AttendancePage() {
           disabled={!canEdit || vm.saving}
           onStatusChange={vm.setStatus}
           onRemarksChange={vm.setRemarks}
+          onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
+          absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
         />
       )}
 
@@ -373,9 +410,6 @@ export default function AttendancePage() {
                 Không khôi phục được <strong>{result.lunchRestoreSkippedCount}</strong> suất (nhà bếp đã chốt)
               </li>
             )}
-            <li>
-              Đã gửi thông báo tới <strong>{result.parentsNotifiedCount}</strong> phụ huynh
-            </li>
           </ul>
           {result.warnings && result.warnings.length > 0 && (
             <div
@@ -414,11 +448,25 @@ export default function AttendancePage() {
         {vm.impact.newlyUnexcused > 0 ? (
           <p>
             <strong>{vm.impact.newlyUnexcused}</strong> học sinh vắng không phép mới → trừ{' '}
-            <strong>{vm.impact.lunchToDeduct}</strong> suất ăn và gửi thông báo cho phụ huynh.
+            <strong>{vm.impact.lunchToDeduct}</strong> suất ăn.
           </p>
         ) : (
           <p>Không có học sinh vắng không phép mới.</p>
         )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={noticeEntry !== null}
+        title="Gửi thông báo vắng mặt"
+        confirmText="Gửi"
+        busy={noticeSending}
+        onConfirm={handleSendAbsenceNotice}
+        onCancel={() => setNoticeEntry(null)}
+      >
+        <p>
+          Gửi thông báo vắng mặt không phép của <strong>{noticeEntry?.fullName}</strong> ({session === 'Morning' ? 'buổi sáng' : 'buổi chiều'}{' '}
+          {formatViDate(date)}) tới phụ huynh? Mỗi buổi vắng chỉ gửi được một lần.
+        </p>
       </ConfirmDialog>
     </main>
   );

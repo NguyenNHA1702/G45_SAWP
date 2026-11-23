@@ -1,8 +1,9 @@
-import { Utensils } from 'lucide-react';
+import { BellRing, Utensils } from 'lucide-react';
 import type { AttendanceSheetEntry, AttendanceStatus } from '../../types/attendance.types';
 import type { DraftMap } from '../../hooks/useAttendanceSheet';
 import { AttendanceStatusToggle } from './AttendanceStatusToggle';
 import { LeaveBadge } from './LeaveBadge';
+import { formatViDateTime } from '../../utils/date';
 
 interface Props {
   entries: AttendanceSheetEntry[];
@@ -10,14 +11,31 @@ interface Props {
   disabled: boolean;
   onStatusChange: (studentId: number, status: AttendanceStatus) => void;
   onRemarksChange: (studentId: number, remarks: string) => void;
+  /** Office Staff only (OVR-01, UC-23 A2): shows the absence notice column. */
+  onSendAbsenceNotice?: (entry: AttendanceSheetEntry) => void;
+  /** Disables the send buttons, e.g. while sending or while the sheet has unsaved changes. */
+  absenceNoticeDisabled?: boolean;
 }
+
+/** A notice can be sent for a saved unexcused absence not covered by an approved leave. */
+const canSendAbsenceNotice = (e: AttendanceSheetEntry) =>
+  e.recordId !== null && e.status === 'UnexcusedAbsence' && e.leave?.status !== 'Approved';
 
 const initials = (name: string) => {
   const parts = name.trim().split(/\s+/);
   return (parts.at(-1)?.[0] ?? '?').toUpperCase();
 };
 
-export function AttendanceRosterTable({ entries, draft, disabled, onStatusChange, onRemarksChange }: Props) {
+export function AttendanceRosterTable({
+  entries,
+  draft,
+  disabled,
+  onStatusChange,
+  onRemarksChange,
+  onSendAbsenceNotice,
+  absenceNoticeDisabled = false,
+}: Props) {
+  const showNotice = onSendAbsenceNotice !== undefined;
   return (
     <div
       className="card roster-card pop-in"
@@ -41,6 +59,9 @@ export function AttendanceRosterTable({ entries, draft, disabled, onStatusChange
               <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 100, fontWeight: 800 }}>Ăn trưa</th>
               <th scope="col" style={{ padding: '12px 16px', textAlign: 'center', minWidth: 380, fontWeight: 800 }}>Trạng thái buổi học</th>
               <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', minWidth: 180, fontWeight: 800 }}>Ghi chú</th>
+              {showNotice && (
+                <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', minWidth: 170, fontWeight: 800 }}>Thông báo vắng</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -127,6 +148,41 @@ export function AttendanceRosterTable({ entries, draft, disabled, onStatusChange
                       }}
                     />
                   </td>
+                  {showNotice && (
+                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                      {e.absenceNoticeSentAt ? (
+                        <span
+                          className="badge badge--mint"
+                          style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}
+                          title={`Đã gửi lúc ${formatViDateTime(e.absenceNoticeSentAt)}`}
+                        >
+                          Đã gửi · {formatViDateTime(e.absenceNoticeSentAt)}
+                        </span>
+                      ) : canSendAbsenceNotice(e) ? (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => onSendAbsenceNotice(e)}
+                          disabled={absenceNoticeDisabled}
+                          aria-label={`Gửi thông báo vắng mặt cho phụ huynh của ${e.fullName}`}
+                          style={{
+                            borderRadius: 'var(--radius-full)',
+                            border: '1.5px solid var(--color-fg)',
+                            fontWeight: 700,
+                            fontSize: 'var(--fs-xs)',
+                            padding: '6px 12px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          <BellRing size={14} aria-hidden="true" /> Gửi thông báo vắng
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--color-muted-fg)' }}>—</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
