@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { UploadCloud, CheckCircle2, FileText, Image, Trash2, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { UploadCloud, FileText, Image, Trash2, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 
@@ -13,32 +13,63 @@ interface DirectFileUploaderProps {
 export function DirectFileUploader({
   value,
   onChange,
-  label = 'Tệp / Ảnh minh chứng đính kèm:',
-  hint = 'Hỗ trợ tải trực tiếp hình ảnh (.jpg, .png) hoặc tài liệu (.pdf, .doc, .docx). Dung lượng tối đa 15MB.',
+  label = 'Tệp minh chứng đính kèm (nếu có):',
+  hint = 'Định dạng hợp lệ: PDF, JPG, PNG (tối đa 5 tệp, dung lượng 10MB/tệp).',
 }: DirectFileUploaderProps) {
+  const MAX_FILES = 5;
   const [uploading, setUploading] = useState(false);
-  const [showManualUrl, setShowManualUrl] = useState(false);
-  const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // File list parsed from semicolon-separated value
+  const fileList = value ? value.split(';').filter(Boolean) : [];
 
-    if (file.size > 15 * 1024 * 1024) {
-      toast.error('Kích thước tệp không được vượt quá 15MB.');
+  const uploadSingleFile = async (file: File): Promise<string | null> => {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(`Tệp ${file.name} vượt quá dung lượng tối đa 10MB.`);
+      return null;
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+    if (!ext || !allowed.includes(ext)) {
+      toast.error(`Tệp ${file.name} không đúng định dạng. Chỉ chấp nhận tệp PDF, JPG, PNG.`);
+      return null;
+    }
+
+    const res = await administrativeRequestApi.uploadAttachment(file);
+    if (res.success && res.data?.url) {
+      return res.data.url;
+    } else {
+      toast.error(res.message || `Không thể tải tệp ${file.name}`);
+      return null;
+    }
+  };
+
+  const handleFiles = async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+
+    if (fileList.length + files.length > MAX_FILES) {
+      toast.error(`Chỉ được đính kèm tối đa ${MAX_FILES} tệp minh chứng. Hiện bạn đã có ${fileList.length} tệp.`);
       return;
     }
 
     try {
       setUploading(true);
-      const res = await administrativeRequestApi.uploadAttachment(file);
-      if (res.success && res.data?.url) {
-        onChange(res.data.url);
-        setUploadedFileName(file.name);
-        toast.success(`Đã tải lên tệp ${file.name} thành công!`);
-      } else {
-        toast.error(res.message || 'Không thể tải lên tệp.');
+      const newUrls: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const uploadedUrl = await uploadSingleFile(file);
+        if (uploadedUrl) {
+          newUrls.push(uploadedUrl);
+        }
+      }
+
+      if (newUrls.length > 0) {
+        const combined = [...fileList, ...newUrls].join(';');
+        onChange(combined);
+        toast.success(`Đã tải lên ${newUrls.length} tệp thành công!`);
       }
     } catch {
       toast.error('Đã xảy ra lỗi khi tải lên tệp tin.');
@@ -50,156 +81,180 @@ export function DirectFileUploader({
     }
   };
 
-  const handleClear = () => {
-    onChange('');
-    setUploadedFileName('');
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      handleFiles(e.target.files);
+    }
   };
 
-  const isImage = value.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+  // Clipboard paste support (Ctrl+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const pastedFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) pastedFiles.push(file);
+        }
+      }
+
+      if (pastedFiles.length > 0) {
+        e.preventDefault();
+        toast.loading('Đang tải ảnh từ bộ nhớ tạm...', { duration: 1500 });
+        handleFiles(pastedFiles);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [fileList]);
+
+  const handleRemove = (indexToRemove: number) => {
+    const updated = fileList.filter((_, idx) => idx !== indexToRemove);
+    onChange(updated.join(';'));
+  };
 
   return (
     <div>
-      <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
-        {label}
+      <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+        {label} <span style={{ fontWeight: 400, color: '#64748B', fontSize: 12 }}>({hint})</span>
       </label>
 
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         style={{ display: 'none' }}
-        accept="image/*,.pdf,.doc,.docx"
+        accept=".pdf,.jpg,.jpeg,.png,image/png,image/jpeg,application/pdf"
         onChange={handleFileChange}
       />
 
-      {/* Box Upload */}
-      {!value ? (
-        <div
-          style={{
-            border: '2px dashed #94A3B8',
-            borderRadius: 12,
-            padding: '16px 20px',
-            backgroundColor: '#F8FAFC',
-            textAlign: 'center',
-            cursor: uploading ? 'wait' : 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-          onClick={() => !uploading && fileInputRef.current?.click()}
-        >
-          {uploading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <Loader2 size={28} className="animate-spin" color="#4F46E5" />
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#4F46E5' }}>
-                Đang tải tệp lên hệ thống, vui lòng chờ...
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <UploadCloud size={30} color="#4F46E5" />
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B' }}>
-                Nhấn vào đây để tải ảnh hoặc tệp từ máy tính / điện thoại
-              </div>
-              <div style={{ fontSize: 12, color: '#64748B' }}>
-                {hint}
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Box đã có tệp */
-        <div
-          style={{
-            border: '2px solid #1E293B',
-            borderRadius: 12,
-            padding: '12px 16px',
-            backgroundColor: '#F0FDF4',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 200, flex: '1 1 auto' }}>
-            {isImage ? (
-              <Image size={24} color="#16A34A" />
-            ) : (
-              <FileText size={24} color="#16A34A" />
-            )}
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#14532D', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <CheckCircle2 size={16} color="#16A34A" />
-                {uploadedFileName || 'Tệp minh chứng đã sẵn sàng'}
-              </div>
-              <a
-                href={value}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: 12, color: '#2563EB', textDecoration: 'underline', marginTop: 2, display: 'inline-block' }}
-              >
-                Mở xem tệp đã đính kèm
-              </a>
+      {/* Upload Zone */}
+      <div
+        style={{
+          border: isDragging ? '2px dashed #4F46E5' : '2px dashed #94A3B8',
+          borderRadius: 12,
+          padding: '18px 20px',
+          backgroundColor: isDragging ? '#EEF2FF' : '#F8FAFC',
+          textAlign: 'center',
+          cursor: uploading ? 'wait' : 'pointer',
+          transition: 'all 0.15s ease',
+        }}
+        onClick={() => !uploading && fileInputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(true);
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            handleFiles(e.dataTransfer.files);
+          }
+        }}
+      >
+        {uploading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <Loader2 size={28} className="animate-spin" color="#4F46E5" />
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#4F46E5' }}>
+              Đang tải tệp lên hệ thống, vui lòng chờ...
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn btn--outline btn--sm"
-              onClick={() => fileInputRef.current?.click()}
-              style={{ fontSize: 12, padding: '5px 10px' }}
-            >
-              Chọn tệp khác
-            </button>
-            <button
-              type="button"
-              className="btn btn--danger btn--sm"
-              onClick={handleClear}
-              style={{ fontSize: 12, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              title="Xóa tệp đính kèm"
-            >
-              <Trash2 size={14} /> Xóa
-            </button>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <UploadCloud size={32} color={isDragging ? '#4338CA' : '#4F46E5'} />
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B' }}>
+              Kéo thả tệp vào đây hoặc Bấm để chọn tệp từ máy tính
+            </div>
+            <div style={{ fontSize: 12, color: '#64748B' }}>
+              Định dạng hợp lệ: <strong>PDF, JPG, PNG</strong> (Tối đa 10MB/tệp). Hỗ trợ chọn hoặc kéo thả nhiều tệp.
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Nút toggle nhập URL thủ công (fallback) */}
-      <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          type="button"
-          onClick={() => setShowManualUrl(!showManualUrl)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#64748B',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            textDecoration: 'underline',
-          }}
-        >
-          <LinkIcon size={12} />
-          {showManualUrl ? 'Ẩn ô dán link trực tiếp' : 'Hoặc dán đường dẫn link bên ngoài (Drive, Cloud...)'}
-        </button>
+        )}
       </div>
 
-      {showManualUrl && (
-        <div style={{ marginTop: 8 }}>
-          <input
-            type="text"
-            className="input"
-            style={{ width: '100%', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}
-            placeholder="https://..."
-            value={value}
-            onChange={(e) => {
-              onChange(e.target.value);
-              setUploadedFileName('');
-            }}
-          />
+      {/* Render list of attached files */}
+      {fileList.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+            Danh sách tệp đã đính kèm ({fileList.length}):
+          </div>
+          {fileList.map((url, idx) => {
+            const isImg = url.match(/\.(jpeg|jpg|png)($|\?)/i);
+            const fileName = url.split('/').pop()?.split('?')[0] || `Tệp minh chứng ${idx + 1}`;
+
+            return (
+              <div
+                key={idx}
+                style={{
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  backgroundColor: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                  {isImg ? (
+                    <Image size={20} color="#16A34A" style={{ flexShrink: 0 }} />
+                  ) : (
+                    <FileText size={20} color="#2563EB" style={{ flexShrink: 0 }} />
+                  )}
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 13,
+                      color: '#2563EB',
+                      textDecoration: 'underline',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={fileName}
+                  >
+                    {fileName}
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(idx)}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    color: '#EF4444',
+                    cursor: 'pointer',
+                    padding: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                  title="Xóa tệp này"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

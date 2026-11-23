@@ -1331,4 +1331,238 @@ public class RequestWorkflowEngineTests : TestBase
     }
 
     #endregion
+
+    #region Bug Fix Tests (BUG1 - BUG9)
+
+    [Fact]
+    public async Task CancelRequest_WhenSubmitted_Succeeds()
+    {
+        // Arrange
+        var req = new AdministrativeRequest
+        {
+            Id = 10,
+            RequestNumber = "REQ-001",
+            RequesterUserId = 20,
+            Status = RequestStatus.Submitted
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<UserRole>());
+
+        // Act
+        var result = await _service.CancelRequestAsync(10, 20);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task CancelRequest_WhenUnderReview_FailsWithMSG34()
+    {
+        // Arrange
+        var req = new AdministrativeRequest
+        {
+            Id = 10,
+            RequestNumber = "REQ-001",
+            RequesterUserId = 20,
+            Status = RequestStatus.UnderReview
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<UserRole>());
+
+        // Act
+        var result = await _service.CancelRequestAsync(10, 20);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG34.Code);
+    }
+
+    [Fact]
+    public async Task StaffRejectRequest_WhenSubmitted_SucceedsWithMSG32()
+    {
+        // Arrange
+        var req = new AdministrativeRequest
+        {
+            Id = 11,
+            RequestNumber = "REQ-002",
+            Status = RequestStatus.Submitted
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        // Act
+        var result = await _service.StaffRejectRequestAsync(11, 5, new StaffRejectDto { Reason = "Thiếu giấy tờ công chứng" });
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG32.Code);
+        req.Status.Should().Be(RequestStatus.Rejected);
+        req.ReviewerNotes.Should().Be("Thiếu giấy tờ công chứng");
+    }
+
+    [Fact]
+    public async Task DirectIssueDocument_SucceedsWithMSG36()
+    {
+        // Arrange
+        var doc = new DocumentRequestDetail { Id = 1, DocumentType = "Giấy xác nhận học sinh" };
+        var req = new AdministrativeRequest
+        {
+            Id = 12,
+            RequestNumber = "REQ-003",
+            Status = RequestStatus.Submitted,
+            DocumentRequestDetail = doc
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        // Act
+        var result = await _service.DirectIssueDocumentAsync(12, 5, new StaffDirectIssueDocumentDto
+        {
+            CertificateNumber = "SAWP-2026-DIRECT-01",
+            IsPaperCopy = true
+        });
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG36.Code);
+        req.Status.Should().Be(RequestStatus.Completed);
+        doc.CertificateNumber.Should().Be("SAWP-2026-DIRECT-01");
+        doc.IsPaperCopyRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExecuteClassTransfer_DeactivatesAllActiveAssignments_AndCompletes()
+    {
+        // Arrange
+        var targetClass = new Class { Id = 2, ClassName = "1B", Grade = 1, Capacity = 35 };
+        var fromClass = new Class { Id = 1, ClassName = "1A", Grade = 1 };
+        SetupRepository(new List<Class> { fromClass, targetClass });
+
+        var transferDetail = new ClassTransferDetail
+        {
+            FromClassId = 1,
+            ToClassId = 2,
+            FromClass = fromClass,
+            ToClass = targetClass,
+            IsExecuted = false
+        };
+
+        var req = new AdministrativeRequest
+        {
+            Id = 15,
+            RequestNumber = "REQ-004",
+            StudentId = 100,
+            RequestType = RequestTypes.ClassTransfer,
+            Status = RequestStatus.Approved,
+            SchoolBoardApprovedAt = DateTime.UtcNow,
+            ClassTransferDetail = transferDetail
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        // Two old active assignments (simulating duplicate active bug)
+        var old1 = new ClassAssignment { Id = 1, StudentId = 100, ClassId = 1, IsActive = true };
+        var old2 = new ClassAssignment { Id = 2, StudentId = 100, ClassId = 1, IsActive = true };
+        var assignments = new List<ClassAssignment> { old1, old2 };
+        SetupRepository(assignments);
+
+        // Act
+        var result = await _service.ExecuteClassTransferAsync(15, 5);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG35.Code);
+        req.Status.Should().Be(RequestStatus.Completed);
+        old1.IsActive.Should().BeFalse();
+        old2.IsActive.Should().BeFalse();
+        assignments.Should().Contain(a => a.StudentId == 100 && a.ClassId == 2 && a.IsActive);
+        assignments.Count(a => a.StudentId == 100 && a.IsActive).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SubmitClassTransfer_DuplicatePendingTransfer_FailsWithMSG09()
+    {
+        // Arrange
+        var guardian = new Guardian
+        {
+            Id = 1,
+            UserId = 20,
+            StudentGuardians = new List<StudentGuardian> { new() { StudentId = 10, GuardianId = 1 } }
+        };
+        SetupRepository(new List<Guardian> { guardian });
+        StudentRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 10, FullName = "Em A" });
+
+        var currentClass = new Class { Id = 1, ClassName = "1A", Grade = 1 };
+        var targetClass = new Class { Id = 2, ClassName = "1B", Grade = 1, Capacity = 35 };
+        SetupRepository(new List<Class> { currentClass, targetClass });
+        SetupRepository(new List<ClassAssignment> { new() { StudentId = 10, ClassId = 1, Class = currentClass, IsActive = true } });
+
+        // Existing pending transfer
+        var existingReq = new AdministrativeRequest
+        {
+            Id = 99,
+            StudentId = 10,
+            RequestType = RequestTypes.ClassTransfer,
+            Status = RequestStatus.Submitted
+        };
+        SetupRepository(new List<AdministrativeRequest> { existingReq });
+
+        var request = new ClassTransferRequestDto { StudentId = 10, TargetClassId = 2, TransferReason = "Lý do mới" };
+
+        // Act
+        var result = await _service.SubmitClassTransferRequestAsync(20, request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task SubmitDocumentRequest_NegativeCopiesCount_FailsWithMSG01()
+    {
+        // Arrange
+        var request = new DocumentIssuanceRequestDto
+        {
+            StudentId = 10,
+            DocumentType = "Giấy xác nhận",
+            Purpose = "Mục đích",
+            NumberOfCopies = -5
+        };
+
+        // Act
+        var result = await _service.SubmitDocumentRequestAsync(20, request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task SubmitDocumentRequest_Over10CopiesCount_FailsWithMSG01()
+    {
+        // Arrange
+        var request = new DocumentIssuanceRequestDto
+        {
+            StudentId = 10,
+            DocumentType = "Giấy xác nhận",
+            Purpose = "Mục đích",
+            NumberOfCopies = 1000000
+        };
+
+        // Act
+        var result = await _service.SubmitDocumentRequestAsync(20, request);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    #endregion
 }

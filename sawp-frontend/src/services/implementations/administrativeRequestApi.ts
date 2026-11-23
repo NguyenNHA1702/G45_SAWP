@@ -5,8 +5,11 @@ import type {
   BoardDecisionRequest,
   ClassTransferRequest,
   DocumentIssuanceRequest,
+  RequestHistoryItem,
+  RequestStatistics,
   ResubmitRequest,
   StaffAmendmentRequest,
+  StaffDirectIssueRequest,
   StaffEndorseDocumentRequest,
   StaffEndorseTransferRequest,
 } from '../../types/request.types';
@@ -38,6 +41,11 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
 
   async resubmitRequest(id: number, req: ResubmitRequest): Promise<ApiResponse<boolean>> {
     const res = await apiClient.put<ApiResponse<boolean>>(`/requests/${id}/resubmit`, req);
+    return res.data;
+  }
+
+  async cancelRequest(id: number): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/cancel`, {});
     return res.data;
   }
 
@@ -95,6 +103,16 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
     return res.data;
   }
 
+  async directIssue(id: number, req: StaffDirectIssueRequest): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/direct-issue`, req);
+    return res.data;
+  }
+
+  async staffReject(id: number, reason: string): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/staff-reject`, { reason });
+    return res.data;
+  }
+
   async executeClassTransfer(id: number): Promise<ApiResponse<boolean>> {
     const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/execute-transfer`, {});
     return res.data;
@@ -111,6 +129,17 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
 
   async processBoardDecision(id: number, req: BoardDecisionRequest): Promise<ApiResponse<boolean>> {
     const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/board-decision`, req);
+    return res.data;
+  }
+
+  // History & Statistics
+  async getRequestHistory(id: number): Promise<ApiResponse<RequestHistoryItem[]>> {
+    const res = await apiClient.get<ApiResponse<RequestHistoryItem[]>>(`/requests/${id}/history`);
+    return res.data;
+  }
+
+  async getStatistics(): Promise<ApiResponse<RequestStatistics>> {
+    const res = await apiClient.get<ApiResponse<RequestStatistics>>('/requests/statistics');
     return res.data;
   }
 }

@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { ArrowRight, CheckCircle2, FileText, Send, Users, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
+import { AttachmentViewer } from '../common/AttachmentViewer';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
+import { formatDDMMYYYY, getNextMondayIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 interface BoardDecisionModalProps {
@@ -20,12 +22,18 @@ export function BoardDecisionModal({
 }: BoardDecisionModalProps) {
   const [decision, setDecision] = useState<'approve' | 'reject'>('approve');
   const [notes, setNotes] = useState('');
+  const [officialEffectiveDate, setOfficialEffectiveDate] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (request) {
       setDecision('approve');
       setNotes('');
+      if (request.classTransfer?.effectiveDate) {
+        setOfficialEffectiveDate(request.classTransfer.effectiveDate.slice(0, 10));
+      } else {
+        setOfficialEffectiveDate(getNextMondayIso());
+      }
     }
   }, [request]);
 
@@ -53,6 +61,7 @@ export function BoardDecisionModal({
       const res = await administrativeRequestApi.processBoardDecision(request.id, {
         isApproved,
         decisionNotes: notes.trim() || undefined,
+        effectiveDate: isApproved && isTransfer ? officialEffectiveDate || undefined : undefined,
       });
 
       if (res.success) {
@@ -68,8 +77,13 @@ export function BoardDecisionModal({
       } else {
         toast.error(res.message || 'Không thể xử lý quyết định');
       }
-    } catch {
-      toast.error('Đã xảy ra lỗi khi gửi quyết định.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi gửi quyết định.';
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -129,6 +143,14 @@ export function BoardDecisionModal({
                 <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#15803D' }}>
                   <Users size={14} /> Sĩ số hiện tại: {transfer.targetClassCapacity ?? 0}/{transfer.targetClassMaxCapacity ?? 35} học sinh
                 </div>
+                {transfer.effectiveDate && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#1E293B' }}>
+                    📅 <strong>Ngày Giáo vụ đề xuất hiệu lực:</strong>{' '}
+                    <span style={{ padding: '2px 8px', backgroundColor: '#FEF3C7', color: '#92400E', borderRadius: 6, fontWeight: 700 }}>
+                      {formatDDMMYYYY(transfer.effectiveDate)}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -160,38 +182,57 @@ export function BoardDecisionModal({
           <div style={{ fontSize: 14, color: '#1E40AF', lineHeight: 1.5, fontStyle: 'italic' }}>
             "{isTransfer ? transfer?.staffRecommendation || 'Hồ sơ đầy đủ, đủ điều kiện chuyển lớp.' : doc?.staffEndorsement || 'Hồ sơ xác thực hợp lệ.'}"
           </div>
+          <AttachmentViewer url={request.attachmentUrl} />
         </div>
 
-        {/* Nếu là đơn giấy tờ: Hiển thị nội dung dự thảo */}
-        {!isTransfer && doc?.documentContentDraft && (
+        {/* Nếu là đơn giấy tờ: Hiển thị nội dung dự thảo theo mẫu chính thức */}
+        {!isTransfer && doc && (
           <div
             style={{
               backgroundColor: '#FFFFFF',
-              border: '2px solid #E2E8F0',
+              border: '2px solid #CBD5E1',
               borderRadius: 12,
-              padding: 14,
+              padding: 16,
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <FileText size={15} /> DỰ THẢO VĂN BẢN SẼ KÝ PHÁT HÀNH:
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FileText size={15} color="#4F46E5" /> VĂN BẢN DỰ THẢO TRÌNH BAN GIÁM HIỆU DUYỆT & KÝ SỐ:
             </div>
-            <pre
-              style={{
-                margin: 0,
-                padding: 10,
-                backgroundColor: '#F8FAFC',
-                borderRadius: 8,
-                fontSize: 12,
-                fontFamily: 'monospace',
-                whiteSpace: 'pre-wrap',
-                lineHeight: 1.5,
-                color: '#1E293B',
-                maxHeight: 140,
-                overflowY: 'auto',
-              }}
-            >
-              {doc.documentContentDraft}
-            </pre>
+            
+            <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: 16, fontFamily: 'Times New Roman, serif', color: '#000000', fontSize: 13, lineHeight: 1.5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: 10, marginBottom: 12 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11 }}>UBND THÀNH PHỐ HÀ NỘI</div>
+                  <div style={{ fontWeight: 800, fontSize: 12 }}>TRƯỜNG TIỂU HỌC SAWP</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>Số: <em>{doc.certificateNumber || 'SAWP-2026-CHÍNH-THỨC'}</em></div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 800, fontSize: 12 }}>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>Độc lập - Tự do - Hạnh phúc</div>
+                  <div style={{ fontSize: 11, fontStyle: 'italic', marginTop: 4 }}>Hà Nội, ngày {new Date().getDate()} tháng {new Date().getMonth() + 1} năm {new Date().getFullYear()}</div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 15, margin: '10px 0', textTransform: 'uppercase' }}>
+                {doc.documentType}
+              </div>
+              <div style={{ margin: '8px 0', fontSize: 13 }}>
+                <div>• <strong>Học sinh:</strong> {request.studentName} (Mã định danh: {request.studentCode})</div>
+                <div>• <strong>Lớp:</strong> {request.currentClassName || 'Chính khóa'} - Trường Tiểu học SAWP</div>
+                <div>• <strong>Mục đích:</strong> {doc.purpose} ({doc.numberOfCopies} bản chính)</div>
+              </div>
+              <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', padding: '10px 12px', borderRadius: 6, margin: '10px 0', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>
+                {doc.documentContentDraft || 'Chưa có nội dung dự thảo.'}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12, textAlign: 'center' }}>
+                <div style={{ width: 220 }}>
+                  <div style={{ fontWeight: 800, fontSize: 12 }}>TM. BAN GIÁM HIỆU</div>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>HIỆU TRƯỞNG</div>
+                  <div style={{ marginTop: 18, fontSize: 11, color: '#059669', border: '1px solid #10B981', padding: '4px 8px', borderRadius: 6, backgroundColor: '#ECFDF5' }}>
+                    ✓ CHỨNG THƯ KÝ SỐ BGH
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -286,6 +327,26 @@ export function BoardDecisionModal({
                 </label>
               </div>
             </div>
+
+            {decision === 'approve' && isTransfer && (
+              <div>
+                <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                  Ngày có hiệu lực chính thức: <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input
+                  type="date"
+                  className="input"
+                  style={{ width: '100%', borderRadius: 10, padding: '10px 12px', fontSize: 14 }}
+                  value={officialEffectiveDate}
+                  onChange={(e) => setOfficialEffectiveDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  required
+                />
+                <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                  Mặc định theo ngày đề xuất của Giáo vụ ({formatDDMMYYYY(officialEffectiveDate)}). Ban Giám Hiệu có thể điều chỉnh ngày quyết định bắt đầu có hiệu lực thi hành.
+                </div>
+              </div>
+            )}
 
             <div>
               <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>

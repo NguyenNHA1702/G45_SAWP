@@ -19,4 +19,5 @@ public class ClassTransferDetail
     public int? TargetClassCapacitySnapshot { get; set; }
     public bool IsExecuted { get; set; }
     public DateTime? ExecutedAt { get; set; }
+    public DateTime? EffectiveDate { get; set; }
 }

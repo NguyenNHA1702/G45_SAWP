@@ -11,15 +11,17 @@ import {
   Info,
   RefreshCw,
   Send,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useParentChild } from '../../contexts/ParentChildContext';
-import { ChildSelectorPill } from '../../components/parent/ChildSelectorPill';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { classApi } from '../../services/implementations/classApi';
 import { ResubmitModal } from '../../components/requests/ResubmitModal';
+import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
 import { DirectFileUploader } from '../../components/common/DirectFileUploader';
+import { AttachmentViewer } from '../../components/common/AttachmentViewer';
 import { formatDDMMYYYY } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
@@ -32,17 +34,24 @@ export default function AdministrativeRequestsPage() {
   const [classes, setClasses] = useState<ClassSummaryDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   // Form Chuyển lớp
   const [targetClassId, setTargetClassId] = useState<number | ''>('');
   const [transferReason, setTransferReason] = useState('');
+  const [effectiveDate, setEffectiveDate] = useState('');
   const [transferAttachment, setTransferAttachment] = useState('');
 
   // Form Giấy tờ
   const [documentType, setDocumentType] = useState('Giấy xác nhận học sinh đang theo học');
   const [numberOfCopies, setNumberOfCopies] = useState<number>(1);
   const [documentPurpose, setDocumentPurpose] = useState('');
+  const [isPaperCopyRequested, setIsPaperCopyRequested] = useState(false);
   const [documentAttachment, setDocumentAttachment] = useState('');
+
+  // History timeline modal
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [selectedHistoryRequest, setSelectedHistoryRequest] = useState<{ id: number; requestNumber: string } | null>(null);
 
   // Modal nộp lại khi có Amendment
   const [selectedRequestForResubmit, setSelectedRequestForResubmit] = useState<AdministrativeRequestSummary | null>(null);
@@ -99,16 +108,26 @@ export default function AdministrativeRequestsPage() {
 
     try {
       setSubmitting(true);
+      const target = classes.find((c) => c.id === Number(targetClassId));
+      const targetEnrolled = target?.enrolledStudentsCount ?? target?.enrolledCount ?? 0;
+      if (target && targetEnrolled >= target.capacity) {
+        toast.error(`Lớp ${target.className} hiện đã đủ sĩ số (${targetEnrolled}/${target.capacity}). Vui lòng chọn lớp khác.`);
+        setSubmitting(false);
+        return;
+      }
+
       const res = await administrativeRequestApi.submitClassTransfer({
         studentId: activeChild.studentId,
         targetClassId: Number(targetClassId),
         transferReason: transferReason.trim(),
+        effectiveDate: effectiveDate || undefined,
         attachmentUrl: transferAttachment.trim() || undefined,
       });
 
       if (res.success) {
         toast.success(res.message || 'Đã gửi đơn xin chuyển lớp thành công!');
         setTransferReason('');
+        setEffectiveDate('');
         setTransferAttachment('');
         setTargetClassId('');
         setActiveTab('list');
@@ -116,8 +135,13 @@ export default function AdministrativeRequestsPage() {
       } else {
         toast.error(res.message || 'Không thể gửi đơn chuyển lớp');
       }
-    } catch {
-      toast.error('Đã xảy ra lỗi khi gửi đơn chuyển lớp.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi gửi đơn chuyển lớp.';
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
     }
@@ -134,6 +158,10 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng nhập mục đích xin cấp giấy tờ.');
       return;
     }
+    if (numberOfCopies < 1 || numberOfCopies > 10) {
+      toast.error('Số lượng bản sao phải từ 1 đến 10 bản.');
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -142,6 +170,7 @@ export default function AdministrativeRequestsPage() {
         documentType: documentType.trim(),
         numberOfCopies: Number(numberOfCopies),
         purpose: documentPurpose.trim(),
+        isPaperCopyRequested,
         attachmentUrl: documentAttachment.trim() || undefined,
       });
 
@@ -150,28 +179,90 @@ export default function AdministrativeRequestsPage() {
         setDocumentPurpose('');
         setDocumentAttachment('');
         setNumberOfCopies(1);
+        setIsPaperCopyRequested(false);
         setActiveTab('list');
         fetchMyRequests();
       } else {
         toast.error(res.message || 'Không thể gửi đơn xin cấp giấy tờ');
       }
-    } catch {
-      toast.error('Đã xảy ra lỗi khi gửi đơn xin cấp giấy tờ.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi gửi đơn xin cấp giấy tờ.';
+      toast.error(errorMsg);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Hủy đơn hành chính khi còn ở Submitted (BUG6)
+  const handleCancelRequest = async (req: AdministrativeRequestSummary) => {
+    const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy đơn "${req.requestNumber}" không?`);
+    if (!confirmed) return;
+
+    try {
+      setCancellingId(req.id);
+      const res = await administrativeRequestApi.cancelRequest(req.id);
+      if (res.success) {
+        toast.success('Đã hủy đơn thành công!');
+        fetchMyRequests();
+      } else {
+        toast.error(res.message || 'Không thể hủy đơn.');
+      }
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Đã xảy ra lỗi khi hủy đơn.';
+      toast.error(errorMsg);
+    } finally {
+      setCancellingId(null);
     }
   };
 
   // Tải văn bản đã phát hành
   const handleDownload = async (req: AdministrativeRequestSummary) => {
     try {
-      const fileName = `Giay_Xac_Nhan_${req.studentCode || 'HS'}_${req.requestNumber}.txt`;
+      const fileName = `Giay_Xac_Nhan_${req.studentCode || 'HS'}_${req.requestNumber}.doc`;
       await administrativeRequestApi.downloadIssuedDocument(req.id, fileName);
       toast.success('Đã tải văn bản chính thức thành công!');
-    } catch {
-      toast.error('Không thể tải văn bản. Vui lòng thử lại sau.');
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0] ||
+        err?.message ||
+        'Không thể tải văn bản. Vui lòng thử lại sau.';
+      toast.error(errorMsg);
     }
   };
+
+  // Kiểm tra học sinh có đang có đơn chuyển lớp đang xử lý không (BUG7 / UC-36 E1)
+  const pendingTransferRequest = useMemo(() => {
+    return requests.find(
+      (r) =>
+        r.requestType === 'ClassTransfer' &&
+        (activeChild?.studentId ? r.studentId === activeChild.studentId : true) &&
+        (r.status === 'Submitted' || r.status === 'UnderReview' || (r.status === 'Approved' && !r.classTransfer?.isExecuted))
+    );
+  }, [requests, activeChild]);
+
+  const hasPendingTransfer = !!pendingTransferRequest;
+
+  // Kiểm tra học sinh có đang có đơn xin cấp cùng loại giấy tờ đang xử lý không
+  const pendingDocForSelectedType = useMemo(() => {
+    return requests.find(
+      (r) =>
+        r.requestType === 'Document' &&
+        (activeChild?.studentId ? r.studentId === activeChild.studentId : true) &&
+        (r.status === 'Submitted' || r.status === 'UnderReview') &&
+        r.documentRequest?.documentType?.trim().toLowerCase() === documentType.trim().toLowerCase()
+    );
+  }, [requests, activeChild, documentType]);
+
+  const hasPendingDocument = !!pendingDocForSelectedType;
 
   // Xác định khối hiện tại của học sinh đang chọn
   const currentChildGrade = useMemo(() => {
@@ -238,11 +329,6 @@ export default function AdministrativeRequestsPage() {
           <p style={{ margin: 0, color: '#64748B', fontSize: 14 }}>
             Gửi yêu cầu xin chuyển lớp hoặc xin cấp các loại giấy xác nhận, chứng nhận điện tử từ Nhà trường.
           </p>
-        </div>
-
-        {/* Pill chọn con */}
-        <div>
-          <ChildSelectorPill />
         </div>
       </div>
 
@@ -476,8 +562,56 @@ export default function AdministrativeRequestsPage() {
                         </span>
                       </div>
 
-                      {/* Badge trạng thái */}
-                      <div>
+                      {/* Badge trạng thái & Hành động */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedHistoryRequest({ id: req.id, requestNumber: req.requestNumber });
+                            setHistoryModalOpen(true);
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 8,
+                            border: '1.5px solid #1E293B',
+                            backgroundColor: '#FFFFFF',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            boxShadow: '1px 1px 0 #1E293B',
+                          }}
+                          title="Xem toàn bộ lịch sử tiến trình xử lý đơn này"
+                        >
+                          <History size={13} /> Lịch sử
+                        </button>
+
+                        {req.status === 'Submitted' && !req.requiresAmendment && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelRequest(req)}
+                            disabled={cancellingId === req.id}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 8,
+                              border: '1.5px solid #EF4444',
+                              backgroundColor: '#FEF2F2',
+                              color: '#B91C1C',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                            title="Hủy đơn này khi Giáo vụ chưa trình BGH"
+                          >
+                            <Trash2 size={13} /> {cancellingId === req.id ? 'Đang hủy...' : 'Hủy đơn'}
+                          </button>
+                        )}
+
                         {req.requiresAmendment ? (
                           <span
                             style={{
@@ -530,7 +664,7 @@ export default function AdministrativeRequestsPage() {
                           >
                             <Info size={14} /> Đang trình BGH xem xét
                           </span>
-                        ) : req.status === 'Approved' ? (
+                        ) : req.status === 'Completed' || (req.status === 'Approved' && (!isTransfer || req.classTransfer?.isExecuted)) ? (
                           <span
                             style={{
                               backgroundColor: '#DCFCE7',
@@ -545,7 +679,41 @@ export default function AdministrativeRequestsPage() {
                               gap: 6,
                             }}
                           >
-                            <CheckCircle2 size={14} /> Đã phê duyệt hoàn tất
+                            <CheckCircle2 size={14} /> {isTransfer ? 'Đã hoàn tất chuyển lớp' : 'Đã phát hành văn bản'}
+                          </span>
+                        ) : req.status === 'Approved' ? (
+                          <span
+                            style={{
+                              backgroundColor: '#E0E7FF',
+                              color: '#3730A3',
+                              border: '1.5px solid #1E293B',
+                              borderRadius: 20,
+                              padding: '4px 12px',
+                              fontSize: 12,
+                              fontWeight: 800,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
+                          >
+                            <CheckCircle2 size={14} /> BGH đã duyệt - Chờ điều chuyển
+                          </span>
+                        ) : req.status === 'Cancelled' ? (
+                          <span
+                            style={{
+                              backgroundColor: '#F1F5F9',
+                              color: '#475569',
+                              border: '1.5px solid #1E293B',
+                              borderRadius: 20,
+                              padding: '4px 12px',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
+                          >
+                            <XCircle size={14} /> Đã hủy đơn
                           </span>
                         ) : (
                           <span
@@ -610,18 +778,7 @@ export default function AdministrativeRequestsPage() {
                             Ngày xử lý: <strong>{formatDDMMYYYY(req.processedDate)}</strong>
                           </div>
                         )}
-                        {req.attachmentUrl && (
-                          <div style={{ marginTop: 6 }}>
-                            <a
-                              href={req.attachmentUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ fontSize: 12, color: '#2563EB', textDecoration: 'underline' }}
-                            >
-                              📎 Xem tệp minh chứng đính kèm
-                            </a>
-                          </div>
-                        )}
+                        <AttachmentViewer url={req.attachmentUrl} compact />
                       </div>
                     </div>
 
@@ -674,8 +831,60 @@ export default function AdministrativeRequestsPage() {
                       </div>
                     )}
 
-                    {/* Hộp kết quả Thành công (Chuyển lớp đã áp dụng hoặc Giấy tờ đã ký phát hành) */}
-                    {req.status === 'Approved' && (
+                    {/* Hộp Thông báo khi BGH đã duyệt đơn chuyển lớp nhưng CHƯA áp dụng (chờ ngày hiệu lực) */}
+                    {isTransfer && req.status === 'Approved' && !req.classTransfer?.isExecuted && (
+                      <div
+                        style={{
+                          marginTop: 16,
+                          backgroundColor: '#EFF6FF',
+                          border: '2px solid #3B82F6',
+                          borderRadius: 12,
+                          padding: 14,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                        }}
+                      >
+                        <Clock size={22} color="#2563EB" style={{ flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontWeight: 800, color: '#1E40AF', fontSize: 13 }}>
+                            BAN GIÁM HIỆU ĐÃ PHÊ DUYỆT ĐƠN CHUYỂN LỚP — CHỜ NHÀ TRƯỜNG ĐIỀU CHUYỂN
+                          </div>
+                          <div style={{ fontSize: 13, color: '#1E3A8A', marginTop: 2 }}>
+                            Ban Giám Hiệu đã đồng ý điều chuyển học sinh sang Lớp {req.classTransfer?.toClassName}. Nhà trường / Văn phòng Giáo vụ sẽ thực hiện thao tác chuyển lớp theo ngày hiệu lực {req.classTransfer?.effectiveDate ? `(${formatDDMMYYYY(req.classTransfer.effectiveDate)})` : ''}.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hộp kết quả Thành công: Chuyển lớp ĐÃ ÁP DỤNG THÀNH CÔNG */}
+                    {isTransfer && (req.status === 'Completed' || (req.status === 'Approved' && req.classTransfer?.isExecuted)) && (
+                      <div
+                        style={{
+                          marginTop: 16,
+                          backgroundColor: '#F0FDF4',
+                          border: '2px solid #22C55E',
+                          borderRadius: 12,
+                          padding: 14,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                        }}
+                      >
+                        <CheckCircle2 size={22} color="#16A34A" style={{ flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontWeight: 800, color: '#166534', fontSize: 13 }}>
+                            CHÚC MỪNG: HỌC SINH ĐÃ ĐƯỢC CHUYỂN LỚP THÀNH CÔNG!
+                          </div>
+                          <div style={{ fontSize: 13, color: '#14532D', marginTop: 2 }}>
+                            Học sinh đã chính thức được chuyển sang Lớp {req.classTransfer?.toClassName}. Quý phụ huynh vui lòng theo dõi thời khóa biểu mới của con.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hộp kết quả Giấy tờ ĐÃ PHÁT HÀNH (Hỗ trợ cả Approved của BGH và Completed do Giáo vụ phát hành trực tiếp) */}
+                    {!isTransfer && (req.status === 'Approved' || req.status === 'Completed') && (
                       <div
                         style={{
                           marginTop: 16,
@@ -691,37 +900,33 @@ export default function AdministrativeRequestsPage() {
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <CheckCircle2 size={22} color="#16A34A" />
+                          <CheckCircle2 size={22} color="#16A34A" style={{ flexShrink: 0 }} />
                           <div>
                             <div style={{ fontWeight: 800, color: '#166534', fontSize: 13 }}>
-                              {isTransfer ? 'CHÚC MỪNG: HỌC SINH ĐÃ ĐƯỢC CHUYỂN LỚP THÀNH CÔNG!' : 'VĂN BẢN ĐÃ ĐƯỢC KÝ DUYỆT & PHÁT HÀNH!'}
+                              VĂN BẢN ĐÃ ĐƯỢC KÝ DUYỆT & PHÁT HÀNH CHÍNH THỨC!
                             </div>
                             <div style={{ fontSize: 13, color: '#14532D', marginTop: 2 }}>
-                              {isTransfer
-                                ? `Học sinh đã chính thức được chuyển sang Lớp ${req.classTransfer?.toClassName}. Quý phụ huynh vui lòng theo dõi thời khóa biểu mới.`
-                                : `Số hiệu: ${req.documentRequest?.certificateNumber || 'SAWP-OFFICIAL'} - ${req.documentRequest?.digitalSignatureInfo || 'Đã ký số'}`}
+                              Số hiệu: {req.documentRequest?.certificateNumber || 'SAWP-OFFICIAL'} — {req.documentRequest?.digitalSignatureInfo || 'Đã ký xác thực điện tử'}
                             </div>
                           </div>
                         </div>
 
-                        {!isTransfer && (
-                          <button
-                            type="button"
-                            className="btn btn--primary"
-                            onClick={() => handleDownload(req)}
-                            style={{
-                              fontSize: 13,
-                              padding: '8px 14px',
-                              backgroundColor: '#16A34A',
-                              borderColor: '#1E293B',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 6,
-                            }}
-                          >
-                            <Download size={15} /> Tải văn bản điện tử
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="btn btn--primary"
+                          onClick={() => handleDownload(req)}
+                          style={{
+                            fontSize: 13,
+                            padding: '8px 14px',
+                            backgroundColor: '#16A34A',
+                            borderColor: '#1E293B',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          <Download size={15} /> Tải văn bản điện tử
+                        </button>
                       </div>
                     )}
 
@@ -777,6 +982,26 @@ export default function AdministrativeRequestsPage() {
             </div>
           </div>
 
+          {/* Cảnh báo nếu đã có đơn chuyển lớp đang chờ xử lý */}
+          {hasPendingTransfer && (
+            <div
+              style={{
+                backgroundColor: '#FEF2F2',
+                border: '2px solid #EF4444',
+                borderRadius: 12,
+                padding: '14px 18px',
+                marginBottom: 20,
+              }}
+            >
+              <div style={{ fontWeight: 800, color: '#991B1B', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertCircle size={18} /> Đang có đơn xin chuyển lớp chờ xử lý
+              </div>
+              <div style={{ fontSize: 13, color: '#7F1D1D', marginTop: 4 }}>
+                Học sinh này hiện đang có 1 đơn xin chuyển lớp đang trong quá trình xét duyệt. Theo quy định, mỗi học sinh chỉ được có 1 yêu cầu chuyển lớp hoạt động tại một thời điểm. Quý phụ huynh vui lòng chờ đơn hiện tại được giải quyết xong hoặc hủy đơn trước khi nộp đơn mới.
+              </div>
+            </div>
+          )}
+
           {/* Card học sinh đang chọn */}
           <div
             style={{
@@ -817,13 +1042,18 @@ export default function AdministrativeRequestsPage() {
                 value={targetClassId}
                 onChange={(e) => setTargetClassId(Number(e.target.value))}
                 required
+                disabled={hasPendingTransfer}
               >
                 <option value="">-- Chọn lớp mục tiêu (Cùng Khối) --</option>
-                {availableTargetClasses.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.className} — Khối {c.grade} (Sức chứa tối đa: {c.capacity} học sinh)
-                  </option>
-                ))}
+                {availableTargetClasses.map((c) => {
+                  const enrolled = c.enrolledStudentsCount ?? c.enrolledCount ?? 0;
+                  const isFull = enrolled >= c.capacity;
+                  return (
+                    <option key={c.id} value={c.id} disabled={isFull}>
+                      {c.className} — Khối {c.grade} ({enrolled}/{c.capacity} học sinh){isFull ? ' - [ĐÃ ĐỦ SĨ SỐ - KHÔNG THỂ CHỌN]' : ` (Còn ${c.capacity - enrolled} chỗ)`}
+                    </option>
+                  );
+                })}
               </select>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#0369A1' }}>
                 <span>ℹ️</span>
@@ -840,6 +1070,24 @@ export default function AdministrativeRequestsPage() {
 
             <div>
               <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                Thời điểm mong muốn chuyển (nếu có):
+              </label>
+              <input
+                type="date"
+                className="input"
+                style={{ width: '100%', borderRadius: 10, padding: '10px 14px', fontSize: 14 }}
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                disabled={hasPendingTransfer}
+              />
+              <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                (Không bắt buộc. Ngày chuyển chính thức sẽ do Ban Giám Hiệu xem xét và ấn định căn cứ theo kế hoạch học tập của trường).
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
                 Lý do xin chuyển lớp: <span style={{ color: '#EF4444' }}>*</span>
               </label>
               <textarea
@@ -849,13 +1097,14 @@ export default function AdministrativeRequestsPage() {
                 onChange={(e) => setTransferReason(e.target.value)}
                 placeholder="Vui lòng trình bày rõ lý do (ví dụ: thuận tiện đưa đón cùng anh/chị, chuyển đổi nơi cư trú, phù hợp định hướng phát triển của con...)"
                 required
+                disabled={hasPendingTransfer}
               />
             </div>
 
             <DirectFileUploader
               value={transferAttachment}
               onChange={setTransferAttachment}
-              label="Tệp minh chứng đính kèm (Hình ảnh hoặc PDF, Word nếu có):"
+              label="Tệp minh chứng đính kèm (nếu có):"
               hint="Tải ảnh giấy xác nhận nơi cư trú, đơn viết tay hoặc giấy tờ minh chứng để Giáo vụ thẩm định nhanh hơn."
             />
 
@@ -871,8 +1120,8 @@ export default function AdministrativeRequestsPage() {
               <button
                 type="submit"
                 className="btn btn--primary"
-                disabled={submitting}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px' }}
+                disabled={submitting || hasPendingTransfer}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px', opacity: hasPendingTransfer ? 0.6 : 1 }}
               >
                 <Send size={18} /> {submitting ? 'Đang gửi...' : 'Gửi đơn xin chuyển lớp'}
               </button>
@@ -935,6 +1184,26 @@ export default function AdministrativeRequestsPage() {
             </div>
           </div>
 
+          {/* Cảnh báo nếu đã có đơn cùng loại đang chờ xử lý */}
+          {hasPendingDocument && pendingDocForSelectedType && (
+            <div
+              style={{
+                backgroundColor: '#FEF2F2',
+                border: '2px solid #EF4444',
+                borderRadius: 12,
+                padding: '14px 18px',
+                marginBottom: 20,
+              }}
+            >
+              <div style={{ fontWeight: 800, color: '#991B1B', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertCircle size={18} /> Đang có đơn xin cấp cùng loại giấy tờ chờ xử lý
+              </div>
+              <div style={{ fontSize: 13, color: '#7F1D1D', marginTop: 4 }}>
+                Học sinh này hiện đang có đơn xin cấp "<strong>{documentType}</strong>" (Mã đơn: <strong>{pendingDocForSelectedType.requestNumber}</strong>) đang trong quá trình xét duyệt. Quý phụ huynh vui lòng chờ kết quả đơn trước đó hoặc chọn loại giấy tờ khác cần cấp.
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmitDocument} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               <div>
@@ -948,10 +1217,19 @@ export default function AdministrativeRequestsPage() {
                   onChange={(e) => setDocumentType(e.target.value)}
                   required
                 >
-                  <option value="Giấy xác nhận học sinh đang theo học">Giấy xác nhận học sinh đang theo học</option>
-                  <option value="Bảng điểm rèn luyện & học tập">Bảng điểm rèn luyện & học tập</option>
-                  <option value="Đơn xin chuyển trường">Đơn xin chuyển trường</option>
-                  <option value="Giấy xác nhận hoàn thành chương trình">Giấy xác nhận hoàn thành chương trình</option>
+                  <optgroup label="Thủ tục Giáo vụ cấp phát hành trực tiếp (Cấp nhanh trong ngày)">
+                    <option value="Giấy xác nhận học sinh đang theo học">Giấy xác nhận học sinh đang theo học</option>
+                    <option value="Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)">Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)</option>
+                    <option value="Đơn xin cấp lại / trích lục hồ sơ học tập">Đơn xin cấp lại / trích lục hồ sơ học tập</option>
+                    <option value="Bảng điểm rèn luyện & học tập">Bảng điểm rèn luyện & học tập</option>
+                    <option value="Giấy xác nhận hoàn thành chương trình">Giấy xác nhận hoàn thành chương trình</option>
+                  </optgroup>
+                  <optgroup label="Thủ tục Ban Giám Hiệu phê duyệt & ký số điện tử">
+                    <option value="Đơn xin chuyển trường">Đơn xin chuyển trường (Chuyển đi tỉnh/trường khác)</option>
+                    <option value="Đơn xin phúc khảo bài kiểm tra định kỳ">Đơn xin phúc khảo bài kiểm tra định kỳ</option>
+                    <option value="Đơn xin miễn, giảm các khoản đóng góp / hỗ trợ chi phí học tập">Đơn xin miễn, giảm các khoản đóng góp / hỗ trợ chi phí học tập</option>
+                    <option value="Giấy xác nhận thuộc đối tượng miễn, giảm học phí / hỗ trợ chi phí học tập">Giấy xác nhận thuộc đối tượng miễn, giảm học phí / hỗ trợ chi phí học tập</option>
+                  </optgroup>
                 </select>
               </div>
 
@@ -986,6 +1264,29 @@ export default function AdministrativeRequestsPage() {
               />
             </div>
 
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '12px 14px',
+                backgroundColor: '#F8FAFC',
+                borderRadius: 10,
+                border: '1.5px solid #CBD5E1',
+              }}
+            >
+              <input
+                type="checkbox"
+                id="paperCopyCheckbox"
+                checked={isPaperCopyRequested}
+                onChange={(e) => setIsPaperCopyRequested(e.target.checked)}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <label htmlFor="paperCopyCheckbox" style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', cursor: 'pointer' }}>
+                Yêu cầu nhận thêm bản giấy có đóng dấu mộc đỏ trực tiếp tại văn phòng Giáo vụ
+              </label>
+            </div>
+
             <DirectFileUploader
               value={documentAttachment}
               onChange={setDocumentAttachment}
@@ -1005,8 +1306,14 @@ export default function AdministrativeRequestsPage() {
               <button
                 type="submit"
                 className="btn btn--primary"
-                disabled={submitting}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px' }}
+                disabled={submitting || hasPendingDocument}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 24px',
+                  opacity: hasPendingDocument ? 0.6 : 1,
+                }}
               >
                 <Send size={18} /> {submitting ? 'Đang gửi...' : 'Gửi đơn xin cấp giấy tờ'}
               </button>
@@ -1021,6 +1328,14 @@ export default function AdministrativeRequestsPage() {
         onClose={() => setResubmitOpen(false)}
         request={selectedRequestForResubmit}
         onSuccess={fetchMyRequests}
+      />
+
+      {/* Modal xem lịch sử tiến trình đơn */}
+      <RequestHistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        requestId={selectedHistoryRequest?.id ?? 0}
+        requestNumber={selectedHistoryRequest?.requestNumber ?? ''}
       />
     </div>
   );
