@@ -58,6 +58,7 @@ public class AttendanceSheetEntryDto
     public LeaveIndicatorDto? Leave { get; set; }
     public bool HasLunch { get; set; }                             // đang có suất ăn active
     public LunchCancellationSource? LunchCancelledBy { get; set; }
+    public DateTime? AbsenceNoticeSentAt { get; set; }             // UTC; OVR-01, null = no notice sent
 }
 
 public class AttendanceSummaryDto
@@ -92,7 +93,6 @@ public class AttendanceSubmitResultDto
     public int LunchDeductedCount { get; set; }
     public int LunchRestoredCount { get; set; }
     public int LunchRestoreSkippedCount { get; set; }              // sau giờ bếp chốt, không khôi phục được
-    public int ParentsNotifiedCount { get; set; }
     public List<string> Warnings { get; set; } = new();
 }
 
@@ -137,4 +137,12 @@ public class StudentAttendanceRowDto
     public int Late { get; set; }
     public int ExcusedAbsence { get; set; }
     public int UnexcusedAbsence { get; set; }
+}
+
+// OVR-01 (UC-23 A2): result of sending an absence notice for one attendance record.
+public class AbsenceNoticeResultDto
+{
+    public int RecordId { get; set; }
+    public DateTime AbsenceNoticeSentAt { get; set; }               // UTC
+    public int ParentsNotifiedCount { get; set; }
 }

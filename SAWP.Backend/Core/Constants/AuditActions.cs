@@ -43,6 +43,7 @@ public static class AuditActions
     public const string AttendanceSubmit = "ATTENDANCE_SUBMIT";
     public const string AttendanceUpdate = "ATTENDANCE_UPDATE";
     public const string AttendanceCorrect = "ATTENDANCE_CORRECT";
+    public const string AttendanceAbsenceNoticeSend = "ATTENDANCE_ABSENCE_NOTICE_SEND";
 
     // Requests
     public const string LeaveRequestSubmit = "LEAVE_REQUEST_SUBMIT";
