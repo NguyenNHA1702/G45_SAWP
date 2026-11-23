@@ -1,7 +1,7 @@
 namespace Core.Constants;
 
 /// <summary>
-/// Standard System Messages defined in SRS (MSG01 to MSG55).
+/// Standard System Messages defined in SRS (MSG01 to MSG59).
 /// </summary>
 public static class SystemMessages
 {
@@ -225,6 +225,22 @@ public static class SystemMessages
     public static readonly SystemMessage MSG55 = new("MSG55", "Toast (Success)", "Absence notice sent", "Đã gửi thông báo vắng mặt cho phụ huynh.");
     public static readonly SystemMessage MSG55_AbsenceNoticeSent = MSG55;
 
+    /// <summary>[Toast (Info)] Recovery or activation link requested: Nếu địa chỉ email đã được đăng ký, một đường liên kết sẽ được gửi đến hộp thư của bạn. Vui lòng kiểm tra email.</summary>
+    public static readonly SystemMessage MSG56 = new("MSG56", "Toast (Info)", "Recovery or activation link requested", "Nếu địa chỉ email đã được đăng ký, một đường liên kết sẽ được gửi đến hộp thư của bạn. Vui lòng kiểm tra email.");
+    public static readonly SystemMessage MSG56_LinkRequested = MSG56;
+
+    /// <summary>[Inline / Toast (Error)] Link invalid, expired, or already used: Liên kết không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu liên kết mới.</summary>
+    public static readonly SystemMessage MSG57 = new("MSG57", "Inline / Toast (Error)", "Link invalid, expired, or already used", "Liên kết không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu liên kết mới.");
+    public static readonly SystemMessage MSG57_LinkInvalid = MSG57;
+
+    /// <summary>[Toast (Error)] Too many link requests: Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau ít phút.</summary>
+    public static readonly SystemMessage MSG58 = new("MSG58", "Toast (Error)", "Too many link requests", "Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau ít phút.");
+    public static readonly SystemMessage MSG58_TooManyLinkRequests = MSG58;
+
+    /// <summary>[Toast (Error)] Activation or recovery email could not be sent: Không thể gửi email lúc này. Vui lòng thử lại sau.</summary>
+    public static readonly SystemMessage MSG59 = new("MSG59", "Toast (Error)", "Activation or recovery email could not be sent", "Không thể gửi email lúc này. Vui lòng thử lại sau.");
+    public static readonly SystemMessage MSG59_EmailUnavailable = MSG59;
+
     /// <summary>Map of all system messages by code</summary>
     public static readonly IReadOnlyDictionary<string, SystemMessage> All = new Dictionary<string, SystemMessage>(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -283,6 +299,10 @@ public static class SystemMessages
         { "MSG53", MSG53 },
         { "MSG54", MSG54 },
         { "MSG55", MSG55 },
+        { "MSG56", MSG56 },
+        { "MSG57", MSG57 },
+        { "MSG58", MSG58 },
+        { "MSG59", MSG59 },
     };
 
     /// <summary>Lookup a message by code (e.g. MSG01)</summary>

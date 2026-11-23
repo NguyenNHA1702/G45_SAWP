@@ -16,6 +16,13 @@ import { adminApi } from '../../services/implementations/adminApi';
 import type { AdminUserDto, RoleOptionDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 
+/** Account state (BR-63): Pending Activation is neither active nor locked. */
+const STATUS_BADGE: Record<AdminUserDto['status'], { label: string; className: string }> = {
+  Active: { label: 'Hoạt động', className: 'badge badge--mint' },
+  PendingActivation: { label: 'Chờ kích hoạt', className: 'badge badge--amber' },
+  Deactivated: { label: 'Đã khóa', className: 'badge badge--pink' },
+};
+
 export default function UsersManagementPage() {
   const [users, setUsers] = useState<AdminUserDto[]>([]);
   const [roles, setRoles] = useState<RoleOptionDto[]>([]);
@@ -35,7 +42,6 @@ export default function UsersManagementPage() {
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [newRoles, setNewRoles] = useState<string[]>(['Teacher']);
 
   // Edit roles modal
@@ -94,17 +100,17 @@ export default function UsersManagementPage() {
         fullName: newFullName,
         email: newEmail,
         phoneNumber: newPhone || undefined,
-        password: newPassword,
         roles: newRoles,
       });
       if (res.success) {
         toast.success(getSystemMessage('MSG38')?.content || res.message);
+        // The account exists, but the activation email could not be sent (MSG59)
+        res.errors?.forEach((m) => toast.error(m, { duration: 8000 }));
         setShowCreateModal(false);
         setNewUsername('');
         setNewFullName('');
         setNewEmail('');
         setNewPhone('');
-        setNewPassword('');
         setNewRoles(['Teacher']);
         loadData();
       } else {
@@ -273,7 +279,7 @@ export default function UsersManagementPage() {
           >
             <option value="">Mọi trạng thái</option>
             <option value="true">Đang hoạt động</option>
-            <option value="false">Đã vô hiệu hóa</option>
+            <option value="false">Chưa hoạt động (chờ kích hoạt / đã khóa)</option>
           </select>
 
           <button type="submit" className="btn btn--primary btn--sm">Lọc</button>
@@ -322,9 +328,7 @@ export default function UsersManagementPage() {
                       </div>
                     </td>
                     <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                      <span className={u.isActive ? 'badge badge--mint' : 'badge badge--pink'}>
-                        {u.isActive ? 'Hoạt động' : 'Đã khóa'}
-                      </span>
+                      <span className={STATUS_BADGE[u.status].className}>{STATUS_BADGE[u.status].label}</span>
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -342,7 +346,8 @@ export default function UsersManagementPage() {
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
-                          title="Đặt lại mật khẩu"
+                          title={u.status === 'Active' ? 'Đặt lại mật khẩu' : 'Chỉ đặt lại được mật khẩu của tài khoản đang hoạt động'}
+                          disabled={u.status !== 'Active' || u.roles.includes('Admin')}
                           onClick={() => {
                             setResettingUser(u);
                             setResetPasswordVal('');
@@ -353,7 +358,12 @@ export default function UsersManagementPage() {
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
-                          title={u.isActive ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'}
+                          title={
+                            u.status === 'PendingActivation'
+                              ? 'Tài khoản chờ người dùng kích hoạt qua email'
+                              : u.isActive ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'
+                          }
+                          disabled={u.status === 'PendingActivation'}
                           onClick={() => handleToggleStatus(u)}
                         >
                           {u.isActive ? <Lock size={14} /> : <Unlock size={14} />}
@@ -395,11 +405,13 @@ export default function UsersManagementPage() {
             <input className="input" placeholder="Họ và tên *" value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
             <input className="input" type="email" placeholder="Email *" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             <input className="input" placeholder="Số điện thoại" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
-            <input className="input" type="password" placeholder="Mật khẩu * (≥ 8 ký tự, hoa/thường/số/đặc biệt)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Tài khoản được tạo ở trạng thái chờ kích hoạt. Hệ thống gửi đường liên kết kích hoạt đến email để người dùng tự đặt mật khẩu.
+            </p>
             <div>
               <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', marginBottom: 6 }}>Vai trò:</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {roles.map((r) => (
+                {roles.filter((r) => r.name !== 'Parent').map((r) => (
                   <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
@@ -456,10 +468,13 @@ export default function UsersManagementPage() {
               <h3 style={{ margin: 0 }}>Đặt lại mật khẩu: @{resettingUser.username}</h3>
               <button type="button" className="btn btn--secondary btn--sm" onClick={() => setResettingUser(null)}><X size={15} /></button>
             </div>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Nhập mật khẩu tạm thời và chuyển cho người dùng qua kênh của nhà trường. Người dùng phải đổi mật khẩu ở lần đăng nhập tiếp theo; các phiên đăng nhập hiện tại sẽ kết thúc.
+            </p>
             <input
               type="password"
               className="input"
-              placeholder="Mật khẩu mới (≥ 8 ký tự, hoa/thường/số/đặc biệt)"
+              placeholder="Mật khẩu tạm thời (≥ 8 ký tự, hoa/thường/số/đặc biệt)"
               value={resetPasswordVal}
               onChange={(e) => setResetPasswordVal(e.target.value)}
             />

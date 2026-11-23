@@ -13,7 +13,17 @@ public class User
     /// <summary>When <see cref="Email"/> was verified through an emailed link (UTC); null = not verified yet.</summary>
     public DateTime? EmailVerifiedAt { get; set; }
 
+    /// <summary>BCrypt hash; empty while the account has no usable password (Pending Activation, BR-63).</summary>
     public string PasswordHash { get; set; } = string.Empty;
+
+    /// <summary>Set by an administrator-assisted reset (UC-60 A1): the temporary password must be changed at the next sign-in.</summary>
+    public bool MustChangePassword { get; set; }
+
+    /// <summary>
+    /// Carried in every login token; raising it ends all sessions of the account (BR-03, BR-48): deactivation,
+    /// password change, password reset.
+    /// </summary>
+    public int SessionVersion { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
 

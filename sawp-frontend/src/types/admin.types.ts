@@ -33,7 +33,7 @@ export interface CreateUserPayload {
   email: string;
   fullName: string;
   phoneNumber?: string;
-  password: string;
+  // No password: the account starts Pending Activation and gets an activation link (BR-63)
   roles: string[];
   staffCode?: string;
   position?: string;

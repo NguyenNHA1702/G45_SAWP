@@ -9,7 +9,7 @@ namespace API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
+public class AuthController : BaseApiController
 {
     private readonly IAuthService _authService;
 
@@ -40,17 +40,19 @@ public class AuthController : ControllerBase
 
     [HttpPost("change-password")]
     [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<LoginResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<LoginResponseDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<LoginResponseDto>), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequestDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
         if (!userId.HasValue)
         {
-            return Unauthorized(ApiResponse<bool>.Fail(SystemMessages.MSG07));
+            return Unauthorized(ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG07));
         }
 
+        // A wrong current password is a 400, not a 401: the client must not treat it as an ended session.
+        // On success the response carries a new token, because the change ends the other sessions (BR-03).
         var result = await _authService.ChangePasswordAsync(userId.Value, request, cancellationToken);
         if (!result.Success)
         {
@@ -59,6 +61,24 @@ public class AuthController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>UC-66 steps 2-5: request a recovery (or activation) link. Always MSG56 unless E1/E2/E5 applies.</summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _authService.RequestPasswordLinkAsync(request, cancellationToken));
+
+    /// <summary>UC-66 step 6: check a link when its page opens; the link is not used. MSG57 when unusable.</summary>
+    [HttpPost("password-link/check")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CheckPasswordLink([FromBody] PasswordLinkCheckRequestDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _authService.CheckPasswordLinkAsync(request, cancellationToken));
+
+    /// <summary>UC-66 steps 7-10, A3: set the password with an activation or recovery link.</summary>
+    [HttpPost("password-link/set-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SetPasswordWithLink([FromBody] SetPasswordWithLinkRequestDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _authService.SetPasswordWithLinkAsync(request, cancellationToken));
 
     [HttpGet("me")]
     [Authorize]

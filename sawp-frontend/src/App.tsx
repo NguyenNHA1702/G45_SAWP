@@ -1,6 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { Toaster } from 'react-hot-toast';
 import LoginPage from './pages/Auth/LoginPage';
+import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
+import SetPasswordPage from './pages/Auth/SetPasswordPage';
+import ChangeTemporaryPasswordPage from './pages/Auth/ChangeTemporaryPasswordPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import AttendancePage from './pages/TeacherPortal/AttendancePage';
 import ChildAttendancePage from './pages/ParentPortal/ChildAttendancePage';
@@ -23,7 +26,7 @@ import AuditLogsPage from './pages/SystemPortal/AuditLogsPage';
 import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
 import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
 import { MainLayout } from './layouts/MainLayout';
-import { clearAuthSession, TOKEN_KEY } from './services/apiClient';
+import { clearAuthSession, getAuthUser, TOKEN_KEY } from './services/apiClient';
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -44,7 +47,29 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+/** True when the signed-in account still has to replace a temporary password (UC-60 A1). */
+function mustChangePassword(): boolean {
+  try {
+    return JSON.parse(getAuthUser() ?? '{}')?.mustChangePassword === true;
+  } catch {
+    return false;
+  }
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  if (!token || isTokenExpired(token)) {
+    clearAuthSession();
+    return <Navigate to="/login" replace />;
+  }
+  if (mustChangePassword()) {
+    return <Navigate to="/change-password" replace />;
+  }
+  return <>{children}</>;
+}
+
+/** Signed in, but without the temporary-password redirect (the Change Password page itself). */
+function RequireToken({ children }: { children: React.ReactNode }) {
   const token = sessionStorage.getItem(TOKEN_KEY);
   if (!token || isTokenExpired(token)) {
     clearAuthSession();
@@ -71,6 +96,18 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        {/* UC-66: public pages opened from the Login page or from emailed links */}
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<SetPasswordPage />} />
+        <Route path="/activate" element={<SetPasswordPage />} />
+        <Route
+          path="/change-password"
+          element={
+            <RequireToken>
+              <ChangeTemporaryPasswordPage />
+            </RequireToken>
+          }
+        />
 
         {/* Các trang sau khi đăng nhập bọc trong MainLayout */}
         <Route
