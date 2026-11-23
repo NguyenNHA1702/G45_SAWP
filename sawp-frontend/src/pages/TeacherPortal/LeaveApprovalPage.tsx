@@ -13,6 +13,8 @@ import {
   UtensilsCrossed,
   Paperclip,
   ExternalLink,
+  HelpCircle,
+  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
@@ -37,6 +39,10 @@ export default function LeaveApprovalPage() {
   // Modal Reject state
   const [rejectingItem, setRejectingItem] = useState<LeaveRequestItem | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+
+  // Modal Request More Info state (A10)
+  const [moreInfoItem, setMoreInfoItem] = useState<LeaveRequestItem | null>(null);
+  const [moreInfoNotes, setMoreInfoNotes] = useState('');
 
   // Modal Forward to School Board state
   const [forwardingItem, setForwardingItem] = useState<LeaveRequestItem | null>(null);
@@ -64,7 +70,7 @@ export default function LeaveApprovalPage() {
     fetchRequests();
   }, [statusFilter]);
 
-  // GVCN duyệt đơn thông thường (< 3 ngày)
+  // GVCN duyệt đơn thông thường (<= 3 ngày học)
   const handleApprove = async (item: LeaveRequestItem) => {
     if (!window.confirm(`Xác nhận PHÊ DUYỆT đơn xin nghỉ cho học sinh ${item.studentName}?`)) return;
 
@@ -77,6 +83,9 @@ export default function LeaveApprovalPage() {
 
       if (res.success) {
         toast.success(`Đã duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
+        if (res.data.attendanceWarnings && res.data.attendanceWarnings.length > 0) {
+          toast(res.data.attendanceWarnings.join(' '), { icon: '⚠️', duration: 7000 });
+        }
         fetchRequests();
       } else {
         toast.error(res.message);
@@ -89,9 +98,9 @@ export default function LeaveApprovalPage() {
     }
   };
 
-  // Ban Giám Hiệu duyệt đơn chuyển cấp (>= 3 ngày)
+  // Ban Giám Hiệu duyệt đơn chuyển cấp (> 3 ngày học)
   const handleBghApprove = async (item: LeaveRequestItem) => {
-    if (!window.confirm(`Ban Giám Hiệu xác nhận PHÊ DUYỆT đơn xin nghỉ ${item.totalDays} ngày cho học sinh ${item.studentName}?`)) return;
+    if (!window.confirm(`Ban Giám Hiệu xác nhận PHÊ DUYỆT đơn xin nghỉ ${item.totalDays} ngày học cho học sinh ${item.studentName}?`)) return;
 
     try {
       setProcessing(true);
@@ -102,6 +111,41 @@ export default function LeaveApprovalPage() {
 
       if (res.success) {
         toast.success(`Ban Giám Hiệu đã phê duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
+        if (res.data.attendanceWarnings && res.data.attendanceWarnings.length > 0) {
+          toast(res.data.attendanceWarnings.join(' '), { icon: '⚠️', duration: 7000 });
+        }
+        fetchRequests();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: unknown) {
+      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra.';
+      toast.error(errorMsg);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Yêu cầu phụ huynh bổ sung thông tin (A10)
+  const handleConfirmRequestMoreInfo = async () => {
+    if (!moreInfoItem) return;
+    if (!moreInfoNotes.trim()) {
+      toast.error('Vui lòng nhập nội dung cần phụ huynh bổ sung.');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      const res = await leaveRequestApi.review(moreInfoItem.id, {
+        isApproved: false,
+        isRequestMoreInfo: true,
+        reviewerNotes: moreInfoNotes.trim(),
+      });
+
+      if (res.success) {
+        toast.success('Đã gửi yêu cầu bổ sung thông tin tới phụ huynh.');
+        setMoreInfoItem(null);
+        setMoreInfoNotes('');
         fetchRequests();
       } else {
         toast.error(res.message);
@@ -181,12 +225,14 @@ export default function LeaveApprovalPage() {
   const filterTabs = isSchoolBoard
     ? [
         { key: 'UnderReview', label: 'Chờ BGH duyệt' },
+        { key: 'NeedMoreInfo', label: 'Chờ PH bổ sung' },
         { key: 'Approved', label: 'Đã phê duyệt' },
         { key: 'Rejected', label: 'Đã từ chối' },
         { key: 'All', label: 'Tất cả' },
       ]
     : [
         { key: 'Submitted', label: 'Chờ GVCN xử lý' },
+        { key: 'NeedMoreInfo', label: 'Chờ PH bổ sung' },
         { key: 'UnderReview', label: 'Đã chuyển BGH' },
         { key: 'Approved', label: 'Đã phê duyệt' },
         { key: 'Rejected', label: 'Đã từ chối' },
@@ -212,8 +258,8 @@ export default function LeaveApprovalPage() {
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)' }}>
               {isSchoolBoard
-                ? 'Phê duyệt các đơn xin nghỉ từ 3 ngày trở lên do Giáo viên chủ nhiệm chuyển tiếp. Tự động đồng bộ điểm danh và suất ăn bán trú.'
-                : 'Đơn dưới 3 ngày do GVCN duyệt trực tiếp. Đơn từ 3 ngày trở lên GVCN xác nhận và chuyển Ban Giám Hiệu phê duyệt.'}
+                ? 'Phê duyệt các đơn xin nghỉ trên 3 ngày học (> 3 ngày) do Giáo viên chủ nhiệm chuyển tiếp. Tự động đồng bộ điểm danh và suất ăn bán trú.'
+                : 'Đơn từ 1 đến 3 ngày học do GVCN duyệt trực tiếp. Đơn trên 3 ngày học (> 3 ngày) GVCN xác nhận và chuyển Ban Giám Hiệu phê duyệt.'}
             </p>
           </div>
         </div>
@@ -252,7 +298,7 @@ export default function LeaveApprovalPage() {
       ) : (
         <div style={{ display: 'grid', gap: 18 }}>
           {requests.map((r) => {
-            const isEscalated = (r.totalDays || 1) >= 3;
+            const isEscalated = Boolean(r.isEscalated);
             return (
               <div
                 key={r.id}
@@ -292,6 +338,11 @@ export default function LeaveApprovalPage() {
                         Chờ BGH duyệt
                       </span>
                     )}
+                    {r.status === 'NeedMoreInfo' && (
+                      <span className="badge badge--pink">
+                        <HelpCircle size={14} /> Chờ PH bổ sung
+                      </span>
+                    )}
                     {r.status === 'Approved' && (
                       <span className="badge badge--mint">
                         <CheckCircle2 size={14} /> Đã phê duyệt
@@ -327,7 +378,7 @@ export default function LeaveApprovalPage() {
                   >
                     <ShieldAlert size={18} color="var(--color-accent)" style={{ flexShrink: 0 }} />
                     <span>
-                      Đơn xin nghỉ <strong>{r.totalDays} ngày</strong> (từ 3 ngày trở lên) — GVCN cần xác nhận thông tin và chuyển tiếp lên Ban Giám Hiệu.
+                      Đơn xin nghỉ <strong>{r.totalDays} ngày học</strong> (&gt; 3 ngày học) — GVCN cần xác nhận thông tin và chuyển tiếp lên Ban Giám Hiệu.
                     </span>
                   </div>
                 )}
@@ -348,7 +399,7 @@ export default function LeaveApprovalPage() {
                   >
                     <FileText size={18} color="var(--color-accent)" style={{ flexShrink: 0 }} />
                     <span>
-                      Đơn nghỉ chuyển cấp <strong>{r.totalDays} ngày</strong> đã được GVCN xác nhận và đang chờ Ban Giám Hiệu phê duyệt.
+                      Đơn nghỉ chuyển cấp <strong>{r.totalDays} ngày học</strong> đã được GVCN xác nhận và đang chờ Ban Giám Hiệu phê duyệt.
                     </span>
                   </div>
                 )}
@@ -376,7 +427,7 @@ export default function LeaveApprovalPage() {
                       {formatDateDDMMYYYY(r.startDate)} {r.startDate !== r.endDate && `→ ${formatDateDDMMYYYY(r.endDate)}`}
                     </strong>{' '}
                     <span className={`badge ${isEscalated ? 'badge--violet' : 'badge--mint'}`} style={{ fontSize: 'var(--fs-xs)', marginLeft: 4 }}>
-                      {r.totalDays || 1} ngày
+                      {r.totalDays} ngày học
                     </span>
                   </div>
                   <div>
@@ -410,11 +461,16 @@ export default function LeaveApprovalPage() {
                           .filter(Boolean);
                         return urls.map((urlItem, idx) =>
                           urlItem.startsWith('/') || urlItem.startsWith('http') ? (
-                            <a
+                            <button
                               key={idx}
-                              href={urlItem}
-                              target="_blank"
-                              rel="noreferrer"
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await leaveRequestApi.openAttachment(urlItem);
+                                } catch {
+                                  toast.error('Không thể mở tệp minh chứng của phụ huynh.');
+                                }
+                              }}
                               className="btn btn--secondary btn--sm"
                               style={{
                                 display: 'inline-flex',
@@ -428,7 +484,7 @@ export default function LeaveApprovalPage() {
                               <Paperclip size={14} />
                               <span>{urls.length > 1 ? `Xem minh chứng của phụ huynh (${idx + 1})` : 'Xem minh chứng của phụ huynh'}</span>
                               <ExternalLink size={12} />
-                            </a>
+                            </button>
                           ) : (
                             <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
                               <Paperclip size={14} />
@@ -451,12 +507,42 @@ export default function LeaveApprovalPage() {
                       <strong>Nhật ký xử lý:</strong> {r.reviewerNotes}
                     </div>
                   )}
+
+                  {r.statusHistory && r.statusHistory.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--color-border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginBottom: 4 }}>
+                        <Clock size={12} /> Lịch sử trạng thái:
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {r.statusHistory.map((h, idx) => (
+                          <div key={idx} style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)' }}>
+                            <strong>{h.actionLabel}</strong>
+                            {h.actorName ? ` (${h.actorName})` : ''}
+                            {' — '}
+                            <span style={{ color: 'var(--color-muted-fg)' }}>{formatDateDDMMYYYY(h.timestamp)}</span>
+                            {h.notes ? `: ${h.notes}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* ACTION BUTTONS */}
-                {/* 1. Branch: Dưới 3 ngày (GVCN xem xét đơn nghỉ thông thường) */}
+                {/* 1. Branch: <= 3 ngày học (GVCN xem xét đơn nghỉ thông thường) */}
                 {r.status === 'Submitted' && !isEscalated && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      disabled={processing}
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => {
+                        setMoreInfoItem(r);
+                        setMoreInfoNotes('');
+                      }}
+                    >
+                      <HelpCircle size={15} /> Yêu cầu bổ sung
+                    </button>
                     <button
                       type="button"
                       disabled={processing}
@@ -481,9 +567,20 @@ export default function LeaveApprovalPage() {
                   </div>
                 )}
 
-                {/* 2. Branch: Từ 3 ngày trở lên (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu) */}
+                {/* 2. Branch: > 3 ngày học (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu) */}
                 {r.status === 'Submitted' && isEscalated && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      disabled={processing}
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => {
+                        setMoreInfoItem(r);
+                        setMoreInfoNotes('');
+                      }}
+                    >
+                      <HelpCircle size={15} /> Yêu cầu bổ sung
+                    </button>
                     <button
                       type="button"
                       disabled={processing}
@@ -502,7 +599,7 @@ export default function LeaveApprovalPage() {
                       className="btn btn--primary btn--sm"
                       onClick={() => {
                         setForwardingItem(r);
-                        setForwardNotes(`Kính chuyển Ban Giám Hiệu xem xét phê duyệt đơn xin nghỉ ${r.totalDays} ngày cho học sinh ${r.studentName}.`);
+                        setForwardNotes(`Kính chuyển Ban Giám Hiệu xem xét phê duyệt đơn xin nghỉ ${r.totalDays} ngày học cho học sinh ${r.studentName}.`);
                       }}
                     >
                       <Send size={15} /> Xác nhận & Chuyển Ban Giám Hiệu
@@ -512,9 +609,20 @@ export default function LeaveApprovalPage() {
 
                 {/* 3. Branch: Đơn tại Ban Giám Hiệu (Status == UnderReview) */}
                 {r.status === 'UnderReview' && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     {isSchoolBoard || isAdmin ? (
                       <>
+                        <button
+                          type="button"
+                          disabled={processing}
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => {
+                            setMoreInfoItem(r);
+                            setMoreInfoNotes('');
+                          }}
+                        >
+                          <HelpCircle size={15} /> Yêu cầu bổ sung
+                        </button>
                         <button
                           type="button"
                           disabled={processing}
@@ -606,7 +714,7 @@ export default function LeaveApprovalPage() {
         open={!!forwardingItem}
         onClose={() => setForwardingItem(null)}
         title="Xác nhận & Chuyển Ban Giám Hiệu"
-        badgeText="Đơn dài ngày (≥ 3 ngày)"
+        badgeText="Đơn dài ngày (> 3 ngày học)"
         badgeColor="violet"
         icon={<Send size={24} color="#1E293B" />}
         iconBg="var(--color-accent-soft)"
@@ -614,10 +722,10 @@ export default function LeaveApprovalPage() {
       >
         <div>
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginBottom: 8 }}>
-            Học sinh: <strong>{forwardingItem?.studentName}</strong> (Nghỉ <strong>{forwardingItem?.totalDays} ngày</strong>).
+            Học sinh: <strong>{forwardingItem?.studentName}</strong> (Nghỉ <strong>{forwardingItem?.totalDays} ngày học</strong>).
           </p>
           <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginBottom: 14 }}>
-            Theo quy định, đơn xin nghỉ từ 3 ngày trở lên sẽ do Ban Giám Hiệu phê duyệt. Vui lòng ghi ý kiến xác nhận của GVCN để chuyển lên BGH:
+            Theo quy định, đơn xin nghỉ trên 3 ngày học (&gt; 3 ngày) sẽ do Ban Giám Hiệu phê duyệt. Vui lòng ghi ý kiến xác nhận của GVCN để chuyển lên BGH:
           </p>
 
           <div className="field" style={{ marginBottom: 16 }}>
@@ -648,6 +756,56 @@ export default function LeaveApprovalPage() {
               onClick={handleConfirmForward}
             >
               <Send size={16} /> {processing ? 'Đang chuyển...' : 'Chuyển Ban Giám Hiệu'}
+            </button>
+          </div>
+        </div>
+      </GeometricModal>
+
+      {/* REQUEST MORE INFO MODAL (A10) */}
+      <GeometricModal
+        open={!!moreInfoItem}
+        onClose={() => setMoreInfoItem(null)}
+        title="Yêu cầu phụ huynh bổ sung thông tin"
+        badgeText="Trả đơn yêu cầu bổ sung"
+        badgeColor="pink"
+        icon={<HelpCircle size={24} color="#1E293B" />}
+        iconBg="var(--color-tertiary-soft)"
+        maxWidth="md"
+      >
+        <div>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginBottom: 12 }}>
+            Học sinh: <strong>{moreInfoItem?.studentName}</strong> ({moreInfoItem?.requestNumber}). Nhập nội dung cần phụ huynh bổ sung (VD: bổ sung giấy khám bệnh, làm rõ lý do nghỉ...):
+          </p>
+
+          <div className="field" style={{ marginBottom: 16 }}>
+            <label className="label" htmlFor="more-info-notes">Nội dung yêu cầu bổ sung *</label>
+            <textarea
+              id="more-info-notes"
+              className="input"
+              rows={3}
+              value={moreInfoNotes}
+              onChange={(e) => setMoreInfoNotes(e.target.value)}
+              placeholder="Ví dụ: Phụ huynh vui lòng đính kèm giấy khám bệnh hoặc xác nhận của bác sĩ..."
+              style={{ minHeight: 80, resize: 'vertical' }}
+              required
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setMoreInfoItem(null)}
+            >
+              Hủy bỏ
+            </button>
+            <button
+              type="button"
+              disabled={processing}
+              className="btn btn--primary"
+              onClick={handleConfirmRequestMoreInfo}
+            >
+              <Send size={16} /> {processing ? 'Đang gửi...' : 'Gửi yêu cầu bổ sung'}
             </button>
           </div>
         </div>

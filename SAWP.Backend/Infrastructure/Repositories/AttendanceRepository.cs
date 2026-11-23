@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -95,17 +96,27 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         DateTime to, 
         CancellationToken ct = default)
     {
-        var records = await _context.AttendanceRecords
+        var calendarMap = (await _context.SchoolCalendarDays
+            .AsNoTracking()
+            .Where(d => d.Date >= from.Date && d.Date <= to.Date)
+            .ToListAsync(ct))
+            .GroupBy(d => d.Date.Date)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
+
+        var records = (await _context.AttendanceRecords
             .AsNoTracking()
             .Where(ar => ar.ClassId == classId && ar.Date >= from && ar.Date <= to)
             .Select(ar => new 
             {
+                ar.Date,
                 ar.StudentId,
                 ar.Student.StudentCode,
                 ar.Student.FullName,
                 ar.Status
             })
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .Where(r => SchoolCalendarHelper.IsSchoolDay(r.Date, calendarMap))
+            .ToList();
 
         return records
             .GroupBy(x => new { x.StudentId, x.StudentCode, x.FullName })
@@ -131,9 +142,14 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
     {
         var classIdList = classIds.ToList();
 
+        // Bản ghi Vắng có phép tự sinh khi duyệt đơn (LeaveRequestId != null && UpdatedByUserId == null)
+        // KHÔNG tính là giáo viên đã nộp điểm danh lớp (A3)
         var submittedIds = await _context.AttendanceRecords
             .AsNoTracking()
-            .Where(ar => classIdList.Contains(ar.ClassId) && ar.Date == date && ar.Session == session)
+            .Where(ar => classIdList.Contains(ar.ClassId)
+                      && ar.Date == date
+                      && ar.Session == session
+                      && (ar.LeaveRequestId == null || ar.UpdatedByUserId != null))
             .Select(ar => ar.ClassId)
             .Distinct()
             .ToListAsync(ct);

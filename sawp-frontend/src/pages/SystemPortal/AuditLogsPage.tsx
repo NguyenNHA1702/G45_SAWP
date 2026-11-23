@@ -156,8 +156,6 @@ export default function AuditLogsPage() {
             <option value="AdministrativeRequest">Đơn từ, yêu cầu (AdministrativeRequest)</option>
             <option value="LunchServiceDay">Ngày phục vụ bán trú (LunchServiceDay)</option>
             <option value="LunchRegistration">Đăng ký bán trú (LunchRegistration)</option>
-            <option value="LunchMonthlyQuota">Chỉ tiêu bán trú (LunchMonthlyQuota)</option>
-            <option value="BoardingIncident">Sự cố bán trú (BoardingIncident)</option>
             <option value="PostComment">Bình luận sổ liên lạc (PostComment)</option>
           </select>
 

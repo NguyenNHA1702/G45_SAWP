@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCheck, Clock, GraduationCap, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { CheckCheck, Clock, GraduationCap, PencilLine, RotateCcw, Save, TriangleAlert } from 'lucide-react';
 import './AttendancePage.css';
+import { USER_KEY } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
 import { useAttendanceSheet } from '../../hooks/useAttendanceSheet';
 import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
 import { formatViDate, formatViDateTime, todayIso } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
-import type { AttendanceSession, AttendanceSubmitResult, TeacherClassOption } from '../../types/attendance.types';
+import type { AttendanceSession, AttendanceSheetEntry, AttendanceStatus, AttendanceSubmitResult, TeacherClassOption } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
 import { AttendanceRosterTable } from '../../components/attendance/AttendanceRosterTable';
 import { LockedBanner } from '../../components/attendance/LockedBanner';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
+import { GeometricModal } from '../../components/common/GeometricModal';
 
 export default function AttendancePage() {
   const [date, setDate] = useState<string>(todayIso());
@@ -21,6 +23,22 @@ export default function AttendancePage() {
   const [classId, setClassId] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<AttendanceSubmitResult | null>(null);
+  const [correctingEntry, setCorrectingEntry] = useState<AttendanceSheetEntry | null>(null);
+  const [correctionStatus, setCorrectionStatus] = useState<AttendanceStatus>('Present');
+  const [correctionRemarks, setCorrectionRemarks] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [submittingCorrection, setSubmittingCorrection] = useState(false);
+
+  const currentUser = (() => {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const userRoles: string[] = currentUser?.roles ?? [];
+  const isOfficeOrAdmin = userRoles.includes('OfficeStaff') || userRoles.includes('Admin');
 
   const vm = useAttendanceSheet(classId, date, session);
   useUnsavedChangesWarning(vm.isDirty);
@@ -67,6 +85,42 @@ export default function AttendancePage() {
   };
 
   const canEdit = vm.sheet?.canEdit ?? false;
+  const canCorrectPastDay = !canEdit && vm.sheet?.lockReason === 'PastDay' && isOfficeOrAdmin;
+
+  const openCorrectionModal = (entry: AttendanceSheetEntry) => {
+    setCorrectingEntry(entry);
+    const initialStatus = entry.status === 'ExcusedAbsence' ? 'Present' : (entry.status ?? 'Present');
+    setCorrectionStatus(initialStatus);
+    setCorrectionRemarks(entry.remarks ?? '');
+    setCorrectionReason('');
+  };
+
+  const handleSubmitCorrection = async () => {
+    if (!correctingEntry?.recordId) return;
+    const trimmedReason = correctionReason.trim();
+    if (trimmedReason.length < 5 || trimmedReason.length > 500) {
+      toast.error('Lý do điều chỉnh bắt buộc từ 5 đến 500 ký tự.');
+      return;
+    }
+
+    try {
+      setSubmittingCorrection(true);
+      const res = await attendanceApi.correctRecord(correctingEntry.recordId, {
+        status: correctionStatus,
+        remarks: correctionRemarks.trim() || null,
+        correctionReason: trimmedReason,
+      });
+      toast.success(res.message || 'Đã điều chỉnh bản ghi điểm danh thành công.');
+      setCorrectingEntry(null);
+      vm.reload();
+    } catch (e) {
+      const err = asApiError(e);
+      toast.error(err.message);
+      err.errors?.forEach((m) => toast.error(m));
+    } finally {
+      setSubmittingCorrection(false);
+    }
+  };
 
   return (
     <main className="container attendance-page" style={{ paddingBottom: 60 }}>
@@ -264,6 +318,7 @@ export default function AttendancePage() {
           disabled={!canEdit || vm.saving}
           onStatusChange={vm.setStatus}
           onRemarksChange={vm.setRemarks}
+          onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
         />
       )}
 
@@ -420,6 +475,89 @@ export default function AttendancePage() {
           <p>Không có học sinh vắng không phép mới.</p>
         )}
       </ConfirmDialog>
+
+      <GeometricModal
+        open={Boolean(correctingEntry)}
+        onClose={() => setCorrectingEntry(null)}
+        title="Điều Chỉnh Điểm Danh Ngày Quá Khứ"
+        subtitle={correctingEntry ? `${correctingEntry.fullName} (${correctingEntry.studentCode}) • Ngày ${formatViDate(date)}` : ''}
+        badgeText="Ghi nhận Audit Log"
+        badgeColor="amber"
+        icon={<PencilLine size={20} color="var(--color-fg)" />}
+        iconBg="var(--color-tertiary)"
+        maxWidth="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-md)', background: '#FEF3C7', border: '1.5px solid var(--color-fg)', fontSize: 'var(--fs-xs)', fontWeight: 700, color: '#92400E' }}>
+            Chỉ dùng để sửa lỗi nhập liệu ngày quá khứ (không chuyển sang Vắng có phép). Mọi thao tác đều lưu lý do và lịch sử kiểm toán.
+          </div>
+
+          <div>
+            <label htmlFor="correction-status" className="label" style={{ display: 'block', marginBottom: 6 }}>
+              Trạng thái mới
+            </label>
+            <select
+              id="correction-status"
+              className="select"
+              value={correctionStatus}
+              onChange={(e) => setCorrectionStatus(e.target.value as AttendanceStatus)}
+              style={{ width: '100%' }}
+            >
+              <option value="Present">Có mặt</option>
+              <option value="Late">Đi muộn</option>
+              <option value="UnexcusedAbsence">Vắng không phép</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="correction-remarks" className="label" style={{ display: 'block', marginBottom: 6 }}>
+              Ghi chú điểm danh (tùy chọn)
+            </label>
+            <input
+              id="correction-remarks"
+              className="input"
+              maxLength={500}
+              value={correctionRemarks}
+              onChange={(e) => setCorrectionRemarks(e.target.value)}
+              placeholder="Ghi chú kèm theo bản ghi..."
+            />
+          </div>
+
+          <div>
+            <label htmlFor="correction-reason" className="label" style={{ display: 'block', marginBottom: 6 }}>
+              Lý do điều chỉnh (bắt buộc, 5–500 ký tự) *
+            </label>
+            <textarea
+              id="correction-reason"
+              className="input"
+              rows={3}
+              maxLength={500}
+              value={correctionReason}
+              onChange={(e) => setCorrectionReason(e.target.value)}
+              placeholder="Ví dụ: Giáo viên chấm nhầm dòng học sinh, đã xác nhận lại sổ điểm danh giấy..."
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setCorrectingEntry(null)}
+              disabled={submittingCorrection}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleSubmitCorrection}
+              disabled={submittingCorrection}
+            >
+              {submittingCorrection ? 'Đang lưu...' : 'Xác nhận điều chỉnh'}
+            </button>
+          </div>
+        </div>
+      </GeometricModal>
     </main>
   );
 }

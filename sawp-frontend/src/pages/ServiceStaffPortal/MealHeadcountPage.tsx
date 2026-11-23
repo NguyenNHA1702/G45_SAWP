@@ -4,7 +4,6 @@ import {
   UtensilsCrossed,
   Clock,
   CheckCircle2,
-  Printer,
   Lock,
   RefreshCw,
   UserMinus,
@@ -25,10 +24,11 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
-import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, MonthlyBoardingQuota, StudentMealOperationItem } from '../../types/lunch.types';
+import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, StudentMealOperationItem } from '../../types/lunch.types';
 import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { downloadCsv } from '../../utils/csv';
 
 const COURSE_SLOTS = [
   { role: 'Món chính • Tinh bột', emoji: '🍚', bg: '#FEF3C7', accent: '#D97706' },
@@ -172,9 +172,6 @@ export default function MealHeadcountPage() {
     `Đã kiểm tra đối chiếu danh sách điểm danh và đơn nghỉ lúc ${LUNCH_CUTOFF_LABEL}`
   );
 
-  // Modal In phiếu bàn giao
-  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
-
   // Modal UC-32: Cấu hình ngày phục vụ, hạn đăng ký/hủy & thực đơn
   const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
   const [cfgIsServing, setCfgIsServing] = useState<boolean>(true);
@@ -182,69 +179,6 @@ export default function MealHeadcountPage() {
   const [cfgRemarks, setCfgRemarks] = useState<string>('');
   const [cfgApplyFullWeek, setCfgApplyFullWeek] = useState<boolean>(false);
   const [cfgWeeklyMenus, setCfgWeeklyMenus] = useState<Record<string, string>>({});
-
-  // Modal Cấu hình chỉ tiêu bán trú tháng (TC_BDS_34)
-  const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
-  const [quotaMonth, setQuotaMonth] = useState<string>(() => selectedDate.slice(0, 7));
-  const [quotaValue, setQuotaValue] = useState<string>('80');
-  const [quotaInfo, setQuotaInfo] = useState<MonthlyBoardingQuota | null>(null);
-  const [savingQuota, setSavingQuota] = useState<boolean>(false);
-
-  const loadMonthlyQuota = async (month: string) => {
-    try {
-      const info = await lunchApi.getMonthlyQuota(month);
-      setQuotaInfo(info);
-      setQuotaValue(info.quota ? String(info.quota) : '');
-    } catch {
-      setQuotaInfo(null);
-      setQuotaValue('');
-    }
-  };
-
-  const handleOpenQuotaModal = async () => {
-    const m = selectedDate.slice(0, 7);
-    setQuotaMonth(m);
-    setShowQuotaModal(true);
-    await loadMonthlyQuota(m);
-  };
-
-  const handleSaveQuota = async () => {
-    const trimmed = quotaValue.trim();
-    const parsed = Number(trimmed);
-    if (!trimmed || !Number.isInteger(parsed) || parsed <= 0 || parsed > 10000) {
-      toast.error('Chỉ tiêu bán trú tháng phải là số nguyên từ 1 đến 10.000.');
-      return;
-    }
-    try {
-      setSavingQuota(true);
-      const updated = await lunchApi.upsertMonthlyQuota({ month: quotaMonth, quota: parsed });
-      setQuotaInfo(updated);
-      toast.success(`Đã lưu chỉ tiêu bán trú tháng ${quotaMonth}: ${parsed} học sinh.`);
-      setShowQuotaModal(false);
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
-      const errMsg = apiErr?.errors?.[0] || apiErr?.message || 'Không thể lưu chỉ tiêu bán trú tháng.';
-      toast.error(errMsg);
-    } finally {
-      setSavingQuota(false);
-    }
-  };
-
-  const handleClearQuota = async () => {
-    try {
-      setSavingQuota(true);
-      const updated = await lunchApi.clearMonthlyQuota(quotaMonth);
-      setQuotaInfo(updated);
-      setQuotaValue('');
-      toast.success(`Đã gỡ chỉ tiêu bán trú tháng ${quotaMonth} và tự động duyệt danh sách chờ (nếu có).`);
-      setShowQuotaModal(false);
-    } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
-      toast.error(apiErr?.errors?.[0] || apiErr?.message || 'Không thể gỡ chỉ tiêu bán trú tháng.');
-    } finally {
-      setSavingQuota(false);
-    }
-  };
 
   // Modal Xem chi tiết khẩu phần từng lớp
   const [detailClass, setDetailClass] = useState<ClassMealSummary | null>(null);
@@ -507,20 +441,37 @@ export default function MealHeadcountPage() {
       ]);
     });
 
-    const csvContent =
-      '\uFEFF' +
-      rows
-        .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Danh_sach_ban_tru_${selectedDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`Danh_sach_ban_tru_${selectedDate}.csv`, rows);
     toast.success('Đã xuất danh sách vận hành bán trú (.csv) thành công.');
+  };
+
+  const handleExportClassSummaryCsv = () => {
+    if (!board?.classBreakdowns) return;
+    const rows: string[][] = [
+      ['STT', 'Lop', 'Khoi', 'Dang ky', 'Da huy', 'Thuc an', 'Suat man', 'Suat chay', 'Dac biet'],
+    ];
+    board.classBreakdowns.forEach((cls, idx) => {
+      const classActiveMeals = (board.studentMeals ?? []).filter(
+        (s) => s.classId === cls.classId && s.isActive
+      );
+      const stdCnt = cls.standardCount ?? classActiveMeals.filter((s) => s.mealType === 'StandardLunch' || s.mealType === 1).length;
+      const vegCnt = cls.vegetarianCount ?? classActiveMeals.filter((s) => s.mealType === 'VegetarianLunch' || s.mealType === 2).length;
+      const spcCnt = cls.specialDietCount ?? classActiveMeals.filter((s) => s.mealType === 'SpecialDiet' || s.mealType === 3).length;
+      rows.push([
+        String(idx + 1),
+        cls.className,
+        String(cls.grade),
+        String(cls.initialRegistered),
+        String(cls.cancelledCount),
+        String(cls.actualCount),
+        String(stdCnt),
+        String(vegCnt),
+        String(spcCnt),
+      ]);
+    });
+
+    downloadCsv(`Tong_hop_suat_an_theo_lop_${selectedDate}.csv`, rows);
+    toast.success('Đã xuất bảng tổng hợp suất ăn theo lớp (.csv) thành công.');
   };
 
   return (
@@ -609,85 +560,32 @@ export default function MealHeadcountPage() {
             </button>
 
             {board?.canManage && (
-              <>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowConfigModal(true)}
-                  title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    borderRadius: 'var(--radius-full)',
-                    border: '2px solid var(--color-fg)',
-                    boxShadow: '3px 3px 0 0 var(--color-fg)',
-                    background: '#FEF9C3',
-                    color: 'var(--color-fg)',
-                    fontWeight: 800,
-                    fontSize: 'var(--fs-sm)',
-                    padding: '0 18px',
-                    height: 42,
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Settings size={15} />
-                  Cấu hình ngày
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={handleOpenQuotaModal}
-                  title="Cấu hình chỉ tiêu bán trú theo tháng"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    borderRadius: 'var(--radius-full)',
-                    border: '2px solid var(--color-fg)',
-                    boxShadow: '3px 3px 0 0 var(--color-fg)',
-                    background: '#DBEAFE',
-                    color: 'var(--color-fg)',
-                    fontWeight: 800,
-                    fontSize: 'var(--fs-sm)',
-                    padding: '0 18px',
-                    height: 42,
-                    boxSizing: 'border-box',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Users size={15} />
-                  Chỉ tiêu tháng
-                </button>
-              </>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setShowConfigModal(true)}
+                title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  background: '#FEF9C3',
+                  color: 'var(--color-fg)',
+                  fontWeight: 800,
+                  fontSize: 'var(--fs-sm)',
+                  padding: '0 18px',
+                  height: 42,
+                  boxSizing: 'border-box',
+                  cursor: 'pointer',
+                }}
+              >
+                <Settings size={15} />
+                Cấu hình ngày
+              </button>
             )}
-
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setShowPrintModal(true)}
-              title="In phiếu bàn giao cho bếp"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '3px 3px 0 0 var(--color-fg)',
-                background: '#ECFDF5',
-                color: 'var(--color-fg)',
-                fontWeight: 800,
-                fontSize: 'var(--fs-sm)',
-                padding: '0 18px',
-                height: 42,
-                boxSizing: 'border-box',
-                cursor: 'pointer',
-              }}
-            >
-              <Printer size={15} />
-              In Phiếu Giao
-            </button>
 
             {board?.canManage && board.isServing && !board.isLocked ? (
               <button
@@ -1206,9 +1104,27 @@ export default function MealHeadcountPage() {
                   Bấm vào hàng của một lớp để chuyển nhanh sang danh sách học sinh của lớp đó.
                 </p>
               </div>
-              <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', padding: '5px 12px', fontWeight: 700 }}>
-                {board?.classBreakdowns?.length || 0} lớp học • {board?.totalActiveToCook || 0} suất
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', padding: '5px 12px', fontWeight: 700 }}>
+                  {board?.classBreakdowns?.length || 0} lớp học • {board?.totalActiveToCook || 0} suất
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={handleExportClassSummaryCsv}
+                  title="Xuất bảng tổng hợp suất ăn theo lớp (.csv)"
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '2px 2px 0 0 var(--color-fg)',
+                    fontWeight: 700,
+                    padding: '5px 14px',
+                  }}
+                >
+                  <Download size={14} />
+                  Xuất tổng hợp lớp (.csv)
+                </button>
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
@@ -1386,21 +1302,6 @@ export default function MealHeadcountPage() {
               >
                 <Download size={14} />
                 Xuất CSV
-              </button>
-              <button
-                type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={() => setShowPrintModal(true)}
-                style={{
-                  borderRadius: 'var(--radius-full)',
-                  border: '2px solid var(--color-fg)',
-                  boxShadow: '2px 2px 0 0 var(--color-fg)',
-                  fontWeight: 700,
-                  padding: '6px 14px',
-                }}
-              >
-                <Printer size={14} />
-                In Phiếu
               </button>
             </div>
           </div>
@@ -2020,14 +1921,7 @@ export default function MealHeadcountPage() {
                       String(c.specialDietCount ?? 0),
                     ]);
                   });
-                  const csvContent = '\uFEFF' + rows.map((r) => r.map((cell) => `"${cell}"`).join(',')).join('\n');
-                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `Bao_cao_ban_tru_${reportFrom}_${reportTo}.csv`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  downloadCsv(`Bao_cao_ban_tru_${reportFrom}_${reportTo}.csv`, rows);
                   toast.success('Đã xuất báo cáo thống kê bán trú (.csv)!');
                 }}
                 style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', fontWeight: 800 }}
@@ -2807,240 +2701,6 @@ export default function MealHeadcountPage() {
               <Lock size={16} />
               {actionLoading ? 'Đang chốt...' : 'Xác nhận chốt số liệu'}
             </button>
-          </div>
-        </div>
-      </GeometricModal>
-
-      {/* ===================================================================== */}
-      {/* MODAL 2: Printable Handover Sheet                                     */}
-      {/* ===================================================================== */}
-      <GeometricModal
-        open={showPrintModal}
-        onClose={() => setShowPrintModal(false)}
-        title="Phiếu bàn giao suất ăn bán trú cho nhà bếp"
-        badgeText="In biên bản bàn giao"
-        badgeColor="mint"
-        icon={<Printer size={24} color="var(--color-fg)" />}
-        iconBg="var(--color-quaternary)"
-        maxWidth="lg"
-      >
-        <div id="printable-handover-sheet" style={{ background: '#FFFFFF', color: '#1E293B', padding: '16px 8px' }}>
-          {/* Header A4 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #1E293B', paddingBottom: 16, marginBottom: 20 }}>
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase' }}>PHÒNG GD&ĐT HUYỆN ĐAN PHƯỢNG</div>
-              <div style={{ fontSize: '0.95rem', fontWeight: 800, textTransform: 'uppercase' }}>TRƯỜNG TIỂU HỌC TÂN LẬP A</div>
-              <div style={{ fontSize: '0.75rem', color: '#64748B' }}>Hệ thống Quản lý Bán trú SAWP</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</div>
-              <div style={{ fontSize: '0.75rem', fontStyle: 'italic' }}>Độc lập — Tự do — Hạnh phúc</div>
-              <div style={{ fontSize: '0.8rem', marginTop: 4 }}>Ngày: {formatDateDDMMYYYY(selectedDate)}</div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <h2 style={{ margin: '0 0 6px', fontSize: '1.25rem', fontWeight: 900, textTransform: 'uppercase' }}>
-              PHIẾU BÀN GIAO SUẤT ĂN BÁN TRÚ CHO NHÀ BẾP
-            </h2>
-            <div style={{ fontSize: '0.8rem', fontStyle: 'italic', color: '#64748B' }}>
-              (Thời điểm chốt số liệu: {effectiveCutoffLabel} sáng | Dữ liệu đồng bộ từ Đăng ký bán trú & Đơn xin nghỉ)
-            </div>
-          </div>
-
-          {/* Metrics on Paper */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20, textAlign: 'center' }}>
-            <div style={{ border: '1px solid #CBD5E1', padding: '10px 8px', borderRadius: 6 }}>
-              <div style={{ fontSize: '0.75rem', color: '#64748B' }}>TỔNG ĐĂNG KÝ:</div>
-              <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{board?.totalInitialRegistered}</div>
-            </div>
-            <div style={{ border: '1px solid #CBD5E1', padding: '10px 8px', borderRadius: 6 }}>
-              <div style={{ fontSize: '0.75rem', color: '#64748B' }}>SUẤT HỦY HỢP LỆ:</div>
-              <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#e11d48' }}>-{board?.totalAutoCancelled}</div>
-            </div>
-            <div style={{ border: '2px solid #1E293B', padding: '10px 8px', borderRadius: 6, background: '#F8FAFC' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>THỰC TẾ NẤU VÀ GIAO:</div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#047857' }}>{board?.totalActiveToCook} suất</div>
-            </div>
-          </div>
-
-          {/* Table for print */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24, fontSize: '0.82rem' }}>
-            <thead>
-              <tr style={{ background: '#F1F5F9' }}>
-                <th style={{ border: '1px solid #94A3B8', padding: '6px 8px', textAlign: 'center' }}>STT</th>
-                <th style={{ border: '1px solid #94A3B8', padding: '6px 8px', textAlign: 'left' }}>Lớp</th>
-                <th style={{ border: '1px solid #94A3B8', padding: '6px 8px', textAlign: 'center' }}>Đăng ký</th>
-                <th style={{ border: '1px solid #94A3B8', padding: '6px 8px', textAlign: 'center' }}>Đã hủy</th>
-                <th style={{ border: '1px solid #94A3B8', padding: '6px 8px', textAlign: 'center' }}>Thực giao (Khay)</th>
-                <th style={{ border: '1px solid #94A3B8', padding: '6px 8px', textAlign: 'left' }}>Ký nhận của GV/Phụ trách</th>
-              </tr>
-            </thead>
-            <tbody>
-              {board?.classBreakdowns?.map((c, i) => (
-                <tr key={c.classId}>
-                  <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center' }}>{i + 1}</td>
-                  <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', fontWeight: 700 }}>Lớp {c.className}</td>
-                  <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center' }}>{c.initialRegistered}</td>
-                  <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', color: c.cancelledCount > 0 ? '#e11d48' : '#000' }}>
-                    {c.cancelledCount > 0 ? `-${c.cancelledCount}` : '0'}
-                  </td>
-                  <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px', textAlign: 'center', fontWeight: 800 }}>{c.actualCount}</td>
-                  <td style={{ border: '1px solid #CBD5E1', padding: '6px 8px' }}></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {/* Signatures */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', textAlign: 'center', marginTop: 32 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.82rem' }}>ĐẠI DIỆN NHÀ BẾP</div>
-              <div style={{ fontSize: '0.75rem', fontStyle: 'italic', marginBottom: 40 }}>(Ký và ghi rõ họ tên)</div>
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.82rem' }}>NHÂN VIÊN BÁN TRÚ</div>
-              <div style={{ fontSize: '0.75rem', fontStyle: 'italic', marginBottom: 40 }}>(Ký và ghi rõ họ tên)</div>
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.82rem' }}>BAN GIÁM HIỆU DUYỆT</div>
-              <div style={{ fontSize: '0.75rem', fontStyle: 'italic', marginBottom: 40 }}>(Ký và đóng dấu)</div>
-            </div>
-          </div>
-
-          {/* Print Modal Buttons */}
-          <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setShowPrintModal(false)}
-              style={{
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '2px 2px 0 0 var(--color-fg)',
-                fontWeight: 700,
-                fontSize: 'var(--fs-sm)',
-                padding: '8px 20px',
-                background: '#FFFFFF',
-                color: 'var(--color-fg)',
-                cursor: 'pointer',
-              }}
-            >
-              Đóng
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => window.print()}
-              style={{
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '3px 3px 0 0 var(--color-fg)',
-                fontWeight: 800,
-                fontSize: 'var(--fs-sm)',
-                padding: '8px 24px',
-                background: 'var(--color-accent)',
-                color: '#FFFFFF',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'pointer',
-              }}
-            >
-              <Printer size={16} /> In Phiếu Bàn Giao
-            </button>
-          </div>
-        </div>
-      </GeometricModal>
-
-      {/* Modal Cấu hình Chỉ tiêu Bán trú Tháng (TC_BDS_34) */}
-      <GeometricModal
-        open={showQuotaModal}
-        onClose={() => setShowQuotaModal(false)}
-        title="Cấu hình Chỉ tiêu Bán trú Tháng"
-        maxWidth="sm"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ padding: 12, borderRadius: 12, background: '#EFF6FF', border: '1.5px solid #93C5FD', fontSize: 'var(--fs-xs)', color: '#1E3A8A', lineHeight: 1.5 }}>
-            Khi số học sinh đăng ký trong tháng đạt chỉ tiêu tối đa, các đăng ký mới sẽ tự động chuyển sang <strong>Danh sách chờ (Waitlist)</strong> và gửi thông báo cho phụ huynh.
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontWeight: 800, fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
-              Tháng áp dụng (YYYY-MM)
-            </label>
-            <input
-              type="month"
-              className="input"
-              value={quotaMonth}
-              onChange={(e) => {
-                setQuotaMonth(e.target.value);
-                loadMonthlyQuota(e.target.value);
-              }}
-              style={{ width: '100%' }}
-            />
-          </div>
-
-          {quotaInfo && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div style={{ padding: 10, borderRadius: 12, background: '#F8FAFC', border: '1.5px solid var(--color-border)' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--color-muted-fg)', fontWeight: 700 }}>ĐÃ ĐĂNG KÝ</div>
-                <div style={{ fontSize: '1.15rem', fontWeight: 900 }}>{quotaInfo.registeredCount} HS</div>
-              </div>
-              <div style={{ padding: 10, borderRadius: 12, background: '#FEF3C7', border: '1.5px solid #F59E0B' }}>
-                <div style={{ fontSize: '0.7rem', color: '#92400E', fontWeight: 700 }}>DANH SÁCH CHỜ</div>
-                <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#B45309' }}>{quotaInfo.waitlistedCount} HS</div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label style={{ display: 'block', fontWeight: 800, fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
-              Chỉ tiêu tối đa (Số học sinh)
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={10000}
-              className="input"
-              value={quotaValue}
-              onChange={(e) => setQuotaValue(e.target.value)}
-              placeholder="Ví dụ: 80"
-              style={{ width: '100%' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-            {quotaInfo?.quota != null ? (
-              <button
-                type="button"
-                className="btn btn--secondary"
-                onClick={handleClearQuota}
-                disabled={savingQuota}
-                style={{ color: '#E11D48', borderColor: '#F43F5E' }}
-              >
-                Gỡ chỉ tiêu tháng
-              </button>
-            ) : (
-              <span />
-            )}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn btn--secondary"
-                onClick={() => setShowQuotaModal(false)}
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={handleSaveQuota}
-                disabled={savingQuota}
-              >
-                {savingQuota ? 'Đang lưu...' : 'Lưu chỉ tiêu'}
-              </button>
-            </div>
           </div>
         </div>
       </GeometricModal>

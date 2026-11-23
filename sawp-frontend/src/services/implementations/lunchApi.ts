@@ -9,12 +9,10 @@ import type {
   LunchPeriodReport,
   LunchServiceDayConfig,
   MealHeadcount,
-  MonthlyBoardingQuota,
   RestoreMealPayload,
   StudentLunchSchedule,
   UpdateLunchRegistrationMealTypePayload,
   UpsertLunchServiceDaysPayload,
-  UpsertMonthlyBoardingQuotaPayload,
 } from '../../types/lunch.types';
 
 export const lunchApi = {
@@ -115,25 +113,6 @@ export const lunchApi = {
     const params: Record<string, string | number> = { from, to };
     if (classId) params.classId = classId;
     const res = await apiClient.get<{ success: boolean; data: LunchPeriodReport }>('/lunch/report', { params });
-    return res.data.data;
-  },
-
-  getMonthlyQuota: async (month: string): Promise<MonthlyBoardingQuota> => {
-    const res = await apiClient.get<{ success: boolean; data: MonthlyBoardingQuota }>('/lunch/monthly-quota', {
-      params: { month },
-    });
-    return res.data.data;
-  },
-
-  upsertMonthlyQuota: async (payload: UpsertMonthlyBoardingQuotaPayload): Promise<MonthlyBoardingQuota> => {
-    const res = await apiClient.put<{ success: boolean; data: MonthlyBoardingQuota }>('/lunch/monthly-quota', payload);
-    return res.data.data;
-  },
-
-  clearMonthlyQuota: async (month: string): Promise<MonthlyBoardingQuota> => {
-    const res = await apiClient.delete<{ success: boolean; data: MonthlyBoardingQuota }>('/lunch/monthly-quota', {
-      params: { month },
-    });
     return res.data.data;
   },
 };

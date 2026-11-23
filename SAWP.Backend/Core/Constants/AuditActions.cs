@@ -48,9 +48,13 @@ public static class AuditActions
     public const string ChildLinkRequestApprove = "CHILD_LINK_REQUEST_APPROVE";
     public const string ChildLinkRequestReject = "CHILD_LINK_REQUEST_REJECT";
     public const string LeaveRequestSubmit = "LEAVE_REQUEST_SUBMIT";
+    public const string LeaveRequestForward = "LEAVE_REQUEST_FORWARD";
     public const string LeaveRequestApprove = "LEAVE_REQUEST_APPROVE";
     public const string LeaveRequestReject = "LEAVE_REQUEST_REJECT";
     public const string LeaveRequestCancel = "LEAVE_REQUEST_CANCEL";
+    public const string LeaveRequestRequestMoreInfo = "LEAVE_REQUEST_REQUEST_MORE_INFO";
+    public const string LeaveRequestResubmit = "LEAVE_REQUEST_RESUBMIT";
+    public const string LeaveRequestWithdraw = "LEAVE_REQUEST_WITHDRAW";
     public const string ClassTransferRequestExecute = "CLASS_TRANSFER_REQUEST_EXECUTE";
     public const string AdministrativeRequestReject = "ADMINISTRATIVE_REQUEST_REJECT";
 

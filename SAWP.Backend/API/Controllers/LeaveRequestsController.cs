@@ -87,9 +87,14 @@ public class LeaveRequestsController : ControllerBase
             return Unauthorized(ApiResponse<LeaveRequestItemDto>.Fail("Vui lòng đăng nhập lại."));
         }
 
-        var result = await _leaveRequestService.GetLeaveRequestDetailsAsync(id, userId.Value, cancellationToken);
+        var roles = User.GetRoles();
+        var result = await _leaveRequestService.GetLeaveRequestDetailsAsync(id, userId.Value, roles, cancellationToken);
         if (!result.Success)
         {
+            if (string.Equals(result.Code, "MSG10", StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, result);
+            }
             return NotFound(result);
         }
 
@@ -120,6 +125,27 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Phụ huynh chỉnh sửa và gửi lại đơn khi ở trạng thái Chờ duyệt hoặc Yêu cầu bổ sung thông tin
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateLeaveRequest(int id, [FromBody] UpdateLeaveRequestDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<LeaveRequestItemDto>.Fail("Vui lòng đăng nhập lại."));
+        }
+
+        var result = await _leaveRequestService.UpdateLeaveRequestAsync(id, userId.Value, request, cancellationToken);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Phụ huynh hủy đơn khi còn ở trạng thái Chờ duyệt
     /// </summary>
     [HttpPost("{id}/cancel")]
@@ -132,6 +158,27 @@ public class LeaveRequestsController : ControllerBase
         }
 
         var result = await _leaveRequestService.CancelLeaveRequestAsync(id, userId.Value, cancellationToken);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Phụ huynh thu hồi đơn đã duyệt đối với các ngày chưa qua giờ chốt
+    /// </summary>
+    [HttpPost("{id}/withdraw")]
+    public async Task<IActionResult> WithdrawLeaveRequest(int id, [FromBody] WithdrawLeaveRequestDto? request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<bool>.Fail("Vui lòng đăng nhập lại."));
+        }
+
+        var result = await _leaveRequestService.WithdrawLeaveRequestAsync(id, userId.Value, request?.Reason, cancellationToken);
         if (!result.Success)
         {
             return BadRequest(result);
@@ -157,21 +204,27 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Tải / Xem tệp đính kèm
+    /// Tải / Xem tệp đính kèm (bắt buộc đăng nhập và đúng phạm vi đơn)
     /// </summary>
     [HttpGet("attachment-file")]
-    [AllowAnonymous]
     public async Task<IActionResult> GetAttachmentFile([FromQuery] string path, CancellationToken cancellationToken)
     {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<bool>.Fail("Vui lòng đăng nhập lại."));
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             return BadRequest();
         }
 
-        var attachment = await _leaveRequestService.GetAttachmentAsync(path, cancellationToken);
+        var roles = User.GetRoles();
+        var attachment = await _leaveRequestService.GetAttachmentAsync(path, userId.Value, roles, cancellationToken);
         if (attachment == null)
         {
-            return NotFound("Không tìm thấy tệp đính kèm.");
+            return NotFound("Không tìm thấy tệp đính kèm hoặc bạn không có quyền xem.");
         }
 
         return File(attachment.Content, attachment.ContentType, attachment.FileName);

@@ -13,6 +13,8 @@ import {
   FileText,
   Paperclip,
   ExternalLink,
+  Pencil,
+  RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
@@ -39,11 +41,18 @@ export default function LeaveRequestPage() {
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
+
+  // Modal thu hồi đơn đã duyệt (A8)
+  const [withdrawingItem, setWithdrawingItem] = useState<LeaveRequestItem | null>(null);
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
 
   // Form states
   const [children, setChildren] = useState<LinkedChild[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<number>(0);
-  const todayStr = new Date().toISOString().split('T')[0];
+  const nowLocal = new Date();
+  const todayStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(todayStr);
   const [session, setSession] = useState<number>(3); // 1: Sáng, 2: Chiều, 3: Cả ngày
@@ -54,14 +63,29 @@ export default function LeaveRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const uploadingFile = attachments.some((a) => a.uploading);
 
-  const calculateDays = (start: string, end: string) => {
-    if (!start || !end) return 1;
-    const s = new Date(start);
-    const e = new Date(end);
-    const diffDays = Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1;
-    return Math.max(1, diffDays);
+  const isFixedHoliday = (d: Date) => {
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
+    return (m === 1 && day === 1) || (m === 4 && day === 30) || (m === 5 && day === 1) || (m === 9 && day === 2);
   };
-  const durationDays = calculateDays(startDate, endDate);
+
+  const calculateSchoolDays = (start: string, end: string) => {
+    if (!start || !end || end < start) return 0;
+    const [sy, sm, sd] = start.split('-').map(Number);
+    const [ey, em, ed] = end.split('-').map(Number);
+    const cur = new Date(sy, sm - 1, sd);
+    const endObj = new Date(ey, em - 1, ed);
+    let count = 0;
+    while (cur <= endObj) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6 && !isFixedHoliday(cur)) {
+        count++;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  };
+  const durationDays = calculateSchoolDays(startDate, endDate);
 
   const fetchRequests = async () => {
     try {
@@ -112,8 +136,8 @@ export default function LeaveRequestPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (fileList.length === 0) return;
 
-    // Validate file extensions (chấp nhận ảnh JPG/PNG/WEBP và tài liệu PDF/Word)
-    const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx'];
+    // Validate file extensions theo BR-50: chỉ chấp nhận PDF, JPG, PNG
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.pdf'];
 
     for (const file of fileList) {
       if (attachments.length >= 5) {
@@ -123,7 +147,7 @@ export default function LeaveRequestPage() {
 
       const ext = file.name.slice(Math.max(0, file.name.lastIndexOf('.'))).toLowerCase();
       if (!allowedExts.includes(ext)) {
-        toast.error(`Tệp "${file.name}" không đúng định dạng! Chỉ chấp nhận ảnh (.jpg, .png, .webp) hoặc tài liệu (.pdf, .doc, .docx).`);
+        toast.error(`Tệp "${file.name}" không đúng định dạng! Theo quy định BR-50 chỉ chấp nhận tệp PDF, JPG hoặc PNG.`);
         continue;
       }
 
@@ -185,13 +209,51 @@ export default function LeaveRequestPage() {
     }
   };
 
+  const resetForm = () => {
+    setEditingRequestId(null);
+    setStartDate(todayStr);
+    setEndDate(todayStr);
+    setSession(3);
+    setKeepLunch(false);
+    setReason('');
+    handleRemoveFile();
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    setShowModal(true);
+  };
+
+  const openEditModal = (item: LeaveRequestItem) => {
+    setEditingRequestId(item.id);
+    setSelectedStudentId(item.studentId);
+    setStartDate(item.startDate.slice(0, 10));
+    setEndDate(item.endDate.slice(0, 10));
+    setSession(item.session === 'Morning' ? 1 : item.session === 'Afternoon' ? 2 : 3);
+    setKeepLunch(item.keepLunchService);
+    setReason(item.reason);
+    const existingUrls = (item.doctorNoteAttachmentUrl || '')
+      .split('|')
+      .map((u) => u.trim())
+      .filter(Boolean);
+    setAttachments(
+      existingUrls.map((url, idx) => ({
+        id: `existing-${item.id}-${idx}`,
+        file: new File([], `Tệp đính kèm ${idx + 1}`),
+        previewUrl: null,
+        uploadedUrl: url,
+        uploading: false,
+      }))
+    );
+    setShowModal(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentId) {
       toast.error('Vui lòng chọn học sinh.');
       return;
     }
-    // Validate date range & weekday-only before API call
     if (!startDate || !endDate) {
       toast.error('Vui lòng chọn ngày bắt đầu và ngày kết thúc nghỉ.');
       return;
@@ -208,18 +270,6 @@ export default function LeaveRequestPage() {
       toast.error('Không thể xin nghỉ học cho ngày trong quá khứ.');
       return;
     }
-    let hasWeekday = false;
-    for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) {
-        hasWeekday = true;
-        break;
-      }
-    }
-    if (!hasWeekday) {
-      toast.error('Khoảng ngày chọn chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.');
-      return;
-    }
     const sessionOverlaps = (existingSession: string | number, newSession: number) => {
       const normalized =
         existingSession === 'Morning' || existingSession === 1
@@ -231,8 +281,9 @@ export default function LeaveRequestPage() {
     };
     const overlapping = requests.some(
       (r) =>
+        r.id !== editingRequestId &&
         r.studentId === selectedStudentId &&
-        (r.status === 'Submitted' || r.status === 'UnderReview' || r.status === 'Approved') &&
+        (r.status === 'Submitted' || r.status === 'UnderReview' || r.status === 'Approved' || r.status === 'NeedMoreInfo') &&
         r.startDate.slice(0, 10) <= endDate &&
         r.endDate.slice(0, 10) >= startDate &&
         sessionOverlaps(r.session, session)
@@ -249,29 +300,49 @@ export default function LeaveRequestPage() {
         .filter(Boolean)
         .join(' | ');
 
-      const res = await leaveRequestApi.submit({
-        studentId: selectedStudentId,
-        startDate,
-        endDate,
-        session,
-        keepLunchService: keepLunch,
-        reason,
-        doctorNoteAttachmentUrl: combinedUrls || undefined,
-      });
+      if (editingRequestId) {
+        const res = await leaveRequestApi.update(editingRequestId, {
+          startDate,
+          endDate,
+          session,
+          keepLunchService: keepLunch,
+          reason,
+          doctorNoteAttachmentUrl: combinedUrls || undefined,
+        });
 
-      if (res.success) {
-        toast.success(
-          durationDays >= 3
-            ? 'Đã gửi đơn nghỉ (≥ 3 ngày)! GVCN sẽ xác nhận và chuyển Ban Giám Hiệu phê duyệt.'
-            : 'Đã gửi đơn xin nghỉ thành công! GVCN sẽ sớm xem xét.',
-          { duration: 5000 }
-        );
-        setShowModal(false);
-        setReason('');
-        handleRemoveFile();
-        fetchRequests();
+        if (res.success) {
+          toast.success(res.message || 'Đã cập nhật và gửi lại đơn xin nghỉ thành công!');
+          setShowModal(false);
+          resetForm();
+          fetchRequests();
+        } else {
+          toast.error(res.message || 'Cập nhật đơn thất bại.');
+        }
       } else {
-        toast.error(res.message || 'Gửi đơn thất bại.');
+        const res = await leaveRequestApi.submit({
+          studentId: selectedStudentId,
+          startDate,
+          endDate,
+          session,
+          keepLunchService: keepLunch,
+          reason,
+          doctorNoteAttachmentUrl: combinedUrls || undefined,
+        });
+
+        if (res.success) {
+          const actualDays = res.data?.totalDays ?? durationDays;
+          toast.success(
+            actualDays > 3
+              ? 'Đã gửi đơn nghỉ (> 3 ngày học)! GVCN sẽ xác nhận và chuyển Ban Giám Hiệu phê duyệt.'
+              : res.message || 'Đã gửi đơn xin nghỉ thành công! GVCN sẽ sớm xem xét.',
+            { duration: 5000 }
+          );
+          setShowModal(false);
+          resetForm();
+          fetchRequests();
+        } else {
+          toast.error(res.message || 'Gửi đơn thất bại.');
+        }
       }
     } catch (err: unknown) {
       const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra khi gửi đơn.';
@@ -293,6 +364,27 @@ export default function LeaveRequestPage() {
       }
     } catch {
       toast.error('Không thể hủy đơn.');
+    }
+  };
+
+  const handleConfirmWithdraw = async () => {
+    if (!withdrawingItem) return;
+    try {
+      setWithdrawing(true);
+      const res = await leaveRequestApi.withdraw(withdrawingItem.id, withdrawReason.trim() || undefined);
+      if (res.success) {
+        toast.success(res.message || 'Đã thu hồi đơn và khôi phục suất ăn (nếu có) thành công!');
+        setWithdrawingItem(null);
+        setWithdrawReason('');
+        fetchRequests();
+      } else {
+        toast.error(res.message || 'Không thể thu hồi đơn.');
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Không thể thu hồi đơn.';
+      toast.error(msg);
+    } finally {
+      setWithdrawing(false);
     }
   };
 
@@ -320,7 +412,7 @@ export default function LeaveRequestPage() {
           <button
             type="button"
             className="btn btn--primary"
-            onClick={() => setShowModal(true)}
+            onClick={openCreateModal}
           >
             <span className="btn__icon">
               <Plus size={16} />
@@ -378,14 +470,14 @@ export default function LeaveRequestPage() {
           <p style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)', marginTop: 6, marginBottom: 16 }}>
             Bấm vào nút "Gửi đơn xin nghỉ mới" ở trên để tạo đơn đầu tiên cho con.
           </p>
-          <button type="button" className="btn btn--secondary" onClick={() => setShowModal(true)}>
+          <button type="button" className="btn btn--secondary" onClick={openCreateModal}>
             <Plus size={16} /> Tạo đơn ngay
           </button>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 18 }}>
           {requests.map((r) => {
-            const isLongLeave = (r.totalDays || 1) >= 3;
+            const isLongLeave = Boolean(r.isEscalated);
             return (
               <div
                 key={r.id}
@@ -421,6 +513,11 @@ export default function LeaveRequestPage() {
                     {r.status === 'UnderReview' && (
                       <span className="badge badge--violet">
                         Chờ BGH phê duyệt
+                      </span>
+                    )}
+                    {r.status === 'NeedMoreInfo' && (
+                      <span className="badge badge--pink">
+                        <ShieldAlert size={14} /> Yêu cầu bổ sung thông tin
                       </span>
                     )}
                     {r.status === 'Approved' && (
@@ -461,7 +558,7 @@ export default function LeaveRequestPage() {
                       {r.startDate !== r.endDate && ` → ${formatDateDDMMYYYY(r.endDate)}`}
                     </strong>{' '}
                     <span className={`badge ${isLongLeave ? 'badge--violet' : 'badge--mint'}`} style={{ fontSize: 'var(--fs-xs)', marginLeft: 4 }}>
-                      {r.totalDays || 1} ngày {isLongLeave ? '(Chuyển BGH)' : '(Thông thường)'}
+                      {r.totalDays} ngày học {isLongLeave ? '(Chuyển BGH)' : '(Thông thường)'}
                     </span>
                   </div>
 
@@ -503,11 +600,16 @@ export default function LeaveRequestPage() {
                         .filter(Boolean)
                         .map((urlItem, idx) =>
                           urlItem.startsWith('/') || urlItem.startsWith('http') ? (
-                            <a
+                            <button
                               key={idx}
-                              href={urlItem}
-                              target="_blank"
-                              rel="noreferrer"
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await leaveRequestApi.openAttachment(urlItem);
+                                } catch {
+                                  toast.error('Không thể mở tệp minh chứng. Vui lòng thử lại.');
+                                }
+                              }}
                               className="btn btn--secondary btn--sm"
                               style={{
                                 display: 'inline-flex',
@@ -521,7 +623,7 @@ export default function LeaveRequestPage() {
                               <Paperclip size={14} />
                               <span>Xem minh chứng {idx + 1}</span>
                               <ExternalLink size={12} />
-                            </a>
+                            </button>
                           ) : (
                             <div key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-accent)' }}>
                               <Paperclip size={14} />
@@ -537,25 +639,68 @@ export default function LeaveRequestPage() {
                         marginTop: 8,
                         paddingTop: 8,
                         borderTop: '1px dashed var(--color-border)',
-                        color: r.status === 'Rejected' ? 'var(--color-secondary)' : 'var(--color-accent)',
+                        color: r.status === 'Rejected' || r.status === 'NeedMoreInfo' ? 'var(--color-secondary)' : 'var(--color-accent)',
                       }}
                     >
-                      <strong>Ý kiến phê duyệt:</strong> {r.reviewerNotes}
+                      <strong>Ý kiến phản hồi:</strong> {r.reviewerNotes}
+                    </div>
+                  )}
+
+                  {r.statusHistory && r.statusHistory.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--color-border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginBottom: 4 }}>
+                        <Clock size={12} /> Lịch sử xử lý đơn:
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {r.statusHistory.map((h, idx) => (
+                          <div key={idx} style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)' }}>
+                            <strong>{h.actionLabel}</strong>
+                            {h.actorName ? ` (${h.actorName})` : ''}
+                            {' — '}
+                            <span style={{ color: 'var(--color-muted-fg)' }}>{formatDateDDMMYYYY(h.timestamp)}</span>
+                            {h.notes ? `: ${h.notes}` : ''}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
 
                 {/* Actions Footer */}
-                {r.status === 'Submitted' && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--sm"
-                      style={{ color: '#e11d48', borderColor: '#fda4af' }}
-                      onClick={() => handleCancel(r.id)}
-                    >
-                      <X size={14} /> Hủy đơn này
-                    </button>
+                {(r.status === 'Submitted' || r.status === 'NeedMoreInfo' || (r.status === 'Approved' && r.canWithdraw)) && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, paddingTop: 8, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
+                    {(r.status === 'Submitted' || r.status === 'NeedMoreInfo') && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => openEditModal(r)}
+                        >
+                          <Pencil size={14} /> {r.status === 'NeedMoreInfo' ? 'Bổ sung & Gửi lại' : 'Chỉnh sửa đơn'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{ color: '#e11d48', borderColor: '#fda4af' }}
+                          onClick={() => handleCancel(r.id)}
+                        >
+                          <X size={14} /> Hủy đơn này
+                        </button>
+                      </>
+                    )}
+                    {r.status === 'Approved' && r.canWithdraw && (
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        style={{ color: '#B45309', borderColor: '#FCD34D', background: '#FFFBEB' }}
+                        onClick={() => {
+                          setWithdrawingItem(r);
+                          setWithdrawReason('');
+                        }}
+                      >
+                        <RotateCcw size={14} /> Thu hồi đơn đã duyệt
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -564,13 +709,15 @@ export default function LeaveRequestPage() {
         </div>
       )}
 
-      {/* CREATE MODAL (GeometricModal) */}
-      {/* CREATE MODAL (GeometricModal) */}
+      {/* CREATE / EDIT MODAL (GeometricModal) */}
       <GeometricModal
         open={showModal}
-        onClose={() => setShowModal(false)}
-        title="Gửi đơn xin nghỉ học"
-        badgeText="Đơn xin nghỉ trực tuyến"
+        onClose={() => {
+          setShowModal(false);
+          resetForm();
+        }}
+        title={editingRequestId ? 'Cập nhật & Gửi lại đơn xin nghỉ' : 'Gửi đơn xin nghỉ học'}
+        badgeText={editingRequestId ? 'Chỉnh sửa đơn' : 'Đơn xin nghỉ trực tuyến'}
         badgeColor="violet"
         icon={<Calendar size={24} color="var(--color-fg)" />}
         maxWidth="lg"
@@ -587,6 +734,7 @@ export default function LeaveRequestPage() {
                     id="leave-student"
                     className="select"
                     value={selectedStudentId}
+                    disabled={!!editingRequestId}
                     onChange={(e) => setSelectedStudentId(Number(e.target.value))}
                   >
                     <option value={0}>-- Chọn học sinh --</option>
@@ -654,8 +802,8 @@ export default function LeaveRequestPage() {
                 </div>
               </div>
 
-              {/* Quy tắc định tuyến đơn */}
-              {durationDays >= 3 ? (
+              {/* Quy tắc định tuyến đơn (A2: > 3 ngày học) */}
+              {durationDays > 3 ? (
                 <div
                   className="card"
                   style={{
@@ -669,7 +817,7 @@ export default function LeaveRequestPage() {
                 >
                   <ShieldAlert size={18} color="var(--color-accent)" style={{ marginTop: 2, flexShrink: 0 }} />
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)', lineHeight: 1.4 }}>
-                    <strong style={{ color: 'var(--color-accent)' }}>Nghỉ {durationDays} ngày (≥ 3 ngày):</strong> GVCN xác nhận & chuyển Ban Giám Hiệu duyệt.
+                    <strong style={{ color: 'var(--color-accent)' }}>Nghỉ {durationDays} ngày học (&gt; 3 ngày):</strong> GVCN xác nhận &amp; chuyển Ban Giám Hiệu duyệt.
                   </div>
                 </div>
               ) : (
@@ -686,7 +834,12 @@ export default function LeaveRequestPage() {
                 >
                   <CheckCircle2 size={18} color="#059669" style={{ marginTop: 2, flexShrink: 0 }} />
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)', lineHeight: 1.4 }}>
-                    <strong style={{ color: '#059669' }}>Nghỉ {durationDays} ngày:</strong> GVCN trực tiếp xem xét và phê duyệt.
+                    <strong style={{ color: '#059669' }}>
+                      {durationDays > 0 ? `Nghỉ ${durationDays} ngày học:` : 'Ngày cuối tuần / nghỉ lễ:'}
+                    </strong>{' '}
+                    {durationDays > 0
+                      ? 'GVCN trực tiếp xem xét và phê duyệt (≤ 3 ngày học).'
+                      : 'Chỉ được chấp thuận nếu là ngày học bù theo lịch nhà trường.'}
                   </div>
                 </div>
               )}
@@ -749,7 +902,7 @@ export default function LeaveRequestPage() {
                   id="leave-file-input"
                   type="file"
                   multiple
-                  accept="image/png,image/jpeg,image/webp,application/pdf,.doc,.docx"
+                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                   style={{ display: 'none' }}
                   onChange={handleFileSelect}
                 />
@@ -899,7 +1052,7 @@ export default function LeaveRequestPage() {
                       </span>
                       {attachments.length === 0 && (
                         <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--color-muted-fg)' }}>
-                          Hỗ trợ chọn nhiều ảnh cùng lúc (JPG, PNG, WEBP) hoặc PDF, DOCX — Tối đa 10MB/tệp
+                          Hỗ trợ chọn nhiều tệp PDF hoặc ảnh JPG, PNG (theo BR-50) — Tối đa 10MB/tệp
                         </p>
                       )}
                     </div>
@@ -925,7 +1078,7 @@ export default function LeaveRequestPage() {
               className="btn btn--secondary"
               onClick={() => {
                 setShowModal(false);
-                handleRemoveFile();
+                resetForm();
               }}
             >
               Đóng
@@ -936,10 +1089,60 @@ export default function LeaveRequestPage() {
               disabled={submitting || uploadingFile}
             >
               <Send size={16} />
-              {submitting ? 'Đang gửi…' : 'Gửi đơn xin nghỉ'}
+              {submitting ? 'Đang xử lý…' : editingRequestId ? 'Cập nhật & Gửi lại' : 'Gửi đơn xin nghỉ'}
             </button>
           </div>
         </form>
+      </GeometricModal>
+
+      {/* WITHDRAW APPROVED LEAVE MODAL (A8) */}
+      <GeometricModal
+        open={!!withdrawingItem}
+        onClose={() => setWithdrawingItem(null)}
+        title="Thu hồi đơn xin nghỉ đã duyệt"
+        badgeText="Thu hồi trước giờ chốt"
+        badgeColor="amber"
+        icon={<RotateCcw size={24} color="#1E293B" />}
+        iconBg="#FEF3C7"
+        maxWidth="md"
+      >
+        <div>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginBottom: 10 }}>
+            Đơn: <strong>{withdrawingItem?.requestNumber}</strong> — Học sinh: <strong>{withdrawingItem?.studentName}</strong>.
+          </p>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginBottom: 14 }}>
+            Hệ thống sẽ gỡ trạng thái Vắng có phép tự động sinh từ đơn và khôi phục suất ăn bán trú (nếu đã hủy theo đơn) cho các ngày chưa qua giờ chốt, đồng thời thông báo lại cho GVCN.
+          </p>
+          <div className="field" style={{ marginBottom: 16 }}>
+            <label className="label" htmlFor="withdraw-reason">Lý do thu hồi (tuỳ chọn)</label>
+            <textarea
+              id="withdraw-reason"
+              className="input"
+              rows={2}
+              value={withdrawReason}
+              onChange={(e) => setWithdrawReason(e.target.value)}
+              placeholder="Ví dụ: Cháu đã hết sốt và gia đình cho đi học trở lại..."
+              style={{ minHeight: 65, resize: 'vertical' }}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setWithdrawingItem(null)}
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              disabled={withdrawing}
+              className="btn btn--primary"
+              onClick={handleConfirmWithdraw}
+            >
+              <RotateCcw size={15} /> {withdrawing ? 'Đang thu hồi...' : 'Xác nhận thu hồi đơn'}
+            </button>
+          </div>
+        </div>
       </GeometricModal>
     </div>
   );

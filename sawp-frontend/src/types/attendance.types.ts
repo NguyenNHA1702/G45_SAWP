@@ -7,7 +7,7 @@ export const AttendanceStatus = {
 } as const;
 export type AttendanceStatus = (typeof AttendanceStatus)[keyof typeof AttendanceStatus];
 
-export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled';
+export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'NeedMoreInfo';
 export type AttendanceSession = 'Morning' | 'Afternoon';
 export type LeaveSession = 'Morning' | 'Afternoon' | 'FullDay';
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff';
