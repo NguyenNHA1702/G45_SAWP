@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Configuration;
 using Core.Constants;
 using Core.DTOs;
@@ -38,19 +39,38 @@ public class LunchService : ILunchService
         _auditService = auditService;
     }
 
-    private static bool IsPublicHoliday(DateTime date)
+    private async Task<Dictionary<DateTime, bool>> GetCalendarDayMapAsync(DateTime startDate, DateTime endDate, CancellationToken ct)
     {
-        return (date.Month == 1 && date.Day == 1)
-            || (date.Month == 4 && date.Day == 30)
-            || (date.Month == 5 && date.Day == 1)
-            || (date.Month == 9 && date.Day == 2);
+        var repo = _unitOfWork.Repository<SchoolCalendarDay>();
+        if (repo == null) return new Dictionary<DateTime, bool>();
+
+        var rows = await repo.Query()
+            .Where(d => d.Date >= startDate.Date && d.Date <= endDate.Date)
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(d => d.Date.Date)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
+    }
+
+    private async Task<bool?> GetCalendarSchoolDayFlagAsync(DateTime date, CancellationToken ct)
+    {
+        var repo = _unitOfWork.Repository<SchoolCalendarDay>();
+        if (repo == null) return null;
+
+        var row = await repo.Query()
+            .Where(d => d.Date == date.Date)
+            .OrderByDescending(d => d.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return row?.IsSchoolDay;
     }
 
     private (bool IsServing, TimeSpan Cutoff, bool IsLocked, DateTime? LockedAt, string? Remarks) ResolveServiceDay(DateTime date, LunchServiceDay? day, bool? isCalendarSchoolDay = null)
     {
         var targetDate = date.Date;
-        var isWeekend = targetDate.DayOfWeek == DayOfWeek.Saturday || targetDate.DayOfWeek == DayOfWeek.Sunday;
-        var defaultServing = !isWeekend && !IsPublicHoliday(targetDate) && (isCalendarSchoolDay ?? true);
+        // Nếu SchoolCalendarDay có cấu hình rõ ràng (VD: học bù T7 IsSchoolDay=true, hoặc nghỉ lễ 02/12 IsSchoolDay=false) thì ưu tiên theo lịch nhà trường
+        var defaultServing = isCalendarSchoolDay ?? SchoolCalendarHelper.IsDefaultSchoolDay(targetDate);
         var isServing = day != null ? day.IsServing : defaultServing;
         var cutoff = (day != null && day.CutoffTime != TimeSpan.Zero) ? day.CutoffTime : _options.LunchCutoff;
         var isLocked = day?.IsLocked ?? false;
@@ -118,12 +138,14 @@ public class LunchService : ILunchService
             .Query()
             .Where(d => d.Date >= start && d.Date <= end)
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+        var calendarMap = await GetCalendarDayMapAsync(start, end, cancellationToken);
 
         var result = new List<LunchServiceDayConfigDto>();
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
         {
             existingDays.TryGetValue(cur, out var day);
-            var resolved = ResolveServiceDay(cur, day);
+            bool? isCalSchoolDay = calendarMap.TryGetValue(cur, out var calFlag) ? calFlag : null;
+            var resolved = ResolveServiceDay(cur, day, isCalSchoolDay);
             result.Add(new LunchServiceDayConfigDto
             {
                 Date = cur,
@@ -158,6 +180,17 @@ public class LunchService : ILunchService
             .Query()
             .Where(d => targetDates.Contains(d.Date))
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+
+        var lockedDates = targetDates
+            .Where(d => existingMap.TryGetValue(d, out var ex) && ex.IsLocked)
+            .ToList();
+        if (lockedDates.Count > 0)
+        {
+            var lockedLabel = string.Join(", ", lockedDates.Select(d => d.ToString("dd-MM-yyyy")));
+            return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(
+                SystemMessages.MSG19,
+                new List<string> { $"Ngày ({lockedLabel}) đã chốt sổ bán trú. Vui lòng mở khóa trước khi thay đổi cấu hình." });
+        }
 
         var updatedDtos = new List<LunchServiceDayConfigDto>();
 
@@ -270,6 +303,7 @@ public class LunchService : ILunchService
             .Query()
             .Where(d => d.Date >= startOfMonth && d.Date <= endOfMonth)
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+        var calendarMap = await GetCalendarDayMapAsync(startOfMonth, endOfMonth, cancellationToken);
 
         var registrations = await _unitOfWork.Repository<LunchRegistration>()
             .Query()
@@ -281,8 +315,9 @@ public class LunchService : ILunchService
         {
             serviceDays.TryGetValue(cur, out var sDay);
             registrations.TryGetValue(cur, out var reg);
+            bool? isCalSchoolDay = calendarMap.TryGetValue(cur, out var calFlag) ? calFlag : null;
 
-            var resolved = ResolveServiceDay(cur, sDay);
+            var resolved = ResolveServiceDay(cur, sDay, isCalSchoolDay);
             var cutoffPassed = IsCutoffPassed(cur, resolved.Cutoff, resolved.IsLocked);
 
             days.Add(new StudentLunchDayDto
@@ -295,7 +330,6 @@ public class LunchService : ILunchService
                 ServiceRemarks = resolved.Remarks,
                 RegistrationId = reg?.Id,
                 IsRegistered = reg != null && reg.IsActive,
-                IsWaitlisted = reg != null && reg.IsWaitlisted && !reg.IsActive,
                 MealType = reg?.MealType,
                 StudentRemarks = reg?.Remarks,
                 CancellationSource = (reg != null && !reg.IsActive) ? reg.CancellationSource : null,
@@ -304,7 +338,11 @@ public class LunchService : ILunchService
             });
         }
 
-        var className = student.ClassAssignments.FirstOrDefault(ca => ca.IsActive)?.Class?.ClassName ?? "Chưa phân lớp";
+        var className = student.ClassAssignments
+            .Where(ca => ca.IsActive)
+            .OrderByDescending(ca => ca.StartDate)
+            .ThenByDescending(ca => ca.Id)
+            .FirstOrDefault()?.Class?.ClassName ?? "Chưa phân lớp";
 
         var schedule = new StudentLunchScheduleDto
         {
@@ -361,12 +399,16 @@ public class LunchService : ILunchService
             .Query()
             .Where(d => targetDates.Contains(d.Date))
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+        var calendarMap = targetDates.Count > 0
+            ? await GetCalendarDayMapAsync(targetDates.First(), targetDates.Last(), cancellationToken)
+            : new Dictionary<DateTime, bool>();
 
         // Kiểm tra ngày phục vụ (MSG28) và hạn đăng ký (MSG27)
         foreach (var d in targetDates)
         {
             serviceDays.TryGetValue(d, out var sDay);
-            var resolved = ResolveServiceDay(d, sDay);
+            bool? isCalSchoolDay = calendarMap.TryGetValue(d, out var calFlag) ? calFlag : null;
+            var resolved = ResolveServiceDay(d, sDay, isCalSchoolDay);
 
             if (!resolved.IsServing)
             {
@@ -396,51 +438,9 @@ public class LunchService : ILunchService
 
         var registeredDates = new List<DateTime>();
         var skippedDuplicates = new List<DateTime>();
-        var waitlistedDates = new List<DateTime>();
-
-        // Kiểm tra chỉ tiêu bán trú theo tháng (Monthly Boarding Quota - TC_BDS_34)
-        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
-        var fullMonths = new HashSet<string>();
-        var monthQuotaMap = new Dictionary<string, (int Quota, int ActiveCount)>();
-
-        if (quotaRepo != null)
-        {
-            var distinctMonths = targetDates.Select(d => d.ToString("yyyy-MM")).Distinct().ToList();
-            var quotas = await quotaRepo.Query()
-                .Where(q => distinctMonths.Contains(q.Month))
-                .ToDictionaryAsync(q => q.Month, cancellationToken);
-
-            foreach (var mKey in distinctMonths)
-            {
-                if (quotas.TryGetValue(mKey, out var q) && q.Quota > 0)
-                {
-                    var parts = mKey.Split('-');
-                    int qYear = int.Parse(parts[0]);
-                    int qMonth = int.Parse(parts[1]);
-                    var mStart = new DateTime(qYear, qMonth, 1);
-                    var mEnd = mStart.AddMonths(1).AddDays(-1);
-
-                    var activeStudentIds = await _unitOfWork.Repository<LunchRegistration>()
-                        .Query()
-                        .Where(r => r.Date >= mStart && r.Date <= mEnd && r.IsActive && !r.IsWaitlisted)
-                        .Select(r => r.StudentId)
-                        .Distinct()
-                        .ToListAsync(cancellationToken);
-
-                    monthQuotaMap[mKey] = (q.Quota, activeStudentIds.Count);
-                    if (!activeStudentIds.Contains(request.StudentId) && activeStudentIds.Count >= q.Quota)
-                    {
-                        fullMonths.Add(mKey);
-                    }
-                }
-            }
-        }
 
         foreach (var d in targetDates)
         {
-            var dMonth = d.ToString("yyyy-MM");
-            bool isMonthFull = fullMonths.Contains(dMonth);
-
             if (existingRegs.TryGetValue(d, out var existing))
             {
                 if (existing.IsActive)
@@ -449,17 +449,7 @@ public class LunchService : ILunchService
                     continue;
                 }
 
-                if (isMonthFull)
-                {
-                    existing.IsActive = false;
-                    existing.IsWaitlisted = true;
-                    existing.MealType = request.MealType;
-                    existing.Remarks = request.Remarks?.Trim();
-                    waitlistedDates.Add(d);
-                    continue;
-                }
-
-                // Bản ghi trước đó đã hủy / waitlist -> kích hoạt lại thành bản đăng ký hợp lệ
+                // Bản ghi trước đó đã hủy -> kích hoạt lại thành bản đăng ký hợp lệ
                 existing.IsActive = true;
                 existing.IsWaitlisted = false;
                 existing.MealType = request.MealType;
@@ -477,52 +467,13 @@ public class LunchService : ILunchService
                     StudentId = request.StudentId,
                     Date = d,
                     MealType = request.MealType,
-                    IsActive = !isMonthFull,
-                    IsWaitlisted = isMonthFull,
+                    IsActive = true,
+                    IsWaitlisted = false,
                     Remarks = request.Remarks?.Trim(),
                     CreatedAt = DateTime.UtcNow
                 };
                 await _unitOfWork.Repository<LunchRegistration>().AddAsync(newReg, cancellationToken);
-                if (isMonthFull)
-                {
-                    waitlistedDates.Add(d);
-                }
-                else
-                {
-                    registeredDates.Add(d);
-                }
-            }
-        }
-
-        // Xử lý Waitlist nếu có tháng đã đủ chỉ tiêu (TC_BDS_34)
-        if (waitlistedDates.Count > 0)
-        {
-            var firstMonth = waitlistedDates[0].ToString("yyyy-MM");
-            var (qVal, aVal) = monthQuotaMap.TryGetValue(firstMonth, out var info) ? info : (0, 0);
-
-            await _auditService.LogActionAsync(
-                userId > 0 ? userId : null,
-                AuditActions.LunchRegistrationWaitlist,
-                nameof(LunchRegistration),
-                null,
-                null,
-                new { StudentId = student.Id, student.StudentCode, Month = firstMonth, Quota = qVal, CurrentActive = aVal, Dates = waitlistedDates.Select(x => x.ToString("yyyy-MM-dd")).ToList() },
-                null, // TODO: pass the client IP address; it is not recorded yet.
-                cancellationToken);
-
-            var notifRepo = _unitOfWork.Repository<Notification>();
-            if (notifRepo != null && userId > 0)
-            {
-                await notifRepo.AddAsync(new Notification
-                {
-                    UserId = userId,
-                    Title = "Registration Waitlisted",
-                    Content = $"Đăng ký bán trú tháng {firstMonth} cho học sinh {student.FullName} ({student.StudentCode}) đã được đưa vào danh sách chờ (Waitlist) do đã đủ chỉ tiêu {aVal}/{qVal}.",
-                    Type = "BOARDING_WAITLISTED",
-                    LinkUrl = $"/parent/lunch?studentId={student.Id}&month={firstMonth}",
-                    CreatedAt = DateTime.UtcNow,
-                    IsRead = false
-                }, cancellationToken);
+                registeredDates.Add(d);
             }
         }
 
@@ -549,30 +500,14 @@ public class LunchService : ILunchService
         {
             RegisteredCount = registeredDates.Count,
             RegisteredDates = registeredDates,
-            SkippedDuplicateDates = skippedDuplicates,
-            WaitlistedCount = waitlistedDates.Count,
-            WaitlistedDates = waitlistedDates,
-            IsWaitlisted = waitlistedDates.Count > 0
+            SkippedDuplicateDates = skippedDuplicates
         };
-
-        if (waitlistedDates.Count > 0 && registeredDates.Count == 0)
-        {
-            var firstMonth = waitlistedDates[0].ToString("yyyy-MM");
-            var (qVal, aVal) = monthQuotaMap.TryGetValue(firstMonth, out var info) ? info : (0, 0);
-            return new ApiResponse<BatchLunchRegistrationResultDto>
-            {
-                Success = true,
-                Code = "BOARDING_WAITLISTED",
-                Message = $"Registration Waitlisted: Chỉ tiêu bán trú tháng {firstMonth} đã đủ ({aVal}/{qVal}). Đăng ký cho {student.FullName} đã được chuyển vào danh sách chờ.",
-                Data = result
-            };
-        }
 
         return ApiResponse<BatchLunchRegistrationResultDto>.Ok(result, SystemMessages.MSG25);
     }
 
     /// <summary>
-    /// UC-30: Phụ huynh chọn đăng ký còn hiệu lực (hoặc đang chờ) và hủy trước hạn hủy
+    /// UC-30: Phụ huynh chọn đăng ký còn hiệu lực và hủy trước hạn hủy
     /// </summary>
     public async Task<ApiResponse<bool>> CancelRegistrationByParentAsync(
         int userId,
@@ -601,25 +536,23 @@ public class LunchService : ILunchService
             .Include(r => r.Student)
             .FirstOrDefaultAsync(r => r.StudentId == request.StudentId && r.Date == targetDate, cancellationToken);
 
-        if (reg == null || (!reg.IsActive && !reg.IsWaitlisted))
+        if (reg == null || !reg.IsActive)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không tìm thấy đăng ký ăn trưa còn hiệu lực hoặc đang chờ cho ngày đã chọn." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không tìm thấy đăng ký ăn trưa còn hiệu lực cho ngày đã chọn." });
         }
 
         var serviceDay = await _unitOfWork.Repository<LunchServiceDay>()
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
 
-        // Kiểm tra hạn hủy (UC-30): nếu quá hạn 08h15 hoặc đã khóa ngày -> thông báo MSG27 và giữ nguyên đăng ký hiện tại
+        // Kiểm tra hạn hủy (UC-30): nếu quá hạn chốt hoặc đã khóa ngày -> thông báo MSG27 và giữ nguyên đăng ký hiện tại
         if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG27);
         }
 
-        var wasActive = reg.IsActive;
-        var wasWaitlisted = reg.IsWaitlisted;
         reg.IsActive = false;
         reg.IsWaitlisted = false;
         reg.CancellationSource = isStaffOrAdmin && !roles.Contains(UserRoles.Parent)
@@ -628,9 +561,7 @@ public class LunchService : ILunchService
         reg.CancelledAt = DateTime.UtcNow;
         reg.CancelledByUserId = userId;
         reg.CancellationReason = string.IsNullOrWhiteSpace(request.Reason)
-            ? (wasWaitlisted
-                ? $"Phụ huynh hủy đăng ký danh sách chờ trước {resolved.Cutoff:hh\\:mm}"
-                : $"Phụ huynh hủy đăng ký trực tiếp trước {resolved.Cutoff:hh\\:mm}")
+            ? $"Phụ huynh hủy đăng ký trực tiếp trước {resolved.Cutoff:hh\\:mm}"
             : request.Reason.Trim();
 
         if (userId > 0)
@@ -638,10 +569,8 @@ public class LunchService : ILunchService
             var notif = new Notification
             {
                 UserId = userId,
-                Title = wasWaitlisted ? "Đã hủy đăng ký danh sách chờ bán trú" : "Đã hủy đăng ký suất ăn bán trú",
-                Content = wasWaitlisted
-                    ? $"Đã hủy đăng ký danh sách chờ bán trú ngày {targetDate:dd-MM-yyyy} của học sinh {reg.Student?.FullName}."
-                    : $"Đã hủy suất ăn bán trú ngày {targetDate:dd-MM-yyyy} của học sinh {reg.Student?.FullName} trước giờ chốt ({resolved.Cutoff:hh\\:mm}).",
+                Title = "Đã hủy đăng ký suất ăn bán trú",
+                Content = $"Đã hủy suất ăn bán trú ngày {targetDate:dd-MM-yyyy} của học sinh {reg.Student?.FullName} trước giờ chốt ({resolved.Cutoff:hh\\:mm}).",
                 LinkUrl = $"/parent/lunch?studentId={request.StudentId}&month={targetDate:yyyy-MM}",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
@@ -650,12 +579,6 @@ public class LunchService : ILunchService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        // Tự động đôn người chờ đầu tiên lên nếu hủy suất active làm trống chỉ tiêu tháng (SSAWP-136)
-        if (wasActive)
-        {
-            await PromoteWaitlistForMonthAsync(targetDate.ToString("yyyy-MM"), cancellationToken);
-        }
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG26);
     }
@@ -690,7 +613,7 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
         if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
         {
             return ApiResponse<bool>.Ok(false, $"Đã qua mốc chốt suất ({resolved.Cutoff:hh\\:mm}), giữ nguyên đăng ký hiện tại.");
@@ -726,7 +649,7 @@ public class LunchService : ILunchService
         var serviceDay = serviceDayRepo != null
             ? await serviceDayRepo.Query().FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken)
             : null;
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
         var afterCutoff = IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked);
 
         // Phương án A (SSAWP-135): Sau giờ chốt / đã khóa ngày, chặn Teacher/OfficeStaff; chỉ ServiceStaff/Admin được khôi phục ngoại lệ kèm lý do + AuditLog + thông báo bếp
@@ -762,7 +685,11 @@ public class LunchService : ILunchService
             reg.CancelledAt = null;
             reg.CancelledByUserId = null;
             reg.CancellationReason = null;
-            reg.Remarks = $"Khôi phục suất ăn: {cleanReason} (Lúc {_clock.Now:HH:mm dd-MM-yyyy})";
+            var restoreTag = $"[Khôi phục suất ăn: {cleanReason} - {_clock.Now:HH:mm dd-MM-yyyy}]";
+            var existingRemarks = reg.Remarks?.Trim();
+            reg.Remarks = !string.IsNullOrWhiteSpace(existingRemarks) && !existingRemarks.StartsWith("[Khôi phục", StringComparison.OrdinalIgnoreCase)
+                ? $"{existingRemarks} | {restoreTag}"
+                : restoreTag;
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             await _auditService.LogActionAsync(
@@ -814,6 +741,57 @@ public class LunchService : ILunchService
         return ApiResponse<bool>.Ok(false, "Học sinh chưa có bản ghi đăng ký bán trú bị hủy cho ngày này");
     }
 
+    private static ClassAssignment? GetPrimaryClassAssignment(LunchRegistration reg, HashSet<int>? scopedClassIds = null)
+    {
+        var query = reg.Student?.ClassAssignments.Where(ca => ca.IsActive);
+        if (query == null) return null;
+        if (scopedClassIds != null)
+        {
+            query = query.Where(ca => scopedClassIds.Contains(ca.ClassId));
+        }
+
+        return query
+            .OrderByDescending(ca => ca.StartDate)
+            .ThenByDescending(ca => ca.Id)
+            .FirstOrDefault();
+    }
+
+    private async Task<List<Class>> GetActiveScopedClassesAsync(
+        HashSet<int>? allowedClassIds,
+        int? classId,
+        CancellationToken cancellationToken)
+    {
+        var syRepo = _unitOfWork.Repository<SchoolYear>();
+        int? activeSchoolYearId = null;
+        if (syRepo != null)
+        {
+            activeSchoolYearId = await syRepo.Query()
+                .Where(sy => sy.IsActive)
+                .OrderByDescending(sy => sy.Id)
+                .Select(sy => (int?)sy.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var query = _unitOfWork.Repository<Class>()
+            .Query()
+            .Where(c => c.Status == "Active");
+
+        if (activeSchoolYearId.HasValue)
+        {
+            query = query.Where(c => c.SchoolYearId == activeSchoolYearId.Value || c.SchoolYearId == 0);
+        }
+        if (allowedClassIds != null)
+        {
+            query = query.Where(c => allowedClassIds.Contains(c.Id));
+        }
+        if (classId.HasValue)
+        {
+            query = query.Where(c => c.Id == classId.Value);
+        }
+
+        return await query.OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToListAsync(cancellationToken);
+    }
+
     public async Task<ApiResponse<DailyMealBoardDto>> GetDailyMealBoardAsync(
         DateTime date,
         int? userId = null,
@@ -828,7 +806,7 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
 
         // Xác định phạm vi quyền (UC-33: Nhân viên bán trú vận hành; Giáo vụ/BGH xem toàn trường; Giáo viên xem lớp mình phụ trách)
         bool canManage = roles == null || roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.Admin);
@@ -874,29 +852,8 @@ public class LunchService : ILunchService
             .Select(g => g.OrderByDescending(x => x.IsActive).ThenByDescending(x => x.Id).First())
             .ToList();
 
-        // Helper chọn duy nhất 1 lớp hiện tại mới nhất cho mỗi học sinh (chống đếm trùng giữa nhiều ClassAssignments)
-        static ClassAssignment? GetPrimaryClassAssignment(LunchRegistration reg) =>
-            reg.Student?.ClassAssignments
-                .Where(ca => ca.IsActive)
-                .OrderByDescending(ca => ca.StartDate)
-                .ThenByDescending(ca => ca.Id)
-                .FirstOrDefault();
-
-        // 3. Phân bổ theo lớp trong phạm vi quyền
-        var allClassesQuery = _unitOfWork.Repository<Class>()
-            .Query()
-            .Where(c => c.Status == "Active");
-
-        if (allowedClassIds != null)
-        {
-            allClassesQuery = allClassesQuery.Where(c => allowedClassIds.Contains(c.Id));
-        }
-        if (classId.HasValue)
-        {
-            allClassesQuery = allClassesQuery.Where(c => c.Id == classId.Value);
-        }
-
-        var allClasses = await allClassesQuery.ToListAsync(cancellationToken);
+        // 3. Phân bổ theo lớp thuộc năm học đang hoạt động trong phạm vi quyền
+        var allClasses = await GetActiveScopedClassesAsync(allowedClassIds, classId, cancellationToken);
         var scopedClassIds = allClasses.Select(c => c.Id).ToHashSet();
 
         // Lọc registrations theo phạm vi lớp được xem (nếu toàn trường không lọc classId và không phải Teacher-only thì giữ cả HS chưa phân lớp để khớp tổng)
@@ -949,7 +906,6 @@ public class LunchService : ILunchService
                     Grade = activeCa?.Class?.Grade ?? 0,
                     MealType = r.MealType,
                     IsActive = r.IsActive,
-                    IsWaitlisted = r.IsWaitlisted,
                     Remarks = r.Remarks,
                     AllergyWarning = !string.IsNullOrWhiteSpace(r.Student?.SpecialNeedsNotes)
                         ? r.Student.SpecialNeedsNotes
@@ -977,6 +933,9 @@ public class LunchService : ILunchService
                     : "AutoCancelled")
                 : "Restored";
             var changedAt = isCancelled && reg.CancelledAt.HasValue ? reg.CancelledAt.Value : reg.CreatedAt;
+            var changedAtUtc = changedAt.Kind == DateTimeKind.Local
+                ? changedAt.ToUniversalTime()
+                : DateTime.SpecifyKind(changedAt, DateTimeKind.Utc);
 
             logs.Add(new MealAuditLogDto
             {
@@ -986,8 +945,8 @@ public class LunchService : ILunchService
                 ClassName = studentClass,
                 ChangeType = changeType,
                 Reason = (isCancelled ? reg.CancellationReason : null) ?? reg.Remarks ?? string.Empty,
-                Timestamp = changedAt,
-                IsBeforeCutoff = _clock.ToSchoolTime(changedAt) < cutoffAt
+                Timestamp = changedAtUtc,
+                IsBeforeCutoff = _clock.ToSchoolTime(changedAtUtc) < cutoffAt
             });
         }
 
@@ -1055,14 +1014,22 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
-        var cutoff = (serviceDay != null && serviceDay.CutoffTime != TimeSpan.Zero) ? serviceDay.CutoffTime : _options.LunchCutoff;
+        if (serviceDay != null && serviceDay.IsLocked)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG09,
+                new List<string> { "Ngày đã chọn đã được chốt sổ bán trú trước đó." });
+        }
+
+        var resolvedDay = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
+        var cutoff = resolvedDay.Cutoff;
 
         if (serviceDay == null)
         {
             serviceDay = new LunchServiceDay
             {
                 Date = targetDate,
-                IsServing = true,
+                IsServing = resolvedDay.IsServing,
                 CutoffTime = cutoff,
                 IsLocked = true,
                 LockedAt = DateTime.UtcNow,
@@ -1143,7 +1110,7 @@ public class LunchService : ILunchService
             .FindAsync(d => d.Date == targetDate, cancellationToken);
         var day = serviceDays.FirstOrDefault();
 
-        var resolved = ResolveServiceDay(targetDate, day);
+        var resolved = ResolveServiceDay(targetDate, day, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
         bool isServiceDay = resolved.IsServing;
         var finalizeTime = resolved.Cutoff;
         bool isFinalized = IsCutoffPassed(targetDate, finalizeTime, resolved.IsLocked);
@@ -1227,7 +1194,7 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
         if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG27);
@@ -1300,34 +1267,44 @@ public class LunchService : ILunchService
             .Query()
             .Where(d => d.Date >= start && d.Date <= end)
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+        var calendarMap = await GetCalendarDayMapAsync(start, end, cancellationToken);
 
         int servingCount = 0;
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
         {
             serviceDays.TryGetValue(cur, out var sDay);
-            if (ResolveServiceDay(cur, sDay).IsServing) servingCount++;
+            bool? isCalSchoolDay = calendarMap.TryGetValue(cur, out var calFlag) ? calFlag : null;
+            if (ResolveServiceDay(cur, sDay, isCalSchoolDay).IsServing) servingCount++;
         }
 
-        var classesQuery = _unitOfWork.Repository<Class>().Query().Where(c => c.Status == "Active");
-        if (allowedClassIds != null) classesQuery = classesQuery.Where(c => allowedClassIds.Contains(c.Id));
-        if (classId.HasValue) classesQuery = classesQuery.Where(c => c.Id == classId.Value);
-        var classes = await classesQuery.OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToListAsync(cancellationToken);
+        var classes = await GetActiveScopedClassesAsync(allowedClassIds, classId, cancellationToken);
         var classIds = classes.Select(c => c.Id).ToHashSet();
 
-        var regs = await _unitOfWork.Repository<LunchRegistration>()
+        var rawRegs = await _unitOfWork.Repository<LunchRegistration>()
             .Query()
             .Include(r => r.Student)
                 .ThenInclude(s => s.ClassAssignments.Where(ca => ca.IsActive))
-            .Where(r => r.Date >= start && r.Date <= end)
+            .Where(r => r.Date >= start && r.Date <= end && !r.IsWaitlisted)
             .ToListAsync(cancellationToken);
 
-        var scopedRegs = regs
-            .Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && classIds.Contains(ca.ClassId)) == true)
+        var dedupedRegs = rawRegs
+            .GroupBy(r => new { r.StudentId, Date = r.Date.Date })
+            .Select(g => g.OrderByDescending(x => x.IsActive).ThenByDescending(x => x.Id).First())
             .ToList();
+
+        var regWithPrimaryClass = dedupedRegs
+            .Select(r => new { Reg = r, PrimaryClassId = GetPrimaryClassAssignment(r, classIds)?.ClassId })
+            .Where(x => x.PrimaryClassId.HasValue)
+            .ToList();
+
+        var scopedRegs = regWithPrimaryClass.Select(x => x.Reg).ToList();
 
         var summaries = classes.Select(cls =>
         {
-            var cRegs = scopedRegs.Where(r => r.Student?.ClassAssignments.Any(ca => ca.IsActive && ca.ClassId == cls.Id) == true).ToList();
+            var cRegs = regWithPrimaryClass
+                .Where(x => x.PrimaryClassId == cls.Id)
+                .Select(x => x.Reg)
+                .ToList();
             return new ClassMealSummaryDto
             {
                 ClassId = cls.Id,
@@ -1355,307 +1332,5 @@ public class LunchService : ILunchService
             TotalSpecialDiet = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet),
             ClassSummaries = summaries
         });
-    }
-
-    // ---- Monthly Boarding Quota & Waitlist (TC_BDS_34) ----
-
-    public async Task<ApiResponse<MonthlyBoardingQuotaDto>> GetMonthlyQuotaAsync(string month, CancellationToken cancellationToken = default)
-    {
-        if (!TryParseMonth(month, out var year, out var m))
-        {
-            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Định dạng tháng không hợp lệ (YYYY-MM)." });
-        }
-
-        var normalizedMonth = $"{year:D4}-{m:D2}";
-        var mStart = new DateTime(year, m, 1);
-        var mEnd = mStart.AddMonths(1).AddDays(-1);
-
-        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
-        LunchMonthlyQuota? quotaEntity = null;
-        if (quotaRepo != null)
-        {
-            quotaEntity = await quotaRepo.Query()
-                .FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken);
-        }
-
-        var regRepo = _unitOfWork.Repository<LunchRegistration>();
-        int registeredCount = 0;
-        int waitlistedCount = 0;
-        if (regRepo != null)
-        {
-            registeredCount = await regRepo.Query()
-                .Where(r => r.Date >= mStart && r.Date <= mEnd && r.IsActive && !r.IsWaitlisted)
-                .Select(r => r.StudentId)
-                .Distinct()
-                .CountAsync(cancellationToken);
-
-            waitlistedCount = await regRepo.Query()
-                .Where(r => r.Date >= mStart && r.Date <= mEnd && !r.IsActive && r.IsWaitlisted)
-                .Select(r => r.StudentId)
-                .Distinct()
-                .CountAsync(cancellationToken);
-        }
-
-        int? quotaVal = quotaEntity?.Quota;
-        bool isFull = quotaVal.HasValue && quotaVal.Value > 0 && registeredCount >= quotaVal.Value;
-
-        return ApiResponse<MonthlyBoardingQuotaDto>.Ok(new MonthlyBoardingQuotaDto
-        {
-            Month = normalizedMonth,
-            Quota = quotaVal,
-            RegisteredCount = registeredCount,
-            WaitlistedCount = waitlistedCount,
-            IsFull = isFull,
-            UpdatedAt = quotaEntity?.UpdatedAt
-        });
-    }
-
-    public async Task<ApiResponse<MonthlyBoardingQuotaDto>> UpsertMonthlyQuotaAsync(
-        int userId,
-        UpsertMonthlyBoardingQuotaRequestDto request,
-        CancellationToken cancellationToken = default)
-    {
-        if (!TryParseMonth(request.Month, out var year, out var m))
-        {
-            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Định dạng tháng không hợp lệ (YYYY-MM)." });
-        }
-
-        // Cho phép truyền Quota = null để gỡ chỉ tiêu tháng (SSAWP-136)
-        if (!request.Quota.HasValue)
-        {
-            return await ClearMonthlyQuotaAsync(userId, request.Month, cancellationToken);
-        }
-
-        var quotaVal = request.Quota.Value;
-        if (quotaVal <= 0 || quotaVal > 10000)
-        {
-            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Chỉ tiêu bán trú tháng phải là số nguyên từ 1 đến 10.000." });
-        }
-
-        var normalizedMonth = $"{year:D4}-{m:D2}";
-        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
-        if (quotaRepo == null)
-        {
-            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG09);
-        }
-
-        var existing = await quotaRepo.Query()
-            .FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken);
-
-        object? oldValue = existing != null ? new { Month = normalizedMonth, existing.Quota } : null;
-        if (existing != null)
-        {
-            existing.Quota = quotaVal;
-            existing.UpdatedByUserId = userId > 0 ? userId : null;
-            existing.UpdatedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            existing = new LunchMonthlyQuota
-            {
-                Month = normalizedMonth,
-                Quota = quotaVal,
-                UpdatedByUserId = userId > 0 ? userId : null,
-                UpdatedAt = DateTime.UtcNow
-            };
-            await quotaRepo.AddAsync(existing, cancellationToken);
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditService.LogActionAsync(
-            userId > 0 ? userId : null,
-            AuditActions.LunchMonthlyQuotaConfigure,
-            nameof(LunchMonthlyQuota),
-            existing.Id.ToString(),
-            oldValue,
-            new { Month = normalizedMonth, Quota = quotaVal },
-            null, // TODO: pass the client IP address; it is not recorded yet.
-            cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        // Nếu tăng chỉ tiêu khiến còn chỗ trống -> tự động đôn danh sách chờ lên
-        await PromoteWaitlistForMonthAsync(normalizedMonth, cancellationToken);
-
-        return await GetMonthlyQuotaAsync(normalizedMonth, cancellationToken);
-    }
-
-    public async Task<ApiResponse<MonthlyBoardingQuotaDto>> ClearMonthlyQuotaAsync(
-        int userId,
-        string month,
-        CancellationToken cancellationToken = default)
-    {
-        if (!TryParseMonth(month, out var year, out var m))
-        {
-            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG01, new List<string> { "Định dạng tháng không hợp lệ (YYYY-MM)." });
-        }
-
-        var normalizedMonth = $"{year:D4}-{m:D2}";
-        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
-        if (quotaRepo == null)
-        {
-            return ApiResponse<MonthlyBoardingQuotaDto>.Fail(SystemMessages.MSG09);
-        }
-
-        var existing = await quotaRepo.Query()
-            .FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken);
-
-        if (existing != null)
-        {
-            var oldValue = new { Month = normalizedMonth, existing.Quota };
-            var entityId = existing.Id.ToString();
-            await quotaRepo.DeleteAsync(existing, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            await _auditService.LogActionAsync(
-                userId > 0 ? userId : null,
-                AuditActions.LunchMonthlyQuotaClear,
-                nameof(LunchMonthlyQuota),
-                entityId,
-                oldValue,
-                new { Month = normalizedMonth, Quota = (int?)null },
-                null,
-                cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-
-        // Gỡ chỉ tiêu -> tự động duyệt toàn bộ danh sách chờ còn hạn trong tháng
-        await PromoteWaitlistForMonthAsync(normalizedMonth, cancellationToken);
-
-        return await GetMonthlyQuotaAsync(normalizedMonth, cancellationToken);
-    }
-
-    /// <summary>
-    /// Tự động đẩy học sinh chờ sớm nhất (theo CreatedAt) lên IsActive khi tháng còn suất trống (SSAWP-136)
-    /// </summary>
-    private async Task PromoteWaitlistForMonthAsync(string normalizedMonth, CancellationToken cancellationToken)
-    {
-        if (!TryParseMonth(normalizedMonth, out var year, out var m)) return;
-
-        var mStart = new DateTime(year, m, 1);
-        var mEnd = mStart.AddMonths(1).AddDays(-1);
-
-        var regRepo = _unitOfWork.Repository<LunchRegistration>();
-        if (regRepo == null) return;
-
-        var waitlistedRegs = await regRepo.Query()
-            .Include(r => r.Student)
-                .ThenInclude(s => s.StudentGuardians)
-                    .ThenInclude(sg => sg.Guardian)
-            .Where(r => r.Date >= mStart && r.Date <= mEnd && !r.IsActive && r.IsWaitlisted)
-            .OrderBy(r => r.CreatedAt)
-            .ThenBy(r => r.Id)
-            .ToListAsync(cancellationToken);
-
-        if (waitlistedRegs.Count == 0) return;
-
-        var quotaRepo = _unitOfWork.Repository<LunchMonthlyQuota>();
-        var quotaEntity = quotaRepo != null
-            ? await quotaRepo.Query().FirstOrDefaultAsync(q => q.Month == normalizedMonth, cancellationToken)
-            : null;
-
-        int? quotaLimit = quotaEntity?.Quota;
-
-        var activeStudentIds = (await regRepo.Query()
-            .Where(r => r.Date >= mStart && r.Date <= mEnd && r.IsActive && !r.IsWaitlisted)
-            .Select(r => r.StudentId)
-            .Distinct()
-            .ToListAsync(cancellationToken)).ToHashSet();
-
-        var serviceDayRepo = _unitOfWork.Repository<LunchServiceDay>();
-        var serviceDaysMap = serviceDayRepo != null
-            ? await serviceDayRepo.Query()
-                .Where(d => d.Date >= mStart && d.Date <= mEnd)
-                .ToDictionaryAsync(d => d.Date.Date, cancellationToken)
-            : new Dictionary<DateTime, LunchServiceDay>();
-
-        var notifRepo = _unitOfWork.Repository<Notification>();
-        var waitlistedByStudent = waitlistedRegs
-            .GroupBy(r => r.StudentId)
-            .OrderBy(g => g.Min(x => x.CreatedAt))
-            .ToList();
-
-        bool anyPromoted = false;
-        foreach (var group in waitlistedByStudent)
-        {
-            var studentId = group.Key;
-            bool alreadyCounted = activeStudentIds.Contains(studentId);
-            if (!alreadyCounted && quotaLimit.HasValue && quotaLimit.Value > 0 && activeStudentIds.Count >= quotaLimit.Value)
-            {
-                break;
-            }
-
-            var promotedDates = new List<DateTime>();
-            Student? studentObj = null;
-
-            foreach (var reg in group)
-            {
-                studentObj ??= reg.Student;
-                serviceDaysMap.TryGetValue(reg.Date.Date, out var sd);
-                var resolved = ResolveServiceDay(reg.Date.Date, sd);
-                if (!resolved.IsServing || IsCutoffPassed(reg.Date.Date, resolved.Cutoff, resolved.IsLocked))
-                {
-                    continue;
-                }
-
-                reg.IsActive = true;
-                reg.IsWaitlisted = false;
-                reg.CancellationSource = null;
-                reg.CancelledAt = null;
-                reg.CancelledByUserId = null;
-                reg.CancellationReason = null;
-                promotedDates.Add(reg.Date.Date);
-            }
-
-            if (promotedDates.Count > 0)
-            {
-                anyPromoted = true;
-                activeStudentIds.Add(studentId);
-
-                if (notifRepo != null && studentObj != null)
-                {
-                    var parentUserIds = studentObj.StudentGuardians
-                        .Where(sg => sg.Guardian != null && sg.Guardian.UserId != null)
-                        .Select(sg => sg.Guardian.UserId!.Value)
-                        .Distinct()
-                        .ToList();
-
-                    var dateStr = string.Join(", ", promotedDates.Take(5).Select(d => d.ToString("dd-MM-yyyy")))
-                        + (promotedDates.Count > 5 ? $" (+{promotedDates.Count - 5} ngày)" : "");
-
-                    foreach (var pUid in parentUserIds)
-                    {
-                        await notifRepo.AddAsync(new Notification
-                        {
-                            UserId = pUid,
-                            Title = "Đã được duyệt từ danh sách chờ bán trú",
-                            Content = $"Đăng ký bán trú tháng {normalizedMonth} của học sinh {studentObj.FullName} ({dateStr}) đã tự động được chuyển từ danh sách chờ sang xác nhận do có suất trống.",
-                            Type = "BOARDING_WAITLIST_PROMOTED",
-                            LinkUrl = $"/parent/lunch?studentId={studentId}&month={normalizedMonth}",
-                            CreatedAt = DateTime.UtcNow,
-                            IsRead = false
-                        }, cancellationToken);
-                    }
-                }
-            }
-        }
-
-        if (anyPromoted)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-    }
-
-    private static bool TryParseMonth(string? month, out int year, out int m)
-    {
-        year = 0;
-        m = 0;
-        if (string.IsNullOrWhiteSpace(month)) return false;
-        var parts = month.Trim().Split('-');
-        return parts.Length == 2 &&
-               int.TryParse(parts[0], out year) &&
-               int.TryParse(parts[1], out m) &&
-               m >= 1 && m <= 12 &&
-               year >= 2000 && year <= 2100;
     }
 }

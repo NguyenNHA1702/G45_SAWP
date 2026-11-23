@@ -1,4 +1,4 @@
-import { BellRing, Utensils } from 'lucide-react';
+import { BellRing, PencilLine, Utensils } from 'lucide-react';
 import type { AttendanceSheetEntry, AttendanceStatus } from '../../types/attendance.types';
 import type { DraftMap } from '../../hooks/useAttendanceSheet';
 import { AttendanceStatusToggle } from './AttendanceStatusToggle';
@@ -11,6 +11,7 @@ interface Props {
   disabled: boolean;
   onStatusChange: (studentId: number, status: AttendanceStatus) => void;
   onRemarksChange: (studentId: number, remarks: string) => void;
+  onCorrect?: (entry: AttendanceSheetEntry) => void;
   /** Office Staff only (OVR-01, UC-23 A2): shows the absence notice column. */
   onSendAbsenceNotice?: (entry: AttendanceSheetEntry) => void;
   /** Disables the send buttons, e.g. while sending or while the sheet has unsaved changes. */
@@ -32,6 +33,7 @@ export function AttendanceRosterTable({
   disabled,
   onStatusChange,
   onRemarksChange,
+  onCorrect,
   onSendAbsenceNotice,
   absenceNoticeDisabled = false,
 }: Props) {
@@ -59,6 +61,9 @@ export function AttendanceRosterTable({
               <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 100, fontWeight: 800 }}>Ăn trưa</th>
               <th scope="col" style={{ padding: '12px 16px', textAlign: 'center', minWidth: 380, fontWeight: 800 }}>Trạng thái buổi học</th>
               <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', minWidth: 180, fontWeight: 800 }}>Ghi chú</th>
+              {onCorrect && (
+                <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 120, fontWeight: 800 }}>Điều chỉnh</th>
+              )}
               {showNotice && (
                 <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', minWidth: 170, fontWeight: 800 }}>Thông báo vắng</th>
               )}
@@ -116,6 +121,32 @@ export function AttendanceRosterTable({
                       <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }} title="Đã trừ do vắng">
                         Đã trừ
                       </span>
+                    ) : e.lunchCancelledBy === 'Leave' ? (
+                      <span
+                        className="badge"
+                        style={{
+                          border: '1.5px solid var(--color-fg)',
+                          fontWeight: 700,
+                          background: '#F1F5F9',
+                          color: '#334155',
+                        }}
+                        title="Không ăn (suất ăn đã được hủy do đơn xin nghỉ được duyệt)"
+                      >
+                        Không
+                      </span>
+                    ) : e.lunchCancelledBy === 'Parent' || e.lunchCancelledBy === 'Staff' ? (
+                      <span
+                        className="badge"
+                        style={{
+                          border: '1.5px solid var(--color-fg)',
+                          fontWeight: 700,
+                          background: '#F1F5F9',
+                          color: '#334155',
+                        }}
+                        title="Không ăn (đã hủy suất ăn bán trú)"
+                      >
+                        Không
+                      </span>
                     ) : (
                       <span style={{ color: 'var(--color-muted-fg)' }}>—</span>
                     )}
@@ -148,6 +179,31 @@ export function AttendanceRosterTable({
                       }}
                     />
                   </td>
+                  {onCorrect && (
+                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                      {e.recordId != null ? (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => onCorrect(e)}
+                          style={{
+                            borderRadius: 'var(--radius-full)',
+                            border: '1.5px solid var(--color-fg)',
+                            boxShadow: '2px 2px 0 0 var(--color-fg)',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
+                          <PencilLine size={13} />
+                          Sửa
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>—</span>
+                      )}
+                    </td>
+                  )}
                   {showNotice && (
                     <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                       {e.absenceNoticeSentAt ? (

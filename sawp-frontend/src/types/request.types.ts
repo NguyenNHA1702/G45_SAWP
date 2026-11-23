@@ -1,4 +1,4 @@
-export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'Completed';
+export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'Completed' | 'NeedMoreInfo';
 
 export interface ClassTransferRequest {
   studentId: number;
