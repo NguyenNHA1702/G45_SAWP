@@ -42,7 +42,7 @@ public class UpdateStudentDto
 public class StudentGuardianItemDto
 {
     public int GuardianId { get; set; }
-    public int UserId { get; set; }
+    public int? UserId { get; set; } // null = guardian record without an account
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }

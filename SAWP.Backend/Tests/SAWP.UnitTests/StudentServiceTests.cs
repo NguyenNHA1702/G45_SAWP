@@ -837,4 +837,96 @@ public class StudentServiceTests : TestBase
     }
 
     #endregion
+
+    #region Method 08: guardian records without accounts (SSAWP-151, BR-64) (UTCID01 - UTCID02)
+
+    [Fact]
+    public async Task UTCID01_GetStudentProfile_GuardianDetailsComeFromGuardianRecord()
+    {
+        // Arrange: one guardian record without an account, one linked to an account whose own details differ
+        var student = new Student
+        {
+            Id = 1,
+            StudentCode = "HS001",
+            FullName = "Nguyen Van A",
+            Status = "Active",
+            StudentGuardians = new List<StudentGuardian>
+            {
+                new()
+                {
+                    GuardianId = 5,
+                    IsPrimaryContact = true,
+                    Relationship = RelationshipTypes.Mother,
+                    Guardian = new Guardian { Id = 5, UserId = null, FullName = "Tran Thi Me", PhoneNumber = "0901111111", Email = "me@example.com" }
+                },
+                new()
+                {
+                    GuardianId = 6,
+                    Relationship = RelationshipTypes.Father,
+                    Guardian = new Guardian
+                    {
+                        Id = 6, UserId = 20, FullName = "Nguyen Van Bo", PhoneNumber = "0902222222", Email = "bo@example.com",
+                        User = new User { Id = 20, FullName = "Account Name", PhoneNumber = "0999999999", Email = "login@example.com" }
+                    }
+                }
+            }
+        };
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(student);
+
+        // Act
+        var result = await _service.GetStudentProfileAsync(1, 10, "OfficeStaff");
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Data!.PrimaryGuardianName.Should().Be("Tran Thi Me");
+        result.Data.PrimaryGuardianPhone.Should().Be("0901111111");
+        var mother = result.Data.Guardians.Single(g => g.GuardianId == 5);
+        mother.UserId.Should().BeNull();
+        mother.FullName.Should().Be("Tran Thi Me");
+        mother.Email.Should().Be("me@example.com");
+        var father = result.Data.Guardians.Single(g => g.GuardianId == 6);
+        father.UserId.Should().Be(20);
+        father.FullName.Should().Be("Nguyen Van Bo");
+        father.PhoneNumber.Should().Be("0902222222");
+        father.Email.Should().Be("bo@example.com");
+    }
+
+    [Fact]
+    public async Task UTCID02_CreateStudent_NewGuardian_RecordHoldsNameAndPhoneButNoPlaceholderEmail()
+    {
+        // Arrange
+        var request = new CreateStudentDto
+        {
+            StudentCode = "HS002",
+            FullName = "Tran Thi B",
+            DateOfBirth = new DateTime(2018, 3, 15),
+            Gender = "Nữ",
+            InitialGuardian = new GuardianInputDto { FullName = "Tran Van Bo", PhoneNumber = "0901234567", Relationship = 1 }
+        };
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS002", null, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        StudentRepoMock.Setup(r => r.AddAsync(It.IsAny<Student>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Student s, CancellationToken _) => { s.Id = 2; return s; });
+        var users = new List<User>();
+        var guardians = new List<Guardian>();
+        SetupRepository(users);
+        SetupRepository(new List<Role> { new() { Id = 3, Name = UserRoles.Parent.ToString() } });
+        SetupRepository(new List<UserRole>());
+        SetupRepository(guardians);
+        SetupRepository(new List<StudentGuardian>());
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 2, StudentCode = "HS002", FullName = "Tran Thi B", Status = "Active" });
+
+        // Act
+        var result = await _service.CreateStudentAsync(request, 10);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        var guardian = guardians.Should().ContainSingle().Subject;
+        guardian.FullName.Should().Be("Tran Van Bo");
+        guardian.PhoneNumber.Should().Be("0901234567");
+        guardian.Email.Should().BeNull("the placeholder login email is not a real contact address");
+        users.Should().ContainSingle().Which.Email.Should().Be("0901234567@parent.sawp.edu.vn");
+    }
+
+    #endregion
 }

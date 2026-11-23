@@ -89,7 +89,7 @@ public class AuthServiceTests : TestBase
             FullName = "Nguyen Van A",
             Email = "a@school.edu.vn",
             PhoneNumber = "0901234567",
-            IsActive = true,
+            Status = AccountStatus.Active,
             CreatedAt = DateTime.UtcNow.AddMonths(-6),
             UserRoles = new List<UserRole>
             {
@@ -211,7 +211,7 @@ public class AuthServiceTests : TestBase
             FullName = "Ten Cu",
             Email = "cu@school.edu.vn",
             PhoneNumber = "0900000000",
-            IsActive = true,
+            Status = AccountStatus.Active,
             UserRoles = new List<UserRole>
             {
                 new() { Role = new Role { Id = 3, Name = "Parent" } }
@@ -252,6 +252,10 @@ public class AuthServiceTests : TestBase
         user.UpdatedAt.Should().NotBeNull();
         user.Guardian!.Address.Should().Be("456 Kim Ma, Ha Noi");
         user.Guardian.Occupation.Should().Be("Bac si");
+        // The linked guardian record follows the Parent's own changes (SSAWP-151)
+        user.Guardian.FullName.Should().Be("Nguyen Van Moi");
+        user.Guardian.PhoneNumber.Should().Be("0911223344");
+        user.Guardian.Email.Should().Be("moi@school.edu.vn");
 
         result.Data.Should().NotBeNull();
         result.Data!.FullName.Should().Be("Nguyen Van Moi");
@@ -275,7 +279,7 @@ public class AuthServiceTests : TestBase
             FullName = "Can Bo Cu",
             Email = "canbo@school.edu.vn",
             PhoneNumber = "0911111111",
-            IsActive = true,
+            Status = AccountStatus.Active,
             UserRoles = new List<UserRole>
             {
                 new() { Role = new Role { Id = 4, Name = "Admin" } }
@@ -323,9 +327,46 @@ public class AuthServiceTests : TestBase
         Email = "teacher1@sawp.edu.vn",
         FullName = "Teacher One",
         PasswordHash = passwordHash,
-        IsActive = true,
+        Status = AccountStatus.Active,
         UserRoles = new List<UserRole> { new() { Role = new Role { Name = "Teacher" } } }
     };
+
+    [Theory]
+    [InlineData(AccountStatus.PendingActivation)]
+    [InlineData(AccountStatus.Deactivated)]
+    public async Task LoginAsync_WhenAccountNotActive_ReturnsMSG03(AccountStatus status)
+    {
+        // Arrange: correct password, but only Active accounts may sign in (BR-01, BR-63)
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Password@123", 4));
+        user.Status = status;
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        // Act
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = "Password@123" });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG03.Code);
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_WhenEmailUsedByAnotherAccount_ReturnsMSG01()
+    {
+        // Arrange: login emails are unique (BR-64)
+        var user = new User { Id = 7, Username = "parent7", FullName = "Ten", Email = "a@school.edu.vn", Status = AccountStatus.Active };
+        var other = new User { Id = 8, Username = "parent8", FullName = "Khac", Email = "taken@school.edu.vn", Status = AccountStatus.Active };
+        var users = new List<User> { user, other };
+        UserRepoMock.Setup(r => r.Query()).Returns(() => users.BuildMock());
+
+        // Act
+        var result = await _authService.UpdateProfileAsync(7, new UpdateProfileRequestDto { FullName = "Ten", Email = "TAKEN@school.edu.vn" });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        user.Email.Should().Be("a@school.edu.vn");
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
 
     [Fact]
     public async Task LoginAsync_WhenPasswordMatchesBcryptHash_ReturnsToken()

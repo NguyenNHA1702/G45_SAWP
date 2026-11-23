@@ -1615,8 +1615,8 @@ public class LunchService : ILunchService
                 if (notifRepo != null && studentObj != null)
                 {
                     var parentUserIds = studentObj.StudentGuardians
-                        .Where(sg => sg.Guardian != null && sg.Guardian.UserId > 0)
-                        .Select(sg => sg.Guardian.UserId)
+                        .Where(sg => sg.Guardian != null && sg.Guardian.UserId != null)
+                        .Select(sg => sg.Guardian.UserId!.Value)
                         .Distinct()
                         .ToList();
 

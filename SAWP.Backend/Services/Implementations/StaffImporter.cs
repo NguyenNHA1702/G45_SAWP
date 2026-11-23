@@ -1,3 +1,4 @@
+using Core.Enums;
 using ClosedXML.Excel;
 using Core.Constants;
 using Core.DTOs;
@@ -73,7 +74,7 @@ public class StaffImporter : IStaffImporter
                     Email = email,
                     PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone,
                     PasswordHash = BCrypt.Net.BCrypt.HashPassword(string.IsNullOrWhiteSpace(rawPassword) ? "Password@123" : rawPassword),
-                    IsActive = true,
+                    Status = AccountStatus.Active,
                     CreatedAt = DateTime.UtcNow,
                     UserRoles = new List<UserRole> { new() { RoleId = matchedRole.Id } },
                     StaffProfile = new StaffProfile

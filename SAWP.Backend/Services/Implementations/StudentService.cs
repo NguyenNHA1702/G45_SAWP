@@ -80,7 +80,7 @@ public class StudentService : IStudentService
             query = query.Where(s => s.StudentCode.ToLower().Contains(term) 
                 || s.FullName.ToLower().Contains(term)
                 || (s.ResidentialArea != null && s.ResidentialArea.ToLower().Contains(term))
-                || s.StudentGuardians.Any(sg => sg.Guardian.User != null && sg.Guardian.User.FullName.ToLower().Contains(term)));
+                || s.StudentGuardians.Any(sg => sg.Guardian.FullName.ToLower().Contains(term)));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Status))
@@ -499,6 +499,8 @@ public class StudentService : IStudentService
                 guardian = new Guardian
                 {
                     UserId = existingUser.Id,
+                    FullName = input.FullName.Trim(),
+                    PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone,
                     IdentityCardNumber = input.IdentityCardNumber?.Trim() ?? string.Empty,
                     Occupation = input.Occupation?.Trim(),
                     Address = input.Address?.Trim(),
@@ -511,15 +513,18 @@ public class StudentService : IStudentService
         else
         {
             // Create user for parent with default password
+            // TODO SSAWP-152: create only the guardian record here; accounts come from account requests (BR-66).
             var passwordHash = BCrypt.Net.BCrypt.HashPassword("Password@123");
+            var newUsername = !string.IsNullOrWhiteSpace(phone) ? phone : $"parent_{Guid.NewGuid().ToString("N")[..8]}";
             var newUser = new User
             {
-                Username = !string.IsNullOrWhiteSpace(phone) ? phone : $"parent_{Guid.NewGuid().ToString("N")[..8]}",
-                Email = $"{phone}@parent.sawp.edu.vn",
+                Username = newUsername,
+                // Placeholder login email, unique per account (BR-64 unique index); never copied to the guardian record.
+                Email = $"{newUsername}@parent.sawp.edu.vn",
                 FullName = input.FullName.Trim(),
                 PhoneNumber = phone,
                 PasswordHash = passwordHash,
-                IsActive = true,
+                Status = AccountStatus.Active,
                 CreatedAt = DateTime.UtcNow
             };
             await _unitOfWork.Repository<User>().AddAsync(newUser, cancellationToken);
@@ -540,6 +545,8 @@ public class StudentService : IStudentService
             guardian = new Guardian
             {
                 UserId = newUser.Id,
+                FullName = newUser.FullName,
+                PhoneNumber = newUser.PhoneNumber,
                 IdentityCardNumber = input.IdentityCardNumber?.Trim() ?? string.Empty,
                 Occupation = input.Occupation?.Trim(),
                 Address = input.Address?.Trim(),
@@ -596,17 +603,17 @@ public class StudentService : IStudentService
             CurrentGrade = activeClass?.Grade,
             CurrentRoomNumber = activeClass?.RoomNumber,
             HomeroomTeacherName = activeClass?.HomeroomTeacher?.User?.FullName,
-            PrimaryGuardianName = primaryGuardian?.User?.FullName,
-            PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
+            PrimaryGuardianName = primaryGuardian?.FullName,
+            PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
             GuardiansCount = student.StudentGuardians.Count,
             CreatedAt = student.CreatedAt,
             Guardians = student.StudentGuardians.Select(sg => new StudentGuardianItemDto
             {
                 GuardianId = sg.GuardianId,
                 UserId = sg.Guardian.UserId,
-                FullName = sg.Guardian.User?.FullName ?? string.Empty,
-                PhoneNumber = sg.Guardian.User?.PhoneNumber,
-                Email = sg.Guardian.User?.Email,
+                FullName = sg.Guardian.FullName,
+                PhoneNumber = sg.Guardian.PhoneNumber,
+                Email = sg.Guardian.Email,
                 IdentityCardNumber = sg.Guardian.IdentityCardNumber,
                 Occupation = sg.Guardian.Occupation,
                 Address = sg.Guardian.Address,

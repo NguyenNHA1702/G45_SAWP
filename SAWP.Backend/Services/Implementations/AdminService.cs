@@ -1,3 +1,4 @@
+using Core.Enums;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -41,7 +42,9 @@ public class AdminService : IAdminService
 
         if (isActive.HasValue)
         {
-            query = query.Where(u => u.IsActive == isActive.Value);
+            query = isActive.Value
+                ? query.Where(u => u.Status == AccountStatus.Active)
+                : query.Where(u => u.Status != AccountStatus.Active);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -128,7 +131,7 @@ public class AdminService : IAdminService
             FullName = fullName,
             PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            IsActive = true,
+            Status = AccountStatus.Active, // TODO SSAWP-98: start in Pending Activation with an activation link (BR-63)
             CreatedAt = DateTime.UtcNow
         };
 
@@ -259,8 +262,8 @@ public class AdminService : IAdminService
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể tự vô hiệu hóa tài khoản đang đăng nhập." });
         }
 
-        var oldActive = user.IsActive;
-        user.IsActive = isActive;
+        var oldStatus = user.Status;
+        user.Status = isActive ? AccountStatus.Active : AccountStatus.Deactivated;
         user.UpdatedAt = DateTime.UtcNow;
 
         await _auditService.LogActionAsync(
@@ -268,8 +271,8 @@ public class AdminService : IAdminService
             isActive ? AuditActions.UserActivate : AuditActions.UserDeactivate,
             nameof(User),
             user.Id.ToString(),
-            new { IsActive = oldActive },
-            new { IsActive = isActive },
+            new { Status = oldStatus.ToString() },
+            new { Status = user.Status.ToString() },
             null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -514,7 +517,8 @@ public class AdminService : IAdminService
         Email = u.Email,
         FullName = u.FullName,
         PhoneNumber = u.PhoneNumber,
-        IsActive = u.IsActive,
+        IsActive = u.Status == AccountStatus.Active,
+        Status = u.Status.ToString(),
         CreatedAt = u.CreatedAt,
         Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
         StaffCode = u.StaffProfile?.StaffCode,
