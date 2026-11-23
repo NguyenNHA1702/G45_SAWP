@@ -6,14 +6,14 @@ import {
   Clock,
   GraduationCap,
   HeartHandshake,
-  Plus,
   RefreshCw,
   Sparkles,
   UtensilsCrossed,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { guardianApi } from '../../services/implementations/guardianApi';
-import { LinkChildModal } from '../../components/parent/LinkChildModal';
+import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
+import { asApiError } from '../../utils/apiError';
 import { formatRelationship } from '../../utils/formatters';
 import { formatDDMMYYYY } from '../../utils/date';
 import type { LinkedChildSummaryDto } from '../../types/guardian.types';
@@ -21,7 +21,6 @@ import type { LinkedChildSummaryDto } from '../../types/guardian.types';
 export default function ChildDashboardPage() {
   const [children, setChildren] = useState<LinkedChildSummaryDto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [linkModalOpen, setLinkModalOpen] = useState(false);
 
   useEffect(() => {
     loadMyChildren();
@@ -33,9 +32,11 @@ export default function ChildDashboardPage() {
       const res = await guardianApi.getMyChildren();
       if (res.success && res.data) {
         setChildren(res.data);
+      } else {
+        toast.error((res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG50.content);
       }
-    } catch {
-      toast.error('Lỗi khi tải thông tin con của bạn.');
+    } catch (err) {
+      toast.error(asApiError(err).message);
     } finally {
       setLoading(false);
     }
@@ -61,14 +62,6 @@ export default function ChildDashboardPage() {
               Theo dõi kết quả xếp lớp, thông tin giáo viên chủ nhiệm và chuyên cần bán trú của con bạn.
             </p>
           </div>
-
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={() => setLinkModalOpen(true)}
-          >
-            <Plus size={18} /> Liên kết thêm con
-          </button>
         </div>
       </header>
 
@@ -82,16 +75,9 @@ export default function ChildDashboardPage() {
         <div className="card empty-state" style={{ textAlign: 'center', padding: 48 }}>
           <HeartHandshake size={48} color="var(--color-muted-fg)" style={{ margin: '0 auto 12px' }} />
           <h3>Bạn chưa liên kết với hồ sơ học sinh nào</h3>
-          <p style={{ color: 'var(--color-muted-fg)', maxWidth: 460, margin: '0 auto 16px' }}>
-            Để theo dõi kết quả xếp lớp và điểm danh của con, vui lòng nhấn nút dưới đây để gửi thông tin liên kết.
+          <p style={{ color: 'var(--color-muted-fg)', maxWidth: 460, margin: '0 auto' }}>
+            Chưa có học sinh nào được liên kết với tài khoản này. Vui lòng liên hệ Phòng Giáo vụ của nhà trường để được liên kết hồ sơ của con.
           </p>
-          <button
-            type="button"
-            className="btn btn--primary btn--sm"
-            onClick={() => setLinkModalOpen(true)}
-          >
-            <Plus size={16} /> Liên kết hồ sơ con ngay
-          </button>
         </div>
       ) : (
         <div
@@ -194,25 +180,18 @@ export default function ChildDashboardPage() {
                 >
                   <CalendarCheck2 size={15} /> Xem chuyên cần
                 </Link>
-                <button
-                  type="button"
+                <Link
+                  to={`/parent/lunch?studentId=${child.studentId}`}
                   className="btn btn--secondary btn--sm"
-                  onClick={() => toast('Tính năng đăng ký suất ăn bán trú sắp mở')}
+                  style={{ textDecoration: 'none' }}
                 >
                   <UtensilsCrossed size={15} /> Suất ăn bán trú
-                </button>
+                </Link>
               </div>
             </div>
           ))}
         </div>
       )}
-
-      {/* Link Child Modal */}
-      <LinkChildModal
-        open={linkModalOpen}
-        onClose={() => setLinkModalOpen(false)}
-        onSubmitted={() => loadMyChildren()}
-      />
     </div>
   );
 }

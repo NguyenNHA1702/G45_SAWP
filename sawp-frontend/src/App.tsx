@@ -9,7 +9,6 @@ import StudentsPage from './pages/OfficeStaffPortal/StudentsPage';
 import ClassesPage from './pages/OfficeStaffPortal/ClassesPage';
 import LeaveRequestPage from './pages/ParentPortal/LeaveRequestPage';
 import LeaveApprovalPage from './pages/TeacherPortal/LeaveApprovalPage';
-import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
 import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
 import TeacherBoardingPage from './pages/TeacherPortal/TeacherBoardingPage';
 import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
@@ -93,7 +92,6 @@ export default function App() {
           <Route path="/service/headcount" element={<MealHeadcountPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/classes" element={<ClassesPage />} />
-          <Route path="/link-requests" element={<LinkRequestsPage />} />
           <Route path="/office/requests" element={<AdminRequestsManagementPage />} />
           <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
           <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
