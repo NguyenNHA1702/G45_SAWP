@@ -9,7 +9,7 @@ namespace API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize]
 public class AdminController : BaseApiController
 {
     private readonly IAdminService _adminService;
@@ -22,6 +22,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpGet("users")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetUsers(
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 20,
@@ -35,6 +36,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpGet("roles")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetRoles(CancellationToken ct = default)
     {
         var result = await _adminService.GetRolesAsync(ct);
@@ -42,6 +44,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPost("users")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();
@@ -51,6 +54,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPut("users/{id}/roles")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateUserRoles(int id, [FromBody] UpdateUserRolesRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();
@@ -60,6 +64,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPatch("users/{id}/status")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateUserStatus(int id, [FromBody] UpdateUserStatusRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();
@@ -69,6 +74,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPost("users/{id}/reset-password")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ResetUserPassword(int id, [FromBody] ResetUserPasswordRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();
@@ -78,6 +84,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPost("staff/import")]
+    [Authorize(Roles = "Admin")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportStaff(IFormFile file, CancellationToken ct = default)
     {
@@ -92,6 +99,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpGet("calendar")]
+    [Authorize(Roles = "Admin,OfficeStaff,Parent,Teacher,ServiceStaff,SchoolBoard")]
     public async Task<IActionResult> GetCalendarDays([FromQuery] int? schoolYearId = null, [FromQuery] string? month = null, CancellationToken ct = default)
     {
         var result = await _adminService.GetCalendarDaysAsync(schoolYearId, month, ct);
@@ -99,6 +107,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPut("calendar/day")]
+    [Authorize(Roles = "Admin,OfficeStaff")]
     public async Task<IActionResult> UpsertCalendarDay([FromBody] UpdateCalendarDayDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();
@@ -108,6 +117,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpGet("lunch-cutoff")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetLunchServiceDays([FromQuery] string? month = null, CancellationToken ct = default)
     {
         var result = await _adminService.GetLunchServiceDaysAsync(month, ct);
@@ -115,6 +125,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPut("lunch-cutoff")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpsertLunchCutoff([FromBody] UpdateLunchCutoffDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();

@@ -986,4 +986,89 @@ public class AttendanceServiceTests : TestBase
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG43.Code);
     }
+
+    // ==================== Makeup Day (12/12) & Holiday (02/12) ====================
+
+    [Fact]
+    public async Task GetAttendanceSheet_MakeupSaturday12Dec_ShouldAllowEdit()
+    {
+        var makeupDate = new DateTime(2026, 12, 12); // Saturday
+        _clockMock.Setup(c => c.Today).Returns(makeupDate);
+        _clockMock.Setup(c => c.Now).Returns(makeupDate.AddHours(8));
+
+        var staff = new StaffProfile { Id = 1, UserId = 20 };
+        var cls = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 1, Status = "Active" };
+        SetupRepository(new List<Class> { cls });
+        SetupRepository(new List<StaffProfile> { staff });
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) } });
+        SetupRepository(new List<SchoolCalendarDay> { new() { Id = 1, SchoolYearId = 1, Date = makeupDate, IsSchoolDay = true, Note = "Học bù 02/12" } });
+        StudentRepoMock.Setup(r => r.GetActiveRosterAsync(1, makeupDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 100, StudentCode = "HS001", FullName = "Nguyễn An" } });
+        AttendanceRepoMock.Setup(r => r.GetDailyClassAttendanceAsync(1, makeupDate, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+        AttendanceRepoMock.Setup(r => r.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), makeupDate, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(r => r.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), makeupDate, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        var result = await _service.GetAttendanceSheetAsync(1, makeupDate, AttendanceSession.Morning, 20, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeTrue();
+        result.Data!.IsSchoolDay.Should().BeTrue();
+        result.Data.CanEdit.Should().BeTrue();
+        result.Data.LockReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAttendanceSheet_HolidayWednesday02Dec_ShouldLockAsNonSchoolDay()
+    {
+        var holidayDate = new DateTime(2026, 12, 2); // Wednesday
+        _clockMock.Setup(c => c.Today).Returns(holidayDate);
+        _clockMock.Setup(c => c.Now).Returns(holidayDate.AddHours(8));
+
+        var staff = new StaffProfile { Id = 1, UserId = 20 };
+        var cls = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 1, Status = "Active" };
+        SetupRepository(new List<Class> { cls });
+        SetupRepository(new List<StaffProfile> { staff });
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) } });
+        SetupRepository(new List<SchoolCalendarDay> { new() { Id = 1, SchoolYearId = 1, Date = holidayDate, IsSchoolDay = false, Note = "Ngày nghỉ" } });
+        StudentRepoMock.Setup(r => r.GetActiveRosterAsync(1, holidayDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 100, StudentCode = "HS001", FullName = "Nguyễn An" } });
+        AttendanceRepoMock.Setup(r => r.GetDailyClassAttendanceAsync(1, holidayDate, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+        AttendanceRepoMock.Setup(r => r.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), holidayDate, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(r => r.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), holidayDate, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        var result = await _service.GetAttendanceSheetAsync(1, holidayDate, AttendanceSession.Morning, 20, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeTrue();
+        result.Data!.IsSchoolDay.Should().BeFalse();
+        result.Data.CanEdit.Should().BeFalse();
+        result.Data.LockReason.Should().Be("NonSchoolDay");
+    }
+
+    [Fact]
+    public async Task GetClassSummary_CountsMakeup12Dec_ExcludesHoliday02Dec()
+    {
+        var from = new DateTime(2026, 12, 1);
+        var to = new DateTime(2026, 12, 15);
+        var cls = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 1, Status = "Active" };
+        SetupRepository(new List<Class> { cls });
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) } });
+        SetupRepository(new List<SchoolCalendarDay>
+        {
+            new() { Id = 1, SchoolYearId = 1, Date = new DateTime(2026, 12, 2), IsSchoolDay = false },
+            new() { Id = 2, SchoolYearId = 1, Date = new DateTime(2026, 12, 12), IsSchoolDay = true }
+        });
+        AttendanceRepoMock.Setup(r => r.GetClassStatusCountsAsync(1, from, to, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<StudentAttendanceRowDto>());
+
+        var result = await _service.GetClassSummaryAsync(1, from, to, 1, new[] { UserRoles.OfficeStaff });
+
+        result.Success.Should().BeTrue();
+        // 01..15/12/2026 có 11 ngày T2-T6, trừ 02/12 (nghỉ) + cộng 12/12 (học bù) = 11 ngày học
+        result.Data!.SchoolDays.Should().Be(11);
+    }
 }

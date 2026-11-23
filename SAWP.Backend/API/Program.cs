@@ -51,6 +51,7 @@ builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<ISchoolCalendarService, SchoolCalendarService>();
 builder.Services.AddScoped<IStudentImporter, StudentImporter>();
 builder.Services.AddScoped<IStaffImporter, StaffImporter>();
 builder.Services.AddScoped<IPlacementPlanService, PlacementPlanService>();

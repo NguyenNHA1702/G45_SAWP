@@ -1,8 +1,10 @@
+using Core.Configuration;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
 using Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Services.Interfaces;
 
 namespace Services.Implementations;
@@ -13,11 +15,13 @@ public class AdminService : IAdminService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditService _auditService;
+    private readonly SchoolOptions _options;
 
-    public AdminService(IUnitOfWork unitOfWork, IAuditService auditService)
+    public AdminService(IUnitOfWork unitOfWork, IAuditService auditService, IOptions<SchoolOptions>? options = null)
     {
         _unitOfWork = unitOfWork;
         _auditService = auditService;
+        _options = options?.Value ?? new SchoolOptions();
     }
 
     public async Task<ApiResponse<PaginatedResult<AdminUserDto>>> GetUsersPagedAsync(
@@ -404,6 +408,50 @@ public class AdminService : IAdminService
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
+
+        // Đồng bộ bán trú theo lịch trường: ngày nghỉ đóng bán trú, ngày học bù T7/CN mở bán trú
+        var lunchDayRepo = _unitOfWork.Repository<LunchServiceDay>();
+        if (lunchDayRepo != null)
+        {
+            var isWeekend = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
+            var lunchDay = await lunchDayRepo.Query().FirstOrDefaultAsync(d => d.Date.Date == date, ct);
+            if (!request.IsSchoolDay)
+            {
+                if (lunchDay == null)
+                {
+                    await lunchDayRepo.AddAsync(new LunchServiceDay
+                    {
+                        Date = date,
+                        IsServing = false,
+                        CutoffTime = _options.LunchCutoff,
+                        Remarks = string.IsNullOrWhiteSpace(request.Note) ? "Đóng bán trú theo lịch nghỉ của trường" : request.Note.Trim()
+                    }, ct);
+                }
+                else
+                {
+                    lunchDay.IsServing = false;
+                }
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+            else if (isWeekend)
+            {
+                if (lunchDay == null)
+                {
+                    await lunchDayRepo.AddAsync(new LunchServiceDay
+                    {
+                        Date = date,
+                        IsServing = true,
+                        CutoffTime = _options.LunchCutoff,
+                        Remarks = string.IsNullOrWhiteSpace(request.Note) ? "Mở bán trú ngày học bù" : request.Note.Trim()
+                    }, ct);
+                }
+                else
+                {
+                    lunchDay.IsServing = true;
+                }
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+        }
 
         await _auditService.LogActionAsync(
             adminUserId,

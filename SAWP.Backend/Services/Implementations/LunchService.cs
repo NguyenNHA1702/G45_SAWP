@@ -16,6 +16,7 @@ public class LunchService : ILunchService
     private readonly ISchoolClock _clock;
     private readonly SchoolOptions _options;
     private readonly IAuditService _auditService;
+    private readonly ISchoolCalendarService _calendarService;
 
     private static readonly string[] DefaultMenus =
     {
@@ -30,12 +31,14 @@ public class LunchService : ILunchService
         IUnitOfWork unitOfWork,
         ISchoolClock clock,
         IOptions<SchoolOptions> options,
-        IAuditService auditService)
+        IAuditService auditService,
+        ISchoolCalendarService? calendarService = null)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _options = options.Value;
         _auditService = auditService;
+        _calendarService = calendarService ?? new SchoolCalendarService(unitOfWork);
     }
 
     private static bool IsPublicHoliday(DateTime date)
@@ -50,8 +53,10 @@ public class LunchService : ILunchService
     {
         var targetDate = date.Date;
         var isWeekend = targetDate.DayOfWeek == DayOfWeek.Saturday || targetDate.DayOfWeek == DayOfWeek.Sunday;
-        var defaultServing = !isWeekend && !IsPublicHoliday(targetDate) && (isCalendarSchoolDay ?? true);
-        var isServing = day != null ? day.IsServing : defaultServing;
+        var isSchoolDay = isCalendarSchoolDay ?? !isWeekend;
+        var defaultServing = isSchoolDay && !IsPublicHoliday(targetDate);
+        // Nếu lịch trường đánh dấu là ngày nghỉ (IsSchoolDay == false) thì bắt buộc đóng bán trú (BR-30)
+        var isServing = isCalendarSchoolDay == false ? false : (day != null ? day.IsServing : defaultServing);
         var cutoff = (day != null && day.CutoffTime != TimeSpan.Zero) ? day.CutoffTime : _options.LunchCutoff;
         var isLocked = day?.IsLocked ?? false;
         var lockedAt = day?.LockedAt;
@@ -119,11 +124,13 @@ public class LunchService : ILunchService
             .Where(d => d.Date >= start && d.Date <= end)
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
 
+        var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(start, end, cancellationToken);
+
         var result = new List<LunchServiceDayConfigDto>();
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
         {
             existingDays.TryGetValue(cur, out var day);
-            var resolved = ResolveServiceDay(cur, day);
+            var resolved = ResolveServiceDay(cur, day, calendarSchoolDays.Contains(cur));
             result.Add(new LunchServiceDayConfigDto
             {
                 Date = cur,
@@ -276,13 +283,15 @@ public class LunchService : ILunchService
             .Where(r => r.StudentId == studentId && r.Date >= startOfMonth && r.Date <= endOfMonth)
             .ToDictionaryAsync(r => r.Date.Date, cancellationToken);
 
+        var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(startOfMonth, endOfMonth, cancellationToken);
+
         var days = new List<StudentLunchDayDto>();
         for (var cur = startOfMonth; cur <= endOfMonth; cur = cur.AddDays(1))
         {
             serviceDays.TryGetValue(cur, out var sDay);
             registrations.TryGetValue(cur, out var reg);
 
-            var resolved = ResolveServiceDay(cur, sDay);
+            var resolved = ResolveServiceDay(cur, sDay, calendarSchoolDays.Contains(cur));
             var cutoffPassed = IsCutoffPassed(cur, resolved.Cutoff, resolved.IsLocked);
 
             days.Add(new StudentLunchDayDto
@@ -362,11 +371,15 @@ public class LunchService : ILunchService
             .Where(d => targetDates.Contains(d.Date))
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
 
+        var calendarSchoolDays = targetDates.Count > 0
+            ? await _calendarService.GetSchoolDaysInRangeAsync(targetDates.First(), targetDates.Last(), cancellationToken)
+            : new HashSet<DateTime>();
+
         // Kiểm tra ngày phục vụ (MSG28) và hạn đăng ký (MSG27)
         foreach (var d in targetDates)
         {
             serviceDays.TryGetValue(d, out var sDay);
-            var resolved = ResolveServiceDay(d, sDay);
+            var resolved = ResolveServiceDay(d, sDay, calendarSchoolDays.Contains(d));
 
             if (!resolved.IsServing)
             {
@@ -690,7 +703,8 @@ public class LunchService : ILunchService
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var isSchoolDay = await _calendarService.IsSchoolDayAsync(targetDate, cancellationToken);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, isSchoolDay);
         if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
         {
             return ApiResponse<bool>.Ok(false, $"Đã qua mốc chốt suất ({resolved.Cutoff:hh\\:mm}), giữ nguyên đăng ký hiện tại.");
@@ -726,7 +740,8 @@ public class LunchService : ILunchService
         var serviceDay = serviceDayRepo != null
             ? await serviceDayRepo.Query().FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken)
             : null;
-        var resolved = ResolveServiceDay(targetDate, serviceDay);
+        var isSchoolDay = await _calendarService.IsSchoolDayAsync(targetDate, cancellationToken);
+        var resolved = ResolveServiceDay(targetDate, serviceDay, isSchoolDay);
         var afterCutoff = IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked);
 
         // Phương án A (SSAWP-135): Sau giờ chốt / đã khóa ngày, chặn Teacher/OfficeStaff; chỉ ServiceStaff/Admin được khôi phục ngoại lệ kèm lý do + AuditLog + thông báo bếp

@@ -113,6 +113,13 @@ const NAV_ITEMS: NavItem[] = [
         roles: ['OfficeStaff', 'SchoolBoard'],
         icon: GraduationCap,
       },
+      {
+        id: 'office-calendar',
+        label: 'Lịch năm học & Học bù',
+        path: '/admin/config',
+        roles: ['OfficeStaff'],
+        icon: CalendarCheck2,
+      },
     ],
   },
   // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard) ---

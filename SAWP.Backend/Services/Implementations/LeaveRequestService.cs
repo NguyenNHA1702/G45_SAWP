@@ -19,6 +19,7 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly SchoolOptions _options;
     private readonly IFileStorageService _fileStorage;
     private readonly IAuditService _auditService;
+    private readonly ISchoolCalendarService _calendarService;
 
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
     private static readonly string[] AllowedAttachmentExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx" };
@@ -29,7 +30,8 @@ public class LeaveRequestService : ILeaveRequestService
         ISchoolClock clock,
         IOptions<SchoolOptions> schoolOptions,
         IFileStorageService fileStorage,
-        IAuditService auditService)
+        IAuditService auditService,
+        ISchoolCalendarService? calendarService = null)
     {
         _fileStorage = fileStorage;
         _auditService = auditService;
@@ -37,6 +39,7 @@ public class LeaveRequestService : ILeaveRequestService
         _lunchService = lunchService;
         _clock = clock;
         _options = schoolOptions.Value;
+        _calendarService = calendarService ?? new SchoolCalendarService(unitOfWork);
     }
 
     public async Task<ApiResponse<LeaveRequestItemDto>> SubmitLeaveRequestAsync(int parentUserId, CreateLeaveRequestDto request, CancellationToken cancellationToken = default)
@@ -70,16 +73,11 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<LeaveRequestItemDto>.Fail("Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.");
         }
 
-        // Chỉ kiểm tra thứ 7/CN khi ngày nghỉ khác hôm nay (tránh ảnh hưởng unit test chạy vào cuối tuần)
-        if (request.StartDate.Date != today || request.EndDate.Date != today)
+        // Kiểm tra theo lịch trường (cho phép ngày học bù T7/CN, chặn ngày nghỉ lễ giữa tuần)
+        var schoolDays = await _calendarService.GetSchoolDaysInRangeAsync(request.StartDate.Date, request.EndDate.Date, cancellationToken);
+        if (schoolDays.Count == 0)
         {
-            var hasSchoolDay = Enumerable.Range(0, (request.EndDate.Date - request.StartDate.Date).Days + 1)
-                .Select(offset => request.StartDate.Date.AddDays(offset).DayOfWeek)
-                .Any(dow => dow != DayOfWeek.Saturday && dow != DayOfWeek.Sunday);
-            if (!hasSchoolDay)
-            {
-                return ApiResponse<LeaveRequestItemDto>.Fail("Khoảng thời gian xin nghỉ chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.");
-            }
+            return ApiResponse<LeaveRequestItemDto>.Fail("Khoảng thời gian xin nghỉ không có ngày học nào theo lịch nhà trường. Vui lòng chọn ngày học hợp lệ.");
         }
 
         if (string.IsNullOrWhiteSpace(request.Reason))
@@ -526,59 +524,46 @@ public class LeaveRequestService : ILeaveRequestService
         syncResult.Status = RequestStatus.Approved;
         syncResult.IsAttendanceSyncSuggested = true;
 
-        // Đánh dấu học sinh Vắng có phép trong danh sách điểm danh
-        if (req.StudentId.HasValue)
+        // BR-26: Duyệt đơn chỉ cung cấp chỉ báo nghỉ trên bảng điểm danh (không tự ghi/ghi đè AttendanceRecord).
+        // Nếu giáo viên đã chấm Có mặt / Đi muộn cho ngày trong đơn, gửi thông báo nhắc GVCN kiểm tra lại.
+        var schoolDaysInLeave = await _calendarService.GetSchoolDaysInRangeAsync(
+            req.LeaveRequest.StartDate.Date,
+            req.LeaveRequest.EndDate.Date,
+            cancellationToken);
+
+        if (req.StudentId.HasValue && schoolDaysInLeave.Count > 0)
         {
-            var leaveSession = req.LeaveRequest.Session;
-            var currentAssignment = await _unitOfWork.Repository<ClassAssignment>()
-                .Query()
-                .FirstOrDefaultAsync(ca => ca.StudentId == req.StudentId.Value && ca.IsActive, cancellationToken);
-
-            var startD = req.LeaveRequest.StartDate.Date;
-            var endD = req.LeaveRequest.EndDate.Date;
-            var daysCount = (endD - startD).Days;
-
-            for (int d = 0; d <= daysCount; d++)
+            var attRepo = _unitOfWork.Repository<AttendanceRecord>();
+            if (attRepo != null)
             {
-                var curDate = startD.AddDays(d);
-                var sessionsToMark = leaveSession switch
-                {
-                    LeaveSession.Morning => new[] { AttendanceSession.Morning },
-                    LeaveSession.Afternoon => new[] { AttendanceSession.Afternoon },
-                    _ => new[] { AttendanceSession.Morning, AttendanceSession.Afternoon }
-                };
+                var startD = req.LeaveRequest.StartDate.Date;
+                var endD = req.LeaveRequest.EndDate.Date;
+                var existingPresentOrLate = await attRepo.Query()
+                    .Where(ar => ar.StudentId == req.StudentId.Value &&
+                                 ar.Date >= startD && ar.Date <= endD &&
+                                 (ar.Status == AttendanceStatus.Present || ar.Status == AttendanceStatus.Late))
+                    .Select(ar => ar.Date)
+                    .ToListAsync(cancellationToken);
 
-                foreach (var ses in sessionsToMark)
+                var conflictDates = existingPresentOrLate.Where(d => schoolDaysInLeave.Contains(d.Date)).Distinct().OrderBy(d => d).ToList();
+                if (conflictDates.Count > 0)
                 {
-                    var existingAtt = await _unitOfWork.Repository<AttendanceRecord>()
+                    var classAssignment = await _unitOfWork.Repository<ClassAssignment>()
                         .Query()
-                        .FirstOrDefaultAsync(ar => ar.StudentId == req.StudentId.Value &&
-                                                   ar.Date == curDate &&
-                                                   ar.Session == ses, cancellationToken);
-
-                    if (existingAtt != null)
+                        .Include(ca => ca.Class).ThenInclude(c => c.HomeroomTeacher)
+                        .FirstOrDefaultAsync(ca => ca.StudentId == req.StudentId.Value && ca.IsActive, cancellationToken);
+                    var homeroomUserId = classAssignment?.Class?.HomeroomTeacher?.UserId;
+                    if (homeroomUserId.HasValue)
                     {
-                        existingAtt.Status = AttendanceStatus.ExcusedAbsence;
-                        existingAtt.Remarks = $"Vắng có phép theo đơn {req.RequestNumber}";
-                        existingAtt.LeaveRequestId = req.LeaveRequest.Id;
-                        existingAtt.UpdatedAt = DateTime.UtcNow;
-                        existingAtt.UpdatedByUserId = reviewerUserId;
-                    }
-                    else if (currentAssignment != null)
-                    {
-                        var newAtt = new AttendanceRecord
+                        await _unitOfWork.Repository<Notification>().AddAsync(new Notification
                         {
-                            StudentId = req.StudentId.Value,
-                            ClassId = currentAssignment.ClassId,
-                            Date = curDate,
-                            Session = ses,
-                            Status = AttendanceStatus.ExcusedAbsence,
-                            Remarks = $"Vắng có phép theo đơn {req.RequestNumber}",
-                            LeaveRequestId = req.LeaveRequest.Id,
+                            UserId = homeroomUserId.Value,
+                            Title = "Kiểm tra lại điểm danh học sinh có đơn nghỉ",
+                            Content = $"Học sinh {req.Student?.FullName} có đơn nghỉ {req.RequestNumber} vừa được duyệt, nhưng đã được chấm Có mặt/Đi muộn ngày {string.Join(", ", conflictDates.Select(d => d.ToString("dd/MM/yyyy")))}. Vui lòng kiểm tra lại.",
+                            LinkUrl = "/teacher/attendance",
                             CreatedAt = DateTime.UtcNow,
-                            RecordedByUserId = reviewerUserId
-                        };
-                        await _unitOfWork.Repository<AttendanceRecord>().AddAsync(newAtt, cancellationToken);
+                            IsRead = false
+                        }, cancellationToken);
                     }
                 }
             }
@@ -596,6 +581,8 @@ public class LeaveRequestService : ILeaveRequestService
             for (int i = 0; i <= totalDays; i++)
             {
                 var curDate = req.LeaveRequest.StartDate.Date.AddDays(i);
+                if (!schoolDaysInLeave.Contains(curDate)) continue;
+
                 var cancelRes = await _lunchService.CancelMealForLeaveAsync(
                     req.StudentId.Value,
                     curDate,

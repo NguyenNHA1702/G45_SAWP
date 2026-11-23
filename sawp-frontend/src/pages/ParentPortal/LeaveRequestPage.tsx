@@ -208,16 +208,48 @@ export default function LeaveRequestPage() {
       toast.error('Không thể xin nghỉ học cho ngày trong quá khứ.');
       return;
     }
-    let hasWeekday = false;
+    // Kiểm tra theo lịch trường (cho phép ngày học bù T7/CN, chặn ngày nghỉ lễ giữa tuần)
+    const monthsToCheck = Array.from(
+      new Set([startDate.slice(0, 7), endDate.slice(0, 7)]),
+    );
+    const calendarMap = new Map<string, boolean>();
+    try {
+      const responses = await Promise.all(
+        monthsToCheck.map((m) =>
+          apiClient.get<{ success: boolean; data?: Array<{ date: string; isSchoolDay: boolean }> }>(
+            `/admin/calendar?month=${encodeURIComponent(m)}`,
+          ),
+        ),
+      );
+      for (const r of responses) {
+        if (r.data?.success && Array.isArray(r.data.data)) {
+          for (const item of r.data.data) {
+            calendarMap.set(item.date.slice(0, 10), item.isSchoolDay);
+          }
+        }
+      }
+    } catch {
+      // Nếu không tải được lịch, backend sẽ kiểm tra lại khi submit
+    }
+
+    let hasSchoolDay = false;
     for (let d = new Date(startDate); d <= new Date(endDate); d.setDate(d.getDate() + 1)) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) {
-        hasWeekday = true;
-        break;
+      const iso = d.toISOString().slice(0, 10);
+      if (calendarMap.has(iso)) {
+        if (calendarMap.get(iso)) {
+          hasSchoolDay = true;
+          break;
+        }
+      } else {
+        const day = d.getDay();
+        if (day !== 0 && day !== 6) {
+          hasSchoolDay = true;
+          break;
+        }
       }
     }
-    if (!hasWeekday) {
-      toast.error('Khoảng ngày chọn chỉ gồm Thứ 7 / Chủ nhật. Vui lòng chọn ngày học trong tuần.');
+    if (!hasSchoolDay) {
+      toast.error('Khoảng ngày chọn không có ngày học nào theo lịch nhà trường. Vui lòng chọn ngày học hợp lệ.');
       return;
     }
     const sessionOverlaps = (existingSession: string | number, newSession: number) => {

@@ -16,17 +16,20 @@ public class AttendanceService : IAttendanceService
     private readonly ISchoolClock _clock;
     private readonly IAuditService _auditService;
     private readonly SchoolOptions _options;
+    private readonly ISchoolCalendarService _calendarService;
 
     public AttendanceService(
         IUnitOfWork unitOfWork,
         ISchoolClock clock,
         IAuditService auditService,
-        IOptions<SchoolOptions> schoolOptions)
+        IOptions<SchoolOptions> schoolOptions,
+        ISchoolCalendarService? calendarService = null)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _auditService = auditService;
         _options = schoolOptions.Value;
+        _calendarService = calendarService ?? new SchoolCalendarService(unitOfWork);
     }
 
     #region API-1: GetMyClassesAsync (GV lấy danh sách lớp được điểm danh)
@@ -788,10 +791,9 @@ public class AttendanceService : IAttendanceService
 
         var rows = await _unitOfWork.Attendance.GetClassStatusCountsAsync(classId, fromDate, toDate, ct);
 
-        // Số ngày học thực tế có bản ghi
-        var classRecords = await _unitOfWork.Repository<AttendanceRecord>()
-            .FindAsync(r => r.ClassId == classId && r.Date >= fromDate && r.Date <= toDate, ct);
-        var schoolDaysCount = classRecords.Select(r => r.Date).Distinct().Count();
+        // Số ngày học thực tế theo lịch trường (tính ngày học bù như 12/12, loại ngày nghỉ như 02/12)
+        var schoolDays = await _calendarService.GetSchoolDaysInRangeAsync(fromDate, toDate, ct);
+        var schoolDaysCount = schoolDays.Count;
 
         var totals = new AttendanceSummaryDto
         {
@@ -871,6 +873,9 @@ public class AttendanceService : IAttendanceService
 
         var records = await _unitOfWork.Attendance
             .GetStudentAttendanceHistoryAsync(studentId, fromDate, toDate, ct);
+
+        var validSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(fromDate, toDate, ct);
+        records = records.Where(r => validSchoolDays.Contains(r.Date.Date)).ToList();
 
         bool isParent = roles.Contains(UserRoles.Parent);
 
@@ -982,25 +987,9 @@ public class AttendanceService : IAttendanceService
     /// <summary>
     /// Kiểm tra xem một ngày có phải ngày học theo lịch của trường không
     /// </summary>
-    private async Task<bool> ValidateSchoolDayAsync(DateTime date, CancellationToken ct = default)
+    private Task<bool> ValidateSchoolDayAsync(DateTime date, CancellationToken ct = default)
     {
-        // Thứ 7 và Chủ nhật không phải ngày học (TC_ATT_13 / SSAWP-20)
-        if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
-        {
-            return false;
-        }
-
-        var calendarDays = await _unitOfWork.Repository<SchoolCalendarDay>()
-            .FindAsync(d => d.Date == date, ct);
-        var calendarDay = calendarDays.FirstOrDefault();
-
-        if (calendarDay != null)
-        {
-            return calendarDay.IsSchoolDay;
-        }
-
-        // Mặc định Thứ 2 đến Thứ 6 là ngày học
-        return true;
+        return _calendarService.IsSchoolDayAsync(date, ct);
     }
 
     #endregion

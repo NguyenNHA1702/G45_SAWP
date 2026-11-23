@@ -95,11 +95,31 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         DateTime to, 
         CancellationToken ct = default)
     {
+        var fromDate = from.Date;
+        var toDate = to.Date;
+
+        var calendarOverrides = await _context.SchoolCalendarDays
+            .AsNoTracking()
+            .Where(d => d.Date >= fromDate && d.Date <= toDate)
+            .ToListAsync(ct);
+
+        var calendarMap = calendarOverrides
+            .GroupBy(d => d.Date.Date)
+            .ToDictionary(g => g.Key, g => g.First().IsSchoolDay);
+
+        bool IsValidSchoolDay(DateTime dt)
+        {
+            var d = dt.Date;
+            if (calendarMap.TryGetValue(d, out var isSchoolDay)) return isSchoolDay;
+            return d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday;
+        }
+
         var records = await _context.AttendanceRecords
             .AsNoTracking()
-            .Where(ar => ar.ClassId == classId && ar.Date >= from && ar.Date <= to)
+            .Where(ar => ar.ClassId == classId && ar.Date >= fromDate && ar.Date <= toDate)
             .Select(ar => new 
             {
+                ar.Date,
                 ar.StudentId,
                 ar.Student.StudentCode,
                 ar.Student.FullName,
@@ -108,6 +128,7 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             .ToListAsync(ct);
 
         return records
+            .Where(x => IsValidSchoolDay(x.Date))
             .GroupBy(x => new { x.StudentId, x.StudentCode, x.FullName })
             .Select(g => new StudentAttendanceRowDto
             {
