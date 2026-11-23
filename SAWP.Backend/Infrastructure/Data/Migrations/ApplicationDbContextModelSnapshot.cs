@@ -102,6 +102,12 @@ namespace Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("AbsenceNoticeSentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("AbsenceNoticeSentByUserId")
+                        .HasColumnType("int");
+
                     b.Property<int>("ClassId")
                         .HasColumnType("int");
 
@@ -141,6 +147,8 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AbsenceNoticeSentByUserId");
 
                     b.HasIndex("LeaveRequestId");
 
@@ -1402,6 +1410,11 @@ namespace Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Core.Entities.AttendanceRecord", b =>
                 {
+                    b.HasOne("Core.Entities.User", "AbsenceNoticeSentByUser")
+                        .WithMany()
+                        .HasForeignKey("AbsenceNoticeSentByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Core.Entities.Class", "Class")
                         .WithMany("AttendanceRecords")
                         .HasForeignKey("ClassId")
@@ -1429,6 +1442,8 @@ namespace Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("UpdatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AbsenceNoticeSentByUser");
 
                     b.Navigation("Class");
 

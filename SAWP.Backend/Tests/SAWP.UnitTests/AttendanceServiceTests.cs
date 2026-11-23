@@ -236,9 +236,10 @@ public class AttendanceServiceTests : TestBase
     }
 
     // ==================== 54. RecordDailyAttendanceAsync (8 TCs) ====================
+    // OVR-01 (BR-62): submitting attendance never notifies parents.
 
     [Fact]
-    public async Task UTCID01_RecordDailyAttendance_Success_DeductsLunchAndNotifiesParent()
+    public async Task UTCID01_RecordDailyAttendance_Success_DeductsLunchAndDoesNotNotifyParent()
     {
         // Arrange
         var today = new DateTime(2026, 10, 28);
@@ -248,7 +249,7 @@ public class AttendanceServiceTests : TestBase
         SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
         SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
         SetupRepository(new List<LunchServiceDay>());
-        SetupRepository(new List<Notification>());
+        var notificationRepo = SetupRepository(new List<Notification>());
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Student>
             {
@@ -291,7 +292,7 @@ public class AttendanceServiceTests : TestBase
         result.Success.Should().BeTrue();
         result.Code.Should().Be(SystemMessages.MSG18.Code);
         result.Data!.LunchDeductedCount.Should().Be(1);
-        result.Data.ParentsNotifiedCount.Should().Be(1);
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -461,7 +462,7 @@ public class AttendanceServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
-    // ==================== 55. CorrectAttendanceAsync (6 TCs) ====================
+    // ==================== 55. CorrectAttendanceAsync (7 TCs) ====================
 
     [Fact]
     public async Task UTCID01_CorrectAttendance_ToExcusedAbsence_Success()
@@ -619,6 +620,46 @@ public class AttendanceServiceTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task UTCID07_CorrectAttendance_ToUnexcusedAbsenceToday_DoesNotNotifyParent()
+    {
+        // Arrange: OVR-01 (BR-62) - a correction never notifies parents
+        var today = new DateTime(2026, 10, 28);
+        var rec = new AttendanceRecord
+        {
+            Id = 10,
+            StudentId = 1,
+            ClassId = 1,
+            Date = today,
+            Session = AttendanceSession.Morning,
+            Status = AttendanceStatus.Present,
+            Student = new Student { Id = 1, StudentCode = "HS001", FullName = "Em A" },
+            Class = new Class { Id = 1, ClassName = "1A" }
+        };
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(rec);
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+        var notificationRepo = SetupRepository(new List<Notification>());
+        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int> { 20 } });
+
+        var dto = new CorrectAttendanceDto
+        {
+            Status = AttendanceStatus.UnexcusedAbsence,
+            CorrectionReason = "Giáo viên chọn nhầm trạng thái"
+        };
+
+        // Act
+        var result = await _service.CorrectAttendanceAsync(10, dto, 10);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        rec.Status.Should().Be(AttendanceStatus.UnexcusedAbsence);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ==================== 56. GetClassSummaryAsync (5 TCs) ====================
@@ -809,5 +850,140 @@ public class AttendanceServiceTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    // ==================== 58. SendAbsenceNoticeAsync (6 TCs) - OVR-01, UC-23 A2 ====================
+
+    private AttendanceRecord UnexcusedRecord(int id = 10) => new()
+    {
+        Id = id,
+        StudentId = 1,
+        ClassId = 1,
+        Date = new DateTime(2026, 10, 28),
+        Session = AttendanceSession.Morning,
+        Status = AttendanceStatus.UnexcusedAbsence,
+        Student = new Student { Id = 1, StudentCode = "HS001", FullName = "Em A" },
+        Class = new Class { Id = 1, ClassName = "1A" }
+    };
+
+    private void SetupNoLeaveAndGuardians(params int[] guardianUserIds)
+    {
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<DateTime>(), It.IsAny<AttendanceSession>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int>(guardianUserIds) });
+    }
+
+    [Fact]
+    public async Task UTCID01_SendAbsenceNotice_UnexcusedAbsence_NotifiesEveryLinkedParent()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupNoLeaveAndGuardians(20, 21);
+        var notificationRepo = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG55.Code);
+        result.Data!.ParentsNotifiedCount.Should().Be(2);
+        rec.AbsenceNoticeSentAt.Should().NotBeNull();
+        rec.AbsenceNoticeSentByUserId.Should().Be(40);
+        notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n => n.ReferenceKey == NotificationTemplates.AbsenceNoticeKey(10)), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        AuditServiceMock.Verify(a => a.LogActionAsync(40, AuditActions.AttendanceAbsenceNoticeSend, nameof(AttendanceRecord), "10",
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID02_SendAbsenceNotice_AlreadySent_FailsWithMSG09()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        rec.AbsenceNoticeSentAt = new DateTime(2026, 10, 28, 9, 0, 0, DateTimeKind.Utc);
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        var notificationRepo = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(AttendanceStatus.Present)]
+    [InlineData(AttendanceStatus.Late)]
+    [InlineData(AttendanceStatus.ExcusedAbsence)]
+    public async Task UTCID03_SendAbsenceNotice_NotUnexcusedAbsence_FailsWithMSG09(AttendanceStatus status)
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        rec.Status = status;
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UTCID04_SendAbsenceNotice_CoveredByApprovedLeave_FailsWithMSG09()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), rec.Date, rec.Session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>
+            {
+                [1] = new LeaveIndicatorDto { LeaveRequestId = 5, Status = RequestStatus.Approved }
+            });
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UTCID05_SendAbsenceNotice_NoLinkedParent_FailsWithMSG09()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupNoLeaveAndGuardians();
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UTCID06_SendAbsenceNotice_RecordNotFound_FailsWithMSG43()
+    {
+        // Arrange
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((AttendanceRecord?)null);
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(999, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG43.Code);
     }
 }

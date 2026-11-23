@@ -1,4 +1,4 @@
-// Standard System Messages defined in SRS (MSG01 to MSG50)
+// Standard System Messages defined in SRS (MSG01 to MSG55)
 
 export interface SystemMessage {
   code: string;
@@ -331,6 +331,12 @@ export const SYSTEM_MESSAGES = {
     messageType: "Toast (Info)",
     context: "Comments disabled",
     content: "Bài viết này hiện đã tắt tính năng bình luận.",
+  },
+  MSG55: {
+    code: "MSG55",
+    messageType: "Toast (Success)",
+    context: "Absence notice sent",
+    content: "Đã gửi thông báo vắng mặt cho phụ huynh.",
   },
 } as const;
 

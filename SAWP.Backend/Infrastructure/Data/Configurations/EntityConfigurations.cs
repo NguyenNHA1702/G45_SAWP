@@ -205,6 +205,11 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
                .WithMany()
                .HasForeignKey(ar => ar.UpdatedByUserId)
                .OnDelete(DeleteBehavior.Restrict);
+        // OVR-01: Office Staff member who sent the absence notice
+        builder.HasOne(ar => ar.AbsenceNoticeSentByUser)
+               .WithMany()
+               .HasForeignKey(ar => ar.AbsenceNoticeSentByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(ar => ar.LeaveRequest)
                .WithMany()
                .HasForeignKey(ar => ar.LeaveRequestId)

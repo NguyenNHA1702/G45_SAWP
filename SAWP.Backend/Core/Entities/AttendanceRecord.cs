@@ -28,4 +28,9 @@ public class AttendanceRecord
     public string? CorrectionReason { get; set; }      // max 500, bắt buộc khi Giáo vụ sửa
     public int? LeaveRequestId { get; set; }           // đơn nghỉ đã duyệt phủ ngày này
     public virtual LeaveRequest? LeaveRequest { get; set; }
+
+    // OVR-01 (UC-23 A2): absence notice sent by Office Staff; null = not sent. At most one per record.
+    public DateTime? AbsenceNoticeSentAt { get; set; } // UTC
+    public int? AbsenceNoticeSentByUserId { get; set; }
+    public virtual User? AbsenceNoticeSentByUser { get; set; }
 }
