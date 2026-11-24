@@ -1,6 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { Toaster } from 'react-hot-toast';
 import LoginPage from './pages/Auth/LoginPage';
+import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
+import SetPasswordPage from './pages/Auth/SetPasswordPage';
+import ChangeTemporaryPasswordPage from './pages/Auth/ChangeTemporaryPasswordPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import AttendancePage from './pages/TeacherPortal/AttendancePage';
 import ChildAttendancePage from './pages/ParentPortal/ChildAttendancePage';
@@ -9,7 +12,6 @@ import StudentsPage from './pages/OfficeStaffPortal/StudentsPage';
 import ClassesPage from './pages/OfficeStaffPortal/ClassesPage';
 import LeaveRequestPage from './pages/ParentPortal/LeaveRequestPage';
 import LeaveApprovalPage from './pages/TeacherPortal/LeaveApprovalPage';
-import LinkRequestsPage from './pages/OfficeStaffPortal/LinkRequestsPage';
 import HomeroomRosterPage from './pages/TeacherPortal/HomeroomRosterPage';
 import TeacherBoardingPage from './pages/TeacherPortal/TeacherBoardingPage';
 import ChildDashboardPage from './pages/ParentPortal/ChildDashboardPage';
@@ -22,9 +24,11 @@ import EContactBookPage from './pages/ParentPortal/EContactBookPage';
 import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
 import AuditLogsPage from './pages/SystemPortal/AuditLogsPage';
 import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
+import AccountRequestReviewPage from './pages/AdminPortal/AccountRequestReviewPage';
+import AccountRequestsPage from './pages/OfficeStaffPortal/AccountRequestsPage';
 import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
 import { MainLayout } from './layouts/MainLayout';
-import { clearAuthSession, TOKEN_KEY } from './services/apiClient';
+import { clearAuthSession, getAuthUser, TOKEN_KEY } from './services/apiClient';
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -45,7 +49,43 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+/** True when the signed-in account still has to replace a temporary password (UC-60 A1). */
+function mustChangePassword(): boolean {
+  try {
+    return JSON.parse(getAuthUser() ?? '{}')?.mustChangePassword === true;
+  } catch {
+    return false;
+  }
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
+  const token = sessionStorage.getItem(TOKEN_KEY);
+  if (!token || isTokenExpired(token)) {
+    clearAuthSession();
+    return <Navigate to="/login" replace />;
+  }
+  if (mustChangePassword()) {
+    return <Navigate to="/change-password" replace />;
+  }
+  return <>{children}</>;
+}
+
+/** Chặn phân quyền truy cập Route theo vai trò người dùng (Role-based Route Guard) */
+function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const userJson = getAuthUser();
+  const currentUser = userJson ? JSON.parse(userJson) : null;
+  const userRoles: string[] = currentUser?.roles ?? [];
+
+  const hasRole = roles.some((r) => userRoles.includes(r));
+  if (!hasRole) {
+    toast.error('Bạn không có quyền truy cập trang này.');
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+}
+
+/** Signed in, but without the temporary-password redirect (the Change Password page itself). */
+function RequireToken({ children }: { children: React.ReactNode }) {
   const token = sessionStorage.getItem(TOKEN_KEY);
   if (!token || isTokenExpired(token)) {
     clearAuthSession();
@@ -72,6 +112,18 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        {/* UC-66: public pages opened from the Login page or from emailed links */}
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<SetPasswordPage />} />
+        <Route path="/activate" element={<SetPasswordPage />} />
+        <Route
+          path="/change-password"
+          element={
+            <RequireToken>
+              <ChangeTemporaryPasswordPage />
+            </RequireToken>
+          }
+        />
 
         {/* Các trang sau khi đăng nhập bọc trong MainLayout */}
         <Route
@@ -82,26 +134,174 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/teacher/attendance" element={<AttendancePage />} />
-          <Route path="/teacher/leave-requests" element={<LeaveApprovalPage />} />
-          <Route path="/teacher/contact-book" element={<TeacherContactBookPage />} />
-          <Route path="/parent/attendance" element={<ChildAttendancePage />} />
-          <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
-          <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
-          <Route path="/parent/lunch" element={<ParentLunchPage />} />
-          <Route path="/parent/contact-book" element={<EContactBookPage />} />
-          <Route path="/service/headcount" element={<MealHeadcountPage />} />
-          <Route path="/students" element={<StudentsPage />} />
-          <Route path="/classes" element={<ClassesPage />} />
-          <Route path="/link-requests" element={<LinkRequestsPage />} />
-          <Route path="/office/requests" element={<AdminRequestsManagementPage />} />
-          <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
-          <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
-          <Route path="/teacher/boarding" element={<TeacherBoardingPage />} />
-          <Route path="/parent/children" element={<ChildDashboardPage />} />
-          <Route path="/system/audit-logs" element={<AuditLogsPage />} />
-          <Route path="/admin/users" element={<UsersManagementPage />} />
-          <Route path="/admin/config" element={<SystemConfigPage />} />
+          <Route
+            path="/teacher/attendance"
+            element={
+              <RequireRole roles={['Teacher', 'OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <AttendancePage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/leave-requests"
+            element={
+              <RequireRole roles={['Teacher', 'SchoolBoard', 'Admin']}>
+                <LeaveApprovalPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/contact-book"
+            element={
+              <RequireRole roles={['Teacher', 'SchoolBoard', 'Admin']}>
+                <TeacherContactBookPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/attendance"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <ChildAttendancePage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/leave-requests"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <LeaveRequestPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/requests"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <AdministrativeRequestsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/lunch"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <ParentLunchPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/contact-book"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <EContactBookPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/service/headcount"
+            element={
+              <RequireRole roles={['ServiceStaff', 'OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <MealHeadcountPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/students"
+            element={
+              <RequireRole roles={['OfficeStaff', 'Admin']}>
+                <StudentsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/classes"
+            element={
+              <RequireRole roles={['OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <ClassesPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/office/requests"
+            element={
+              <RequireRole roles={['OfficeStaff', 'Admin']}>
+                <AdminRequestsManagementPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/board/requests"
+            element={
+              <RequireRole roles={['SchoolBoard', 'Admin']}>
+                <AdministrativeApprovalPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/roster"
+            element={
+              <RequireRole roles={['Teacher', 'Admin']}>
+                <HomeroomRosterPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/boarding"
+            element={
+              <RequireRole roles={['Teacher', 'Admin']}>
+                <TeacherBoardingPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/children"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <ChildDashboardPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/system/audit-logs"
+            element={
+              <RequireRole roles={['OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <AuditLogsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <RequireRole roles={['Admin']}>
+                <UsersManagementPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/account-requests"
+            element={
+              <RequireRole roles={['Admin']}>
+                <AccountRequestReviewPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/office/account-requests"
+            element={
+              <RequireRole roles={['OfficeStaff', 'Admin']}>
+                <AccountRequestsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/config"
+            element={
+              <RequireRole roles={['Admin']}>
+                <SystemConfigPage />
+              </RequireRole>
+            }
+          />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 

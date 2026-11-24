@@ -54,10 +54,32 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     }
   };
 
+  const currentYear = new Date().getFullYear();
+  const maxBirthDate = `${currentYear - 5}-12-31`;
+  const minBirthDate = `${currentYear - 15}-01-01`;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.studentCode.trim() || !formData.fullName.trim()) {
       toast.error('Vui lòng điền đầy đủ Mã học sinh và Họ tên!');
+      return;
+    }
+
+    if (!formData.dateOfBirth) {
+      toast.error('Vui lòng chọn ngày sinh của học sinh!');
+      return;
+    }
+
+    const birthDate = new Date(formData.dateOfBirth);
+    const today = new Date();
+    if (isNaN(birthDate.getTime()) || birthDate >= today) {
+      toast.error('Ngày sinh không hợp lệ (không thể là ngày trong tương lai)!');
+      return;
+    }
+
+    const age = today.getFullYear() - birthDate.getFullYear();
+    if (age < 5 || age > 15) {
+      toast.error(`Độ tuổi của học sinh không hợp lệ (${age} tuổi). Độ tuổi tiểu học hợp lệ là từ 5 đến 15 tuổi.`);
       return;
     }
 
@@ -152,9 +174,14 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 type="date"
                 className="input"
                 required
+                max={maxBirthDate}
+                min={minBirthDate}
                 value={formData.dateOfBirth}
                 onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
               />
+              <small style={{ color: 'var(--color-muted-fg)', marginTop: 4, display: 'block' }}>
+                Độ tuổi tiểu học hợp lệ: từ 5 đến 15 tuổi (sinh năm {currentYear - 15} – {currentYear - 5}).
+              </small>
             </div>
 
             <div className="field">

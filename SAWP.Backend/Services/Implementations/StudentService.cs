@@ -131,6 +131,21 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Mã học sinh và Họ tên là bắt buộc." });
         }
 
+        if (request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Ngày sinh không hợp lệ (không thể là ngày trong tương lai)." });
+        }
+
+        var age = DateTime.UtcNow.Year - request.DateOfBirth.Year;
+        if (age < 5 || age > 15)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
+        }
+
         // 2. Duplicate Student Code Check (BR-09, MSG12)
         var exists = await _unitOfWork.Students.ExistsByStudentCodeAsync(request.StudentCode.Trim(), null, cancellationToken);
         if (exists)
@@ -212,6 +227,21 @@ public class StudentService : IStudentService
         if (student == null)
         {
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
+        }
+
+        if (request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Ngày sinh không hợp lệ (không thể là ngày trong tương lai)." });
+        }
+
+        var updateAge = DateTime.UtcNow.Year - request.DateOfBirth.Year;
+        if (updateAge < 5 || updateAge > 15)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({updateAge} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
         }
 
         var oldValues = new { student.FullName, student.DateOfBirth, student.Gender, student.Status };
