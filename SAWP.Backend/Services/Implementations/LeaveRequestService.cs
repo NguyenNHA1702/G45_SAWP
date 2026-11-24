@@ -21,6 +21,7 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly SchoolOptions _options;
     private readonly IFileStorageService _fileStorage;
     private readonly IAuditService _auditService;
+    private readonly ISchoolCalendarService _calendarService;
 
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
     private const string AttachmentUrlPrefix = "/api/LeaveRequests/attachment-file?path=";
@@ -32,7 +33,8 @@ public class LeaveRequestService : ILeaveRequestService
         ISchoolClock clock,
         IOptions<SchoolOptions> schoolOptions,
         IFileStorageService fileStorage,
-        IAuditService auditService)
+        IAuditService auditService,
+        ISchoolCalendarService? calendarService = null)
     {
         _fileStorage = fileStorage;
         _auditService = auditService;
@@ -40,6 +42,7 @@ public class LeaveRequestService : ILeaveRequestService
         _lunchService = lunchService;
         _clock = clock;
         _options = schoolOptions.Value;
+        _calendarService = calendarService ?? new SchoolCalendarService(unitOfWork);
     }
 
     private DateTime CurrentToday => _clock.Today != default ? _clock.Today.Date : DateTime.Today;
@@ -889,83 +892,50 @@ public class LeaveRequestService : ILeaveRequestService
         var attendanceWarnings = new List<string>();
         var teacherConflictAlerts = new List<(int TargetUserId, int? ClassId, DateTime Date, AttendanceSession Session, AttendanceStatus ExistingStatus)>();
 
-        if (req.StudentId.HasValue)
+        // BR-26: Duyệt đơn chỉ cung cấp chỉ báo nghỉ trên bảng điểm danh (không tự ghi/ghi đè AttendanceRecord).
+        // Nếu giáo viên đã chấm Có mặt / Đi muộn cho ngày trong đơn, gửi thông báo nhắc GVCN kiểm tra lại.
+        var schoolDaysInLeave = await _calendarService.GetSchoolDaysInRangeAsync(
+            req.LeaveRequest.StartDate.Date,
+            req.LeaveRequest.EndDate.Date,
+            cancellationToken);
+
+        if (req.StudentId.HasValue && schoolDaysInLeave.Count > 0)
         {
-            var leaveSession = req.LeaveRequest.Session;
-            var currentAssignment = await _unitOfWork.Repository<ClassAssignment>()
-                .Query()
-                .Include(ca => ca.Class)
-                    .ThenInclude(c => c.HomeroomTeacher)
-                .FirstOrDefaultAsync(ca => ca.StudentId == req.StudentId.Value && ca.IsActive, cancellationToken);
-
             var attRepo = _unitOfWork.Repository<AttendanceRecord>();
-            var sessionsToMark = leaveSession switch
+            if (attRepo != null)
             {
-                LeaveSession.Morning => new[] { AttendanceSession.Morning },
-                LeaveSession.Afternoon => new[] { AttendanceSession.Afternoon },
-                _ => new[] { AttendanceSession.Morning, AttendanceSession.Afternoon }
-            };
+                var startD = req.LeaveRequest.StartDate.Date;
+                var endD = req.LeaveRequest.EndDate.Date;
+                var existingPresentOrLate = await attRepo.Query()
+                    .Where(ar => ar.StudentId == req.StudentId.Value &&
+                                 ar.Date >= startD && ar.Date <= endD &&
+                                 (ar.Status == AttendanceStatus.Present || ar.Status == AttendanceStatus.Late))
+                    .Select(ar => new { ar.Date, ar.Session, ar.Status, ar.RecordedByUserId })
+                    .ToListAsync(cancellationToken);
 
-            // Chỉ đồng bộ điểm danh cho các NGÀY HỌC thực tế (A3 — bỏ qua T7/CN & ngày lễ, hỗ trợ ngày học bù)
-            foreach (var curDate in schoolDays)
-            {
-                foreach (var ses in sessionsToMark)
+                var conflicts = existingPresentOrLate.Where(x => schoolDaysInLeave.Contains(x.Date.Date)).ToList();
+                if (conflicts.Count > 0)
                 {
-                    var existingAtt = attRepo != null
-                        ? await attRepo.Query().FirstOrDefaultAsync(ar =>
-                            ar.StudentId == req.StudentId.Value &&
-                            ar.Date == curDate &&
-                            ar.Session == ses, cancellationToken)
-                        : null;
+                    var classAssignment = await _unitOfWork.Repository<ClassAssignment>()
+                        .Query()
+                        .Include(ca => ca.Class).ThenInclude(c => c.HomeroomTeacher)
+                        .FirstOrDefaultAsync(ca => ca.StudentId == req.StudentId.Value && ca.IsActive, cancellationToken);
+                    var homeroomUserId = classAssignment?.Class?.HomeroomTeacher?.UserId;
 
-                    if (existingAtt != null)
+                    foreach (var c in conflicts)
                     {
-                        // A3: Tuyệt đối KHÔNG ghi đè nếu giáo viên đã chấm Có mặt hoặc Đi muộn
-                        if (existingAtt.Status == AttendanceStatus.Present || existingAtt.Status == AttendanceStatus.Late)
+                        var statusText = c.Status == AttendanceStatus.Present ? "Có mặt" : "Đi muộn";
+                        var sesText = c.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
+                        attendanceWarnings.Add($"Ngày {c.Date:dd-MM-yyyy} ({sesText}) học sinh đã được chấm {statusText}, hệ thống giữ nguyên và đã gửi cảnh báo tới giáo viên.");
+                        if (c.Session == AttendanceSession.Morning) skippedMealDates.Add(c.Date.Date);
+                        if (homeroomUserId.HasValue && homeroomUserId.Value > 0)
                         {
-                            var statusText = existingAtt.Status == AttendanceStatus.Present ? "Có mặt" : "Đi muộn";
-                            var sesText = ses == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
-                            attendanceWarnings.Add($"Ngày {curDate:dd-MM-yyyy} ({sesText}) học sinh đã được chấm {statusText}, hệ thống giữ nguyên và đã gửi cảnh báo tới giáo viên.");
-
-                            if (ses == AttendanceSession.Morning)
-                            {
-                                skippedMealDates.Add(curDate);
-                            }
-
-                            var teacherUserId = currentAssignment?.Class?.HomeroomTeacher?.UserId;
-                            if (teacherUserId.HasValue && teacherUserId.Value > 0)
-                            {
-                                teacherConflictAlerts.Add((teacherUserId.Value, currentAssignment?.ClassId, curDate, ses, existingAtt.Status));
-                            }
-                            if (existingAtt.RecordedByUserId > 0 && existingAtt.RecordedByUserId != teacherUserId)
-                            {
-                                teacherConflictAlerts.Add((existingAtt.RecordedByUserId, currentAssignment?.ClassId, curDate, ses, existingAtt.Status));
-                            }
-                            continue;
+                            teacherConflictAlerts.Add((homeroomUserId.Value, classAssignment?.ClassId, c.Date.Date, c.Session, c.Status));
                         }
-
-                        existingAtt.Status = AttendanceStatus.ExcusedAbsence;
-                        existingAtt.Remarks = $"Vắng có phép theo đơn {req.RequestNumber}";
-                        existingAtt.LeaveRequestId = req.LeaveRequest.Id;
-                        existingAtt.UpdatedAt = DateTime.UtcNow;
-                        existingAtt.UpdatedByUserId = reviewerUserId;
-                    }
-                    else if (attRepo != null && currentAssignment != null)
-                    {
-                        // Bản ghi tự tạo từ đơn nghỉ: giữ UpdatedByUserId = null để không đánh dấu sai là GV đã nộp bảng điểm danh (A3)
-                        var newAtt = new AttendanceRecord
+                        if (c.RecordedByUserId > 0 && c.RecordedByUserId != homeroomUserId)
                         {
-                            StudentId = req.StudentId.Value,
-                            ClassId = currentAssignment.ClassId,
-                            Date = curDate,
-                            Session = ses,
-                            Status = AttendanceStatus.ExcusedAbsence,
-                            Remarks = $"Vắng có phép theo đơn {req.RequestNumber}",
-                            LeaveRequestId = req.LeaveRequest.Id,
-                            CreatedAt = DateTime.UtcNow,
-                            RecordedByUserId = reviewerUserId
-                        };
-                        await attRepo.AddAsync(newAtt, cancellationToken);
+                            teacherConflictAlerts.Add((c.RecordedByUserId, classAssignment?.ClassId, c.Date.Date, c.Session, c.Status));
+                        }
                     }
                 }
             }
@@ -1001,7 +971,7 @@ public class LeaveRequestService : ILeaveRequestService
         {
             foreach (var curDate in schoolDays)
             {
-                if (skippedMealDates.Contains(curDate))
+                if (skippedMealDates.Contains(curDate) || !schoolDaysInLeave.Contains(curDate))
                 {
                     continue;
                 }

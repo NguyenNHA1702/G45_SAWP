@@ -39,6 +39,7 @@ public class ContactBookController : BaseApiController
     /// Tải lên tệp đính kèm cho bài viết bảng tin lớp (hình ảnh hoặc tài liệu) (UC-61, BR-50)
     /// </summary>
     [HttpPost("upload-attachment")]
+    [Authorize(Roles = "Teacher,OfficeStaff,Admin")]
     public async Task<IActionResult> UploadAttachment(
         IFormFile file,
         [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
@@ -56,13 +57,13 @@ public class ContactBookController : BaseApiController
         }
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx" };
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
         if (!allowedExtensions.Contains(ext))
         {
             return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG41));
         }
 
-        var isImg = ext is ".jpg" or ".jpeg" or ".png" or ".webp";
+        var isImg = ext is ".jpg" or ".jpeg" or ".png";
         using var stream = file.OpenReadStream();
         var relativePath = await fileStorageService.SaveFileAsync(stream, file.FileName, "contact-book", cancellationToken);
         var normalizedPath = relativePath.Replace('\\', '/');
@@ -82,7 +83,6 @@ public class ContactBookController : BaseApiController
     /// Tải / Xem tệp đính kèm bảng tin lớp
     /// </summary>
     [HttpGet("attachment-file")]
-    [AllowAnonymous]
     public async Task<IActionResult> GetAttachmentFile(
         [FromQuery] string path,
         [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
@@ -93,7 +93,11 @@ public class ContactBookController : BaseApiController
             return BadRequest();
         }
 
-        var cleanPath = path.Replace("..", "").TrimStart('/', '\\');
+        var cleanPath = path.Replace("..", "").TrimStart('/', '\\').Replace('\\', '/');
+        if (!cleanPath.StartsWith("contact-book/", StringComparison.OrdinalIgnoreCase))
+        {
+            return Forbid();
+        }
         var stream = await fileStorageService.GetFileAsync(cleanPath, cancellationToken);
         if (stream == null)
         {
@@ -140,6 +144,16 @@ public class ContactBookController : BaseApiController
         if (!userId.HasValue) return Unauthorized();
 
         var result = await _contactBookService.TogglePinPostAsync(userId.Value, postId, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPatch("posts/{postId}/comments-lock")]
+    public async Task<IActionResult> ToggleCommentsLock(int postId, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _contactBookService.ToggleCommentsLockAsync(userId.Value, postId, cancellationToken);
         return ToActionResult(result);
     }
 
