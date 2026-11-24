@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Search,
   Sparkles,
-  UserCheck,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -36,7 +35,6 @@ export default function StudentsPage() {
   const [pageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<number | undefined>(undefined);
-  const [selectedStatus, setSelectedStatus] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
 
   // Modals state
@@ -56,7 +54,7 @@ export default function StudentsPage() {
 
   useEffect(() => {
     loadStudents();
-  }, [pageIndex, selectedClassId, selectedStatus]);
+  }, [pageIndex, selectedClassId]);
 
   const loadClasses = async () => {
     try {
@@ -69,17 +67,18 @@ export default function StudentsPage() {
     }
   };
 
-  const loadStudents = async () => {
+  const loadStudents = async (overrideKeyword?: string, overrideClassId?: number | null) => {
     setLoading(true);
     try {
-      const trimmedSearch = keyword.trim() || undefined;
+      const rawKeyword = overrideKeyword !== undefined ? overrideKeyword : keyword;
+      const trimmedSearch = rawKeyword.trim().replace(/\s+/g, ' ') || undefined;
+      const classIdToUse = overrideClassId !== undefined ? (overrideClassId ?? undefined) : selectedClassId;
       const filter: StudentFilterDto = {
         pageIndex,
         pageSize,
         keyword: trimmedSearch,
         searchTerm: trimmedSearch,
-        classId: selectedClassId,
-        status: selectedStatus,
+        classId: classIdToUse,
       };
       const res = await studentApi.getStudents(filter);
       if (res.success && res.data) {
@@ -95,8 +94,11 @@ export default function StudentsPage() {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setPageIndex(1);
-    loadStudents();
+    if (pageIndex !== 1) {
+      setPageIndex(1);
+    } else {
+      loadStudents();
+    }
   };
 
   const handleDownloadTemplate = async () => {
@@ -117,7 +119,6 @@ export default function StudentsPage() {
   };
 
   // Stats calculation
-  const activeCount = students.filter((s) => s.status === 'Active').length;
   const unassignedCount = students.filter((s) => !s.currentClassId).length;
 
   return (
@@ -193,20 +194,6 @@ export default function StudentsPage() {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'var(--color-quaternary-soft)' }}>
-            <UserCheck size={22} color="var(--color-quaternary)" strokeWidth={2.5} />
-          </div>
-          <div>
-            <div style={{ fontSize: 'var(--fs-2xl)', fontFamily: 'var(--font-heading)', fontWeight: 800 }}>
-              {activeCount}
-            </div>
-            <div style={{ fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-muted-fg)', fontWeight: 700 }}>
-              Hồ sơ kích hoạt (Active)
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
           <div className="stat-icon" style={{ background: 'var(--color-secondary-soft)' }}>
             <GraduationCap size={22} color="var(--color-secondary)" strokeWidth={2.5} />
           </div>
@@ -258,21 +245,6 @@ export default function StudentsPage() {
             </select>
           </div>
 
-          <div style={{ minWidth: 140 }}>
-            <select
-              className="select"
-              value={selectedStatus ?? ''}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value || undefined);
-                setPageIndex(1);
-              }}
-            >
-              <option value="">Mọi trạng thái</option>
-              <option value="Active">Đang học (Active)</option>
-              <option value="Inactive">Tạm ngưng (Inactive)</option>
-            </select>
-          </div>
-
           <button type="submit" className="btn btn--primary btn--sm">
             <Filter size={15} /> Lọc kết quả
           </button>
@@ -283,9 +255,11 @@ export default function StudentsPage() {
             onClick={() => {
               setKeyword('');
               setSelectedClassId(undefined);
-              setSelectedStatus(undefined);
-              setPageIndex(1);
-              loadStudents();
+              if (pageIndex !== 1) {
+                setPageIndex(1);
+              } else {
+                loadStudents('', null);
+              }
             }}
             title="Làm mới"
           >
@@ -327,7 +301,6 @@ export default function StudentsPage() {
                 <th>Lớp học</th>
                 <th>GV Chủ nhiệm</th>
                 <th>Phụ huynh liên hệ</th>
-                <th>Trạng thái</th>
                 <th style={{ textAlign: 'right' }}>Thao tác</th>
               </tr>
             </thead>
@@ -365,11 +338,6 @@ export default function StudentsPage() {
                     ) : (
                       <small style={{ color: 'var(--color-muted-fg)' }}>Chưa có</small>
                     )}
-                  </td>
-                  <td>
-                    <span className={`badge ${s.status === 'Active' ? 'badge--mint' : 'badge--amber'}`}>
-                      {s.status}
-                    </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <button

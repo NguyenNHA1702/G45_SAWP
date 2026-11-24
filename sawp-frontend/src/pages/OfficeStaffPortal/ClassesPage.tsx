@@ -88,6 +88,7 @@ export default function ClassesPage() {
   }, []);
 
   useEffect(() => {
+    if (selectedYearId === undefined && schoolYears.length === 0) return;
     loadClasses();
     if (activeTab === 'placement') {
       loadPlacementPlans();
@@ -104,12 +105,9 @@ export default function ClassesPage() {
 
   const loadSchoolYears = async () => {
     try {
-      const [activeRes, allRes] = await Promise.all([
-        classApi.getActiveSchoolYear(),
-        classApi.getSchoolYears(),
-      ]);
+      const allRes = await classApi.getSchoolYears();
 
-      if (allRes.success && allRes.data) {
+      if (allRes.success && allRes.data && allRes.data.length > 0) {
         // Sanitize names by stripping HTML and sort descending by start date
         const sanitizedYears = allRes.data
           .map((y) => ({
@@ -119,25 +117,14 @@ export default function ClassesPage() {
           .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
 
         setSchoolYears(sanitizedYears);
-      }
-
-      if (activeRes.success && activeRes.data) {
-        const sanitizedActive = {
-          ...activeRes.data,
-          yearName: activeRes.data.yearName ? activeRes.data.yearName.replace(/<[^>]*>?/gm, '').trim() : '',
-        };
-        setActiveSchoolYear(sanitizedActive);
-        setSelectedYearId(sanitizedActive.id);
-      } else if (allRes.data && allRes.data.length > 0) {
-        const firstYear = {
-          ...allRes.data[0],
-          yearName: allRes.data[0].yearName ? allRes.data[0].yearName.replace(/<[^>]*>?/gm, '').trim() : '',
-        };
-        setActiveSchoolYear(firstYear);
-        setSelectedYearId(firstYear.id);
+        const activeYear = sanitizedYears.find((y) => y.isActive) ?? sanitizedYears[0];
+        setActiveSchoolYear(activeYear);
+        setSelectedYearId(activeYear.id);
+      } else {
+        loadClasses();
       }
     } catch {
-      // ignore
+      loadClasses();
     }
   };
 

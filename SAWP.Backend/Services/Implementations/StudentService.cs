@@ -61,23 +61,15 @@ public class StudentService : IStudentService
         StudentFilterDto filter,
         CancellationToken cancellationToken = default)
     {
-        var query = _unitOfWork.Repository<Student>()
+        var baseQuery = _unitOfWork.Repository<Student>()
             .Query()
-            .Include(s => s.StudentGuardians)
-
-                .ThenInclude(sg => sg.Guardian)
-                    .ThenInclude(g => g.User)
-            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
-                .ThenInclude(ca => ca.Class)
-                    .ThenInclude(c => c.HomeroomTeacher)
-                        .ThenInclude(t => t!.User)
-            .AsQueryable();
+            .AsNoTracking();
 
         var searchTerm = !string.IsNullOrWhiteSpace(filter.SearchTerm) ? filter.SearchTerm : filter.Keyword;
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            var term = searchTerm.Trim().ToLower();
-            query = query.Where(s => s.StudentCode.ToLower().Contains(term) 
+            var term = System.Text.RegularExpressions.Regex.Replace(searchTerm.Trim(), @"\s+", " ").ToLower();
+            baseQuery = baseQuery.Where(s => s.StudentCode.ToLower().Contains(term)
                 || s.FullName.ToLower().Contains(term)
                 || (s.ResidentialArea != null && s.ResidentialArea.ToLower().Contains(term))
                 || s.StudentGuardians.Any(sg => sg.Guardian.FullName.ToLower().Contains(term)));
@@ -85,30 +77,42 @@ public class StudentService : IStudentService
 
         if (!string.IsNullOrWhiteSpace(filter.Status))
         {
-            query = query.Where(s => s.Status == filter.Status);
+            baseQuery = baseQuery.Where(s => s.Status == filter.Status);
         }
 
         if (filter.ClassId.HasValue)
         {
-            query = query.Where(s => s.ClassAssignments.Any(ca => ca.IsActive && ca.ClassId == filter.ClassId.Value));
+            baseQuery = baseQuery.Where(s => s.ClassAssignments.Any(ca => ca.IsActive && ca.ClassId == filter.ClassId.Value));
         }
 
         if (filter.Grade.HasValue)
         {
-            query = query.Where(s => s.ClassAssignments.Any(ca => ca.IsActive && ca.Class.Grade == filter.Grade.Value));
+            baseQuery = baseQuery.Where(s => s.ClassAssignments.Any(ca => ca.IsActive && ca.Class.Grade == filter.Grade.Value));
         }
 
         if (filter.SchoolYearId.HasValue)
         {
-            query = query.Where(s => s.ClassAssignments.Any(ca => ca.IsActive && ca.Class.SchoolYearId == filter.SchoolYearId.Value));
+            baseQuery = baseQuery.Where(s => s.ClassAssignments.Any(ca => ca.IsActive && ca.Class.SchoolYearId == filter.SchoolYearId.Value));
         }
-
-        var totalItems = await query.CountAsync(cancellationToken);
 
         var pageIndex = filter.PageIndex <= 0 ? 1 : filter.PageIndex;
         var pageSize = filter.PageSize <= 0 ? 20 : filter.PageSize;
 
-        var items = await query
+        var totalItems = await baseQuery.CountAsync(cancellationToken);
+        if (totalItems == 0 || (pageIndex - 1) * pageSize >= totalItems)
+        {
+            return ApiResponse<PaginatedResult<StudentProfileDto>>.Ok(
+                new PaginatedResult<StudentProfileDto>(new List<StudentProfileDto>(), totalItems, pageIndex, pageSize));
+        }
+
+        var items = await baseQuery
+            .Include(s => s.StudentGuardians)
+                .ThenInclude(sg => sg.Guardian)
+            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
+                .ThenInclude(ca => ca.Class)
+                    .ThenInclude(c => c.HomeroomTeacher)
+                        .ThenInclude(t => t!.User)
+            .AsSplitQuery()
             .OrderByDescending(s => s.CreatedAt)
             .Skip((pageIndex - 1) * pageSize)
             .Take(pageSize)

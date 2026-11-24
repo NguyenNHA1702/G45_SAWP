@@ -241,6 +241,29 @@ public class StudentServiceTests : TestBase
     }
 
     [Fact]
+    public async Task UTCID05_GetStudentsPaged_WithMultipleSpacesInSearchTerm_FiltersCorrectly()
+    {
+        // Arrange
+        var students = new List<Student>
+        {
+            new() { Id = 1, StudentCode = "HS001", FullName = "Nguyen Van A", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new() { Id = 2, StudentCode = "HS002", FullName = "Phan Thu Hương", Status = "Active", CreatedAt = DateTime.UtcNow }
+        };
+        SetupRepository(students);
+
+        var filter = new StudentFilterDto { SearchTerm = "  Phan   Thu   Hương  ", PageIndex = 1, PageSize = 10 };
+
+        // Act
+        var result = await _service.GetStudentsPagedAsync(filter);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Data!.TotalCount.Should().Be(1);
+        result.Data.Items.First().FullName.Should().Be("Phan Thu Hương");
+    }
+
+    [Fact]
     public async Task UTCID03_GetStudentsPaged_WithClassFilter_FiltersCorrectly()
     {
         // Arrange

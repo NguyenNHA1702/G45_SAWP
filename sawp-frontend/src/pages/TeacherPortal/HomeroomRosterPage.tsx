@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Download,
   Eye,
   Filter,
   GraduationCap,
@@ -186,39 +185,6 @@ export default function HomeroomRosterPage() {
     const start = (pageIndex - 1) * pageSize;
     return filteredStudents.slice(start, start + pageSize);
   }, [filteredStudents, pageIndex, pageSize]);
-
-  const handleExportCsv = () => {
-    if (!roster) return;
-    const rows: string[][] = [
-      ['STT', 'Ma hoc sinh', 'Ho va ten', 'Ngay sinh', 'Gioi tinh', 'Phu huynh lien he', 'SDT Phu huynh', 'SDT Khan cap', 'Trang thai'],
-    ];
-
-    filteredStudents.forEach((s, idx) => {
-      rows.push([
-        String(idx + 1),
-        s.studentCode,
-        s.fullName,
-        formatDDMMYYYY(s.dateOfBirth),
-        s.gender,
-        s.primaryGuardianName || 'Chưa cập nhật',
-        s.primaryGuardianPhone || '',
-        s.emergencyContactPhone || '',
-        s.status,
-      ]);
-    });
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      rows.map((r) => r.map((c) => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Danh_sach_lop_${roster.className}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Đã tải xuống file danh sách học sinh!');
-  };
 
   return (
     <div className="container pop-in" style={{ paddingBottom: 60 }}>
@@ -503,23 +469,6 @@ export default function HomeroomRosterPage() {
               <option value={50}>50 dòng / trang</option>
               <option value={100}>Tất cả cả lớp</option>
             </select>
-
-            {/* Export CSV button */}
-            <button
-              type="button"
-              className="btn btn--secondary btn--sm"
-              onClick={handleExportCsv}
-              title="Tải file CSV danh sách học sinh của lớp"
-              style={{
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '2px 2px 0 0 var(--color-fg)',
-                fontWeight: 700,
-                padding: '6px 14px',
-              }}
-            >
-              <Download size={14} /> Xuất CSV
-            </button>
           </div>
 
           {/* Quick summary badges */}
