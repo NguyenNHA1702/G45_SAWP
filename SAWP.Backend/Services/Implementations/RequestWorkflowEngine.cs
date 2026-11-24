@@ -1416,7 +1416,8 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                 .Query()
                 .Include(sg => sg.Guardian)
                 .Where(sg => sg.StudentId == studentId.Value && sg.Guardian != null)
-                .Select(sg => sg.Guardian.UserId)
+                .Where(sg => sg.Guardian.UserId != null)
+                .Select(sg => sg.Guardian.UserId!.Value)
                 .Distinct()
                 .ToListAsync(ct);
 

@@ -74,7 +74,7 @@ public static class DbInitializer
             Email = email,
             FullName = string.IsNullOrWhiteSpace(options.FullName) ? username : options.FullName.Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(options.Password),
-            IsActive = true
+            Status = AccountStatus.Active
         };
         admin.UserRoles.Add(new UserRole { RoleId = adminRoleId });
         context.Users.Add(admin);
@@ -106,7 +106,7 @@ public static class DbInitializer
                 Email = "admin@sawp.edu.vn",
                 FullName = "Quản trị viên Hệ thống",
                 PasswordHash = defaultPasswordHash,
-                IsActive = true
+                Status = AccountStatus.Active
             };
             context.Users.Add(adminUser);
             await context.SaveChangesAsync();
@@ -124,7 +124,7 @@ public static class DbInitializer
                 FullName = "Thầy Trần Đức Minh (Hiệu trưởng)",
                 PhoneNumber = "0901234567",
                 PasswordHash = defaultPasswordHash,
-                IsActive = true
+                Status = AccountStatus.Active
             };
             context.Users.Add(boardUser);
             await context.SaveChangesAsync();
@@ -152,7 +152,7 @@ public static class DbInitializer
                 FullName = "Cô Phạm Thu Hà (Giáo vụ)",
                 PhoneNumber = "0944556677",
                 PasswordHash = defaultPasswordHash,
-                IsActive = true
+                Status = AccountStatus.Active
             };
             context.Users.Add(officeUser);
             await context.SaveChangesAsync();
@@ -180,7 +180,7 @@ public static class DbInitializer
                 FullName = "Cô Nguyễn Mai Hương (GVCN)",
                 PhoneNumber = "0987654321",
                 PasswordHash = defaultPasswordHash,
-                IsActive = true
+                Status = AccountStatus.Active
             };
             context.Users.Add(teacherUser);
             await context.SaveChangesAsync();
@@ -208,7 +208,7 @@ public static class DbInitializer
                 FullName = "Bếp trưởng Lê Thị Bích",
                 PhoneNumber = "0933221100",
                 PasswordHash = defaultPasswordHash,
-                IsActive = true
+                Status = AccountStatus.Active
             };
             context.Users.Add(kitchenUser);
             await context.SaveChangesAsync();
@@ -236,7 +236,7 @@ public static class DbInitializer
                 FullName = "Phụ huynh Trần Văn Nam",
                 PhoneNumber = "0912345678",
                 PasswordHash = defaultPasswordHash,
-                IsActive = true
+                Status = AccountStatus.Active
             };
             context.Users.Add(parentUser);
             await context.SaveChangesAsync();
@@ -245,6 +245,9 @@ public static class DbInitializer
             var guardian = new Guardian
             {
                 UserId = parentUser.Id,
+                FullName = parentUser.FullName,
+                PhoneNumber = parentUser.PhoneNumber,
+                Email = parentUser.Email,
                 IdentityCardNumber = "001200123456",
                 Occupation = "Kỹ sư",
                 Address = "Hà Nội"
@@ -759,7 +762,7 @@ public static class DbInitializer
                         PasswordHash = defaultPasswordHash,
                         FullName = fatherFullName,
                         PhoneNumber = phone,
-                        IsActive = true,
+                        Status = AccountStatus.Active,
                         CreatedAt = DateTime.UtcNow
                     };
                     context.Users.Add(user);
@@ -769,6 +772,9 @@ public static class DbInitializer
                     var guardian = new Guardian
                     {
                         UserId = user.Id,
+                        FullName = fatherFullName,
+                        PhoneNumber = phone,
+                        Email = email,
                         IdentityCardNumber = cccd,
                         Occupation = occ,
                         Address = addr,
@@ -809,7 +815,7 @@ public static class DbInitializer
                         PasswordHash = defaultPasswordHash,
                         FullName = motherFullName,
                         PhoneNumber = phone2,
-                        IsActive = true,
+                        Status = AccountStatus.Active,
                         CreatedAt = DateTime.UtcNow
                     };
                     context.Users.Add(user2);
@@ -819,6 +825,9 @@ public static class DbInitializer
                     var guardian2 = new Guardian
                     {
                         UserId = user2.Id,
+                        FullName = motherFullName,
+                        PhoneNumber = phone2,
+                        Email = email2,
                         IdentityCardNumber = cccd2,
                         Occupation = occ2,
                         Address = addr,

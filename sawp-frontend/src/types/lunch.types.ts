@@ -57,7 +57,6 @@ export interface StudentMealOperationItem {
   grade: number;
   mealType: MealType;
   isActive: boolean;
-  isWaitlisted?: boolean;
   remarks?: string | null;
   allergyWarning?: string | null;
   cancellationSource?: LunchCancellationSource | null;
@@ -126,7 +125,6 @@ export interface StudentLunchDay {
   serviceRemarks?: string | null;
   registrationId?: number | null;
   isRegistered: boolean;
-  isWaitlisted?: boolean;
   mealType?: MealType | null;
   studentRemarks?: string | null;
   cancellationSource?: LunchCancellationSource | null;
@@ -158,9 +156,6 @@ export interface BatchLunchRegistrationResult {
   registeredCount: number;
   registeredDates: string[];
   skippedDuplicateDates: string[];
-  waitlistedCount?: number;
-  waitlistedDates?: string[];
-  isWaitlisted?: boolean;
 }
 
 // ---- UC-30: Phụ huynh hủy đăng ký còn hiệu lực ----
@@ -188,18 +183,4 @@ export interface LunchPeriodReport {
   totalVegetarian: number;
   totalSpecialDiet: number;
   classSummaries: ClassMealSummary[];
-}
-
-export interface MonthlyBoardingQuota {
-  month: string;
-  quota?: number | null;
-  registeredCount: number;
-  waitlistedCount: number;
-  isFull: boolean;
-  updatedAt?: string | null;
-}
-
-export interface UpsertMonthlyBoardingQuotaPayload {
-  month: string;
-  quota: number | null;
 }

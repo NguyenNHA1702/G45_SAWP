@@ -8,8 +8,14 @@ using Core.DTOs;
 using Core.Entities;
 using Core.Enums;
 using FluentAssertions;
+using Core.Configuration;
+using Infrastructure.ExternalServices;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Services.Interfaces;
 using MockQueryable;
 using MockQueryable.Moq;
 using Moq;
@@ -21,7 +27,33 @@ namespace SAWP.UnitTests;
 public class AuthServiceTests : TestBase
 {
     private readonly Mock<IConfiguration> _configurationMock;
+    private readonly Mock<IAccountLinkService> _linksMock = new();
+    private readonly Mock<IEmailService> _emailMock = new();
+    private readonly RecordingWorkQueue _queue = new();
     private readonly AuthService _authService;
+
+    /// <summary>Keeps queued work so a test can check that the response did not wait for it, then run it.</summary>
+    private sealed class RecordingWorkQueue : IBackgroundWorkQueue
+    {
+        public readonly List<(string Description, Func<IServiceProvider, CancellationToken, Task> Work)> Items = new();
+        public void Enqueue(string description, Func<IServiceProvider, CancellationToken, Task> work) => Items.Add((description, work));
+        public ValueTask<(string Description, Func<IServiceProvider, CancellationToken, Task> Work)> DequeueAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
+
+    /// <summary>Runs the queued work as the API's background worker would, with the test's mocks.</summary>
+    private async Task RunQueuedWorkAsync()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton(UnitOfWorkMock.Object)
+            .AddSingleton(_linksMock.Object)
+            .BuildServiceProvider();
+        foreach (var item in _queue.Items)
+        {
+            await item.Work(services, CancellationToken.None);
+        }
+        _queue.Items.Clear();
+    }
 
     public AuthServiceTests()
     {
@@ -30,7 +62,13 @@ public class AuthServiceTests : TestBase
         _configurationMock.Setup(c => c["Jwt:Issuer"]).Returns("SAWP.Backend");
         _configurationMock.Setup(c => c["Jwt:Audience"]).Returns("SAWP.Client");
 
-        _authService = new AuthService(UnitOfWorkMock.Object, _configurationMock.Object, NullLogger<AuthService>.Instance);
+        _emailMock.Setup(e => e.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _linksMock.Setup(l => l.SendActivationLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _linksMock.Setup(l => l.SendRecoveryLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        _authService = new AuthService(UnitOfWorkMock.Object, _configurationMock.Object, NullLogger<AuthService>.Instance,
+            _linksMock.Object, _queue, _emailMock.Object, AuditServiceMock.Object,
+            new MemoryCache(new MemoryCacheOptions()), Options.Create(new AccountLinkOptions()));
     }
 
     [Fact]
@@ -89,7 +127,7 @@ public class AuthServiceTests : TestBase
             FullName = "Nguyen Van A",
             Email = "a@school.edu.vn",
             PhoneNumber = "0901234567",
-            IsActive = true,
+            Status = AccountStatus.Active,
             CreatedAt = DateTime.UtcNow.AddMonths(-6),
             UserRoles = new List<UserRole>
             {
@@ -211,7 +249,7 @@ public class AuthServiceTests : TestBase
             FullName = "Ten Cu",
             Email = "cu@school.edu.vn",
             PhoneNumber = "0900000000",
-            IsActive = true,
+            Status = AccountStatus.Active,
             UserRoles = new List<UserRole>
             {
                 new() { Role = new Role { Id = 3, Name = "Parent" } }
@@ -252,6 +290,10 @@ public class AuthServiceTests : TestBase
         user.UpdatedAt.Should().NotBeNull();
         user.Guardian!.Address.Should().Be("456 Kim Ma, Ha Noi");
         user.Guardian.Occupation.Should().Be("Bac si");
+        // The linked guardian record follows the Parent's own changes (SSAWP-151)
+        user.Guardian.FullName.Should().Be("Nguyen Van Moi");
+        user.Guardian.PhoneNumber.Should().Be("0911223344");
+        user.Guardian.Email.Should().Be("moi@school.edu.vn");
 
         result.Data.Should().NotBeNull();
         result.Data!.FullName.Should().Be("Nguyen Van Moi");
@@ -275,7 +317,7 @@ public class AuthServiceTests : TestBase
             FullName = "Can Bo Cu",
             Email = "canbo@school.edu.vn",
             PhoneNumber = "0911111111",
-            IsActive = true,
+            Status = AccountStatus.Active,
             UserRoles = new List<UserRole>
             {
                 new() { Role = new Role { Id = 4, Name = "Admin" } }
@@ -323,9 +365,46 @@ public class AuthServiceTests : TestBase
         Email = "teacher1@sawp.edu.vn",
         FullName = "Teacher One",
         PasswordHash = passwordHash,
-        IsActive = true,
+        Status = AccountStatus.Active,
         UserRoles = new List<UserRole> { new() { Role = new Role { Name = "Teacher" } } }
     };
+
+    [Theory]
+    [InlineData(AccountStatus.PendingActivation)]
+    [InlineData(AccountStatus.Deactivated)]
+    public async Task LoginAsync_WhenAccountNotActive_ReturnsMSG03(AccountStatus status)
+    {
+        // Arrange: correct password, but only Active accounts may sign in (BR-01, BR-63)
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Password@123", 4));
+        user.Status = status;
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        // Act
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = "Password@123" });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG03.Code);
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_WhenEmailUsedByAnotherAccount_ReturnsMSG01()
+    {
+        // Arrange: login emails are unique (BR-64)
+        var user = new User { Id = 7, Username = "parent7", FullName = "Ten", Email = "a@school.edu.vn", Status = AccountStatus.Active };
+        var other = new User { Id = 8, Username = "parent8", FullName = "Khac", Email = "taken@school.edu.vn", Status = AccountStatus.Active };
+        var users = new List<User> { user, other };
+        UserRepoMock.Setup(r => r.Query()).Returns(() => users.BuildMock());
+
+        // Act
+        var result = await _authService.UpdateProfileAsync(7, new UpdateProfileRequestDto { FullName = "Ten", Email = "TAKEN@school.edu.vn" });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        user.Email.Should().Be("a@school.edu.vn");
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
 
     [Fact]
     public async Task LoginAsync_WhenPasswordMatchesBcryptHash_ReturnsToken()
@@ -364,7 +443,7 @@ public class AuthServiceTests : TestBase
     {
         // Arrange
         var user = CreateUser("Password@123");
-        UserRepoMock.Setup(r => r.GetByIdAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        UserRepoMock.Setup(r => r.GetByIdWithRolesAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
 
         // Act
         var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto
@@ -385,7 +464,7 @@ public class AuthServiceTests : TestBase
     {
         // Arrange
         var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Password@123", 4));
-        UserRepoMock.Setup(r => r.GetByIdAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        UserRepoMock.Setup(r => r.GetByIdWithRolesAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
 
         // Act
         var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto
@@ -398,5 +477,280 @@ public class AuthServiceTests : TestBase
         result.Success.Should().BeTrue();
         BCrypt.Net.BCrypt.Verify("NewPassword@456", user.PasswordHash).Should().BeTrue();
         UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ===================== SSAWP-98: UC-66, UC-60 A1, BR-03 =====================
+
+    private static User UserWithRole(int id, string email, string role, AccountStatus status, string passwordHash = "") => new()
+    {
+        Id = id,
+        Username = "user" + id,
+        Email = email,
+        FullName = "User " + id,
+        PasswordHash = passwordHash,
+        Status = status,
+        UserRoles = new List<UserRole> { new() { Role = new Role { Name = role } } }
+    };
+
+    private void SetupUsers(params User[] users)
+    {
+        var list = users.ToList();
+        UserRepoMock.Setup(r => r.Query()).Returns(() => list.BuildMock());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-an-email")]
+    [InlineData("a b@school.vn")]
+    public async Task RequestPasswordLink_InvalidEmail_ReturnsMSG01(string email)
+    {
+        var result = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = email });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task RequestPasswordLink_UnknownEmail_ReturnsMSG56WithoutLink()
+    {
+        SetupUsers(UserWithRole(1, "known@school.vn", "Teacher", AccountStatus.Active));
+
+        var result = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "unknown@school.vn" });
+
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG56.Code);
+        _queue.Items.Should().BeEmpty();
+        _linksMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RequestPasswordLink_ActiveAccount_SendsRecoveryLink_ReturnsMSG56()
+    {
+        var user = UserWithRole(1, "teacher@school.vn", "Teacher", AccountStatus.Active, "hash");
+        SetupUsers(user);
+
+        var result = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "TEACHER@school.vn" });
+
+        result.Code.Should().Be(SystemMessages.MSG56.Code);
+        // BR-04: the answer does not wait for the link, so its timing does not depend on the address
+        _linksMock.Verify(l => l.SendRecoveryLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+        _queue.Items.Should().ContainSingle();
+
+        await RunQueuedWorkAsync();
+        _linksMock.Verify(l => l.SendRecoveryLinkAsync(user, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestPasswordLink_PendingActivationAccount_SendsActivationLink()
+    {
+        var user = UserWithRole(1, "new@school.vn", "Teacher", AccountStatus.PendingActivation);
+        SetupUsers(user);
+
+        var result = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "new@school.vn" });
+        await RunQueuedWorkAsync();
+
+        result.Code.Should().Be(SystemMessages.MSG56.Code);
+        _linksMock.Verify(l => l.SendActivationLinkAsync(user, It.IsAny<CancellationToken>()), Times.Once);
+        _linksMock.Verify(l => l.SendRecoveryLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("Admin", AccountStatus.Active)]
+    [InlineData("Teacher", AccountStatus.Deactivated)]
+    public async Task RequestPasswordLink_AdministratorOrDeactivated_NoLink_SameMSG56(string role, AccountStatus status)
+    {
+        SetupUsers(UserWithRole(1, "x@school.vn", role, status, "hash"));
+
+        var result = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "x@school.vn" });
+
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG56.Code);
+        _queue.Items.Should().BeEmpty();
+        _linksMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RequestPasswordLink_AccountDeactivatedBeforeTheQueuedWorkRuns_NoLink()
+    {
+        var user = UserWithRole(1, "t@school.vn", "Teacher", AccountStatus.Active, "hash");
+        SetupUsers(user);
+
+        await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "t@school.vn" });
+        user.Status = AccountStatus.Deactivated; // changed between the request and the background send
+        await RunQueuedWorkAsync();
+
+        _linksMock.Verify(l => l.SendRecoveryLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RequestPasswordLink_EmailServiceDown_ReturnsMSG59EvenForUnknownEmail()
+    {
+        _emailMock.Setup(e => e.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        SetupUsers();
+
+        var result = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "unknown@school.vn" });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG59.Code);
+    }
+
+    [Fact]
+    public async Task RequestPasswordLink_FourthRequestForSameEmail_ReturnsMSG58()
+    {
+        SetupUsers();
+        for (var i = 0; i < 3; i++)
+        {
+            (await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "a@school.vn" })).Code
+                .Should().Be(SystemMessages.MSG56.Code);
+        }
+
+        var fourth = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "A@school.vn" });
+        var other = await _authService.RequestPasswordLinkAsync(new ForgotPasswordRequestDto { Email = "b@school.vn" });
+
+        fourth.Code.Should().Be(SystemMessages.MSG58.Code);
+        other.Code.Should().Be(SystemMessages.MSG56.Code, "the limit is per email address entered");
+    }
+
+    private VerificationToken SetupLink(VerificationTokenPurpose purpose, User user)
+    {
+        var token = new VerificationToken { Id = 5, UserId = user.Id, User = user, Purpose = purpose, ExpiresAt = DateTime.UtcNow.AddMinutes(10) };
+        _linksMock.Setup(l => l.FindUsableAsync("raw-token", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        SetupRepository(new List<VerificationToken> { token });
+        return token;
+    }
+
+    [Fact]
+    public async Task CheckPasswordLink_UnknownOrUsedLink_ReturnsMSG57()
+    {
+        _linksMock.Setup(l => l.FindUsableAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((VerificationToken?)null);
+
+        var result = await _authService.CheckPasswordLinkAsync(new PasswordLinkCheckRequestDto { Token = "whatever" });
+
+        result.Code.Should().Be(SystemMessages.MSG57.Code);
+    }
+
+    [Fact]
+    public async Task CheckPasswordLink_ValidActivationLink_ReturnsPurposeWithoutUsingIt()
+    {
+        var token = SetupLink(VerificationTokenPurpose.Activation, UserWithRole(1, "n@school.vn", "Teacher", AccountStatus.PendingActivation));
+
+        var result = await _authService.CheckPasswordLinkAsync(new PasswordLinkCheckRequestDto { Token = "raw-token" });
+
+        result.Success.Should().BeTrue();
+        result.Data!.Purpose.Should().Be("Activation");
+        token.UsedAt.Should().BeNull();
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SetPasswordWithLink_Activation_ActivatesAccountAndUsesLink_ReturnsMSG46()
+    {
+        var user = UserWithRole(1, "n@school.vn", "Teacher", AccountStatus.PendingActivation);
+        var token = SetupLink(VerificationTokenPurpose.Activation, user);
+
+        var result = await _authService.SetPasswordWithLinkAsync(new SetPasswordWithLinkRequestDto
+        {
+            Token = "raw-token", NewPassword = "NewPassword@456", ConfirmPassword = "NewPassword@456"
+        });
+
+        result.Code.Should().Be(SystemMessages.MSG46.Code);
+        user.Status.Should().Be(AccountStatus.Active);
+        user.EmailVerifiedAt.Should().NotBeNull();
+        user.SessionVersion.Should().Be(1);
+        BCrypt.Net.BCrypt.Verify("NewPassword@456", user.PasswordHash).Should().BeTrue();
+        token.UsedAt.Should().NotBeNull();
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("NewPassword@456", "Different@456")]
+    [InlineData("short", "short")]
+    public async Task SetPasswordWithLink_BadPasswordOrConfirmation_ReturnsMSG04(string password, string confirm)
+    {
+        var user = UserWithRole(1, "t@school.vn", "Teacher", AccountStatus.Active, "hash");
+        var token = SetupLink(VerificationTokenPurpose.PasswordRecovery, user);
+
+        var result = await _authService.SetPasswordWithLinkAsync(new SetPasswordWithLinkRequestDto { Token = "raw-token", NewPassword = password, ConfirmPassword = confirm });
+
+        result.Code.Should().Be(SystemMessages.MSG04.Code);
+        token.UsedAt.Should().BeNull();
+        user.PasswordHash.Should().Be("hash");
+    }
+
+    [Theory]
+    [InlineData(VerificationTokenPurpose.PasswordRecovery, AccountStatus.Deactivated, "Teacher")]
+    [InlineData(VerificationTokenPurpose.Activation, AccountStatus.Active, "Teacher")]
+    [InlineData(VerificationTokenPurpose.PasswordRecovery, AccountStatus.Active, "Admin")]
+    [InlineData(VerificationTokenPurpose.EmailChange, AccountStatus.Active, "Teacher")]
+    public async Task SetPasswordWithLink_LinkNotForThisAccountState_ReturnsMSG57(VerificationTokenPurpose purpose, AccountStatus status, string role)
+    {
+        var user = UserWithRole(1, "t@school.vn", role, status, "hash");
+        SetupLink(purpose, user);
+
+        var result = await _authService.SetPasswordWithLinkAsync(new SetPasswordWithLinkRequestDto
+        {
+            Token = "raw-token", NewPassword = "NewPassword@456", ConfirmPassword = "NewPassword@456"
+        });
+
+        result.Code.Should().Be(SystemMessages.MSG57.Code);
+        user.PasswordHash.Should().Be("hash");
+    }
+
+    [Fact]
+    public async Task LoginAsync_PendingActivationWithoutPassword_ReturnsMSG02()
+    {
+        var user = CreateUser(string.Empty);
+        user.Status = AccountStatus.PendingActivation;
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = "anything" });
+
+        result.Code.Should().Be(SystemMessages.MSG02.Code);
+    }
+
+    [Fact]
+    public async Task LoginAsync_AfterAdminReset_FlagsMustChangePasswordAndCarriesSessionVersion()
+    {
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Temp@12345", 4));
+        user.MustChangePassword = true;
+        user.SessionVersion = 3;
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = "Temp@12345" });
+
+        result.Success.Should().BeTrue();
+        result.Data!.MustChangePassword.Should().BeTrue();
+        var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(result.Data.Token);
+        jwt.Claims.Single(c => c.Type == AuthService.SessionVersionClaim).Value.Should().Be("3");
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_ClearsForcedChange_EndsOtherSessions_ReturnsNewToken()
+    {
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Temp@12345", 4));
+        user.MustChangePassword = true;
+        UserRepoMock.Setup(r => r.GetByIdWithRolesAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto { CurrentPassword = "Temp@12345", NewPassword = "NewPassword@456" });
+
+        result.Code.Should().Be(SystemMessages.MSG46.Code);
+        user.MustChangePassword.Should().BeFalse();
+        user.SessionVersion.Should().Be(1);
+        result.Data!.MustChangePassword.Should().BeFalse();
+        var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(result.Data.Token);
+        jwt.Claims.Single(c => c.Type == AuthService.SessionVersionClaim).Value.Should().Be("1");
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_SameAsTemporaryPassword_ReturnsMSG04()
+    {
+        var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Temp@12345", 4));
+        user.MustChangePassword = true;
+        UserRepoMock.Setup(r => r.GetByIdWithRolesAsync(user.Id, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto { CurrentPassword = "Temp@12345", NewPassword = "Temp@12345" });
+
+        result.Code.Should().Be(SystemMessages.MSG04.Code);
+        user.MustChangePassword.Should().BeTrue();
     }
 }

@@ -15,6 +15,9 @@ export const attendanceApi: IAttendanceApi = {
   correctRecord: (recordId, payload) =>
     unwrap(apiClient.patch(`/attendance/records/${recordId}/correction`, payload)),
 
+  sendAbsenceNotice: (recordId) =>
+    unwrap(apiClient.post(`/attendance/records/${recordId}/absence-notice`)),
+
   getClassSummary: (classId, from, to) =>
     unwrapData(apiClient.get(`/attendance/classes/${classId}/summary`, { params: { from, to } })),
 

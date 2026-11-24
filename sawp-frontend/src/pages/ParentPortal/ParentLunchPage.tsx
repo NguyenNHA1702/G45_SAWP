@@ -23,7 +23,7 @@ import { useParentChild } from '../../contexts/ParentChildContext';
 import { GeometricModal } from '../../components/common/GeometricModal';
 import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY, formatWeekdayDateDDMMYYYY } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
-import type { MonthlyBoardingQuota, StudentLunchDay, StudentLunchSchedule } from '../../types/lunch.types';
+import type { StudentLunchDay, StudentLunchSchedule } from '../../types/lunch.types';
 
 const MEAL_TYPE_LABELS: Record<string, string> = {
   StandardLunch: 'Suất tiêu chuẩn',
@@ -127,7 +127,6 @@ export default function ParentLunchPage() {
 
   // Modal Xem chi tiết ngày / thực đơn
   const [detailDay, setDetailDay] = useState<StudentLunchDay | null>(null);
-  const [monthlyQuota, setMonthlyQuota] = useState<MonthlyBoardingQuota | null>(null);
 
   useEffect(() => {
     if (queryStudentId && queryStudentId !== activeChildId && children.some((c) => c.studentId === queryStudentId)) {
@@ -147,12 +146,8 @@ export default function ParentLunchPage() {
     if (!studentId) return;
     try {
       setLoading(true);
-      const [data, quota] = await Promise.all([
-        lunchApi.getStudentSchedule(studentId, month),
-        lunchApi.getMonthlyQuota(month).catch(() => null),
-      ]);
+      const data = await lunchApi.getStudentSchedule(studentId, month);
       setSchedule(data);
-      setMonthlyQuota(quota);
       // Giữ lại những ngày đang chọn nếu vẫn còn hợp lệ để đăng ký
       setSelectedDates((prev) =>
         prev.filter((dKey) => {
@@ -235,28 +230,14 @@ export default function ParentLunchPage() {
         remarks: studentRemarks.trim() || undefined,
       });
 
-      if (res.data.isWaitlisted && res.data.registeredCount === 0) {
-        toast(res.message || 'Đăng ký đã được chuyển vào danh sách chờ do đã đủ chỉ tiêu tháng.', { icon: '⏳', duration: 6000 });
-      } else if (res.data.isWaitlisted) {
-        toast.success(`Đã đăng ký ${res.data.registeredCount} ngày và chuyển ${res.data.waitlistedCount ?? 0} ngày vào danh sách chờ.`);
-      } else {
-        const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG25.content;
-        toast.success(`${msg} (${res.data.registeredCount} ngày)`);
-      }
+      const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG25.content;
+      toast.success(`${msg} (${res.data.registeredCount} ngày)`);
       setShowRegisterModal(false);
       setSelectedDates([]);
       setStudentRemarks('');
       await fetchSchedule();
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { code?: string; message?: string; errors?: string[] } } })?.response?.data;
-      if (apiErr?.code === 'BOARDING_WAITLISTED') {
-        toast.error(apiErr.message || 'Registration Waitlisted: Đã đủ chỉ tiêu bán trú tháng.');
-        setShowRegisterModal(false);
-        setSelectedDates([]);
-        setStudentRemarks('');
-        await fetchSchedule();
-        return;
-      }
       const sysMsg = apiErr?.code ? getSystemMessage(apiErr.code) : undefined;
       const detail = apiErr?.errors?.[0];
       toast.error(detail || sysMsg?.content || apiErr?.message || SYSTEM_MESSAGES.MSG09.content);
@@ -547,39 +528,6 @@ export default function ParentLunchPage() {
           )}
         </div>
       </div>
-
-      {/* Monthly Boarding Quota Banner */}
-      {monthlyQuota?.quota != null && (
-        <div
-          style={{
-            marginBottom: 18,
-            padding: '12px 18px',
-            borderRadius: 16,
-            border: '2px solid var(--color-fg)',
-            boxShadow: '3px 3px 0 0 var(--color-fg)',
-            background: monthlyQuota.isFull ? '#FEF3C7' : '#EFF6FF',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 10,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
-            <Users size={18} />
-            <span>
-              Chỉ tiêu bán trú tháng <strong>{monthlyQuota.month}</strong>:{' '}
-              <strong>{monthlyQuota.registeredCount} / {monthlyQuota.quota}</strong> học sinh
-            </span>
-          </div>
-          <span
-            className={monthlyQuota.isFull ? 'badge badge--amber' : 'badge badge--mint'}
-            style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}
-          >
-            {monthlyQuota.isFull ? 'Đã đủ chỉ tiêu (Waitlist)' : 'Còn chỗ đăng ký'}
-          </span>
-        </div>
-      )}
 
       {/* 4 Sticker KPI Summary Cards */}
       {schedule && (
@@ -1009,18 +957,6 @@ export default function ParentLunchPage() {
                     >
                       <Check size={11} /> Đã chọn
                     </span>
-                  ) : day.isWaitlisted ? (
-                    <span
-                      className="badge badge--amber"
-                      style={{
-                        fontSize: '10px',
-                        border: '1.5px solid var(--color-fg)',
-                        fontWeight: 800,
-                        padding: '2px 7px',
-                      }}
-                    >
-                      ⏳ Danh sách chờ (Waitlist)
-                    </span>
                   ) : day.isRegistered ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                       <span
@@ -1234,7 +1170,7 @@ export default function ParentLunchPage() {
               <tbody>
                 {registeredOrCancelledDays.map((day) => {
                   const dKey = toDateKey(day.date);
-                  const canCancel = (day.isRegistered || Boolean(day.isWaitlisted)) && !day.isCutoffPassed;
+                  const canCancel = day.isRegistered && !day.isCutoffPassed;
                   const cleanedRemarks = cleanText(day.serviceRemarks);
 
                   return (

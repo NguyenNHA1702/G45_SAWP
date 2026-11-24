@@ -188,42 +188,6 @@ public class LunchController : BaseApiController
         var result = await _lunchService.RestoreMealForStudentAsync(request.StudentId, request.Date, request.Reason, userId, roles, cancellationToken);
         return ToActionResult(result);
     }
-
-    /// <summary>
-    /// Lấy chỉ tiêu bán trú theo tháng (TC_BDS_34)
-    /// </summary>
-    [HttpGet("monthly-quota")]
-    [Authorize]
-    public async Task<IActionResult> GetMonthlyQuota([FromQuery] string? month, CancellationToken cancellationToken)
-    {
-        var targetMonth = string.IsNullOrWhiteSpace(month) ? _clock.Today.ToString("yyyy-MM") : month;
-        var result = await _lunchService.GetMonthlyQuotaAsync(targetMonth, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    /// <summary>
-    /// Nhân viên bán trú cấu hình chỉ tiêu bán trú theo tháng (TC_BDS_34)
-    /// </summary>
-    [HttpPut("monthly-quota")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
-    public async Task<IActionResult> UpsertMonthlyQuota([FromBody] UpsertMonthlyBoardingQuotaRequestDto request, CancellationToken cancellationToken)
-    {
-        var userId = User.GetRequiredUserId();
-        var result = await _lunchService.UpsertMonthlyQuotaAsync(userId, request, cancellationToken);
-        return ToActionResult(result);
-    }
-
-    /// <summary>
-    /// Nhân viên bán trú gỡ bỏ chỉ tiêu bán trú của tháng
-    /// </summary>
-    [HttpDelete("monthly-quota")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
-    public async Task<IActionResult> ClearMonthlyQuota([FromQuery] string month, CancellationToken cancellationToken)
-    {
-        var userId = User.GetRequiredUserId();
-        var result = await _lunchService.ClearMonthlyQuotaAsync(userId, month, cancellationToken);
-        return ToActionResult(result);
-    }
 }
 
 public class RestoreMealRequest

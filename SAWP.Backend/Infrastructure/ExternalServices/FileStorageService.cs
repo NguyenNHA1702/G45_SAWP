@@ -30,10 +30,32 @@ public class FileStorageService : IFileStorageService
         return Path.Combine(folderName, uniqueFileName);
     }
 
+    private string? ResolveSafeFullPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || Path.IsPathRooted(filePath))
+        {
+            return null;
+        }
+
+        var rootFullPath = Path.GetFullPath(_baseStoragePath);
+        if (!rootFullPath.EndsWith(Path.DirectorySeparatorChar))
+        {
+            rootFullPath += Path.DirectorySeparatorChar;
+        }
+
+        var candidate = Path.GetFullPath(Path.Combine(rootFullPath, filePath));
+        if (!candidate.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return candidate;
+    }
+
     public Task<Stream?> GetFileAsync(string filePath, CancellationToken cancellationToken = default)
     {
-        var fullPath = Path.Combine(_baseStoragePath, filePath);
-        if (!File.Exists(fullPath))
+        var fullPath = ResolveSafeFullPath(filePath);
+        if (fullPath == null || !File.Exists(fullPath))
         {
             return Task.FromResult<Stream?>(null);
         }
@@ -43,8 +65,8 @@ public class FileStorageService : IFileStorageService
 
     public Task<bool> DeleteFileAsync(string filePath, CancellationToken cancellationToken = default)
     {
-        var fullPath = Path.Combine(_baseStoragePath, filePath);
-        if (File.Exists(fullPath))
+        var fullPath = ResolveSafeFullPath(filePath);
+        if (fullPath != null && File.Exists(fullPath))
         {
             File.Delete(fullPath);
             return Task.FromResult(true);

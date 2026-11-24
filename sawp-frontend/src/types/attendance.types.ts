@@ -7,7 +7,7 @@ export const AttendanceStatus = {
 } as const;
 export type AttendanceStatus = (typeof AttendanceStatus)[keyof typeof AttendanceStatus];
 
-export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled';
+export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'NeedMoreInfo';
 export type AttendanceSession = 'Morning' | 'Afternoon';
 export type LeaveSession = 'Morning' | 'Afternoon' | 'FullDay';
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff';
@@ -43,6 +43,7 @@ export interface AttendanceSheetEntry {
   leave: LeaveIndicator | null;
   hasLunch: boolean;
   lunchCancelledBy: LunchCancellationSource | null;
+  absenceNoticeSentAt: string | null; // UTC; null = no absence notice sent yet (OVR-01)
 }
 
 export interface AttendanceSummary {
@@ -92,8 +93,13 @@ export interface AttendanceSubmitResult {
   lunchDeductedCount: number;
   lunchRestoredCount: number;
   lunchRestoreSkippedCount: number;
-  parentsNotifiedCount: number;
   warnings: string[];
+}
+
+export interface AbsenceNoticeResult {
+  recordId: number;
+  absenceNoticeSentAt: string;
+  parentsNotifiedCount: number;
 }
 
 export interface AttendanceDay {

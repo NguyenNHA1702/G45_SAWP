@@ -80,7 +80,7 @@ public class StudentService : IStudentService
             query = query.Where(s => s.StudentCode.ToLower().Contains(term) 
                 || s.FullName.ToLower().Contains(term)
                 || (s.ResidentialArea != null && s.ResidentialArea.ToLower().Contains(term))
-                || s.StudentGuardians.Any(sg => sg.Guardian.User != null && sg.Guardian.User.FullName.ToLower().Contains(term)));
+                || s.StudentGuardians.Any(sg => sg.Guardian.FullName.ToLower().Contains(term)));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Status))
@@ -131,19 +131,26 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Mã học sinh và Họ tên là bắt buộc." });
         }
 
-        if (request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.StudentCode.Trim(), @"^[a-zA-Z0-9_\-]{3,30}$"))
         {
             return ApiResponse<StudentProfileDto>.Fail(
                 SystemMessages.MSG01,
-                new List<string> { "Ngày sinh không hợp lệ (không thể là ngày trong tương lai)." });
+                new List<string> { "Mã học sinh chỉ được chứa chữ cái, chữ số, dấu gạch ngang (-) và gạch dưới (_) từ 3 đến 30 ký tự." });
         }
 
-        var age = DateTime.UtcNow.Year - request.DateOfBirth.Year;
-        if (age < 5 || age > 15)
+        if (request.FullName.Contains('<') || request.FullName.Contains('>'))
         {
             return ApiResponse<StudentProfileDto>.Fail(
                 SystemMessages.MSG01,
-                new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
+                new List<string> { "Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML." });
+        }
+
+        var validGenders = new[] { "Nam", "Nữ", "Male", "Female" };
+        if (!string.IsNullOrWhiteSpace(request.Gender) && !validGenders.Contains(request.Gender.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Giới tính không hợp lệ. Vui lòng chọn 'Nam' hoặc 'Nữ'." });
         }
 
         // 2. Duplicate Student Code Check (BR-09, MSG12)
@@ -151,6 +158,37 @@ public class StudentService : IStudentService
         if (exists)
         {
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG12);
+        }
+
+        // 3. Date of birth & Age validation (BR-01, 5 to 15 years old)
+        if (request.DateOfBirth != default)
+        {
+            if (request.DateOfBirth.Year < 1900 || request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
+            {
+                return ApiResponse<StudentProfileDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Ngày sinh không hợp lệ (không thể là ngày trong tương lai)." });
+            }
+
+            var age = DateTime.UtcNow.Year - request.DateOfBirth.Year;
+            if (age < 5 || age > 15)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
+            }
+        }
+
+        // Guardian checked before anything is saved: a conflicting identity card number / email stops the creation
+        GuardianMatch? guardianMatch = null;
+        if (request.InitialGuardian != null && !string.IsNullOrWhiteSpace(request.InitialGuardian.FullName))
+        {
+            var (match, error) = await MatchGuardianAsync(request.InitialGuardian, cancellationToken);
+            if (error != null)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { error });
+            }
+            guardianMatch = match;
         }
 
         // 3. Create Student
@@ -194,10 +232,12 @@ public class StudentService : IStudentService
             }
         }
 
-        // 5. Initial Guardian if specified
-        if (request.InitialGuardian != null && !string.IsNullOrWhiteSpace(request.InitialGuardian.FullName))
+        // 5. Initial guardian: a guardian record, never a user account (BR-64, BR-66)
+        if (guardianMatch != null)
         {
-            await CreateOrLinkGuardianAsync(student.Id, request.InitialGuardian, cancellationToken);
+            var guardian = await CreateOrReuseGuardianAsync(request.InitialGuardian!, guardianMatch, cancellationToken);
+            // The first guardian of a new student is its primary contact (BR-13)
+            await LinkGuardianRecordAsync(student.Id, guardian, request.InitialGuardian!.Relationship, true, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -229,6 +269,13 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
         }
 
+        if (request.DateOfBirth == default || request.DateOfBirth.Year < 1900)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Vui lòng nhập ngày sinh hợp lệ của học sinh." });
+        }
+
         if (request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
         {
             return ApiResponse<StudentProfileDto>.Fail(
@@ -242,6 +289,21 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(
                 SystemMessages.MSG01,
                 new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({updateAge} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
+        }
+
+        if (request.FullName.Contains('<') || request.FullName.Contains('>'))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML." });
+        }
+
+        var validUpdateGenders = new[] { "Nam", "Nữ", "Male", "Female" };
+        if (!string.IsNullOrWhiteSpace(request.Gender) && !validUpdateGenders.Contains(request.Gender.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Giới tính không hợp lệ. Vui lòng chọn 'Nam' hoặc 'Nữ'." });
         }
 
         var oldValues = new { student.FullName, student.DateOfBirth, student.Gender, student.Status };
@@ -264,16 +326,24 @@ public class StudentService : IStudentService
             var currentActiveAssignment = student.ClassAssignments.FirstOrDefault(ca => ca.IsActive);
             if (currentActiveAssignment == null || currentActiveAssignment.ClassId != request.CurrentClassId.Value)
             {
-                if (currentActiveAssignment != null)
-                {
-                    currentActiveAssignment.IsActive = false;
-                    currentActiveAssignment.EndDate = DateTime.UtcNow;
-                    await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(currentActiveAssignment, cancellationToken);
-                }
-
                 var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.CurrentClassId.Value, cancellationToken);
                 if (targetClass != null)
                 {
+                    var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
+                    if (enrolledCount >= targetClass.Capacity)
+                    {
+                        return ApiResponse<StudentProfileDto>.Fail(
+                            SystemMessages.MSG01,
+                            new List<string> { $"Lớp {targetClass.ClassName} đã đủ sĩ số tối đa ({targetClass.Capacity} học sinh). Không thể chuyển học sinh vào lớp này." });
+                    }
+
+                    if (currentActiveAssignment != null)
+                    {
+                        currentActiveAssignment.IsActive = false;
+                        currentActiveAssignment.EndDate = DateTime.UtcNow;
+                        await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(currentActiveAssignment, cancellationToken);
+                    }
+
                     var newAssignment = new ClassAssignment
                     {
                         ClassId = targetClass.Id,
@@ -366,6 +436,17 @@ public class StudentService : IStudentService
         var action = !string.IsNullOrWhiteSpace(request.Action) ? request.Action : (request.ResolutionAction ?? "Merge");
         var profileData = request.ProfileData ?? request.NewStudentData ?? new CreateStudentDto();
 
+        GuardianMatch? mergeGuardianMatch = null;
+        if (profileData.InitialGuardian != null && !string.IsNullOrWhiteSpace(profileData.InitialGuardian.FullName))
+        {
+            var (match, error) = await MatchGuardianAsync(profileData.InitialGuardian, cancellationToken);
+            if (error != null)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { error });
+            }
+            mergeGuardianMatch = match;
+        }
+
         if (string.Equals(action, "Rename", StringComparison.OrdinalIgnoreCase))
         {
             if (string.IsNullOrWhiteSpace(request.NewStudentCode))
@@ -428,9 +509,11 @@ public class StudentService : IStudentService
             existing.Status = "Active";
 
             // If guardian info provided, merge guardian
-            if (profileData.InitialGuardian != null && !string.IsNullOrWhiteSpace(profileData.InitialGuardian.FullName))
+            if (mergeGuardianMatch != null)
             {
-                await CreateOrLinkGuardianAsync(existing.Id, profileData.InitialGuardian, cancellationToken);
+                var guardian = await CreateOrReuseGuardianAsync(profileData.InitialGuardian!, mergeGuardianMatch, cancellationToken);
+                await LinkGuardianRecordAsync(existing.Id, guardian, profileData.InitialGuardian!.Relationship,
+                    profileData.InitialGuardian.IsPrimaryContact ? true : null, cancellationToken);
             }
 
             // If initialClassId provided, assign class if not already assigned
@@ -507,98 +590,264 @@ public class StudentService : IStudentService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
-    #region Helper Methods
+    #region UC-10 Link or Unlink Guardian to Student (SSAWP-152)
 
-    private async Task CreateOrLinkGuardianAsync(int studentId, GuardianInputDto input, CancellationToken cancellationToken)
+    public async Task<ApiResponse<List<GuardianRecordDto>>> SearchGuardianRecordsAsync(string? search, CancellationToken ct = default)
     {
-        // Check if user account or guardian profile exists by phone number or username
-        var phone = input.PhoneNumber.Trim();
-        var user = await _unitOfWork.Repository<User>().FindAsync(u => u.PhoneNumber == phone || u.Username == phone, cancellationToken);
-        var existingUser = user.FirstOrDefault();
-
-        Guardian guardian;
-        if (existingUser != null)
+        var q = search?.Trim().ToLower() ?? string.Empty;
+        if (q.Length < 2)
         {
-            var guardianProfile = (await _unitOfWork.Repository<Guardian>().FindAsync(g => g.UserId == existingUser.Id, cancellationToken)).FirstOrDefault();
-            if (guardianProfile != null)
+            return ApiResponse<List<GuardianRecordDto>>.Ok(new List<GuardianRecordDto>());
+        }
+
+        // Office Staff pick the record themselves; searching by phone is fine here (no automatic linking, BR-66)
+        var items = await _unitOfWork.Repository<Guardian>().Query()
+            .AsNoTracking()
+            .Where(g => g.FullName.ToLower().Contains(q)
+                        || (g.Email != null && g.Email.ToLower().Contains(q))
+                        || (g.IdentityCardNumber != null && g.IdentityCardNumber.Contains(q))
+                        || (g.PhoneNumber != null && g.PhoneNumber.Contains(q)))
+            .OrderBy(g => g.FullName)
+            .Take(20)
+            .Select(g => new GuardianRecordDto
             {
-                guardian = guardianProfile;
-            }
-            else
+                Id = g.Id,
+                FullName = g.FullName,
+                PhoneNumber = g.PhoneNumber,
+                Email = g.Email,
+                IdentityCardNumber = g.IdentityCardNumber,
+                HasAccount = g.UserId != null,
+                LinkedStudentCount = g.StudentGuardians.Count
+            })
+            .ToListAsync(ct);
+        return ApiResponse<List<GuardianRecordDto>>.Ok(items);
+    }
+
+    public async Task<ApiResponse<StudentProfileDto>> LinkGuardianAsync(int studentId, LinkGuardianRequestDto request, int? actorUserId = null, CancellationToken ct = default)
+    {
+        var student = await _unitOfWork.Repository<Student>().GetByIdAsync(studentId, ct);
+        if (student == null)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
+        }
+        if (!Enum.IsDefined(typeof(RelationshipTypes), request.Relationship))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Quan hệ với học sinh không hợp lệ." });
+        }
+
+        Guardian? guardian;
+        var reused = false;
+        if (request.GuardianId.HasValue)
+        {
+            guardian = await _unitOfWork.Repository<Guardian>().GetByIdAsync(request.GuardianId.Value, ct);
+            if (guardian == null)
             {
-                guardian = new Guardian
-                {
-                    UserId = existingUser.Id,
-                    IdentityCardNumber = input.IdentityCardNumber?.Trim() ?? string.Empty,
-                    Occupation = input.Occupation?.Trim(),
-                    Address = input.Address?.Trim(),
-                    CreatedAt = DateTime.UtcNow
-                };
-                await _unitOfWork.Repository<Guardian>().AddAsync(guardian, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
             }
+        }
+        else if (request.NewGuardian != null && !string.IsNullOrWhiteSpace(request.NewGuardian.FullName))
+        {
+            var (match, error) = await MatchGuardianAsync(request.NewGuardian, ct);
+            if (error != null)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { error });
+            }
+            reused = match.Kind == GuardianMatchKind.Reused;
+            guardian = await CreateOrReuseGuardianAsync(request.NewGuardian, match, ct);
         }
         else
         {
-            // Create user for parent with default password
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword("Password@123");
-            var newUser = new User
-            {
-                Username = !string.IsNullOrWhiteSpace(phone) ? phone : $"parent_{Guid.NewGuid().ToString("N")[..8]}",
-                Email = $"{phone}@parent.sawp.edu.vn",
-                FullName = input.FullName.Trim(),
-                PhoneNumber = phone,
-                PasswordHash = passwordHash,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            await _unitOfWork.Repository<User>().AddAsync(newUser, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            var parentRoleId = (await _unitOfWork.Repository<Role>().FindAsync(r => r.Name == UserRoles.Parent.ToString(), cancellationToken))
-                .Select(r => r.Id).FirstOrDefault();
-
-            if (parentRoleId > 0)
-            {
-                await _unitOfWork.Repository<UserRole>().AddAsync(new UserRole
-                {
-                    UserId = newUser.Id,
-                    RoleId = parentRoleId
-                }, cancellationToken);
-            }
-
-            guardian = new Guardian
-            {
-                UserId = newUser.Id,
-                IdentityCardNumber = input.IdentityCardNumber?.Trim() ?? string.Empty,
-                Occupation = input.Occupation?.Trim(),
-                Address = input.Address?.Trim(),
-                CreatedAt = DateTime.UtcNow
-            };
-            await _unitOfWork.Repository<Guardian>().AddAsync(guardian, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn hoặc nhập thông tin người giám hộ." });
         }
 
-        // Link student to guardian
-        var existingLink = (await _unitOfWork.Repository<StudentGuardian>()
-            .FindAsync(sg => sg.StudentId == studentId && sg.GuardianId == guardian.Id, cancellationToken)).FirstOrDefault();
-
-        if (existingLink == null)
+        var links = (await _unitOfWork.Repository<StudentGuardian>().FindAsync(sg => sg.StudentId == studentId, ct)).ToList();
+        if (links.Any(sg => sg.GuardianId == guardian.Id))
         {
-            var relType = Enum.IsDefined(typeof(RelationshipTypes), input.Relationship)
-                ? (RelationshipTypes)input.Relationship
-                : RelationshipTypes.Guardian;
-
-            var link = new StudentGuardian
-            {
-                StudentId = studentId,
-                GuardianId = guardian.Id,
-                Relationship = relType,
-                IsPrimaryContact = input.IsPrimaryContact
-            };
-            await _unitOfWork.Repository<StudentGuardian>().AddAsync(link, cancellationToken);
+            // E1: duplicate relationship
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Người giám hộ này đã được liên kết với học sinh." });
         }
+
+        // BR-13: a student without a primary guardian gets this one as primary
+        var isPrimary = request.IsPrimaryContact || !links.Any(sg => sg.IsPrimaryContact);
+        await LinkGuardianRecordAsync(studentId, guardian, request.Relationship, isPrimary, ct);
+
+        await _auditService.LogActionAsync(actorUserId, AuditActions.StudentGuardianLink, nameof(StudentGuardian), $"{studentId}:{guardian.Id}",
+            null, new { StudentId = studentId, GuardianId = guardian.Id, guardian.FullName, Relationship = ToRelationship(request.Relationship).ToString(), IsPrimaryContact = isPrimary, ReusedRecord = reused },
+            null, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return await ReloadProfileAsync(studentId, ct);
     }
+
+    public async Task<ApiResponse<StudentProfileDto>> UpdateGuardianLinkAsync(int studentId, int guardianId, UpdateGuardianLinkRequestDto request, int? actorUserId = null, CancellationToken ct = default)
+    {
+        var student = await _unitOfWork.Repository<Student>().GetByIdAsync(studentId, ct);
+        var links = (await _unitOfWork.Repository<StudentGuardian>().FindAsync(sg => sg.StudentId == studentId, ct)).ToList();
+        var link = links.FirstOrDefault(sg => sg.GuardianId == guardianId);
+        if (student == null || link == null)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
+        }
+        if (!Enum.IsDefined(typeof(RelationshipTypes), request.Relationship))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Quan hệ với học sinh không hợp lệ." });
+        }
+        if (link.IsPrimaryContact && !request.IsPrimaryContact && IsActive(student))
+        {
+            // BR-13: choose another primary guardian instead
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Học sinh đang học cần có một người giám hộ chính. Hãy chọn người giám hộ chính khác trước." });
+        }
+
+        var old = new { Relationship = link.Relationship.ToString(), link.IsPrimaryContact };
+        if (request.IsPrimaryContact)
+        {
+            foreach (var other in links.Where(sg => sg.GuardianId != guardianId && sg.IsPrimaryContact))
+            {
+                other.IsPrimaryContact = false;
+            }
+        }
+        link.Relationship = ToRelationship(request.Relationship);
+        link.IsPrimaryContact = request.IsPrimaryContact;
+
+        await _auditService.LogActionAsync(actorUserId, AuditActions.StudentGuardianUpdate, nameof(StudentGuardian), $"{studentId}:{guardianId}",
+            old, new { Relationship = link.Relationship.ToString(), link.IsPrimaryContact }, null, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return await ReloadProfileAsync(studentId, ct);
+    }
+
+    public async Task<ApiResponse<StudentProfileDto>> UnlinkGuardianAsync(int studentId, int guardianId, int? actorUserId = null, CancellationToken ct = default)
+    {
+        var student = await _unitOfWork.Repository<Student>().GetByIdAsync(studentId, ct);
+        var link = (await _unitOfWork.Repository<StudentGuardian>().FindAsync(sg => sg.StudentId == studentId && sg.GuardianId == guardianId, ct)).FirstOrDefault();
+        if (student == null || link == null)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
+        }
+
+        // E1, BR-13: an active student keeps a primary guardian
+        if (link.IsPrimaryContact && IsActive(student))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Không thể gỡ người giám hộ chính của học sinh đang học. Hãy chọn người giám hộ chính khác trước." });
+        }
+
+        await _unitOfWork.Repository<StudentGuardian>().DeleteAsync(link, ct);
+        // A1: the removed relationship is kept in the audit log; the guardian record itself stays
+        await _auditService.LogActionAsync(actorUserId, AuditActions.StudentGuardianUnlink, nameof(StudentGuardian), $"{studentId}:{guardianId}",
+            new { StudentId = studentId, GuardianId = guardianId, Relationship = link.Relationship.ToString(), link.IsPrimaryContact }, null, null, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return await ReloadProfileAsync(studentId, ct);
+    }
+
+    private static bool IsActive(Student student) => string.Equals(student.Status, "Active", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<ApiResponse<StudentProfileDto>> ReloadProfileAsync(int studentId, CancellationToken ct)
+    {
+        var reloaded = await _unitOfWork.Students.GetStudentWithProfileAsync(studentId, ct);
+        return reloaded == null
+            ? ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11)
+            : ApiResponse<StudentProfileDto>.Ok(MapToStudentProfileDto(reloaded), SystemMessages.MSG08);
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    /// <summary>
+    /// UC-09 A3 / BR-66 for forms: finds the guardian record to reuse by exact identity card number or guardian-record
+    /// email (never phone). Returns an error text for an invalid email or a conflict.
+    /// </summary>
+    private async Task<(GuardianMatch Match, string? Error)> MatchGuardianAsync(GuardianInputDto input, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(input.Email) && !GuardianMatcher.IsValidEmail(input.Email))
+        {
+            return (new GuardianMatch(GuardianMatchKind.None, null, null), "Email người giám hộ không hợp lệ.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.PhoneNumber))
+        {
+            var phone = input.PhoneNumber.Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(phone, @"^0\d{9}$"))
+            {
+                return (new GuardianMatch(GuardianMatchKind.None, null, null), "Số điện thoại người giám hộ không hợp lệ. Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0 (ví dụ: 0912345678).");
+            }
+        }
+
+        var id = GuardianMatcher.NormalizeIdentityCard(input.IdentityCardNumber);
+        var mail = GuardianMatcher.NormalizeEmail(input.Email);
+        var candidates = id.Length == 0 && mail.Length == 0
+            ? new List<Guardian>()
+            : await _unitOfWork.Repository<Guardian>().Query()
+                .Where(g => (id != "" && g.IdentityCardNumber != null && g.IdentityCardNumber.Replace(" ", "").ToUpper() == id)
+                            || (mail != "" && g.Email != null && g.Email.ToLower() == mail))
+                .ToListAsync(ct);
+
+        var match = GuardianMatcher.Match(input.FullName, input.Email, input.IdentityCardNumber, candidates);
+        return match.Kind == GuardianMatchKind.Conflict ? (match, match.Note) : (match, null);
+    }
+
+    /// <summary>The reused record (only its empty fields are filled) or a new guardian record; never a user account.</summary>
+    private async Task<Guardian> CreateOrReuseGuardianAsync(GuardianInputDto input, GuardianMatch match, CancellationToken ct)
+    {
+        if (match.Kind == GuardianMatchKind.Reused && match.Record != null)
+        {
+            var record = match.Record;
+            GuardianMatcher.FillEmptyFields(record, input.PhoneNumber, input.Email, input.IdentityCardNumber);
+            if (string.IsNullOrWhiteSpace(record.Occupation) && !string.IsNullOrWhiteSpace(input.Occupation)) record.Occupation = input.Occupation.Trim();
+            if (string.IsNullOrWhiteSpace(record.Address) && !string.IsNullOrWhiteSpace(input.Address)) record.Address = input.Address.Trim();
+            return record;
+        }
+
+        var guardian = new Guardian
+        {
+            FullName = input.FullName.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(input.PhoneNumber) ? null : input.PhoneNumber.Trim(),
+            Email = string.IsNullOrWhiteSpace(input.Email) ? null : input.Email.Trim(),
+            IdentityCardNumber = input.IdentityCardNumber?.Trim() ?? string.Empty,
+            Occupation = input.Occupation?.Trim(),
+            Address = input.Address?.Trim(),
+            CreatedAt = DateTime.UtcNow
+        };
+        await _unitOfWork.Repository<Guardian>().AddAsync(guardian, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return guardian;
+    }
+
+    /// <summary>
+    /// Adds the student-guardian link if missing; a primary link makes the student's other links non-primary (BR-13).
+    /// <paramref name="isPrimaryRequest"/> null = primary only when the student has no primary guardian yet.
+    /// </summary>
+    private async Task LinkGuardianRecordAsync(int studentId, Guardian guardian, int relationship, bool? isPrimaryRequest, CancellationToken ct)
+    {
+        var repo = _unitOfWork.Repository<StudentGuardian>();
+        var links = (await repo.FindAsync(sg => sg.StudentId == studentId, ct)).ToList();
+        if (links.Any(sg => sg.GuardianId == guardian.Id))
+        {
+            return;
+        }
+
+        var isPrimary = isPrimaryRequest ?? !links.Any(sg => sg.IsPrimaryContact);
+
+        if (isPrimary)
+        {
+            foreach (var other in links.Where(sg => sg.IsPrimaryContact))
+            {
+                other.IsPrimaryContact = false;
+            }
+        }
+
+        await repo.AddAsync(new StudentGuardian
+        {
+            StudentId = studentId,
+            GuardianId = guardian.Id,
+            Relationship = ToRelationship(relationship),
+            IsPrimaryContact = isPrimary
+        }, ct);
+    }
+
+    private static RelationshipTypes ToRelationship(int value) =>
+        Enum.IsDefined(typeof(RelationshipTypes), value) ? (RelationshipTypes)value : RelationshipTypes.Guardian;
 
     private static StudentProfileDto MapToStudentProfileDto(Student student)
     {
@@ -626,17 +875,17 @@ public class StudentService : IStudentService
             CurrentGrade = activeClass?.Grade,
             CurrentRoomNumber = activeClass?.RoomNumber,
             HomeroomTeacherName = activeClass?.HomeroomTeacher?.User?.FullName,
-            PrimaryGuardianName = primaryGuardian?.User?.FullName,
-            PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
+            PrimaryGuardianName = primaryGuardian?.FullName,
+            PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
             GuardiansCount = student.StudentGuardians.Count,
             CreatedAt = student.CreatedAt,
             Guardians = student.StudentGuardians.Select(sg => new StudentGuardianItemDto
             {
                 GuardianId = sg.GuardianId,
                 UserId = sg.Guardian.UserId,
-                FullName = sg.Guardian.User?.FullName ?? string.Empty,
-                PhoneNumber = sg.Guardian.User?.PhoneNumber,
-                Email = sg.Guardian.User?.Email,
+                FullName = sg.Guardian.FullName,
+                PhoneNumber = sg.Guardian.PhoneNumber,
+                Email = sg.Guardian.Email,
                 IdentityCardNumber = sg.Guardian.IdentityCardNumber,
                 Occupation = sg.Guardian.Occupation,
                 Address = sg.Guardian.Address,

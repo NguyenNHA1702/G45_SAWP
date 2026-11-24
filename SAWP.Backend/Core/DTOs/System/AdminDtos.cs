@@ -15,6 +15,8 @@ public class AdminUserDto
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; }
+    /// <summary>Account state: PendingActivation, Active or Deactivated (BR-63).</summary>
+    public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public List<string> Roles { get; set; } = new();
     public string? StaffCode { get; set; }
@@ -28,7 +30,7 @@ public class CreateUserRequestDto
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
-    public string Password { get; set; } = string.Empty;
+    // No password: the account starts Pending Activation and the holder sets it through the activation link (BR-63).
     public List<string> Roles { get; set; } = new();
     public string? StaffCode { get; set; }
     public string? Position { get; set; }

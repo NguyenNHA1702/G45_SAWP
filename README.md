@@ -109,7 +109,15 @@ Nothing reaches real recipients. The settings are in `appsettings.Development.js
    SMTP listens on port `1025`, the web inbox on port `8025`.
 3. Open `http://localhost:8025` to read the emails the API sent.
 
-If MailHog is not running, `IEmailService.SendEmailAsync` fails with a connection error.
+Activation and password recovery emails (UC-66) contain a link to the web client. The link uses the address the
+user is on (the request's `Origin`, `X-Forwarded-Host` or `Host`) only if it is listed in
+`AccountLinks:FrontendOrigins`; otherwise the first entry (`http://localhost:5173` in `appsettings.Development.json`).
+A request can name any host, so an unlisted address is never put in a link (password-reset poisoning). New staff accounts
+start in Pending Activation without a password: open the activation email in MailHog to set the first password.
+The demo accounts seeded in Development keep `Password@123`.
+
+If MailHog is not running, "Quên mật khẩu" answers MSG59 ("Không thể gửi email lúc này...") and new accounts
+are created without their activation email; the holder can request a new link later from "Quên mật khẩu".
 To send through a real SMTP server instead, put its `Smtp` settings in `appsettings.Local.json`.
 For production, see [docs/EMAIL_SERVER_SETUP.md](docs/EMAIL_SERVER_SETUP.md) (one-script setup:
 `deploy/mail-server/sawp-mail-server.sh`).
@@ -121,6 +129,7 @@ On every start the API applies pending migrations and seeds the roles. What else
 | Setting | Development | Any other environment |
 |---|---|---|
 | `Jwt:Key` (signs login tokens) | Taken from `appsettings.Development.json` | **Required**, at least 32 bytes, e.g. `Jwt__Key=$(openssl rand -base64 48)`. The app stops if it is missing. |
+| `AccountLinks:FrontendOrigins` (addresses of the web client that emailed links may use; the first is the default) | `["http://localhost:5173"]` | **Required**, e.g. `AccountLinks__FrontendOrigins__0=https://sawp.example.edu.vn`, `AccountLinks__FrontendOrigins__1=https://sawp.truong.vn`. The app stops if the list is empty or an entry is not `http(s)://host[:port]`. Set `AllowedHosts` to the same host names (e.g. `AllowedHosts=sawp.example.edu.vn;sawp.truong.vn`) so other `Host` headers are rejected. |
 | `Seed:DemoData` | Always seeded (demo accounts use `Password@123`) | `false` by default. Set `true` only on a demo server, never in production. |
 | `Seed:Admin:Username`, `Seed:Admin:Email`, `Seed:Admin:Password` | Not needed (the demo `admin` exists) | Creates the first Admin account while none exists. The password must meet the password policy. |
 

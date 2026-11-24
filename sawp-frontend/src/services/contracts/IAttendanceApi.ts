@@ -1,5 +1,6 @@
 import type { ApiResponse } from '../../types/common.types';
 import type {
+  AbsenceNoticeResult,
   AttendanceSession,
   AttendanceSheet,
   AttendanceSheetEntry,
@@ -16,6 +17,7 @@ export interface IAttendanceApi {
   getSheet(classId: number, date: string, session: AttendanceSession): Promise<AttendanceSheet>;
   submitSheet(classId: number, payload: SubmitAttendanceSheetPayload): Promise<ApiResponse<AttendanceSubmitResult>>;
   correctRecord(recordId: number, payload: CorrectAttendancePayload): Promise<ApiResponse<AttendanceSheetEntry>>;
+  sendAbsenceNotice(recordId: number): Promise<ApiResponse<AbsenceNoticeResult>>;
   getClassSummary(classId: number, from: string, to: string): Promise<ClassAttendanceSummary>;
   getStudentHistory(studentId: number, from: string, to: string): Promise<StudentAttendanceHistory>;
 }

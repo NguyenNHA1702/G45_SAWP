@@ -87,6 +87,11 @@ public class AssignStudentsDto
     public List<int> StudentIds { get; set; } = new();
 }
 
+public class RemoveStudentsBatchDto
+{
+    public List<int> StudentIds { get; set; } = new();
+}
+
 public class RosterStudentItemDto
 {
     public int StudentId { get; set; }

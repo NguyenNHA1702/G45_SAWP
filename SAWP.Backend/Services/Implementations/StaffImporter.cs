@@ -1,3 +1,4 @@
+using Core.Enums;
 using ClosedXML.Excel;
 using Core.Constants;
 using Core.DTOs;
@@ -11,10 +12,12 @@ namespace Services.Implementations;
 public class StaffImporter : IStaffImporter
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountLinkService _accountLinks;
 
-    public StaffImporter(IUnitOfWork unitOfWork)
+    public StaffImporter(IUnitOfWork unitOfWork, IAccountLinkService accountLinks)
     {
         _unitOfWork = unitOfWork;
+        _accountLinks = accountLinks;
     }
 
     public async Task<ApiResponse<int>> ImportStaffAsync(Stream fileStream, CancellationToken cancellationToken = default)
@@ -42,6 +45,7 @@ public class StaffImporter : IStaffImporter
 
             var rows = worksheet.RangeUsed()?.RowsUsed().Skip(1) ?? Enumerable.Empty<IXLRangeRow>();
             int importedCount = 0;
+            var createdUsers = new List<User>();
 
             foreach (var row in rows)
             {
@@ -53,7 +57,7 @@ public class StaffImporter : IStaffImporter
                 var staffCode = row.Cell(6).GetString().Trim();
                 var position = row.Cell(7).GetString().Trim();
                 var department = row.Cell(8).GetString().Trim();
-                var rawPassword = row.Cell(9).GetString().Trim();
+                // Column 9 (password) of older templates is ignored: no password is carried in an import file (BR-63)
 
                 if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(email))
                     continue;
@@ -72,8 +76,8 @@ public class StaffImporter : IStaffImporter
                     FullName = fullName,
                     Email = email,
                     PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(string.IsNullOrWhiteSpace(rawPassword) ? "Password@123" : rawPassword),
-                    IsActive = true,
+                    PasswordHash = string.Empty,
+                    Status = AccountStatus.PendingActivation, // activated by the holder through the emailed link
                     CreatedAt = DateTime.UtcNow,
                     UserRoles = new List<UserRole> { new() { RoleId = matchedRole.Id } },
                     StaffProfile = new StaffProfile
@@ -87,17 +91,35 @@ public class StaffImporter : IStaffImporter
                 };
 
                 await _unitOfWork.Repository<User>().AddAsync(user, cancellationToken);
+                createdUsers.Add(user);
                 existingUsernames.Add(username.ToLower());
                 existingEmails.Add(email.ToLower());
                 importedCount++;
             }
 
-            if (importedCount > 0)
+            if (importedCount == 0)
             {
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return ApiResponse<int>.Ok(0, SystemMessages.MSG49);
             }
 
-            return ApiResponse<int>.Ok(importedCount, importedCount > 0 ? SystemMessages.MSG48 : SystemMessages.MSG49);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var notSent = new List<string>();
+            foreach (var created in createdUsers)
+            {
+                if (!await _accountLinks.SendActivationLinkAsync(created, cancellationToken))
+                {
+                    notSent.Add(created.Email);
+                }
+            }
+
+            var result = ApiResponse<int>.Ok(importedCount, SystemMessages.MSG48);
+            if (notSent.Count > 0)
+            {
+                // The accounts exist; each holder can ask for a new link with "Quên mật khẩu" (UC-66 A3)
+                result.Errors = new List<string> { $"{SystemMessages.MSG59.Content} ({notSent.Count} tài khoản chưa nhận được email kích hoạt)" };
+            }
+            return result;
         }
         catch
         {

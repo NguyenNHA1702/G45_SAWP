@@ -10,7 +10,7 @@ namespace API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class StudentsController : ControllerBase
+public class StudentsController : BaseApiController
 {
     private readonly IStudentService _studentService;
     private readonly IStudentImporter _studentImporter;
@@ -155,6 +155,34 @@ public class StudentsController : ControllerBase
         var result = await _studentImporter.ImportStudentsAsync(request, User.GetUserId(), cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
     }
+
+    #region UC-10 Link or Unlink Guardian to Student (SSAWP-152)
+
+    /// <summary>Guardian records by name, email, identity card number or phone, for linking (UC-10 step 2).</summary>
+    [HttpGet("guardian-records")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> SearchGuardianRecords([FromQuery] string? search, CancellationToken cancellationToken)
+        => ToActionResult(await _studentService.SearchGuardianRecordsAsync(search, cancellationToken));
+
+    /// <summary>Links an existing guardian record or a new one (reused on an exact identity card / email match).</summary>
+    [HttpPost("{id:int}/guardians")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> LinkGuardian(int id, [FromBody] LinkGuardianRequestDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _studentService.LinkGuardianAsync(id, request, User.GetUserId(), cancellationToken));
+
+    /// <summary>Changes the relationship type or the primary contact of a link.</summary>
+    [HttpPut("{id:int}/guardians/{guardianId:int}")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> UpdateGuardianLink(int id, int guardianId, [FromBody] UpdateGuardianLinkRequestDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _studentService.UpdateGuardianLinkAsync(id, guardianId, request, User.GetUserId(), cancellationToken));
+
+    /// <summary>Removes a link (A1); the guardian record stays. The primary guardian of an active student cannot be removed (E1).</summary>
+    [HttpDelete("{id:int}/guardians/{guardianId:int}")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> UnlinkGuardian(int id, int guardianId, CancellationToken cancellationToken)
+        => ToActionResult(await _studentService.UnlinkGuardianAsync(id, guardianId, User.GetUserId(), cancellationToken));
+
+    #endregion
 
     [HttpGet("import/template")]
     [AllowAnonymous]

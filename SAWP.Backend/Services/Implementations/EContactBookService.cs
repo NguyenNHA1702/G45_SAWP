@@ -49,7 +49,8 @@ public class EContactBookService : IEContactBookService
         var linkedGuardians = await _context.StudentGuardians
             .AsNoTracking()
             .Where(sg => _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == classId && ca.IsActive))
-            .Select(sg => new { sg.Guardian.UserId, StudentName = sg.Student.FullName })
+            .Where(sg => sg.Guardian.UserId != null)
+            .Select(sg => new { UserId = sg.Guardian.UserId!.Value, StudentName = sg.Student.FullName })
             .ToListAsync(cancellationToken);
 
         var guardianStudentMap = linkedGuardians
@@ -250,7 +251,8 @@ public class EContactBookService : IEContactBookService
         // Bắn thông báo in-app cho phụ huynh của lớp
         var parentUserIds = await _context.StudentGuardians
             .Where(sg => _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == request.ClassId && ca.IsActive))
-            .Select(sg => sg.Guardian.UserId)
+            .Where(sg => sg.Guardian.UserId != null) // guardian records without an account get no notification
+            .Select(sg => sg.Guardian.UserId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
 
@@ -639,7 +641,8 @@ public class EContactBookService : IEContactBookService
         // Notify parent
         var guardianUserIds = await _context.StudentGuardians
             .Where(sg => sg.StudentId == request.StudentId)
-            .Select(sg => sg.Guardian.UserId)
+            .Where(sg => sg.Guardian.UserId != null) // guardian records without an account get no notification
+            .Select(sg => sg.Guardian.UserId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
 
@@ -753,7 +756,7 @@ public class EContactBookService : IEContactBookService
             PrivateRemind = e.PrivateRemind,
             IsAcknowledged = e.IsAcknowledged,
             AcknowledgedAt = e.AcknowledgedAt,
-            AcknowledgedByGuardianName = e.AcknowledgedByGuardian?.User?.FullName,
+            AcknowledgedByGuardianName = e.AcknowledgedByGuardian?.FullName,
             ParentFeedback = e.ParentFeedback,
             CreatedAt = e.CreatedAt
         };
