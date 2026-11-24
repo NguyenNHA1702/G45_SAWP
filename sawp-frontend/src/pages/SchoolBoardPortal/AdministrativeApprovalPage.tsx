@@ -474,14 +474,14 @@ export default function AdministrativeApprovalPage() {
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    alignItems: 'flex-start',
+                    alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 12,
                     paddingBottom: 12,
                     borderBottom: '2px dashed #E2E8F0',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: '1 1 320px', minWidth: 0 }}>
                     <span
                       style={{
                         padding: '4px 10px',
@@ -520,7 +520,7 @@ export default function AdministrativeApprovalPage() {
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', marginLeft: 'auto' }}>
                     {/* View history button */}
                     <button
                       type="button"
