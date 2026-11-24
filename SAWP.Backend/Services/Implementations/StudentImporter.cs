@@ -306,7 +306,7 @@ public class StudentImporter : IStudentImporter
                                 ClassId = targetClass.Id,
                                 StudentId = student.Id,
                                 AcademicYear = schoolYearName,
-                                StartDate = DateTime.UtcNow,
+                                StartDate = DateTime.UtcNow.Date,
                                 IsActive = true
                             };
                             await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);

@@ -17,6 +17,7 @@ export interface TeacherClassOption {
   classId: number;
   className: string;
   grade: number;
+  schoolYearName?: string | null;
   accessReason: 'Homeroom' | 'FirstPeriod' | 'SchoolAdmin';
   isSubmitted: boolean;
 }
@@ -80,6 +81,7 @@ export interface SubmitAttendanceSheetPayload {
   date: string; // yyyy-MM-dd
   session: AttendanceSession;
   entries: DailyAttendanceEntry[];
+  correctionReason?: string | null;
 }
 
 export interface CorrectAttendancePayload {

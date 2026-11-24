@@ -80,7 +80,7 @@ public class SchoolCalendarService : ISchoolCalendarService
             }
         }
 
-        var filtered = preferredYearId.HasValue && days.Any(d => d.SchoolYearId == preferredYearId.Value)
+        var filtered = preferredYearId.HasValue
             ? days.Where(d => d.SchoolYearId == preferredYearId.Value)
             : days;
 

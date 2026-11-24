@@ -99,10 +99,22 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         var fromDate = from.Date;
         var toDate = to.Date;
 
-        var calendarOverrides = await _context.SchoolCalendarDays
+        var classSchoolYearId = await _context.Classes
             .AsNoTracking()
-            .Where(d => d.Date >= fromDate && d.Date <= toDate)
-            .ToListAsync(ct);
+            .Where(c => c.Id == classId)
+            .Select(c => (int?)c.SchoolYearId)
+            .FirstOrDefaultAsync(ct);
+
+        var calendarQuery = _context.SchoolCalendarDays
+            .AsNoTracking()
+            .Where(d => d.Date >= fromDate && d.Date <= toDate);
+
+        if (classSchoolYearId.HasValue && classSchoolYearId.Value > 0)
+        {
+            calendarQuery = calendarQuery.Where(d => d.SchoolYearId == classSchoolYearId.Value);
+        }
+
+        var calendarOverrides = await calendarQuery.ToListAsync(ct);
 
         var calendarMap = calendarOverrides
             .GroupBy(d => d.Date.Date)

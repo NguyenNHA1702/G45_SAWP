@@ -251,6 +251,11 @@ public class ClassAssignmentConfiguration : IEntityTypeConfiguration<ClassAssign
                .WithMany(s => s.ClassAssignments)
                .HasForeignKey(ca => ca.StudentId)
                .OnDelete(DeleteBehavior.Cascade);
+
+        // Chống trùng bản ghi xếp lớp đang active cho cùng học sinh trong cùng lớp (ATT-12)
+        builder.HasIndex(ca => new { ca.StudentId, ca.ClassId })
+               .IsUnique()
+               .HasFilter("[IsActive] = 1");
     }
 }
 

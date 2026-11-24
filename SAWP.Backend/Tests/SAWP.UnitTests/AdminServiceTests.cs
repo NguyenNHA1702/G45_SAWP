@@ -148,4 +148,61 @@ public class AdminServiceTests : TestBase
         result.Success.Should().BeTrue();
         user.Status.Should().Be(expected);
     }
+
+    [Fact]
+    public async Task ATT6_UpsertCalendarDay_DefaultDate_FailsWithMSG01()
+    {
+        var result = await _service.UpsertCalendarDayAsync(1, new UpdateCalendarDayDto { Date = default, IsSchoolDay = false });
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task ATT6_UpsertCalendarDay_NoteExceeds500_FailsWithMSG01()
+    {
+        var result = await _service.UpsertCalendarDayAsync(1, new UpdateCalendarDayDto
+        {
+            Date = new DateTime(2026, 11, 24),
+            IsSchoolDay = false,
+            Note = new string('x', 501)
+        });
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task ATT6_UpsertCalendarDay_NonExistentSchoolYear_FailsWithMSG14()
+    {
+        SetupRepository(new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) }
+        });
+
+        var result = await _service.UpsertCalendarDayAsync(1, new UpdateCalendarDayDto
+        {
+            SchoolYearId = 999,
+            Date = new DateTime(2026, 11, 24),
+            IsSchoolDay = false
+        });
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG14.Code);
+    }
+
+    [Fact]
+    public async Task ATT6_UpsertCalendarDay_DateOutsideSchoolYear_FailsWithMSG01()
+    {
+        SetupRepository(new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) }
+        });
+
+        var result = await _service.UpsertCalendarDayAsync(1, new UpdateCalendarDayDto
+        {
+            SchoolYearId = 1,
+            Date = new DateTime(2090, 1, 3),
+            IsSchoolDay = false
+        });
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
 }

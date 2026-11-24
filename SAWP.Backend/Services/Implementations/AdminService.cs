@@ -411,25 +411,49 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<SchoolCalendarDayDto>> UpsertCalendarDayAsync(int adminUserId, UpdateCalendarDayDto request, CancellationToken ct = default)
     {
+        if (request.Date == default || request.Date.Year < 2000 || request.Date.Year > 2100)
+        {
+            return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày cấu hình lịch không hợp lệ." });
+        }
+
+        if (request.Note != null && request.Note.Trim().Length > 500)
+        {
+            return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú không được vượt quá 500 ký tự." });
+        }
+
         var date = request.Date.Date;
-        int yearId;
+        SchoolYear? targetYear;
         if (request.SchoolYearId.HasValue && request.SchoolYearId.Value > 0)
         {
-            yearId = request.SchoolYearId.Value;
+            targetYear = await _unitOfWork.Repository<SchoolYear>()
+                .Query()
+                .FirstOrDefaultAsync(y => y.Id == request.SchoolYearId.Value, ct);
+            if (targetYear == null)
+            {
+                return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG14);
+            }
         }
         else
         {
-            var activeYear = await _unitOfWork.Repository<SchoolYear>()
+            targetYear = await _unitOfWork.Repository<SchoolYear>()
                 .Query()
                 .OrderByDescending(y => y.IsActive)
                 .ThenByDescending(y => y.StartDate)
                 .FirstOrDefaultAsync(ct);
-            if (activeYear == null)
+            if (targetYear == null)
             {
                 return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG14);
             }
-            yearId = activeYear.Id;
         }
+
+        if (date < targetYear.StartDate.Date || date > targetYear.EndDate.Date)
+        {
+            return ApiResponse<SchoolCalendarDayDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Ngày {date:dd/MM/yyyy} không nằm trong khoảng thời gian năm học {targetYear.YearName} ({targetYear.StartDate:dd/MM/yyyy} - {targetYear.EndDate:dd/MM/yyyy})." });
+        }
+
+        var yearId = targetYear.Id;
 
         var existing = await _unitOfWork.Repository<SchoolCalendarDay>()
             .Query()

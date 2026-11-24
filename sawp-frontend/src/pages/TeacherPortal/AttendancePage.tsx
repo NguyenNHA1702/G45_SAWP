@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCheck, Clock, GraduationCap, PencilLine, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { BarChart3, CheckCheck, Clock, GraduationCap, PencilLine, RotateCcw, Save, TriangleAlert } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
 import { useAttendanceSheet } from '../../hooks/useAttendanceSheet';
 import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
-import { formatViDate, formatViDateTime, todayIso } from '../../utils/date';
+import { formatViDate, formatViDateTime, monthRange, todayIso } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import type {
   AttendanceSession,
   AttendanceSheetEntry,
   AttendanceStatus,
   AttendanceSubmitResult,
+  ClassAttendanceSummary,
   TeacherClassOption,
 } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
@@ -44,7 +45,18 @@ export default function AttendancePage() {
   const [classes, setClasses] = useState<TeacherClassOption[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pastDayReason, setPastDayReason] = useState('');
   const [result, setResult] = useState<AttendanceSubmitResult | null>(null);
+  const [activeTab, setActiveTab] = useState<'sheet' | 'summary'>('sheet');
+  const currentMonth = (() => {
+    const now = new Date();
+    return monthRange(now.getFullYear(), now.getMonth() + 1);
+  })();
+  const [summaryFrom, setSummaryFrom] = useState<string>(currentMonth.from);
+  const [summaryTo, setSummaryTo] = useState<string>(currentMonth.to);
+  const [classSummary, setClassSummary] = useState<ClassAttendanceSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [correctingEntry, setCorrectingEntry] = useState<AttendanceSheetEntry | null>(null);
   const [correctionStatus, setCorrectionStatus] = useState<AttendanceStatus>('Present');
   const [correctionRemarks, setCorrectionRemarks] = useState('');
@@ -77,13 +89,23 @@ export default function AttendancePage() {
       toast.error(`Còn ${vm.summary.notMarked} học sinh chưa điểm danh.`);
       return;
     }
+    setPastDayReason('');
     setConfirmOpen(true);
   };
 
+  const isPastDayEdit = date < todayIso();
+
   const handleConfirm = async () => {
+    if (isPastDayEdit) {
+      const trimmed = pastDayReason.trim();
+      if (trimmed.length < 5 || trimmed.length > 500) {
+        toast.error('Bổ sung điểm danh ngày quá khứ bắt buộc nhập lý do từ 5 đến 500 ký tự.');
+        return;
+      }
+    }
     setConfirmOpen(false);
     try {
-      const res = await vm.submit();
+      const res = await vm.submit(isPastDayEdit ? pastDayReason : undefined);
       toast.success(res.message || SYSTEM_MESSAGES.MSG18.content);
       setResult(res.data);
       res.data?.warnings?.forEach((w) => toast(w, { icon: '⚠️', duration: 6000 }));
@@ -94,6 +116,30 @@ export default function AttendancePage() {
       if (err.code === 'MSG19') vm.reload(); // vừa bị khóa -> tải lại ở chế độ chỉ xem
     }
   };
+
+  useEffect(() => {
+    if (activeTab !== 'summary' || classId === null) return;
+    let cancelled = false;
+    setSummaryLoading(true);
+    setSummaryError(null);
+    attendanceApi
+      .getClassSummary(classId, summaryFrom, summaryTo)
+      .then((data) => {
+        if (!cancelled) setClassSummary(data);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setClassSummary(null);
+          setSummaryError(asApiError(e).message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSummaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, classId, summaryFrom, summaryTo]);
 
   const handleSendAbsenceNotice = async () => {
     if (!noticeEntry?.recordId) return;
@@ -161,8 +207,27 @@ export default function AttendancePage() {
           Điểm Danh <span className="squiggle">Hằng Ngày</span>
         </h1>
         <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)', maxWidth: '65ch' }}>
-          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng không phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Thông báo vắng mặt cho phụ huynh do Phòng Giáo vụ gửi.
+          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng có phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Giáo viên lưu điểm danh; Phòng Giáo vụ gửi thông báo vắng mặt cho phụ huynh.
         </p>
+        <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'sheet' ? 'btn--primary' : 'btn--secondary'}`}
+            onClick={() => setActiveTab('sheet')}
+            style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', fontWeight: 800, padding: '8px 18px' }}
+          >
+            Điểm danh hằng ngày
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'summary' ? 'btn--primary' : 'btn--secondary'}`}
+            onClick={() => setActiveTab('summary')}
+            style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', fontWeight: 800, padding: '8px 18px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <BarChart3 size={16} aria-hidden="true" />
+            Tổng hợp chuyên cần lớp
+          </button>
+        </div>
       </header>
 
       {/* Toolbar */}
@@ -205,7 +270,7 @@ export default function AttendancePage() {
             {classes.length === 0 && <option value="">Không có lớp được phân công</option>}
             {classes.map((c) => (
               <option key={c.classId} value={c.classId}>
-                Lớp {c.className} · {c.accessReason === 'Homeroom' ? 'Chủ nhiệm' : c.accessReason === 'SchoolAdmin' ? 'Toàn trường' : 'Tiết đầu'}
+                Lớp {c.className}{c.schoolYearName ? ` (${c.schoolYearName})` : ''} · {c.accessReason === 'Homeroom' ? 'Chủ nhiệm' : c.accessReason === 'SchoolAdmin' ? 'Toàn trường' : 'Tiết đầu'}
                 {c.isSubmitted ? ' ✓ (Đã lưu)' : ''}
               </option>
             ))}
@@ -284,73 +349,150 @@ export default function AttendancePage() {
         </div>
       </section>
 
-      <LockedBanner reason={vm.sheet?.lockReason ?? null} />
+      {activeTab === 'sheet' && (
+        <>
+          <LockedBanner reason={vm.sheet?.lockReason ?? null} />
 
-      {vm.sheet?.submittedAt && (
-        <div
-          className="banner pop-in"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '14px 20px',
-            background: '#EDE9FE',
-            border: '2px solid var(--color-fg)',
-            boxShadow: '3px 3px 0 0 var(--color-fg)',
-            borderRadius: 'var(--radius-md)',
-            marginBottom: 20,
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 600,
-          }}
-          role="status"
-        >
-          <Clock size={18} color="var(--color-accent)" />
-          <div>
-            Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
-            {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
-            {canEdit && (
-              <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
-                ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
-              </span>
-            )}
+          {vm.sheet?.submittedAt && (
+            <div
+              className="banner pop-in"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '14px 20px',
+                background: '#EDE9FE',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 20,
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 600,
+              }}
+              role="status"
+            >
+              <Clock size={18} color="var(--color-accent)" />
+              <div>
+                Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
+                {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
+                {canEdit && (
+                  <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
+                    ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <AttendanceSummaryBar summary={vm.summary} />
+
+          {vm.loading && (
+            <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="skeleton" />
+              ))}
+            </div>
+          )}
+
+          {!vm.loading && vm.error && vm.error.code === 'MSG43' && (
+            <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)', padding: 32, textAlign: 'center' }}>
+              <GraduationCap size={40} aria-hidden="true" style={{ margin: '0 auto 10px', color: 'var(--color-muted-fg)' }} />
+              <p style={{ fontWeight: 700, margin: 0 }}>Lớp chưa có học sinh trong danh sách điểm danh ngày {formatViDate(date)}.</p>
+            </div>
+          )}
+
+          {!vm.loading && vm.error && vm.error.code !== 'MSG43' && (
+            <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
+              <TriangleAlert size={40} aria-hidden="true" />
+              <p>{vm.error.message}</p>
+              <button type="button" className="btn btn--secondary" onClick={vm.reload} style={{ borderRadius: 'var(--radius-full)' }}>
+                Thử lại
+              </button>
+            </div>
+          )}
+
+          {!vm.loading && !vm.error && vm.sheet && (
+            <AttendanceRosterTable
+              entries={vm.sheet.entries}
+              draft={vm.draft}
+              disabled={!canEdit || vm.saving}
+              onStatusChange={vm.setStatus}
+              onRemarksChange={vm.setRemarks}
+              onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
+              onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
+              absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
+            />
+          )}
+        </>
+      )}
+
+      {activeTab === 'summary' && (
+        <section className="card pop-in" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)', padding: 24 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 20 }}>
+            <div className="field">
+              <label className="label" htmlFor="summary-from">TỪ NGÀY</label>
+              <input id="summary-from" type="date" className="input" value={summaryFrom} onChange={(e) => e.target.value && setSummaryFrom(e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="label" htmlFor="summary-to">ĐẾN NGÀY</label>
+              <input id="summary-to" type="date" className="input" value={summaryTo} onChange={(e) => e.target.value && setSummaryTo(e.target.value)} />
+            </div>
           </div>
-        </div>
+
+          {summaryLoading && <div className="skeleton" style={{ height: 120 }} />}
+          {!summaryLoading && summaryError && (
+            <div className="empty-state">
+              <TriangleAlert size={32} aria-hidden="true" />
+              <p>{summaryError}</p>
+            </div>
+          )}
+          {!summaryLoading && !summaryError && classSummary && (
+            <>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+                <span className="badge badge--violet" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                  Số ngày học: {classSummary.schoolDays} ngày
+                </span>
+                <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                  Tỉ lệ chuyên cần: {classSummary.attendanceRate}%
+                </span>
+              </div>
+              <AttendanceSummaryBar summary={classSummary.totals} />
+              {classSummary.students.length === 0 ? (
+                <p style={{ color: 'var(--color-muted-fg)', fontWeight: 600 }}>Chưa có dữ liệu điểm danh trong khoảng thời gian đã chọn.</p>
+              ) : (
+                <div style={{ overflowX: 'auto', marginTop: 16 }}>
+                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '10px 12px' }}>Mã HS</th>
+                        <th style={{ textAlign: 'left', padding: '10px 12px' }}>Họ và tên</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px' }}>Có mặt</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px' }}>Đi muộn</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px' }}>Vắng có phép</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px' }}>Vắng không phép</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classSummary.students.map((st) => (
+                        <tr key={st.studentId} style={{ borderTop: '1px solid var(--color-border)' }}>
+                          <td style={{ padding: '10px 12px', fontWeight: 700 }}>{st.studentCode}</td>
+                          <td style={{ padding: '10px 12px', fontWeight: 600 }}>{st.fullName}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#059669', fontWeight: 700 }}>{st.present}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#D97706', fontWeight: 700 }}>{st.late}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#2563EB', fontWeight: 700 }}>{st.excusedAbsence}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#DC2626', fontWeight: 700 }}>{st.unexcusedAbsence}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </section>
       )}
 
-      <AttendanceSummaryBar summary={vm.summary} />
-
-      {vm.loading && (
-        <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="skeleton" />
-          ))}
-        </div>
-      )}
-
-      {!vm.loading && vm.error && (
-        <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
-          <TriangleAlert size={40} aria-hidden="true" />
-          <p>{vm.error.code === 'MSG43' ? SYSTEM_MESSAGES.MSG43.content : vm.error.message}</p>
-          <button type="button" className="btn btn--secondary" onClick={vm.reload} style={{ borderRadius: 'var(--radius-full)' }}>
-            Thử lại
-          </button>
-        </div>
-      )}
-
-      {!vm.loading && !vm.error && vm.sheet && (
-        <AttendanceRosterTable
-          entries={vm.sheet.entries}
-          draft={vm.draft}
-          disabled={!canEdit || vm.saving}
-          onStatusChange={vm.setStatus}
-          onRemarksChange={vm.setRemarks}
-          onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
-          onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
-          absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
-        />
-      )}
-
-      {canEdit && vm.sheet && (
+      {activeTab === 'sheet' && canEdit && vm.sheet && (
         <footer
           className="sticky-footer pop-in"
           style={{
@@ -491,13 +633,29 @@ export default function AttendancePage() {
         onCancel={() => setConfirmOpen(false)}
       >
         <p>{SYSTEM_MESSAGES.MSG45.content}</p>
-        {vm.impact.newlyUnexcused > 0 ? (
+        {vm.impact.newlyExcused > 0 ? (
           <p>
-            <strong>{vm.impact.newlyUnexcused}</strong> học sinh vắng không phép mới → trừ{' '}
+            <strong>{vm.impact.newlyExcused}</strong> học sinh vắng có phép mới → trừ{' '}
             <strong>{vm.impact.lunchToDeduct}</strong> suất ăn.
           </p>
         ) : (
-          <p>Không có học sinh vắng không phép mới.</p>
+          <p>Không có học sinh vắng có phép mới.</p>
+        )}
+        {isPastDayEdit && (
+          <div style={{ marginTop: 12 }}>
+            <label htmlFor="past-day-reason" className="label" style={{ display: 'block', marginBottom: 6 }}>
+              Lý do bổ sung điểm danh ngày quá khứ (bắt buộc, 5–500 ký tự) *
+            </label>
+            <textarea
+              id="past-day-reason"
+              className="input"
+              rows={3}
+              maxLength={500}
+              value={pastDayReason}
+              onChange={(e) => setPastDayReason(e.target.value)}
+              placeholder="Ví dụ: Giáo viên nghỉ ốm chưa kịp điểm danh, Giáo vụ bổ sung theo sổ giấy..."
+            />
+          </div>
         )}
       </ConfirmDialog>
 

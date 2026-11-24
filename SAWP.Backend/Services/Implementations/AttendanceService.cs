@@ -43,11 +43,25 @@ public class AttendanceService : IAttendanceService
     {
         var targetDate = (date ?? _clock.Today).Date;
 
-        // Nếu là Admin, OfficeStaff, ServiceStaff hoặc SchoolBoard: xem được tất cả các lớp Active của trường
+        // Nếu là Admin, OfficeStaff, ServiceStaff hoặc SchoolBoard: xem được tất cả các lớp Active của năm học hiện hành
         if (roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.SchoolBoard))
         {
-            var allClasses = await _unitOfWork.Repository<Class>()
-                .FindAsync(c => c.Status == "Active", ct);
+            var yearRepo = _unitOfWork.Repository<SchoolYear>();
+            var allYears = yearRepo != null ? (await yearRepo.GetAllAsync(ct)).ToList() : new List<SchoolYear>();
+            var activeYear = allYears
+                .Where(y => y.IsActive)
+                .OrderByDescending(y => y.StartDate)
+                .FirstOrDefault();
+            var yearNameMap = allYears.ToDictionary(y => y.Id, y => y.YearName);
+
+            var allClasses = (await _unitOfWork.Repository<Class>()
+                .FindAsync(c => c.Status == "Active", ct))
+                .ToList();
+
+            if (activeYear != null)
+            {
+                allClasses = allClasses.Where(c => c.SchoolYearId == activeYear.Id).ToList();
+            }
 
             var submittedIds = await _unitOfWork.Attendance
                 .GetSubmittedClassIdsAsync(allClasses.Select(c => c.Id), targetDate, session, ct);
@@ -58,6 +72,7 @@ public class AttendanceService : IAttendanceService
                     ClassId = c.Id,
                     ClassName = c.ClassName,
                     Grade = c.Grade,
+                    SchoolYearName = yearNameMap.TryGetValue(c.SchoolYearId, out var yn) ? yn : null,
                     AccessReason = "SchoolAdmin",
                     IsSubmitted = submittedIds.Contains(c.Id)
                 })
@@ -128,7 +143,13 @@ public class AttendanceService : IAttendanceService
             return ApiResponse<AttendanceSheetDto>.Fail(SystemMessages.MSG43);
         }
 
-        if (!await CanViewClassAsync(classId, userId, roles, ct))
+        // ATT-8 (BR-08, BR-51): Nhân viên bếp (ServiceStaff) không được xem bảng điểm danh chi tiết từng HS, ghi chú nội bộ và đơn nghỉ
+        var isOnlyServiceStaff = roles.Contains(UserRoles.ServiceStaff)
+            && !roles.Contains(UserRoles.Admin)
+            && !roles.Contains(UserRoles.OfficeStaff)
+            && !roles.Contains(UserRoles.SchoolBoard)
+            && !roles.Contains(UserRoles.Teacher);
+        if (isOnlyServiceStaff || !await CanViewClassAsync(classId, userId, roles, ct))
         {
             return ApiResponse<AttendanceSheetDto>.Fail(SystemMessages.MSG10);
         }
@@ -299,7 +320,13 @@ public class AttendanceService : IAttendanceService
         var now = _clock.Now;
         var isAdminOrOffice = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff);
 
-        // V1: Validate ngày (Admin / OfficeStaff được phép sửa ngày quá khứ)
+        // V0: Validate ngày hợp lệ trước khi kiểm tra khóa quá khứ (ATT-11)
+        if (dto.Date == default || targetDate.Year < 2000 || targetDate.Year > 2100)
+        {
+            return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày điểm danh không hợp lệ." });
+        }
+
+        // V1: Validate ngày (Admin / OfficeStaff được phép bổ sung ngày quá khứ kèm lý do)
         if (targetDate < _clock.Today && !isAdminOrOffice)
         {
             return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG19);
@@ -318,6 +345,17 @@ public class AttendanceService : IAttendanceService
         if (!await ValidateSchoolDayAsync(targetDate, ct))
         {
             return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày đã chọn không phải ngày học." });
+        }
+
+        // V2.5: Kiểm tra lớp tồn tại (ATT-11)
+        var classRepo = _unitOfWork.Repository<Class>();
+        if (classRepo != null)
+        {
+            var cls = await classRepo.GetByIdAsync(classId, ct);
+            if (cls == null)
+            {
+                return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG43);
+            }
         }
 
         // V3: Validate quyền điểm danh (Admin / OfficeStaff được toàn quyền sửa cho mọi lớp)
@@ -373,23 +411,10 @@ public class AttendanceService : IAttendanceService
             }
         }
 
-        // V6: Validate ExcusedAbsence phải có đơn Approved
-        var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(rosterIds, targetDate, session, ct);
-        foreach (var entry in dto.Entries)
-        {
-            if (entry.Status == AttendanceStatus.ExcusedAbsence)
-            {
-                if (!leaves.TryGetValue(entry.StudentId, out var leave) || leave.Status != RequestStatus.Approved)
-                {
-                    var studentCode = rosterMap.TryGetValue(entry.StudentId, out var s) ? s.StudentCode : entry.StudentId.ToString();
-                    return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { $"Học sinh {studentCode}: vắng có phép cần đơn đã được phê duyệt." });
-                }
-            }
-        }
-
-        // DIFF: So khớp thay đổi
-        var existingRecords = (await _unitOfWork.Attendance
+        // Lấy existingRecords trước để kiểm tra khóa quá khứ, ATT-3 và DIFF
+        var existingRecords = ((await _unitOfWork.Attendance
             .GetDailyClassAttendanceAsync(classId, targetDate, session, track: true, ct))
+            ?? Array.Empty<AttendanceRecord>())
             .ToDictionary(r => r.StudentId);
 
         // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt ngay cả với Giáo vụ/Admin
@@ -398,6 +423,35 @@ public class AttendanceService : IAttendanceService
             return ApiResponse<AttendanceSubmitResultDto>.Fail(
                 SystemMessages.MSG19,
                 new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng sử dụng chức năng điều chỉnh từng bản ghi kèm lý do." });
+        }
+
+        // ATT-4 (BR-22, D11): Giáo vụ/Admin bổ sung điểm danh ngày quá khứ (khi chưa có điểm danh GV) bắt buộc nhập lý do 5..500 ký tự
+        string? pastDayReason = null;
+        if (targetDate < _clock.Today && isAdminOrOffice)
+        {
+            pastDayReason = dto.CorrectionReason?.Trim();
+            if (string.IsNullOrEmpty(pastDayReason) || pastDayReason.Length < 5 || pastDayReason.Length > 500)
+            {
+                return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Bổ sung điểm danh ngày quá khứ bắt buộc nhập lý do từ 5 đến 500 ký tự." });
+            }
+        }
+
+        // V6: Validate ExcusedAbsence phải có đơn Approved (ATT-3: chỉ chặn khi mới chuyển sang ExcusedAbsence, không chặn dòng đã ExcusedAbsence từ trước mà không đổi)
+        var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(rosterIds, targetDate, session, ct);
+        foreach (var entry in dto.Entries)
+        {
+            if (entry.Status == AttendanceStatus.ExcusedAbsence)
+            {
+                existingRecords.TryGetValue(entry.StudentId, out var existingRec);
+                var wasAlreadyExcused = existingRec != null && existingRec.Status == AttendanceStatus.ExcusedAbsence;
+                if (!wasAlreadyExcused && (!leaves.TryGetValue(entry.StudentId, out var leave) || leave.Status != RequestStatus.Approved))
+                {
+                    var studentCode = rosterMap.TryGetValue(entry.StudentId, out var s) ? s.StudentCode : entry.StudentId.ToString();
+                    return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { $"Học sinh {studentCode}: vắng có phép cần đơn đã được phê duyệt." });
+                }
+            }
         }
 
         var changes = new List<(int StudentId, AttendanceStatus? OldStatus, AttendanceStatus NewStatus, bool RemarksChanged)>();
@@ -424,7 +478,7 @@ public class AttendanceService : IAttendanceService
         {
             var utcNow = DateTime.UtcNow;
 
-            // T1: Upsert AttendanceRecord
+            // T1: Upsert AttendanceRecord (ATT-5: chỉ cập nhật UpdatedAt/UpdatedByUserId khi thực sự có thay đổi hoặc xác nhận bản ghi đơn nghỉ)
             foreach (var entry in dto.Entries)
             {
                 int? leaveRequestId = (entry.Status == AttendanceStatus.ExcusedAbsence && leaves.TryGetValue(entry.StudentId, out var l))
@@ -432,11 +486,21 @@ public class AttendanceService : IAttendanceService
 
                 if (existingRecords.TryGetValue(entry.StudentId, out var rec))
                 {
-                    rec.Status = entry.Status;
-                    rec.Remarks = entry.Remarks;
-                    rec.LeaveRequestId = leaveRequestId;
-                    rec.UpdatedAt = utcNow;
-                    rec.UpdatedByUserId = userId;
+                    var effectiveLeaveId = leaveRequestId ?? (entry.Status == AttendanceStatus.ExcusedAbsence ? rec.LeaveRequestId : null);
+                    var hasChanged = rec.Status != entry.Status
+                        || rec.Remarks != entry.Remarks
+                        || rec.LeaveRequestId != effectiveLeaveId;
+                    var isFirstTeacherConfirm = !IsTeacherSubmittedRecord(rec);
+
+                    if (hasChanged || isFirstTeacherConfirm)
+                    {
+                        rec.Status = entry.Status;
+                        rec.Remarks = entry.Remarks;
+                        rec.LeaveRequestId = effectiveLeaveId;
+                        if (pastDayReason != null) rec.CorrectionReason = pastDayReason;
+                        rec.UpdatedAt = utcNow;
+                        rec.UpdatedByUserId = userId;
+                    }
                 }
                 else
                 {
@@ -448,6 +512,7 @@ public class AttendanceService : IAttendanceService
                         Session = session,
                         Status = entry.Status,
                         Remarks = entry.Remarks,
+                        CorrectionReason = pastDayReason,
                         RecordedByUserId = userId,
                         CreatedAt = utcNow,
                         // Đánh dấu bản ghi do GV nộp (kể cả khi giữ nguyên Vắng có phép) để tách biệt với bản ghi tự sinh từ đơn nghỉ (A3)
@@ -916,13 +981,15 @@ public class AttendanceService : IAttendanceService
             LeaveRequestNumber = r.LeaveRequest?.AdministrativeRequest?.RequestNumber
         }).ToList();
 
+        // ATT-13: Lịch sử hiển thị cả lịch nghỉ đã duyệt, nhưng thống kê Summary chỉ tính đến ngày hiện tại (<= _clock.Today)
+        var summaryDays = days.Where(d => d.Date.Date <= _clock.Today).ToList();
         var summary = new AttendanceSummaryDto
         {
-            Total = days.Count,
-            Present = days.Count(d => d.Status == AttendanceStatus.Present),
-            Late = days.Count(d => d.Status == AttendanceStatus.Late),
-            ExcusedAbsence = days.Count(d => d.Status == AttendanceStatus.ExcusedAbsence),
-            UnexcusedAbsence = days.Count(d => d.Status == AttendanceStatus.UnexcusedAbsence),
+            Total = summaryDays.Count,
+            Present = summaryDays.Count(d => d.Status == AttendanceStatus.Present),
+            Late = summaryDays.Count(d => d.Status == AttendanceStatus.Late),
+            ExcusedAbsence = summaryDays.Count(d => d.Status == AttendanceStatus.ExcusedAbsence),
+            UnexcusedAbsence = summaryDays.Count(d => d.Status == AttendanceStatus.UnexcusedAbsence),
             NotMarked = 0
         };
 

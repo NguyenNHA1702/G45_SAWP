@@ -183,7 +183,7 @@ public class StudentService : IStudentService
                         ClassId = targetClass.Id,
                         StudentId = student.Id,
                         AcademicYear = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString(),
-                        StartDate = DateTime.UtcNow,
+                        StartDate = DateTime.UtcNow.Date,
                         IsActive = true
                     };
                     await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
@@ -245,14 +245,14 @@ public class StudentService : IStudentService
         // If CurrentClassId changed
         if (request.CurrentClassId.HasValue)
         {
-            var currentActiveAssignment = student.ClassAssignments.FirstOrDefault(ca => ca.IsActive);
-            if (currentActiveAssignment == null || currentActiveAssignment.ClassId != request.CurrentClassId.Value)
+            var activeAssignments = student.ClassAssignments.Where(ca => ca.IsActive).ToList();
+            if (activeAssignments.Count == 0 || activeAssignments.Any(ca => ca.ClassId != request.CurrentClassId.Value))
             {
-                if (currentActiveAssignment != null)
+                foreach (var oldCa in activeAssignments)
                 {
-                    currentActiveAssignment.IsActive = false;
-                    currentActiveAssignment.EndDate = DateTime.UtcNow;
-                    await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(currentActiveAssignment, cancellationToken);
+                    oldCa.IsActive = false;
+                    oldCa.EndDate = DateTime.UtcNow.Date;
+                    await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(oldCa, cancellationToken);
                 }
 
                 var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.CurrentClassId.Value, cancellationToken);
@@ -263,7 +263,7 @@ public class StudentService : IStudentService
                         ClassId = targetClass.Id,
                         StudentId = student.Id,
                         AcademicYear = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString(),
-                        StartDate = DateTime.UtcNow,
+                        StartDate = DateTime.UtcNow.Date,
                         IsActive = true
                     };
                     await _unitOfWork.Repository<ClassAssignment>().AddAsync(newAssignment, cancellationToken);
@@ -444,7 +444,7 @@ public class StudentService : IStudentService
                             ClassId = targetClass.Id,
                             StudentId = existing.Id,
                             AcademicYear = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString(),
-                            StartDate = DateTime.UtcNow,
+                            StartDate = DateTime.UtcNow.Date,
                             IsActive = true
                         };
                         await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);

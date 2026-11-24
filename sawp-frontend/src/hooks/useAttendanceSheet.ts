@@ -111,22 +111,22 @@ export function useAttendanceSheet(classId: number | null, date: string, session
 
   /** Ảnh hưởng của lần lưu này – hiển thị trong hộp xác nhận */
   const impact = useMemo(() => {
-    let newlyUnexcused = 0;
+    let newlyExcused = 0;
     let lunchToDeduct = 0;
     if (sheet) {
       for (const e of sheet.entries) {
         const d = draft[e.studentId];
-        if (d?.status === 'UnexcusedAbsence' && e.status !== 'UnexcusedAbsence') {
-          newlyUnexcused++;
+        if (d?.status === 'ExcusedAbsence' && e.status !== 'ExcusedAbsence') {
+          newlyExcused++;
           if (e.hasLunch) lunchToDeduct++;
         }
       }
     }
-    return { newlyUnexcused, lunchToDeduct };
+    return { newlyExcused, lunchToDeduct };
   }, [sheet, draft]);
 
   // 4. Submit
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (correctionReason?: string) => {
     if (!sheet || classId === null) throw new ApiError('Chưa chọn lớp.', 'MSG01');
     const entries = sheet.entries.map((e) => {
       const d = draft[e.studentId];
@@ -135,7 +135,12 @@ export function useAttendanceSheet(classId: number | null, date: string, session
     });
     setSaving(true);
     try {
-      const res = await attendanceApi.submitSheet(classId, { date, session, entries });
+      const res = await attendanceApi.submitSheet(classId, {
+        date,
+        session,
+        entries,
+        correctionReason: correctionReason?.trim() || null,
+      });
       setReloadKey((k) => k + 1);
       return res;
     } finally {
