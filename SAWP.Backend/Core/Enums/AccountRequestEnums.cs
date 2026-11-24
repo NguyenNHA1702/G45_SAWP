@@ -35,7 +35,9 @@ public enum AccountRequestItemStatus
     Active = 3,
     Rejected = 4,
     Failed = 5,
-    Closed = 6
+    Closed = 6,
+    /// <summary>The account was created but its activation email could not be sent (UC-68 E3).</summary>
+    EmailFailed = 7
 }
 
 /// <summary>Result of the automatic checks on one guardian row (UC-67 E1, BR-64, BR-68).</summary>
@@ -47,5 +49,7 @@ public enum AccountRequestCheckResult
     MissingEmail = 4,
     InvalidEmail = 5,
     EmailOfStaffAccount = 6,
-    EmailInUse = 7
+    EmailInUse = 7,
+    /// <summary>The same email address appears twice in the request (UC-68 step 2).</summary>
+    DuplicateInRequest = 8
 }

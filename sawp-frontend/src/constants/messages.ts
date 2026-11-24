@@ -1,4 +1,4 @@
-// Standard System Messages defined in SRS (MSG01 to MSG59)
+// Standard System Messages defined in SRS (MSG01 to MSG61)
 
 export interface SystemMessage {
   code: string;
@@ -361,6 +361,18 @@ export const SYSTEM_MESSAGES = {
     messageType: "Toast (Error)",
     context: "Activation or recovery email could not be sent",
     content: "Không thể gửi email lúc này. Vui lòng thử lại sau.",
+  },
+  MSG60: {
+    code: "MSG60",
+    messageType: "Toast (Success)",
+    context: "Account request submitted",
+    content: "Đã gửi yêu cầu tạo tài khoản đến quản trị viên.",
+  },
+  MSG61: {
+    code: "MSG61",
+    messageType: "Toast (Success)",
+    context: "Account request reviewed",
+    content: "Đã xử lý yêu cầu tạo tài khoản.",
   },
 } as const;
 

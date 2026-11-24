@@ -6,6 +6,7 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router';
 import { GeometricModal } from '../common/GeometricModal';
 import { studentApi } from '../../services/implementations/studentApi';
 import { formatDDMMYYYY } from '../../utils/date';
@@ -47,6 +48,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onImportCompleted,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ImportStudentRowDto[]>([]);
   const [parsing, setParsing] = useState(false);
@@ -276,6 +278,24 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               Không tạo tài khoản người dùng nào. {importResult.guardiansEligibleForAccountIds.length} phụ huynh có email và chưa có
               tài khoản, có thể được yêu cầu cấp tài khoản.
             </p>
+            {importResult.guardiansEligibleForAccountIds.length > 0 && (
+              <div>
+                {/* UC-09 A5: open an account request pre-filled with these guardians, linked to this import */}
+                <button
+                  id="btn-request-accounts"
+                  type="button"
+                  className="btn btn--primary btn--sm"
+                  onClick={() => {
+                    const ids = importResult.guardiansEligibleForAccountIds.join(',');
+                    const ref = encodeURIComponent(selectedFile?.name ?? 'import');
+                    handleClose();
+                    navigate(`/office/account-requests?guardianIds=${ids}&source=Import&ref=${ref}`);
+                  }}
+                >
+                  Yêu cầu cấp tài khoản
+                </button>
+              </div>
+            )}
             {importResult.errors && importResult.errors.length > 0 && (
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--fs-sm)', color: '#B45309' }}>
                 {importResult.errors.map((e, i) => (

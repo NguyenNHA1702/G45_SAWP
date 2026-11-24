@@ -24,6 +24,8 @@ import EContactBookPage from './pages/ParentPortal/EContactBookPage';
 import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
 import AuditLogsPage from './pages/SystemPortal/AuditLogsPage';
 import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
+import AccountRequestReviewPage from './pages/AdminPortal/AccountRequestReviewPage';
+import AccountRequestsPage from './pages/OfficeStaffPortal/AccountRequestsPage';
 import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
 import { MainLayout } from './layouts/MainLayout';
 import { clearAuthSession, getAuthUser, TOKEN_KEY } from './services/apiClient';
@@ -136,6 +138,8 @@ export default function App() {
           <Route path="/parent/children" element={<ChildDashboardPage />} />
           <Route path="/system/audit-logs" element={<AuditLogsPage />} />
           <Route path="/admin/users" element={<UsersManagementPage />} />
+          <Route path="/admin/account-requests" element={<AccountRequestReviewPage />} />
+          <Route path="/office/account-requests" element={<AccountRequestsPage />} />
           <Route path="/admin/config" element={<SystemConfigPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>

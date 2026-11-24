@@ -45,6 +45,12 @@ public static class AuditActions
     public const string StudentGuardianLink = "STUDENT_GUARDIAN_LINK";
     public const string StudentGuardianUpdate = "STUDENT_GUARDIAN_UPDATE";
     public const string StudentGuardianUnlink = "STUDENT_GUARDIAN_UNLINK";
+    public const string AccountRequestSaveDraft = "ACCOUNT_REQUEST_SAVE_DRAFT";
+    public const string AccountRequestSubmit = "ACCOUNT_REQUEST_SUBMIT";
+    public const string AccountRequestDecide = "ACCOUNT_REQUEST_DECIDE";
+    public const string AccountRequestCloseRows = "ACCOUNT_REQUEST_CLOSE_ROWS";
+    public const string AccountRequestResubmit = "ACCOUNT_REQUEST_RESUBMIT";
+    public const string AccountRequestResendActivation = "ACCOUNT_REQUEST_RESEND_ACTIVATION";
 
     // Attendance
     public const string AttendanceSubmit = "ATTENDANCE_SUBMIT";

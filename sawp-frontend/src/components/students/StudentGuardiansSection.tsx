@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link2, Plus, Search, Star, Unlink, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router';
 import { studentApi } from '../../services/implementations/studentApi';
 import { asApiError } from '../../utils/apiError';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
@@ -26,6 +27,7 @@ interface Props {
  */
 export const StudentGuardiansSection: React.FC<Props> = ({ student, canManage, onChanged }) => {
   const guardians = student.guardians ?? [];
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState<'search' | 'new'>('search');
@@ -162,6 +164,15 @@ export const StudentGuardiansSection: React.FC<Props> = ({ student, canManage, o
                       </option>
                     ))}
                   </select>
+                  {!g.userId && g.email && (
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => navigate(`/office/account-requests?guardianIds=${g.guardianId}`)}
+                    >
+                      Yêu cầu cấp tài khoản
+                    </button>
+                  )}
                   {!g.isPrimaryContact && (
                     <button type="button" className="btn btn--secondary btn--sm" disabled={busy} onClick={() => handleMakePrimary(g)}>
                       <Star size={14} /> Đặt làm liên hệ chính
