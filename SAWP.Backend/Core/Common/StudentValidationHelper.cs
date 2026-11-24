@@ -1,0 +1,139 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+
+namespace Core.Common;
+
+public static class StudentValidationHelper
+{
+    private static readonly string[] StrictDateFormats =
+    {
+        "dd/MM/yyyy",
+        "d/M/yyyy",
+        "dd-MM-yyyy",
+        "d-M-yyyy",
+        "yyyy-MM-dd",
+        "yyyy/MM/dd"
+    };
+
+    private static readonly Regex StudentCodeRegex = new(@"^[A-Z0-9_-]{3,30}$", RegexOptions.Compiled);
+    private static readonly Regex PhoneRegex = new(@"^0\d{9}$", RegexOptions.Compiled);
+    private static readonly Regex IdentityCardRegex = new(@"^\d{9}(\d{3})?$", RegexOptions.Compiled);
+    private static readonly Regex ForbiddenNameCharsRegex = new(@"[<>@#$%^&*+=\[\]{}|\\/~`]", RegexOptions.Compiled);
+
+    private static readonly HashSet<string> ValidRelationships = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bố", "cha", "father",
+        "mẹ", "mother",
+        "người giám hộ", "phụ huynh", "guardian",
+        "ông", "bà"
+    };
+
+    public static bool TryParseStrictDate(string? raw, out DateTime parsed)
+    {
+        parsed = default;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var trimmed = raw.Trim();
+        return DateTime.TryParseExact(
+            trimmed,
+            StrictDateFormats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out parsed);
+    }
+
+    public static bool IsValidStudentCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        return StudentCodeRegex.IsMatch(code.Trim().ToUpperInvariant());
+    }
+
+    public static string? ValidateFullName(string? fullName, string fieldLabel = "họ và tên học sinh")
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return $"Thiếu {fieldLabel}.";
+
+        var cleaned = Regex.Replace(fullName.Trim(), @"\s+", " ");
+        if (cleaned.Length < 1 || cleaned.Length > 100)
+            return $"Độ dài {fieldLabel} phải từ 1 đến 100 ký tự.";
+
+        if (cleaned.Contains('<') || cleaned.Contains('>') || ForbiddenNameCharsRegex.IsMatch(cleaned))
+            return $"Trường {fieldLabel} không được chứa thẻ HTML hoặc ký tự đặc biệt.";
+
+        return null;
+    }
+
+    public static bool TryNormalizeGender(string? raw, out string normalized)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+
+        var trimmed = raw.Trim();
+        if (trimmed.Equals("Nam", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Male", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "Nam";
+            return true;
+        }
+        if (trimmed.Equals("Nữ", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Nu", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Female", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "Nữ";
+            return true;
+        }
+        return false;
+    }
+
+    public static string? ValidateBirthDateAndAge(DateTime dob, int? referenceYear = null)
+    {
+        if (dob == default || dob.Year < 1900)
+            return "Ngày sinh không hợp lệ.";
+
+        var today = DateTime.UtcNow.Date;
+        if (dob.Date >= today.AddDays(1))
+            return "Ngày sinh không hợp lệ (không thể là ngày trong tương lai).";
+
+        var refYear = (referenceYear.HasValue && referenceYear.Value >= 2000) ? referenceYear.Value : today.Year;
+        var age = refYear - dob.Year;
+        if (age < 5 || age > 15)
+            return $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi.";
+
+        return null;
+    }
+
+    public static string? ValidateAgeForGrade(DateTime dob, int grade, int? schoolYearStartYear = null, bool isSpecialNeeds = false)
+    {
+        var baseError = ValidateBirthDateAndAge(dob, schoolYearStartYear);
+        if (baseError != null) return baseError;
+
+        if (grade >= 1 && grade <= 5)
+        {
+            var refYear = (schoolYearStartYear.HasValue && schoolYearStartYear.Value >= 2000) ? schoolYearStartYear.Value : DateTime.UtcNow.Year;
+            var age = refYear - dob.Year;
+            var minAge = Math.Max(5, grade + 4);
+            var maxAge = isSpecialNeeds ? 15 : Math.Min(15, grade + 9);
+            if (age < minAge || age > maxAge)
+            {
+                return $"Độ tuổi của học sinh ({age} tuổi) không phù hợp với Khối {grade} (yêu cầu từ {minAge} đến {maxAge} tuổi).";
+            }
+        }
+
+        return null;
+    }
+
+    public static bool IsValidPhone(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return true;
+        return PhoneRegex.IsMatch(phone.Trim());
+    }
+
+    public static bool IsValidIdentityCard(string? cccd)
+    {
+        if (string.IsNullOrWhiteSpace(cccd)) return true;
+        var compact = Regex.Replace(cccd.Trim(), @"[\s\-]", "");
+        return IdentityCardRegex.IsMatch(compact);
+    }
+
+    public static bool IsValidRelationship(string? relationship)
+    {
+        if (string.IsNullOrWhiteSpace(relationship)) return true;
+        return ValidRelationships.Contains(relationship.Trim());
+    }
+}

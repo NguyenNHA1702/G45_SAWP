@@ -7,6 +7,7 @@ public interface IRequestWorkflowEngine
     // Parent operations
     Task<ApiResponse<string>> SubmitClassTransferRequestAsync(int requesterUserId, ClassTransferRequestDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<string>> SubmitDocumentRequestAsync(int requesterUserId, DocumentIssuanceRequestDto request, CancellationToken cancellationToken = default);
+    Task<ApiResponse<string>> SubmitOtherRequestAsync(int requesterUserId, OtherRequestDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetMyRequestsAsync(int parentUserId, int? studentId = null, CancellationToken cancellationToken = default);
     Task<ApiResponse<AdministrativeRequestSummaryDto>> GetRequestDetailAsync(int requestId, int currentUserId, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> ResubmitRequestAsync(int requestId, int requesterUserId, ResubmitRequestDto request, CancellationToken cancellationToken = default);

@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -185,14 +186,55 @@ public class StudentService : IStudentService
 
         // Guardian checked before anything is saved: a conflicting identity card number / email stops the creation
         GuardianMatch? guardianMatch = null;
-        if (request.InitialGuardian != null && !string.IsNullOrWhiteSpace(request.InitialGuardian.FullName))
+        if (request.InitialGuardian != null)
         {
-            var (match, error) = await MatchGuardianAsync(request.InitialGuardian, cancellationToken);
-            if (error != null)
+            var hasGuardianContact = !string.IsNullOrWhiteSpace(request.InitialGuardian.PhoneNumber)
+                || !string.IsNullOrWhiteSpace(request.InitialGuardian.Email)
+                || !string.IsNullOrWhiteSpace(request.InitialGuardian.IdentityCardNumber);
+            if (hasGuardianContact && string.IsNullOrWhiteSpace(request.InitialGuardian.FullName))
             {
-                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { error });
+                return ApiResponse<StudentProfileDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Vui lòng nhập Họ tên phụ huynh khi cung cấp thông tin liên hệ (SĐT / Email / CCCD)." });
             }
-            guardianMatch = match;
+
+            if (!string.IsNullOrWhiteSpace(request.InitialGuardian.FullName))
+            {
+                var (match, error) = await MatchGuardianAsync(request.InitialGuardian, cancellationToken);
+                if (error != null)
+                {
+                    return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { error });
+                }
+                guardianMatch = match;
+            }
+        }
+
+        // Validate InitialClassId (capacity & age-grade compatibility) BEFORE saving student (SC-03)
+        Class? initialTargetClass = null;
+        if (request.InitialClassId.HasValue)
+        {
+            initialTargetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.InitialClassId.Value, cancellationToken);
+            if (initialTargetClass != null)
+            {
+                if (request.DateOfBirth != default)
+                {
+                    var gradeAgeError = StudentValidationHelper.ValidateAgeForGrade(
+                        request.DateOfBirth,
+                        initialTargetClass.Grade,
+                        initialTargetClass.SchoolYear?.StartDate.Year,
+                        request.IsSpecialNeeds);
+                    if (gradeAgeError != null)
+                    {
+                        return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { gradeAgeError });
+                    }
+                }
+
+                var enrolledCount = initialTargetClass.ClassAssignments.Count(ca => ca.IsActive);
+                if (initialTargetClass.Capacity > 0 && enrolledCount >= initialTargetClass.Capacity)
+                {
+                    initialTargetClass = null; // Class at full capacity: create student without assignment
+                }
+            }
         }
 
         // 3. Create Student
@@ -215,25 +257,17 @@ public class StudentService : IStudentService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 4. Initial Class Assignment if specified
-        if (request.InitialClassId.HasValue)
+        if (initialTargetClass != null)
         {
-            var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.InitialClassId.Value, cancellationToken);
-            if (targetClass != null)
+            var assignment = new ClassAssignment
             {
-                var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
-                if (enrolledCount < targetClass.Capacity)
-                {
-                    var assignment = new ClassAssignment
-                    {
-                        ClassId = targetClass.Id,
-                        StudentId = student.Id,
-                        AcademicYear = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString(),
-                        StartDate = DateTime.UtcNow.Date,
-                        IsActive = true
-                    };
-                    await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
-                }
-            }
+                ClassId = initialTargetClass.Id,
+                StudentId = student.Id,
+                AcademicYear = initialTargetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString(),
+                StartDate = DateTime.UtcNow.Date,
+                IsActive = true
+            };
+            await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
         }
 
         // 5. Initial guardian: a guardian record, never a user account (BR-64, BR-66)
@@ -333,6 +367,16 @@ public class StudentService : IStudentService
                 var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.CurrentClassId.Value, cancellationToken);
                 if (targetClass != null)
                 {
+                    var gradeAgeError = StudentValidationHelper.ValidateAgeForGrade(
+                        request.DateOfBirth,
+                        targetClass.Grade,
+                        targetClass.SchoolYear?.StartDate.Year,
+                        request.IsSpecialNeeds);
+                    if (gradeAgeError != null)
+                    {
+                        return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { gradeAgeError });
+                    }
+
                     var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
                     if (enrolledCount >= targetClass.Capacity)
                     {

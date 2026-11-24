@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { UploadCloud, FileText, Image, Trash2, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
+import { extractAttachmentFileName, openProtectedFile } from '../../utils/fileViewer';
 
 interface DirectFileUploaderProps {
   value: string;
@@ -196,8 +197,8 @@ export function DirectFileUploader({
             Danh sách tệp đã đính kèm ({fileList.length}):
           </div>
           {fileList.map((url, idx) => {
-            const isImg = url.match(/\.(jpeg|jpg|png)($|\?)/i);
-            const fileName = url.split('/').pop()?.split('?')[0] || `Tệp minh chứng ${idx + 1}`;
+            const isImg = url.match(/\.(jpeg|jpg|png)($|\?|&)/i);
+            const fileName = extractAttachmentFileName(url, `Tệp minh chứng ${idx + 1}`);
 
             return (
               <div
@@ -219,22 +220,26 @@ export function DirectFileUploader({
                   ) : (
                     <FileText size={20} color="#2563EB" style={{ flexShrink: 0 }} />
                   )}
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openProtectedFile(url, false, fileName)}
                     style={{
+                      border: 'none',
+                      background: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
                       fontSize: 13,
                       color: '#2563EB',
                       textDecoration: 'underline',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      textAlign: 'left',
                     }}
-                    title={fileName}
+                    title={`Mở xem: ${fileName}`}
                   >
                     {fileName}
-                  </a>
+                  </button>
                 </div>
                 <button
                   type="button"

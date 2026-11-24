@@ -1,4 +1,4 @@
-export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'Completed' | 'NeedMoreInfo';
+export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected' | 'Cancelled' | 'Completed' | 'NeedMoreInfo' | 'ReturnedToStaff';
 
 export interface ClassTransferRequest {
   studentId: number;
@@ -16,6 +16,13 @@ export interface DocumentIssuanceRequest {
   purpose: string;
   attachmentUrl?: string;
   isPaperCopyRequested?: boolean;
+}
+
+export interface OtherRequestPayload {
+  studentId: number;
+  title: string;
+  content: string;
+  attachmentUrl?: string;
 }
 
 export interface ResubmitRequest {
@@ -38,6 +45,7 @@ export interface StaffDirectIssueRequest {
   certificateNumber?: string;
   issuedDate?: string;
   documentContent?: string;
+  documentFileUrl?: string;
   digitalSignatureInfo?: string;
   isPaperCopy?: boolean;
   staffNotes?: string;
@@ -51,6 +59,7 @@ export interface StaffEndorseTransferRequest {
 export interface StaffEndorseDocumentRequest {
   staffEndorsement: string;
   documentContentDraft?: string;
+  documentFileUrl?: string;
   certificateNumber?: string;
   issuedDate?: string;
   isPaperCopyRequested?: boolean;
@@ -58,7 +67,9 @@ export interface StaffEndorseDocumentRequest {
 
 export interface BoardDecisionRequest {
   isApproved: boolean;
+  returnToStaff?: boolean;
   decisionNotes?: string;
+  signedDocumentUrl?: string;
   effectiveDate?: string;
 }
 
@@ -113,7 +124,7 @@ export interface DocumentRequestSummary {
 export interface AdministrativeRequestSummary {
   id: number;
   requestNumber: string;
-  requestType: 'ClassTransfer' | 'Document' | string;
+  requestType: 'ClassTransfer' | 'Document' | 'Other' | string;
   status: RequestStatus;
   submissionDate: string;
   processedDate?: string;

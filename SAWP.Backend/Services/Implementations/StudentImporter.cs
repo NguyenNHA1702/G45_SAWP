@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -48,76 +49,206 @@ public class StudentImporter : IStudentImporter
             // Guardian preview (UC-09 step 3): existing records plus the ones earlier rows of this file would create
             var knownGuardians = (await _unitOfWork.Repository<Guardian>().GetAllAsync(cancellationToken)).ToList();
 
+            // Load active school year & classes for strict class existence / capacity / age-grade validation
+            var activeSchoolYear = _unitOfWork.Classes != null
+                ? await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken)
+                : null;
+            var schoolYearStartYear = activeSchoolYear?.StartDate.Year ?? DateTime.UtcNow.Year;
+            var classesInYear = activeSchoolYear != null
+                ? await _unitOfWork.Classes!.GetClassesBySchoolYearAsync(activeSchoolYear.Id, null, null, cancellationToken)
+                : new List<Class>();
+            var classMap = classesInYear.ToDictionary(c => c.ClassName, c => c, StringComparer.OrdinalIgnoreCase);
+            var previewEnrolledByClassId = classesInYear.ToDictionary(c => c.Id, c => c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0);
+
             for (int r = 2; r <= range.RowCount(); r++)
             {
                 var row = worksheet.Row(r);
-                var studentCode = row.Cell(1).GetString()?.Trim().ToUpperInvariant() ?? string.Empty;
-                var fullName = CapitalizeWords(row.Cell(2).GetString()?.Trim());
-                var dobRaw = row.Cell(3).GetString()?.Trim() ?? string.Empty;
-                var gender = row.Cell(4).GetString()?.Trim() ?? "Nam";
+                var rawCode = row.Cell(1).GetString()?.Trim() ?? string.Empty;
+                var studentCode = rawCode.ToUpperInvariant();
+                var rawFullName = row.Cell(2).GetString()?.Trim() ?? string.Empty;
+                var fullName = CapitalizeWords(rawFullName);
+                var dobCell = row.Cell(3);
+                var dobRaw = dobCell.GetString()?.Trim() ?? string.Empty;
+                var rawGender = row.Cell(4).GetString()?.Trim() ?? string.Empty;
                 var className = row.Cell(5).GetString()?.Trim() ?? string.Empty;
-                var guardianName = CapitalizeWords(row.Cell(6).GetString()?.Trim());
+                var rawGuardianName = row.Cell(6).GetString()?.Trim() ?? string.Empty;
+                var guardianName = CapitalizeWords(rawGuardianName);
                 var guardianPhone = row.Cell(7).GetString()?.Trim() ?? string.Empty;
                 var guardianIdCard = row.Cell(8).GetString()?.Trim() ?? string.Empty;
-                var relationship = row.Cell(9).GetString()?.Trim() ?? "Phụ huynh";
+                var relationship = row.Cell(9).GetString()?.Trim() ?? string.Empty;
                 // Column 10 was added for SSAWP-152; older files without it still import (guardians without email)
                 var guardianEmail = row.Cell(10).GetString()?.Trim() ?? string.Empty;
 
                 // Check if row is entirely empty
-                if (string.IsNullOrWhiteSpace(studentCode) && string.IsNullOrWhiteSpace(fullName))
+                if (string.IsNullOrWhiteSpace(studentCode)
+                    && string.IsNullOrWhiteSpace(fullName)
+                    && string.IsNullOrWhiteSpace(dobRaw)
+                    && string.IsNullOrWhiteSpace(rawGender)
+                    && string.IsNullOrWhiteSpace(className)
+                    && string.IsNullOrWhiteSpace(guardianName)
+                    && string.IsNullOrWhiteSpace(guardianPhone))
                 {
                     continue;
                 }
+
+                var dobParsedOk = TryParseExcelBirthDate(dobCell, out var parsedDob);
+                var genderOk = StudentValidationHelper.TryNormalizeGender(rawGender, out var normalizedGender);
 
                 var item = new ImportStudentRowDto
                 {
                     RowNumber = r,
                     StudentCode = studentCode,
                     FullName = fullName,
-                    DateOfBirth = dobRaw,
-                    Gender = gender,
+                    DateOfBirth = dobParsedOk ? parsedDob.ToString("yyyy-MM-dd") : dobRaw,
+                    Gender = genderOk ? normalizedGender : rawGender,
                     ClassName = className,
                     GuardianName = guardianName,
                     GuardianPhone = guardianPhone,
                     GuardianIdentityCard = guardianIdCard,
                     GuardianEmail = string.IsNullOrWhiteSpace(guardianEmail) ? null : guardianEmail,
-                    Relationship = relationship,
+                    Relationship = string.IsNullOrWhiteSpace(relationship) ? "Phụ huynh" : relationship,
                     IsValid = true,
                     IsDuplicate = false
                 };
 
-                // Validate Required Fields
+                var rowErrors = new List<string>();
+
+                // 1. Validate Student Code
                 if (string.IsNullOrWhiteSpace(studentCode))
                 {
-                    item.IsValid = false;
-                    item.ErrorMessage = "Thiếu mã học sinh.";
+                    rowErrors.Add("Thiếu mã học sinh.");
                 }
-                else if (string.IsNullOrWhiteSpace(fullName))
+                else if (!StudentValidationHelper.IsValidStudentCode(studentCode))
                 {
-                    item.IsValid = false;
-                    item.ErrorMessage = "Thiếu họ và tên học sinh.";
+                    rowErrors.Add($"Mã học sinh '{studentCode}' không hợp lệ (chỉ gồm chữ, số, '-', '_', không khoảng trắng, dài 3-30 ký tự).");
                 }
                 else if (seenCodesInFile.Contains(studentCode))
                 {
-                    // Duplicate in the file
-                    item.IsValid = false;
                     item.IsDuplicate = true;
-                    item.ErrorMessage = $"Mã học sinh '{studentCode}' bị trùng lặp trong tệp Excel.";
+                    rowErrors.Add($"Mã học sinh '{studentCode}' bị trùng lặp trong tệp Excel.");
                 }
                 else if (existingCodesInDb.Contains(studentCode))
                 {
-                    // Duplicate in DB (Workflow: Duplicate Student Identifier Detected)
                     item.IsDuplicate = true;
-                    item.ErrorMessage = $"Mã học sinh '{studentCode}' đã tồn tại trong cơ sở dữ liệu hệ thống.";
+                    rowErrors.Add($"Mã học sinh '{studentCode}' đã tồn tại trong cơ sở dữ liệu hệ thống.");
                 }
-                else if (!string.IsNullOrWhiteSpace(guardianEmail) && !GuardianMatcher.IsValidEmail(guardianEmail))
+
+                // 2. Validate Full Name
+                var nameError = StudentValidationHelper.ValidateFullName(rawFullName, "họ và tên học sinh");
+                if (nameError != null)
                 {
-                    item.IsValid = false;
-                    item.ErrorMessage = $"Email phụ huynh '{guardianEmail}' không hợp lệ.";
+                    rowErrors.Add(nameError);
+                }
+
+                // 3. Validate Date of Birth (strict, no default fallback)
+                if (!dobParsedOk)
+                {
+                    rowErrors.Add(string.IsNullOrWhiteSpace(dobRaw)
+                        ? "Thiếu ngày sinh học sinh."
+                        : $"Ngày sinh '{dobRaw}' không đúng định dạng hợp lệ (yêu cầu dd/MM/yyyy hoặc yyyy-MM-dd).");
+                }
+                else
+                {
+                    var ageError = StudentValidationHelper.ValidateBirthDateAndAge(parsedDob, schoolYearStartYear);
+                    if (ageError != null)
+                    {
+                        rowErrors.Add(ageError);
+                    }
+                }
+
+                // 4. Validate Gender (strict Nam / Nữ)
+                if (!genderOk)
+                {
+                    rowErrors.Add(string.IsNullOrWhiteSpace(rawGender)
+                        ? "Thiếu giới tính (chỉ chấp nhận 'Nam' hoặc 'Nữ')."
+                        : $"Giới tính '{rawGender}' không hợp lệ (chỉ chấp nhận 'Nam' hoặc 'Nữ').");
+                }
+
+                // 5. Validate ClassName (if provided)
+                Class? matchedClass = null;
+                if (!string.IsNullOrWhiteSpace(className) && activeSchoolYear != null)
+                {
+                    if (!classMap.TryGetValue(className, out matchedClass))
+                    {
+                        rowErrors.Add($"Lớp '{className}' không tồn tại trong năm học {activeSchoolYear.YearName}.");
+                    }
+                    else
+                    {
+                        if (dobParsedOk)
+                        {
+                            var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(parsedDob, matchedClass.Grade, schoolYearStartYear, item.IsSpecialNeeds);
+                            if (gradeAgeErr != null)
+                            {
+                                rowErrors.Add(gradeAgeErr);
+                            }
+                        }
+
+                        previewEnrolledByClassId.TryGetValue(matchedClass.Id, out var currentCount);
+                        if (matchedClass.Capacity > 0 && currentCount >= matchedClass.Capacity)
+                        {
+                            rowErrors.Add($"Lớp '{matchedClass.ClassName}' đã đủ sĩ số tối đa ({matchedClass.Capacity} học sinh).");
+                        }
+                    }
+                }
+
+                // 6. Validate Guardian Info (SC-05 + strict fields)
+                var hasAnyGuardianContact = !string.IsNullOrWhiteSpace(guardianPhone)
+                    || !string.IsNullOrWhiteSpace(guardianEmail)
+                    || !string.IsNullOrWhiteSpace(guardianIdCard);
+
+                if (hasAnyGuardianContact && string.IsNullOrWhiteSpace(rawGuardianName))
+                {
+                    rowErrors.Add("Bắt buộc nhập Họ tên phụ huynh khi có thông tin SĐT / Email / CCCD phụ huynh.");
+                }
+                else if (!string.IsNullOrWhiteSpace(rawGuardianName))
+                {
+                    var gNameErr = StudentValidationHelper.ValidateFullName(rawGuardianName, "Họ tên phụ huynh");
+                    if (gNameErr != null)
+                    {
+                        rowErrors.Add(gNameErr);
+                    }
+                }
+
+                if (!StudentValidationHelper.IsValidPhone(guardianPhone))
+                {
+                    rowErrors.Add($"SĐT phụ huynh '{guardianPhone}' không hợp lệ (bắt buộc đúng 10 chữ số, bắt đầu bằng 0).");
+                }
+
+                if (!StudentValidationHelper.IsValidIdentityCard(guardianIdCard))
+                {
+                    rowErrors.Add($"Số CCCD/CMND phụ huynh '{guardianIdCard}' không hợp lệ (bắt buộc 9 hoặc 12 chữ số).");
+                }
+
+                if (!string.IsNullOrWhiteSpace(guardianEmail) && !GuardianMatcher.IsValidEmail(guardianEmail))
+                {
+                    rowErrors.Add($"Email phụ huynh '{guardianEmail}' không hợp lệ.");
+                }
+
+                if (!StudentValidationHelper.IsValidRelationship(relationship))
+                {
+                    rowErrors.Add($"Mối quan hệ '{relationship}' không hợp lệ (chấp nhận: Bố, Mẹ, Người giám hộ, Phụ huynh, Ông, Bà).");
+                }
+
+                if (rowErrors.Count > 0)
+                {
+                    // Existing DB duplicate with no other errors keeps IsValid=true, IsDuplicate=true for duplicate resolution UI
+                    if (item.IsDuplicate && rowErrors.Count == 1 && existingCodesInDb.Contains(studentCode) && !seenCodesInFile.Contains(studentCode))
+                    {
+                        item.IsValid = true;
+                    }
+                    else
+                    {
+                        item.IsValid = false;
+                    }
+                    item.ErrorMessage = string.Join(" ", rowErrors);
                 }
                 else
                 {
                     seenCodesInFile.Add(studentCode);
+                    if (matchedClass != null)
+                    {
+                        previewEnrolledByClassId[matchedClass.Id] = previewEnrolledByClassId.GetValueOrDefault(matchedClass.Id) + 1;
+                    }
                 }
 
                 if (item.IsValid && !item.IsDuplicate)
@@ -198,7 +329,106 @@ public class StudentImporter : IStudentImporter
                 // 1. Thêm danh sách Student trong chunk
                 foreach (var row in chunk)
                 {
-                    var code = row.StudentCode.Trim().ToUpperInvariant();
+                    var code = (row.StudentCode ?? string.Empty).Trim().ToUpperInvariant();
+                    if (!StudentValidationHelper.IsValidStudentCode(code))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: Mã học sinh '{code}' không hợp lệ (3-30 ký tự, không khoảng trắng).");
+                        continue;
+                    }
+
+                    var nameErr = StudentValidationHelper.ValidateFullName(row.FullName, "Họ và tên học sinh");
+                    if (nameErr != null)
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: {nameErr}");
+                        continue;
+                    }
+
+                    if (!StudentValidationHelper.TryParseStrictDate(row.DateOfBirth, out var parsedDob))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: Ngày sinh '{row.DateOfBirth}' không hợp lệ (định dạng yêu cầu dd/MM/yyyy hoặc yyyy-MM-dd).");
+                        continue;
+                    }
+
+                    var schoolYearStartYear = schoolYear?.StartDate.Year ?? DateTime.UtcNow.Year;
+                    var ageErr = StudentValidationHelper.ValidateBirthDateAndAge(parsedDob, schoolYearStartYear);
+                    if (ageErr != null)
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: {ageErr}");
+                        continue;
+                    }
+
+                    if (!StudentValidationHelper.TryNormalizeGender(row.Gender, out var normalizedGender))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: Giới tính '{row.Gender}' không hợp lệ (chỉ chấp nhận 'Nam' hoặc 'Nữ').");
+                        continue;
+                    }
+
+                    var hasAnyGuardianContact = !string.IsNullOrWhiteSpace(row.GuardianPhone)
+                        || !string.IsNullOrWhiteSpace(row.GuardianEmail)
+                        || !string.IsNullOrWhiteSpace(row.GuardianIdentityCard);
+                    if (hasAnyGuardianContact && string.IsNullOrWhiteSpace(row.GuardianName))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: Thiếu Họ tên phụ huynh khi đã nhập SĐT/Email/CCCD.");
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(row.GuardianName))
+                    {
+                        var gNameErr = StudentValidationHelper.ValidateFullName(row.GuardianName, "Họ tên phụ huynh");
+                        if (gNameErr != null)
+                        {
+                            result.SkippedCount++;
+                            result.Errors.Add($"Dòng {row.RowNumber}: {gNameErr}");
+                            continue;
+                        }
+                    }
+
+                    if (!StudentValidationHelper.IsValidPhone(row.GuardianPhone))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: SĐT phụ huynh '{row.GuardianPhone}' không hợp lệ (bắt buộc 10 chữ số, bắt đầu bằng 0).");
+                        continue;
+                    }
+
+                    if (!StudentValidationHelper.IsValidIdentityCard(row.GuardianIdentityCard))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: Số CCCD/CMND phụ huynh '{row.GuardianIdentityCard}' không hợp lệ (9 hoặc 12 chữ số).");
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(row.ClassName))
+                    {
+                        if (!classMap.TryGetValue(row.ClassName.Trim(), out var targetClassCheck))
+                        {
+                            result.SkippedCount++;
+                            result.Errors.Add($"Dòng {row.RowNumber}: Lớp '{row.ClassName.Trim()}' không tồn tại trong năm học {schoolYearName}.");
+                            continue;
+                        }
+
+                        var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(parsedDob, targetClassCheck.Grade, schoolYearStartYear, row.IsSpecialNeeds);
+                        if (gradeAgeErr != null)
+                        {
+                            result.SkippedCount++;
+                            result.Errors.Add($"Dòng {row.RowNumber}: {gradeAgeErr}");
+                            continue;
+                        }
+
+                        enrolledCountByClassId.TryGetValue(targetClassCheck.Id, out var curCountCheck);
+                        if (targetClassCheck.Capacity > 0 && curCountCheck >= targetClassCheck.Capacity)
+                        {
+                            result.SkippedCount++;
+                            result.Errors.Add($"Dòng {row.RowNumber}: Lớp '{targetClassCheck.ClassName}' đã đủ sĩ số ({targetClassCheck.Capacity} học sinh).");
+                            continue;
+                        }
+                    }
+
                     var isCodeExisting = existingCodesInDb.Contains(code) || (checkCodeWithRepo && await _unitOfWork.Students.ExistsByStudentCodeAsync(code, null, cancellationToken));
                     if (isCodeExisting)
                     {
@@ -223,18 +453,12 @@ public class StudentImporter : IStudentImporter
                     }
                     existingCodesInDb.Add(code);
 
-                    DateTime dob = DateTime.UtcNow.AddYears(-6);
-                    if (!string.IsNullOrWhiteSpace(row.DateOfBirth) && DateTime.TryParse(row.DateOfBirth, out var parsedDob))
-                    {
-                        dob = parsedDob;
-                    }
-
                     var student = new Student
                     {
                         StudentCode = code,
                         FullName = CapitalizeWords(row.FullName),
-                        DateOfBirth = dob,
-                        Gender = string.IsNullOrWhiteSpace(row.Gender) ? "Nam" : row.Gender.Trim(),
+                        DateOfBirth = parsedDob,
+                        Gender = normalizedGender,
                         EnrollmentDate = DateTime.UtcNow,
                         Status = "Active", // Workflow step: Save Profiles & Set Student Status = 'Active'
                         ResidentialArea = row.ResidentialArea?.Trim(),
@@ -368,12 +592,12 @@ public class StudentImporter : IStudentImporter
         {
             "Mã học sinh (*)",
             "Họ và tên (*)",
-            "Ngày sinh (YYYY-MM-DD)",
-            "Giới tính (Nam/Nữ)",
+            "Ngày sinh (dd/MM/yyyy) (*)",
+            "Giới tính (Nam/Nữ) (*)",
             "Lớp dự kiến",
             "Họ tên phụ huynh",
-            "SĐT phụ huynh",
-            "CCCD phụ huynh",
+            "SĐT phụ huynh (10 số)",
+            "CCCD phụ huynh (9/12 số)",
             "Quan hệ (Bố/Mẹ/Người giám hộ)",
             "Email phụ huynh"
         };
@@ -391,9 +615,9 @@ public class StudentImporter : IStudentImporter
         // Sample Data Rows
         var sampleRows = new[]
         {
-            new[] { "HS2026001", "Nguyễn Văn An", "2020-05-15", "Nam", "1A", "Nguyễn Văn Nam", "0912345678", "001200123456", "Bố", "nguyenvannam@example.com" },
-            new[] { "HS2026002", "Trần Thị Mai", "2020-08-22", "Nữ", "1A", "Trần Đình Khang", "0987654321", "001200987654", "Bố", "" },
-            new[] { "HS2026003", "Lê Gia Bảo", "2020-03-10", "Nam", "1B", "Phạm Thu Hương", "0944556677", "001200334455", "Mẹ", "phamthuhuong@example.com" }
+            new[] { "HS2026001", "Nguyễn Văn An", "15/05/2020", "Nam", "1A", "Nguyễn Văn Nam", "0912345678", "001200123456", "Bố", "nguyenvannam@example.com" },
+            new[] { "HS2026002", "Trần Thị Mai", "22/08/2020", "Nữ", "1A", "Trần Đình Khang", "0987654321", "001200987654", "Bố", "" },
+            new[] { "HS2026003", "Lê Gia Bảo", "10/03/2020", "Nam", "1B", "Phạm Thu Hương", "0944556677", "001200334455", "Mẹ", "phamthuhuong@example.com" }
         };
 
         for (int r = 0; r < sampleRows.Length; r++)
@@ -448,6 +672,21 @@ public class StudentImporter : IStudentImporter
         if (lower.Contains("bố") || lower.Contains("cha") || lower.Contains("father")) return RelationshipTypes.Father;
         if (lower.Contains("mẹ") || lower.Contains("mother")) return RelationshipTypes.Mother;
         return RelationshipTypes.Guardian;
+    }
+
+    private static bool TryParseExcelBirthDate(IXLCell cell, out DateTime parsed)
+    {
+        parsed = default;
+        if (cell.IsEmpty()) return false;
+
+        if (cell.DataType == XLDataType.DateTime)
+        {
+            parsed = cell.GetDateTime().Date;
+            return true;
+        }
+
+        var raw = cell.GetString()?.Trim();
+        return StudentValidationHelper.TryParseStrictDate(raw, out parsed);
     }
 
     private static string CapitalizeWords(string? input)

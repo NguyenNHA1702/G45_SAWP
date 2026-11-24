@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { AttachmentViewer } from '../common/AttachmentViewer';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
-import { formatDDMMYYYY, getNextMondayIso } from '../../utils/date';
+import { formatDDMMYYYY, getNextMondayIso, todayIso as getTodayIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 interface StaffReviewTransferModalProps {
@@ -52,13 +52,15 @@ export function StaffReviewTransferModal({
   }
 
   const isAwaitingParent = !!request.requiresAmendment;
+  const isReturnedByBoard = request.status === 'ReturnedToStaff' || request.status === 'NeedMoreInfo';
   const isAlreadyUnderReview = request.status === 'UnderReview';
-  const isClosed = request.status === 'Approved' || request.status === 'Rejected';
+  const isClosed = request.status === 'Approved' || request.status === 'Rejected' || request.status === 'Completed';
 
   const transfer = request.classTransfer;
   const currentCap = transfer.targetClassCapacity ?? 0;
   const maxCap = transfer.targetClassMaxCapacity ?? 35;
   const isFull = currentCap >= maxCap;
+  const todayIso = getTodayIso();
 
   const handleEndorse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,8 +76,16 @@ export function StaffReviewTransferModal({
       toast.error('Đơn này đã hoàn tất xử lý.');
       return;
     }
-    if (!recommendation.trim()) {
-      toast.error('Vui lòng nhập ý kiến đề xuất chuyên môn của giáo vụ.');
+    if (!recommendation.trim() || recommendation.trim().length < 5) {
+      toast.error('Vui lòng nhập ý kiến đề xuất chuyên môn của giáo vụ (tối thiểu 5 ký tự).');
+      return;
+    }
+    if (!proposedEffectiveDate) {
+      toast.error('Vui lòng chọn ngày có hiệu lực chuyển lớp (không được để trống).');
+      return;
+    }
+    if (proposedEffectiveDate < todayIso) {
+      toast.error('Ngày có hiệu lực chuyển lớp không được là ngày trong quá khứ.');
       return;
     }
 
@@ -286,6 +296,31 @@ export function StaffReviewTransferModal({
           <AttachmentViewer url={request.attachmentUrl} />
         </div>
 
+        {/* Cảnh báo BGH yêu cầu Giáo vụ chỉnh sửa / trình lại */}
+        {isReturnedByBoard && request.schoolBoardNotes && (
+          <div
+            style={{
+              backgroundColor: '#FFF7ED',
+              border: '2px solid #EA580C',
+              borderRadius: 12,
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+            }}
+          >
+            <AlertCircle size={22} color="#EA580C" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <div style={{ fontWeight: 800, color: '#9A3412', fontSize: 13 }}>
+                BAN GIÁM HIỆU YÊU CẦU GIÁO VỤ CHỈNH SỬA & TRÌNH LẠI
+              </div>
+              <div style={{ fontSize: 13, color: '#7C2D12', marginTop: 4 }}>
+                &quot;{request.schoolBoardNotes}&quot;
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Cảnh báo trạng thái bổ sung hồ sơ */}
         {isAwaitingParent && (
           <div
@@ -397,7 +432,7 @@ export function StaffReviewTransferModal({
                 style={{ width: '100%', borderRadius: 10, padding: '10px 12px', fontSize: 14 }}
                 value={proposedEffectiveDate}
                 onChange={(e) => setProposedEffectiveDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
+                min={todayIso}
                 required
               />
               <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>

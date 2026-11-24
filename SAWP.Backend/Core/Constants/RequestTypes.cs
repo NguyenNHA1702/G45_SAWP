@@ -5,4 +5,5 @@ public static class RequestTypes
     public const string Leave = "Leave";
     public const string ClassTransfer = "ClassTransfer";
     public const string Document = "Document";
+    public const string Other = "Other";
 }

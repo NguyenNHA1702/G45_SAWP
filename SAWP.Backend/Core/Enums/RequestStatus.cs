@@ -8,5 +8,6 @@ public enum RequestStatus
     Rejected = 4,
     Cancelled = 5,
     Completed = 6,
-    NeedMoreInfo = 7
+    NeedMoreInfo = 7,
+    ReturnedToStaff = 8
 }

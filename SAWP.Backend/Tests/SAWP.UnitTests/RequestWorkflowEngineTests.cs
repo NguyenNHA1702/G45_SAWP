@@ -7,6 +7,7 @@ using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
 using Core.Enums;
+using Core.Interfaces;
 using FluentAssertions;
 using Moq;
 using Services.Implementations;
@@ -31,6 +32,7 @@ public class RequestWorkflowEngineTests : TestBase
         SetupRepository(new List<ClassTransferDetail>());
         SetupRepository(new List<DocumentRequestDetail>());
         SetupRepository(new List<Guardian>());
+        SetupRepository(new List<AuditLog>());
     }
 
     #region Method 33: SubmitClassTransferRequestAsync (UTCID01 - UTCID08)
@@ -299,7 +301,7 @@ public class RequestWorkflowEngineTests : TestBase
     {
         // Arrange
         SetupRepository(new List<Guardian>());
-        var request = new DocumentIssuanceRequestDto { StudentId = 10, DocumentType = "Giấy xác nhận", Purpose = "Visa" };
+        var request = new DocumentIssuanceRequestDto { StudentId = 10, DocumentType = "Giấy xác nhận", Purpose = "Bổ sung hồ sơ Visa" };
 
         // Act
         var result = await _service.SubmitDocumentRequestAsync(20, request);
@@ -324,7 +326,7 @@ public class RequestWorkflowEngineTests : TestBase
         StudentRepoMock.Setup(r => r.GetByIdAsync(999, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Student?)null);
 
-        var request = new DocumentIssuanceRequestDto { StudentId = 999, DocumentType = "Giấy xác nhận", Purpose = "Visa" };
+        var request = new DocumentIssuanceRequestDto { StudentId = 999, DocumentType = "Giấy xác nhận", Purpose = "Bổ sung hồ sơ Visa" };
 
         // Act
         var result = await _service.SubmitDocumentRequestAsync(20, request);
@@ -724,7 +726,7 @@ public class RequestWorkflowEngineTests : TestBase
         SetupRepository(new List<AdministrativeRequest> { req });
         SetupRepository(new List<ClassAssignment>()); // 0 enrolled < 35
 
-        var endorse = new StaffEndorseTransferDto { StaffRecommendation = "Đồng ý chuyển lớp" };
+        var endorse = new StaffEndorseTransferDto { StaffRecommendation = "Đồng ý chuyển lớp", EffectiveDate = DateTime.UtcNow.Date.AddDays(3) };
 
         // Act
         var result = await _service.EndorseTransferAsync(1, 10, endorse);
@@ -751,7 +753,7 @@ public class RequestWorkflowEngineTests : TestBase
         SetupRepository(new List<AdministrativeRequest> { req });
         SetupRepository(new List<ClassAssignment>());
 
-        var endorse = new StaffEndorseTransferDto { StaffRecommendation = "Không nên chuyển lớp" };
+        var endorse = new StaffEndorseTransferDto { StaffRecommendation = "Không nên chuyển lớp", EffectiveDate = DateTime.UtcNow.Date.AddDays(3) };
 
         // Act
         var result = await _service.EndorseTransferAsync(1, 10, endorse);
@@ -901,8 +903,8 @@ public class RequestWorkflowEngineTests : TestBase
 
         var endorse = new StaffEndorseDocumentDto
         {
-            StaffEndorsement = "Đồng ý",
-            DocumentContentDraft = "" // Empty draft
+            StaffEndorsement = "Hồ sơ hợp lệ, kính trình BGH",
+            DocumentFileUrl = "/api/LeaveRequests/attachment-file?path=request_attachments/sample.pdf"
         };
 
         // Act
@@ -911,7 +913,118 @@ public class RequestWorkflowEngineTests : TestBase
         // Assert
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
-        docDetail.DocumentContentDraft.Should().Contain("DỰ THẢO VĂN BẢN XÁC NHẬN");
+        docDetail.IssuedDocumentUrl.Should().Contain("sample.pdf");
+        docDetail.StaffEndorsement.Should().Contain("kính trình BGH");
+    }
+
+    [Fact]
+    public async Task RQ02_EndorseTransfer_PastEffectiveDate_Fails()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            Status = RequestStatus.Submitted,
+            Student = new Student { FullName = "Em A" },
+            ClassTransferDetail = new ClassTransferDetail { ToClassId = 2, ToClass = new Class { Id = 2, ClassName = "1B", Capacity = 35 } }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<ClassAssignment>());
+
+        var result = await _service.EndorseTransferAsync(1, 10, new StaffEndorseTransferDto
+        {
+            StaffRecommendation = "Đề xuất chuyển lớp",
+            EffectiveDate = DateTime.UtcNow.Date.AddDays(-2)
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task RQ03_DirectIssueDocument_FutureIssuedDate_Fails()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestType = RequestTypes.Document,
+            Status = RequestStatus.Submitted,
+            SubmissionDate = DateTime.UtcNow.Date,
+            Student = new Student { FullName = "Em A" },
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Giấy xác nhận học sinh đang theo học", Purpose = "Bổ sung hồ sơ" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        var result = await _service.DirectIssueDocumentAsync(1, 10, new StaffDirectIssueDocumentDto
+        {
+            IssuedDate = DateTime.UtcNow.Date.AddDays(5)
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task NewFlow_BoardReturnToStaff_SetsNeedMoreInfoAndNotifiesStaff()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestNumber = "REQ-DOC-20261124-0001",
+            RequestType = RequestTypes.Document,
+            Status = RequestStatus.UnderReview,
+            Student = new Student { FullName = "Em A" },
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Đơn xin chuyển trường", Purpose = "Chuyển nơi ở" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<UserRole>());
+        SetupRepository(new List<Notification>());
+
+        var result = await _service.ProcessBoardDecisionAsync(1, 99, new BoardDecisionDto
+        {
+            ReturnToStaff = true,
+            DecisionNotes = "Thiếu tệp PDF bản scan học bạ, đề nghị giáo vụ bổ sung"
+        });
+
+        result.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.ReturnedToStaff);
+        req.SchoolBoardNotes.Should().Contain("Thiếu tệp PDF");
+
+        // Verify flow does NOT terminate: Office Staff can re-endorse back to UnderReview
+        var reEndorse = await _service.EndorseDocumentAsync(1, 10, new StaffEndorseDocumentDto
+        {
+            StaffEndorsement = "Đã bổ sung bản scan học bạ, kính trình lại BGH",
+            DocumentFileUrl = "/api/LeaveRequests/attachment-file?path=request_attachments/fixed.pdf"
+        });
+        reEndorse.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.UnderReview);
+    }
+
+    [Fact]
+    public async Task NewFlow_SubmitOtherRequest_Success()
+    {
+        var guardian = new Guardian
+        {
+            Id = 1,
+            UserId = 20,
+            StudentGuardians = new List<StudentGuardian> { new() { StudentId = 10, GuardianId = 1 } }
+        };
+        SetupRepository(new List<Guardian> { guardian });
+        StudentRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 10, FullName = "Em A" });
+        SetupRepository(new List<AdministrativeRequest>());
+        SetupRepository(new List<DocumentRequestDetail>());
+        SetupRepository(new List<UserRole>());
+        SetupRepository(new List<Notification>());
+
+        var result = await _service.SubmitOtherRequestAsync(20, new OtherRequestDto
+        {
+            StudentId = 10,
+            Title = "Đơn xin đón muộn định kỳ",
+            Content = "Gia đình làm ca muộn nên xin đón cháu lúc 17h30 thứ 2 và thứ 4."
+        });
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().StartWith("REQ-OTH-");
     }
 
     [Fact]
@@ -1223,7 +1336,12 @@ public class RequestWorkflowEngineTests : TestBase
         };
         SetupRepository(new List<AdministrativeRequest> { req });
 
-        var decision = new BoardDecisionDto { IsApproved = true, DecisionNotes = "Đã duyệt và ký số" };
+        var decision = new BoardDecisionDto
+        {
+            IsApproved = true,
+            DecisionNotes = "Đã duyệt và ký số",
+            SignedDocumentUrl = "/api/requests/attachment-file?path=request_attachments/signed.pdf"
+        };
 
         // Act
         var result = await _service.ProcessBoardDecisionAsync(1, 5, decision);
@@ -1233,6 +1351,164 @@ public class RequestWorkflowEngineTests : TestBase
         result.Success.Should().BeTrue();
         req.Status.Should().Be(RequestStatus.Approved);
         docDetail.CertificateNumber.Should().StartWith("SAWP-");
+        docDetail.IssuedDocumentUrl.Should().Be("/api/requests/attachment-file?path=request_attachments/signed.pdf");
+    }
+
+    [Fact]
+    public async Task StrictFiles_DocumentEndorse_WithoutFile_Fails()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestType = RequestTypes.Document,
+            Status = RequestStatus.Submitted,
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Giấy xác nhận" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        var result = await _service.EndorseDocumentAsync(1, 10, new StaffEndorseDocumentDto
+        {
+            StaffEndorsement = "Hồ sơ đầy đủ, kính trình BGH",
+            DocumentFileUrl = null
+        });
+
+        result.Success.Should().BeFalse();
+        req.Status.Should().Be(RequestStatus.Submitted);
+    }
+
+    [Fact]
+    public async Task StrictFiles_OtherEndorse_WithoutFile_Succeeds()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestNumber = "REQ-OTH-20261125-0001",
+            RequestType = RequestTypes.Other,
+            Status = RequestStatus.Submitted,
+            Student = new Student { FullName = "Em A" },
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Đơn kiến nghị khác" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<UserRole>());
+        SetupRepository(new List<Notification>());
+
+        var result = await _service.EndorseDocumentAsync(1, 10, new StaffEndorseDocumentDto
+        {
+            StaffEndorsement = "Đã kiểm tra kiến nghị của phụ huynh, kính trình BGH xem xét",
+            DocumentFileUrl = null
+        });
+
+        result.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.UnderReview);
+        req.DocumentRequestDetail.IssuedDocumentUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StrictFiles_DocumentDirectIssue_WithoutFile_Fails()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestType = RequestTypes.Document,
+            Status = RequestStatus.Submitted,
+            SubmissionDate = DateTime.UtcNow.Date,
+            Student = new Student { FullName = "Em A" },
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Giấy xác nhận" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        var result = await _service.DirectIssueDocumentAsync(1, 10, new StaffDirectIssueDocumentDto
+        {
+            StaffNotes = "Phát hành trực tiếp",
+            DocumentFileUrl = ""
+        });
+
+        result.Success.Should().BeFalse();
+        req.Status.Should().Be(RequestStatus.Submitted);
+    }
+
+    [Fact]
+    public async Task StrictFiles_OtherDirectIssue_WithoutFile_SucceedsWithoutDummyUrl()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestNumber = "REQ-OTH-20261125-0002",
+            RequestType = RequestTypes.Other,
+            Status = RequestStatus.Submitted,
+            SubmissionDate = DateTime.UtcNow.Date,
+            StudentId = 1,
+            RequesterUserId = 20,
+            Student = new Student { Id = 1, FullName = "Em A" },
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Đơn xin đổi món ăn nhẹ" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<StudentGuardian>());
+        SetupRepository(new List<Notification>());
+
+        var result = await _service.DirectIssueDocumentAsync(1, 10, new StaffDirectIssueDocumentDto
+        {
+            StaffNotes = "Nhà bếp đã ghi nhận điều chỉnh thực đơn cho bé",
+            DocumentFileUrl = null
+        });
+
+        result.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.Completed);
+        req.DocumentRequestDetail.IssuedDocumentUrl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StrictFiles_BoardApproveDocument_WithoutSignedFile_Fails()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestType = RequestTypes.Document,
+            Status = RequestStatus.UnderReview,
+            DocumentRequestDetail = new DocumentRequestDetail
+            {
+                DocumentType = "Giấy xác nhận",
+                IssuedDocumentUrl = "/api/requests/attachment-file?path=request_attachments/staff_draft.pdf"
+            }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        var result = await _service.ProcessBoardDecisionAsync(1, 5, new BoardDecisionDto
+        {
+            IsApproved = true,
+            DecisionNotes = "Đồng ý duyệt",
+            SignedDocumentUrl = null
+        });
+
+        result.Success.Should().BeFalse();
+        req.Status.Should().Be(RequestStatus.UnderReview);
+    }
+
+    [Fact]
+    public async Task StrictFiles_BoardApproveOther_WithoutSignedFile_Succeeds()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 1,
+            RequestType = RequestTypes.Other,
+            Status = RequestStatus.UnderReview,
+            DocumentRequestDetail = new DocumentRequestDetail
+            {
+                DocumentType = "Kiến nghị đưa đón"
+            }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        var result = await _service.ProcessBoardDecisionAsync(1, 5, new BoardDecisionDto
+        {
+            IsApproved = true,
+            DecisionNotes = "Đồng ý giải quyết theo đề xuất của giáo vụ",
+            SignedDocumentUrl = null
+        });
+
+        result.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.Approved);
+        req.DocumentRequestDetail.IssuedDocumentUrl.Should().BeNull();
     }
 
     [Fact]
@@ -1562,6 +1838,158 @@ public class RequestWorkflowEngineTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task MultiRoundReturnAndResubmit_PreservesAllHistoryEntries()
+    {
+        var auditLogs = new List<AuditLog>();
+        SetupRepository(auditLogs);
+
+        var guardian = new Guardian
+        {
+            Id = 1,
+            UserId = 20,
+            StudentGuardians = new List<StudentGuardian> { new() { StudentId = 10, GuardianId = 1 } }
+        };
+        SetupRepository(new List<Guardian> { guardian });
+        StudentRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 10, FullName = "Em A" });
+
+        var requests = new List<AdministrativeRequest>();
+        SetupRepository(requests);
+        SetupRepository(new List<DocumentRequestDetail>());
+
+        var realAuditService = new AuditService(UnitOfWorkMock.Object);
+        var clockMock = new Mock<ISchoolClock>();
+        clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 25, 1, 30, 0));
+        clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 11, 25));
+        clockMock.Setup(c => c.ToSchoolTime(It.IsAny<DateTime>())).Returns((DateTime dt) => dt.AddHours(7));
+
+        var engine = new RequestWorkflowEngine(UnitOfWorkMock.Object, realAuditService, clockMock.Object);
+
+        // 1. Parent submits
+        var submit = await engine.SubmitDocumentRequestAsync(20, new DocumentIssuanceRequestDto
+        {
+            StudentId = 10,
+            DocumentType = "Giấy xác nhận học sinh đang theo học",
+            NumberOfCopies = 1,
+            Purpose = "Bổ sung hồ sơ gia đình"
+        });
+        submit.Success.Should().BeTrue();
+        var req = requests.Single();
+        var allDetails = await UnitOfWorkMock.Object.Repository<DocumentRequestDetail>().GetAllAsync();
+        req.DocumentRequestDetail = allDetails.Single();
+
+        // 2. Staff endorses (round 1)
+        var endorse1 = await engine.EndorseDocumentAsync(req.Id, 10, new StaffEndorseDocumentDto
+        {
+            StaffEndorsement = "Trình BGH lần 1",
+            DocumentFileUrl = "/api/requests/attachment-file?path=request_attachments/v1.pdf"
+        });
+        endorse1.Success.Should().BeTrue();
+
+        // 3. Board returns (round 1)
+        var ret1 = await engine.ProcessBoardDecisionAsync(req.Id, 99, new BoardDecisionDto
+        {
+            ReturnToStaff = true,
+            DecisionNotes = "Thiếu dấu đỏ ở trang 1, trình lại"
+        });
+        ret1.Success.Should().BeTrue();
+
+        // 4. Staff re-endorses (round 2)
+        var endorse2 = await engine.EndorseDocumentAsync(req.Id, 10, new StaffEndorseDocumentDto
+        {
+            StaffEndorsement = "Đã sửa trang 1, trình lại lần 2",
+            DocumentFileUrl = "/api/requests/attachment-file?path=request_attachments/v2.pdf"
+        });
+        endorse2.Success.Should().BeTrue();
+
+        // 5. Board returns again (round 2)
+        var ret2 = await engine.ProcessBoardDecisionAsync(req.Id, 99, new BoardDecisionDto
+        {
+            ReturnToStaff = true,
+            DecisionNotes = "Cần ghi rõ năm học 2026-2027"
+        });
+        ret2.Success.Should().BeTrue();
+
+        // 6. Staff re-endorses (round 3)
+        var endorse3 = await engine.EndorseDocumentAsync(req.Id, 10, new StaffEndorseDocumentDto
+        {
+            StaffEndorsement = "Đã bổ sung năm học 2026-2027, trình lại lần 3",
+            DocumentFileUrl = "/api/requests/attachment-file?path=request_attachments/v3.pdf"
+        });
+        endorse3.Success.Should().BeTrue();
+
+        // 7. Board approves
+        var approve = await engine.ProcessBoardDecisionAsync(req.Id, 99, new BoardDecisionDto
+        {
+            IsApproved = true,
+            DecisionNotes = "Đồng ý ký duyệt chính thức",
+            SignedDocumentUrl = "/api/requests/attachment-file?path=request_attachments/signed.pdf"
+        });
+        approve.Success.Should().BeTrue();
+
+        // Act: Fetch history
+        var historyRes = await engine.GetRequestHistoryAsync(req.Id, 20);
+        historyRes.Success.Should().BeTrue();
+        historyRes.Data.Should().HaveCount(7);
+        historyRes.Data![0].Action.Should().Be("Nộp yêu cầu");
+        historyRes.Data[1].Action.Should().Be("Giáo vụ thẩm định & chuyển tiếp");
+        historyRes.Data[1].Description.Should().Contain("Trình BGH lần 1");
+        historyRes.Data[2].Action.Should().Be("Ban Giám Hiệu yêu cầu Giáo vụ trình lại");
+        historyRes.Data[2].Description.Should().Contain("Thiếu dấu đỏ");
+        historyRes.Data[3].Action.Should().Be("Giáo vụ chỉnh sửa & trình lại BGH");
+        historyRes.Data[3].Description.Should().Contain("Đã sửa trang 1");
+        historyRes.Data[4].Action.Should().Be("Ban Giám Hiệu yêu cầu Giáo vụ trình lại");
+        historyRes.Data[4].Description.Should().Contain("năm học 2026-2027");
+        historyRes.Data[5].Action.Should().Be("Giáo vụ chỉnh sửa & trình lại BGH");
+        historyRes.Data[5].Description.Should().Contain("trình lại lần 3");
+        historyRes.Data[6].Action.Should().Be("Ban Giám Hiệu phê duyệt");
+        historyRes.Data.All(h => h.Timestamp.Kind == DateTimeKind.Utc).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SchoolClock_AfterMidnightVietnamTime_UsesLocalDateInRequestNumberAndUtcKind()
+    {
+        var guardian = new Guardian
+        {
+            Id = 1,
+            UserId = 20,
+            StudentGuardians = new List<StudentGuardian> { new() { StudentId = 10, GuardianId = 1 } }
+        };
+        SetupRepository(new List<Guardian> { guardian });
+        StudentRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 10, FullName = "Em A" });
+
+        var requests = new List<AdministrativeRequest>();
+        SetupRepository(requests);
+        SetupRepository(new List<DocumentRequestDetail>());
+
+        var clockMock = new Mock<ISchoolClock>();
+        // 01:30 AM on 25/11/2026 in Vietnam (+07:00)
+        clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 25, 1, 30, 0));
+        clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 11, 25));
+
+        var engine = new RequestWorkflowEngine(UnitOfWorkMock.Object, AuditServiceMock.Object, clockMock.Object);
+
+        var submit = await engine.SubmitDocumentRequestAsync(20, new DocumentIssuanceRequestDto
+        {
+            StudentId = 10,
+            DocumentType = "Giấy xác nhận học sinh đang theo học",
+            NumberOfCopies = 1,
+            Purpose = "Nộp hồ sơ đầu ngày 25"
+        });
+
+        submit.Success.Should().BeTrue();
+        submit.Data.Should().StartWith("REQ-DOC-20261125-");
+
+        // Simulate SQL Server Unspecified DateTimeKind on read-back
+        requests[0].SubmissionDate = new DateTime(2026, 11, 24, 18, 30, 0, DateTimeKind.Unspecified);
+        var list = await engine.GetMyRequestsAsync(20, 10);
+        list.Success.Should().BeTrue();
+        list.Data.Should().HaveCount(1);
+        list.Data![0].SubmissionDate.Kind.Should().Be(DateTimeKind.Utc);
     }
 
     #endregion

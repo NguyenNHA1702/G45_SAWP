@@ -134,8 +134,12 @@ public class StudentImporterTests : TestBase
         {
             ws.Cell(2, 1).Value = "HS001";
             ws.Cell(2, 2).Value = "Nguyen Van A";
+            ws.Cell(2, 3).Value = "15/05/2020";
+            ws.Cell(2, 4).Value = "Nam";
             ws.Cell(3, 1).Value = "HS001";
             ws.Cell(3, 2).Value = "Nguyen Van Duplicate";
+            ws.Cell(3, 3).Value = "15/05/2020";
+            ws.Cell(3, 4).Value = "Nam";
         });
 
         // Act
@@ -388,7 +392,7 @@ public class StudentImporterTests : TestBase
         {
             void Put(int r, string code, string guardian, string id, string email)
             {
-                ws.Cell(r, 1).Value = code; ws.Cell(r, 2).Value = "Hoc Sinh"; ws.Cell(r, 6).Value = guardian;
+                ws.Cell(r, 1).Value = code; ws.Cell(r, 2).Value = "Hoc Sinh"; ws.Cell(r, 3).Value = "15/05/2020"; ws.Cell(r, 4).Value = "Nam"; ws.Cell(r, 6).Value = guardian;
                 ws.Cell(r, 8).Value = id; ws.Cell(r, 10).Value = email;
             }
             Put(2, "HS941", "Moi Mot", "", "moi@example.com");     // new, eligible
@@ -407,6 +411,54 @@ public class StudentImporterTests : TestBase
         rows[3].GuardianMatch.Should().Be("Conflict"); rows[3].IsValid.Should().BeFalse();
         rows[4].GuardianMatch.Should().Be("New"); rows[4].GuardianEligibleForAccount.Should().BeFalse();
         rows[5].IsValid.Should().BeFalse(); rows[5].ErrorMessage.Should().Contain("Email");
+    }
+
+    [Fact]
+    public async Task SC01_SC02_ParseExcel_RejectsInvalidDobFutureAgeGenderPhoneCodeAndUnknownClass()
+    {
+        var schoolYear = new SchoolYear { Id = 1, YearName = "2026-2027", StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31), IsActive = true };
+        ClassRepoMock.Setup(r => r.GetActiveSchoolYearAsync(It.IsAny<CancellationToken>())).ReturnsAsync(schoolYear);
+        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(1, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Class> { new() { Id = 10, ClassName = "1B", Grade = 1, Capacity = 35, SchoolYear = schoolYear } });
+        SetupRepository(new List<Student>());
+        SetupRepository(new List<Guardian>());
+
+        using var stream = CreateExcelStream(ws =>
+        {
+            // Valid dd/MM/yyyy -> must NOT swap day/month
+            ws.Cell(2, 1).Value = "TEST-N24-1"; ws.Cell(2, 2).Value = "Nguyen Van An"; ws.Cell(2, 3).Value = "01/06/2020"; ws.Cell(2, 4).Value = "Nam"; ws.Cell(2, 5).Value = "1B";
+            // Invalid DOB "abc"
+            ws.Cell(3, 1).Value = "TEST-N24-2"; ws.Cell(3, 2).Value = "Tran Thi B"; ws.Cell(3, 3).Value = "abc"; ws.Cell(3, 4).Value = "Nữ";
+            // Future DOB 2030
+            ws.Cell(4, 1).Value = "TEST-N24-3"; ws.Cell(4, 2).Value = "Le Van C"; ws.Cell(4, 3).Value = "01/06/2030"; ws.Cell(4, 4).Value = "Nam"; ws.Cell(4, 5).Value = "1B";
+            // Underage 3yo (2023)
+            ws.Cell(5, 1).Value = "TEST-N24-4"; ws.Cell(5, 2).Value = "Pham Thi D"; ws.Cell(5, 3).Value = "01/06/2023"; ws.Cell(5, 4).Value = "Nữ";
+            // Gender "Khác"
+            ws.Cell(6, 1).Value = "TEST-N24-5"; ws.Cell(6, 2).Value = "Hoang Van E"; ws.Cell(6, 3).Value = "15/03/2020"; ws.Cell(6, 4).Value = "Khác";
+            // Bad phone "12345"
+            ws.Cell(7, 1).Value = "TEST-N24-6"; ws.Cell(7, 2).Value = "Do Thi F"; ws.Cell(7, 3).Value = "20/04/2020"; ws.Cell(7, 4).Value = "Nữ"; ws.Cell(7, 6).Value = "Do Van Bo"; ws.Cell(7, 7).Value = "12345";
+            // Code with spaces
+            ws.Cell(8, 1).Value = "TEST N24 7"; ws.Cell(8, 2).Value = "Bui Van G"; ws.Cell(8, 3).Value = "15/03/2020"; ws.Cell(8, 4).Value = "Nam";
+            // Unknown class 9Z
+            ws.Cell(9, 1).Value = "TEST-N24-8"; ws.Cell(9, 2).Value = "Vu Thi H"; ws.Cell(9, 3).Value = "15/03/2020"; ws.Cell(9, 4).Value = "Nữ"; ws.Cell(9, 5).Value = "9Z";
+            // Phone provided without guardian name (SC-05)
+            ws.Cell(10, 1).Value = "TEST-N24-9"; ws.Cell(10, 2).Value = "Ngo Van K"; ws.Cell(10, 3).Value = "15/03/2020"; ws.Cell(10, 4).Value = "Nam"; ws.Cell(10, 7).Value = "0911222444";
+        });
+
+        var result = await _importer.ParseExcelAsync(stream);
+        result.Success.Should().BeTrue();
+        var rows = result.Data!;
+
+        rows[0].IsValid.Should().BeTrue();
+        rows[0].DateOfBirth.Should().Be("2020-06-01"); // 01/06/2020 must be June 1, NOT Jan 6!
+        rows[1].IsValid.Should().BeFalse(); // abc
+        rows[2].IsValid.Should().BeFalse(); // 2030 future
+        rows[3].IsValid.Should().BeFalse(); // 3 years old
+        rows[4].IsValid.Should().BeFalse(); // Khác
+        rows[5].IsValid.Should().BeFalse(); // 12345 phone
+        rows[6].IsValid.Should().BeFalse(); // code with space
+        rows[7].IsValid.Should().BeFalse(); // unknown class 9Z
+        rows[8].IsValid.Should().BeFalse(); // phone without guardian name
     }
 
     #endregion

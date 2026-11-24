@@ -6,6 +6,18 @@ export const toIsoDate = (d: Date): string =>
 
 export const todayIso = (): string => toIsoDate(new Date());
 
+export const toLocalDateIso = (dateInput: string | Date | null | undefined): string => {
+  if (!dateInput) return '';
+  if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?$/.test(trimmed)) {
+      return trimmed.slice(0, 10);
+    }
+  }
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  return isNaN(d.getTime()) ? '' : toIsoDate(d);
+};
+
 /** "2026-10-19" -> "19/10/2026" */
 export const formatViDate = (iso: string): string => {
   const [y, m, d] = iso.slice(0, 10).split('-');
@@ -32,14 +44,14 @@ export const getNextMondayIso = (baseDate: Date = new Date()): string => {
   return toIsoDate(d);
 };
 
-/** Chuẩn hóa hiển thị DD/MM/YYYY cho mọi ngày tháng */
+/** Chuẩn hóa hiển thị DD/MM/YYYY cho mọi ngày tháng (giữ nguyên date-only, chuyển UTC sang giờ máy nếu có giờ/múi giờ) */
 export const formatDDMMYYYY = (dateInput: string | Date | null | undefined): string => {
   if (!dateInput) return 'N/A';
   try {
     if (typeof dateInput === 'string') {
       const trimmed = dateInput.trim();
-      // Nếu chuỗi dạng YYYY-MM-DD...
-      if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      // Chỉ cắt trực tiếp khi là ngày thuần YYYY-MM-DD hoặc mốc 00:00:00 không kèm múi giờ
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?$/.test(trimmed)) {
         const parts = trimmed.slice(0, 10).split('-');
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
       }
@@ -52,12 +64,26 @@ export const formatDDMMYYYY = (dateInput: string | Date | null | undefined): str
     if (isNaN(d.getTime())) {
       return String(dateInput);
     }
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = pad(d.getDate());
+    const month = pad(d.getMonth() + 1);
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
   } catch {
     return String(dateInput);
+  }
+};
+
+/** Chuẩn hóa hiển thị HH:mm - DD/MM/YYYY theo giờ địa phương */
+export const formatDDMMYYYYHHMM = (dateInput: string | Date | null | undefined): string => {
+  if (!dateInput) return 'N/A';
+  try {
+    const d = typeof dateInput === 'string' ? new Date(dateInput.trim()) : dateInput;
+    if (isNaN(d.getTime())) {
+      return formatDDMMYYYY(dateInput);
+    }
+    return `${pad(d.getHours())}:${pad(d.getMinutes())} · ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  } catch {
+    return formatDDMMYYYY(dateInput);
   }
 };
 

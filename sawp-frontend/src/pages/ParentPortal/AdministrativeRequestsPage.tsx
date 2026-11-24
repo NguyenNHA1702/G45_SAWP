@@ -22,14 +22,14 @@ import { ResubmitModal } from '../../components/requests/ResubmitModal';
 import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
 import { DirectFileUploader } from '../../components/common/DirectFileUploader';
 import { AttachmentViewer } from '../../components/common/AttachmentViewer';
-import { formatDDMMYYYY } from '../../utils/date';
+import { formatDDMMYYYY, formatDDMMYYYYHHMM, todayIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
 export default function AdministrativeRequestsPage() {
   const { activeChild } = useParentChild();
 
-  const [activeTab, setActiveTab] = useState<'list' | 'transfer' | 'document'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'transfer' | 'document' | 'other'>('list');
   const [requests, setRequests] = useState<AdministrativeRequestSummary[]>([]);
   const [classes, setClasses] = useState<ClassSummaryDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +48,11 @@ export default function AdministrativeRequestsPage() {
   const [documentPurpose, setDocumentPurpose] = useState('');
   const [isPaperCopyRequested, setIsPaperCopyRequested] = useState(false);
   const [documentAttachment, setDocumentAttachment] = useState('');
+
+  // Form Loại đơn khác
+  const [otherTitle, setOtherTitle] = useState('');
+  const [otherContent, setOtherContent] = useState('');
+  const [otherAttachment, setOtherAttachment] = useState('');
 
   // History timeline modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -87,8 +92,13 @@ export default function AdministrativeRequestsPage() {
 
   useEffect(() => {
     fetchMyRequests();
-    fetchClasses();
-  }, [fetchMyRequests, fetchClasses]);
+  }, [fetchMyRequests]);
+
+  useEffect(() => {
+    if (activeTab === 'transfer' && classes.length === 0) {
+      fetchClasses();
+    }
+  }, [activeTab, classes.length, fetchClasses]);
 
   // Xử lý nộp đơn chuyển lớp
   const handleSubmitTransfer = async (e: React.FormEvent) => {
@@ -101,8 +111,8 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng chọn lớp muốn chuyển tới.');
       return;
     }
-    if (!transferReason.trim()) {
-      toast.error('Vui lòng nhập lý do chuyển lớp.');
+    if (!transferReason.trim() || transferReason.trim().replace(/\s+/g, ' ').length < 5) {
+      toast.error('Vui lòng nhập lý do chuyển lớp (tối thiểu 5 ký tự).');
       return;
     }
 
@@ -154,8 +164,8 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng chọn học sinh trước khi nộp đơn.');
       return;
     }
-    if (!documentPurpose.trim()) {
-      toast.error('Vui lòng nhập mục đích xin cấp giấy tờ.');
+    if (!documentPurpose.trim() || documentPurpose.trim().replace(/\s+/g, ' ').length < 5) {
+      toast.error('Vui lòng nhập mục đích xin cấp giấy tờ (tối thiểu 5 ký tự).');
       return;
     }
     if (numberOfCopies < 1 || numberOfCopies > 10) {
@@ -191,6 +201,55 @@ export default function AdministrativeRequestsPage() {
         err?.response?.data?.errors?.[0] ||
         err?.message ||
         'Đã xảy ra lỗi khi gửi đơn xin cấp giấy tờ.';
+      toast.error(errorMsg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Xử lý nộp loại đơn khác
+  const handleSubmitOther = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeChild?.studentId) {
+      toast.error('Vui lòng chọn học sinh trước khi nộp đơn.');
+      return;
+    }
+    const cleanTitle = otherTitle.trim().replace(/\s+/g, ' ');
+    if (cleanTitle.length < 5 || cleanTitle.length > 150) {
+      toast.error('Vui lòng nhập tiêu đề loại đơn khác (từ 5 đến 150 ký tự).');
+      return;
+    }
+    const cleanContent = otherContent.trim().replace(/\s+/g, ' ');
+    if (cleanContent.length < 5 || cleanContent.length > 1000) {
+      toast.error('Vui lòng nhập nội dung chi tiết đơn (từ 5 đến 1000 ký tự).');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const res = await administrativeRequestApi.submitOther({
+        studentId: activeChild.studentId,
+        title: cleanTitle,
+        content: cleanContent,
+        attachmentUrl: otherAttachment.trim() || undefined,
+      });
+
+      if (res.success) {
+        toast.success(res.message || 'Đã gửi đơn thành công!');
+        setOtherTitle('');
+        setOtherContent('');
+        setOtherAttachment('');
+        setActiveTab('list');
+        fetchMyRequests();
+      } else {
+        toast.error(res.errors?.[0] || res.message || 'Không thể gửi đơn.');
+      }
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.errors?.[0] ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Đã xảy ra lỗi khi gửi đơn.';
       toast.error(errorMsg);
     } finally {
       setSubmitting(false);
@@ -437,6 +496,32 @@ export default function AdministrativeRequestsPage() {
           <FileText size={18} />
           Xin Cấp Giấy Tờ / Chứng Nhận
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('other')}
+          style={{
+            flex: '1 1 auto',
+            minWidth: 160,
+            padding: '10px 16px',
+            borderRadius: 12,
+            border: activeTab === 'other' ? '2px solid #1E293B' : '2px solid transparent',
+            backgroundColor: activeTab === 'other' ? '#EDE9FE' : 'transparent',
+            boxShadow: activeTab === 'other' ? '2px 2px 0 #1E293B' : 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            color: activeTab === 'other' ? '#5B21B6' : '#64748B',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Send size={17} />
+          Loại Đơn Khác
+        </button>
       </div>
 
       {/* ======================================================== */}
@@ -548,11 +633,11 @@ export default function AdministrativeRequestsPage() {
                             fontSize: 12,
                             fontWeight: 800,
                             border: '1.5px solid #1E293B',
-                            backgroundColor: isTransfer ? '#D1FAE5' : '#FCE7F3',
-                            color: isTransfer ? '#065F46' : '#9D174D',
+                            backgroundColor: isTransfer ? '#D1FAE5' : req.requestType === 'Other' ? '#EDE9FE' : '#FCE7F3',
+                            color: isTransfer ? '#065F46' : req.requestType === 'Other' ? '#5B21B6' : '#9D174D',
                           }}
                         >
-                          {isTransfer ? 'Chuyển Lớp' : 'Cấp Giấy Tờ'}
+                          {isTransfer ? 'Chuyển Lớp' : req.requestType === 'Other' ? 'Loại Đơn Khác' : 'Cấp Giấy Tờ'}
                         </span>
                         <span style={{ fontWeight: 800, fontSize: 15, color: '#1E293B' }}>
                           Mã đơn: {req.requestNumber}
@@ -647,7 +732,7 @@ export default function AdministrativeRequestsPage() {
                           >
                             <Clock size={14} /> Chờ giáo vụ tiếp nhận
                           </span>
-                        ) : req.status === 'UnderReview' ? (
+                        ) : req.status === 'UnderReview' || req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? (
                           <span
                             style={{
                               backgroundColor: '#F3E8FF',
@@ -771,11 +856,11 @@ export default function AdministrativeRequestsPage() {
                       <div>
                         <div style={{ fontSize: 13, color: '#64748B', marginBottom: 4 }}>Thông tin thời gian:</div>
                         <div style={{ fontSize: 13, color: '#334155' }}>
-                          Ngày nộp: <strong>{formatDDMMYYYY(req.submissionDate)}</strong>
+                          Ngày nộp: <strong>{formatDDMMYYYYHHMM(req.submissionDate)}</strong>
                         </div>
                         {req.processedDate && (
                           <div style={{ fontSize: 13, color: '#334155', marginTop: 4 }}>
-                            Ngày xử lý: <strong>{formatDDMMYYYY(req.processedDate)}</strong>
+                            Ngày xử lý: <strong>{formatDDMMYYYYHHMM(req.processedDate)}</strong>
                           </div>
                         )}
                         <AttachmentViewer url={req.attachmentUrl} compact />
@@ -883,7 +968,7 @@ export default function AdministrativeRequestsPage() {
                       </div>
                     )}
 
-                    {/* Hộp kết quả Giấy tờ ĐÃ PHÁT HÀNH (Hỗ trợ cả Approved của BGH và Completed do Giáo vụ phát hành trực tiếp) */}
+                    {/* Hộp kết quả Giấy tờ / Đơn khác ĐÃ PHÁT HÀNH / PHÊ DUYỆT */}
                     {!isTransfer && (req.status === 'Approved' || req.status === 'Completed') && (
                       <div
                         style={{
@@ -893,40 +978,55 @@ export default function AdministrativeRequestsPage() {
                           borderRadius: 12,
                           padding: 14,
                           display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          flexWrap: 'wrap',
-                          gap: 12,
+                          flexDirection: 'column',
+                          gap: 10,
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <CheckCircle2 size={22} color="#16A34A" style={{ flexShrink: 0 }} />
-                          <div>
-                            <div style={{ fontWeight: 800, color: '#166534', fontSize: 13 }}>
-                              VĂN BẢN ĐÃ ĐƯỢC KÝ DUYỆT & PHÁT HÀNH CHÍNH THỨC!
-                            </div>
-                            <div style={{ fontSize: 13, color: '#14532D', marginTop: 2 }}>
-                              Số hiệu: {req.documentRequest?.certificateNumber || 'SAWP-OFFICIAL'} — {req.documentRequest?.digitalSignatureInfo || 'Đã ký xác thực điện tử'}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <CheckCircle2 size={22} color="#16A34A" style={{ flexShrink: 0 }} />
+                            <div>
+                              <div style={{ fontWeight: 800, color: '#166534', fontSize: 13 }}>
+                                {req.requestType === 'Other'
+                                  ? 'ĐƠN YÊU CẦU ĐÃ ĐƯỢC NHÀ TRƯỜNG GIẢI QUYẾT / PHÊ DUYỆT!'
+                                  : req.documentRequest?.issuedDocumentUrl
+                                    ? 'VĂN BẢN ĐÃ ĐƯỢC KÝ DUYỆT & PHÁT HÀNH CHÍNH THỨC!'
+                                    : 'ĐƠN ĐÃ ĐƯỢC PHÊ DUYỆT (CHƯA CÓ TỆP ĐÍNH KÈM)'}
+                              </div>
+                              <div style={{ fontSize: 13, color: '#14532D', marginTop: 2 }}>
+                                {req.schoolBoardNotes || req.documentRequest?.staffEndorsement || req.documentRequest?.digitalSignatureInfo || 'Đã hoàn tất xử lý.'}
+                              </div>
                             </div>
                           </div>
+
+                          {req.documentRequest?.issuedDocumentUrl?.includes('/download-document') && (
+                            <button
+                              type="button"
+                              className="btn btn--primary"
+                              onClick={() => handleDownload(req)}
+                              style={{
+                                fontSize: 13,
+                                padding: '8px 14px',
+                                backgroundColor: '#16A34A',
+                                borderColor: '#1E293B',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              <Download size={15} /> Tải văn bản điện tử
+                            </button>
+                          )}
                         </div>
 
-                        <button
-                          type="button"
-                          className="btn btn--primary"
-                          onClick={() => handleDownload(req)}
-                          style={{
-                            fontSize: 13,
-                            padding: '8px 14px',
-                            backgroundColor: '#16A34A',
-                            borderColor: '#1E293B',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                        >
-                          <Download size={15} /> Tải văn bản điện tử
-                        </button>
+                        {req.documentRequest?.issuedDocumentUrl && !req.documentRequest.issuedDocumentUrl.includes('/download-document') && (
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: '#166534', marginBottom: 4 }}>
+                              Tệp văn bản chính thức / kết quả từ Nhà trường:
+                            </div>
+                            <AttachmentViewer url={req.documentRequest.issuedDocumentUrl} />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1078,7 +1178,7 @@ export default function AdministrativeRequestsPage() {
                 style={{ width: '100%', borderRadius: 10, padding: '10px 14px', fontSize: 14 }}
                 value={effectiveDate}
                 onChange={(e) => setEffectiveDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
+                min={todayIso()}
                 disabled={hasPendingTransfer}
               />
               <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
@@ -1316,6 +1416,115 @@ export default function AdministrativeRequestsPage() {
                 }}
               >
                 <Send size={18} /> {submitting ? 'Đang gửi...' : 'Gửi đơn xin cấp giấy tờ'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 4: TẠO LOẠI ĐƠN KHÁC / KIẾN NGHỊ                      */}
+      {/* ======================================================== */}
+      {activeTab === 'other' && (
+        <div
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            border: '2px solid #1E293B',
+            boxShadow: '4px 4px 0 #1E293B',
+            padding: 28,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+            <span style={{ fontSize: 24 }}>📝</span>
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1E293B', margin: 0 }}>
+                Gửi Loại Đơn Khác / Kiến Nghị
+              </h2>
+              <p style={{ margin: 0, color: '#64748B', fontSize: 13 }}>
+                Dành cho các đề xuất, kiến nghị hoặc thủ tục ngoài danh mục chuyển lớp và cấp giấy tờ thông thường. Giáo vụ sẽ tiếp nhận phân loại và giải quyết trực tiếp hoặc trình Ban Giám Hiệu xem xét.
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: '#EDE9FE',
+              border: '2px solid #7C3AED',
+              borderRadius: 12,
+              padding: '12px 18px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#5B21B6' }}>HỌC SINH ĐANG CHỌN:</span>
+              <div style={{ fontWeight: 800, fontSize: 16, color: '#4C1D95' }}>
+                {activeChild?.fullName || 'Chưa chọn học sinh'} (Mã: {activeChild?.studentCode})
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#5B21B6' }}>LỚP HIỆN TẠI:</span>
+              <div style={{ fontWeight: 800, fontSize: 16, color: '#4C1D95' }}>
+                {activeChild?.currentClassName || 'Chưa phân lớp'}
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmitOther} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                Tiêu đề / Tên loại đơn: <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <input
+                type="text"
+                className="input"
+                style={{ width: '100%', borderRadius: 10, padding: '10px 14px', fontSize: 14 }}
+                value={otherTitle}
+                onChange={(e) => setOtherTitle(e.target.value)}
+                placeholder="Ví dụ: Đơn xin bảo lưu kết quả học tập, Đơn xin đón muộn định kỳ, Kiến nghị..."
+                maxLength={150}
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                Nội dung chi tiết / Lý do trình bày: <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <textarea
+                className="input"
+                style={{ width: '100%', minHeight: 110, borderRadius: 10, padding: '12px 14px' }}
+                value={otherContent}
+                onChange={(e) => setOtherContent(e.target.value)}
+                placeholder="Trình bày cụ thể nội dung đề nghị của gia đình (tối thiểu 5 ký tự)..."
+                maxLength={1000}
+                required
+              />
+            </div>
+
+            <DirectFileUploader
+              value={otherAttachment}
+              onChange={setOtherAttachment}
+              label="Tệp minh chứng / Đơn viết tay đính kèm (nếu có):"
+              hint="Định dạng hỗ trợ: PDF, JPG, PNG (tối đa 10MB)."
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 10 }}>
+              <button type="button" className="btn btn--outline" onClick={() => setActiveTab('list')} disabled={submitting}>
+                Quay lại
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={submitting}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px' }}
+              >
+                <Send size={18} /> {submitting ? 'Đang gửi...' : 'Gửi đơn khác'}
               </button>
             </div>
           </form>

@@ -16,7 +16,8 @@ import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { BoardDecisionModal } from '../../components/requests/BoardDecisionModal';
 import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
-import { formatDDMMYYYY } from '../../utils/date';
+import { formatDDMMYYYYHHMM } from '../../utils/date';
+import { openProtectedFile } from '../../utils/fileViewer';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 export default function AdministrativeApprovalPage() {
@@ -54,17 +55,27 @@ export default function AdministrativeApprovalPage() {
   const stats = useMemo(() => {
     const total = requests.length;
     const pending = requests.filter((r) => r.status === 'UnderReview').length;
+    const returnedToStaff = requests.filter((r) => r.status === 'ReturnedToStaff' || r.status === 'NeedMoreInfo').length;
     const approved = requests.filter(
       (r) => r.schoolBoardApprovedAt != null || r.status === 'Approved'
     ).length;
     const rejected = requests.filter((r) => r.status === 'Rejected').length;
     const transferCount = requests.filter((r) => r.requestType === 'ClassTransfer').length;
     const documentCount = requests.filter((r) => r.requestType === 'Document').length;
-    return { total, pending, approved, rejected, transferCount, documentCount };
+    return { total, pending, returnedToStaff, approved, rejected, transferCount, documentCount };
   }, [requests]);
 
   // Tải văn bản phát hành (nếu có)
   const handleDownloadDoc = async (req: AdministrativeRequestSummary) => {
+    const issuedUrl = req.documentRequest?.issuedDocumentUrl;
+    if (!issuedUrl) {
+      toast.error('Đơn này chưa có tệp văn bản đính kèm.');
+      return;
+    }
+    if (!issuedUrl.includes('/download-document')) {
+      await openProtectedFile(issuedUrl, true);
+      return;
+    }
     try {
       const fileName = `Giay_Xac_Nhan_${req.studentCode || 'HS'}_${req.requestNumber}.doc`;
       await administrativeRequestApi.downloadIssuedDocument(req.id, fileName);
@@ -90,6 +101,8 @@ export default function AdministrativeApprovalPage() {
       let matchStatus = true;
       if (statusFilter === 'UnderReview') {
         matchStatus = r.status === 'UnderReview';
+      } else if (statusFilter === 'ReturnedToStaff') {
+        matchStatus = r.status === 'ReturnedToStaff' || r.status === 'NeedMoreInfo';
       } else if (statusFilter === 'Approved') {
         matchStatus = r.schoolBoardApprovedAt != null || r.status === 'Approved';
       } else if (statusFilter === 'Rejected') {
@@ -317,6 +330,7 @@ export default function AdministrativeApprovalPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
         {[
           { key: 'UnderReview', label: 'Chờ BGH duyệt', count: stats.pending },
+          { key: 'ReturnedToStaff', label: 'Đã trả Giáo vụ sửa', count: stats.returnedToStaff },
           { key: 'Approved', label: 'Đã phê duyệt', count: stats.approved },
           { key: 'Rejected', label: 'Đã từ chối', count: stats.rejected },
           { key: 'ALL', label: 'Tất cả hồ sơ', count: stats.total },
@@ -391,6 +405,7 @@ export default function AdministrativeApprovalPage() {
             <option value="ALL">Tất cả loại đề xuất</option>
             <option value="ClassTransfer">Đề xuất Chuyển lớp</option>
             <option value="Document">Đề xuất Cấp giấy tờ</option>
+            <option value="Other">Loại đơn khác</option>
           </select>
         </div>
       </div>
@@ -446,6 +461,7 @@ export default function AdministrativeApprovalPage() {
             const isApproved = req.schoolBoardApprovedAt != null || req.status === 'Approved';
             const isRejected = req.status === 'Rejected';
             const isPending = req.status === 'UnderReview';
+            const isReturnedToStaff = req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo';
 
             return (
               <div
@@ -455,11 +471,15 @@ export default function AdministrativeApprovalPage() {
                   borderRadius: 16,
                   border: isApproved
                     ? '2px solid #059669'
+                    : isReturnedToStaff
+                    ? '2px solid #EA580C'
                     : isRejected
                     ? '2px solid #DC2626'
                     : '2px solid #1E293B',
                   boxShadow: isApproved
                     ? '4px 4px 0 #D1FAE5'
+                    : isReturnedToStaff
+                    ? '4px 4px 0 #FFEDD5'
                     : isRejected
                     ? '4px 4px 0 #FEE2E2'
                     : '4px 4px 0 #1E293B',
@@ -474,14 +494,14 @@ export default function AdministrativeApprovalPage() {
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    alignItems: 'flex-start',
+                    alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 12,
                     paddingBottom: 12,
                     borderBottom: '2px dashed #E2E8F0',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: '1 1 320px', minWidth: 0 }}>
                     <span
                       style={{
                         padding: '4px 10px',
@@ -489,17 +509,17 @@ export default function AdministrativeApprovalPage() {
                         fontSize: 12,
                         fontWeight: 800,
                         border: '1.5px solid #1E293B',
-                        backgroundColor: isTransfer ? '#D1FAE5' : '#FCE7F3',
-                        color: isTransfer ? '#065F46' : '#9D174D',
+                        backgroundColor: isTransfer ? '#D1FAE5' : req.requestType === 'Other' ? '#EDE9FE' : '#FCE7F3',
+                        color: isTransfer ? '#065F46' : req.requestType === 'Other' ? '#5B21B6' : '#9D174D',
                       }}
                     >
-                      {isTransfer ? 'Đề xuất Chuyển Lớp' : 'Đề xuất Cấp Giấy Tờ'}
+                      {isTransfer ? 'Đề xuất Chuyển Lớp' : req.requestType === 'Other' ? 'Loại Đơn Khác' : 'Đề xuất Cấp Giấy Tờ'}
                     </span>
                     <span style={{ fontWeight: 800, fontSize: 16, color: '#1E293B' }}>
                       {req.requestNumber}
                     </span>
                     <span style={{ fontSize: 13, color: '#64748B' }}>
-                      (Ngày trình: {formatDDMMYYYY(req.submissionDate)})
+                      (Ngày trình: {formatDDMMYYYYHHMM(req.submissionDate)})
                     </span>
 
                     {/* Status Badge */}
@@ -518,9 +538,14 @@ export default function AdministrativeApprovalPage() {
                         <Clock size={13} /> Chờ BGH phê duyệt
                       </span>
                     )}
+                    {isReturnedToStaff && (
+                      <span className="badge badge--amber" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Clock size={13} /> Đã trả Giáo vụ chỉnh sửa
+                      </span>
+                    )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', marginLeft: 'auto' }}>
                     {/* View history button */}
                     <button
                       type="button"
@@ -582,8 +607,8 @@ export default function AdministrativeApprovalPage() {
                       </button>
                     )}
 
-                    {/* Download button for approved document request */}
-                    {isApproved && !isTransfer && (
+                    {/* Download button for approved document request when file exists */}
+                    {isApproved && !isTransfer && !!req.documentRequest?.issuedDocumentUrl && (
                       <button
                         type="button"
                         className="btn btn--outline"
@@ -612,7 +637,7 @@ export default function AdministrativeApprovalPage() {
                       {req.studentName} ({req.studentCode})
                     </div>
                     <div style={{ fontSize: 13, color: '#475569', marginTop: 4 }}>
-                      Lớp hiện tại: <strong>{req.currentClassName || 'Chính khóa'}</strong> | Phụ huynh: <strong>{req.requesterName}</strong>
+                      Lớp hiện tại: <strong>{req.currentClassName || 'Chưa xếp lớp'}</strong> | Phụ huynh: <strong>{req.requesterName}</strong>
                     </div>
                   </div>
 
@@ -678,25 +703,29 @@ export default function AdministrativeApprovalPage() {
                   </div>
                 </div>
 
-                {/* Quyết định / Chỉ đạo của Ban Giám Hiệu (đối với hồ sơ đã duyệt hoặc từ chối) */}
-                {(isApproved || isRejected) && (
+                {/* Quyết định / Chỉ đạo của Ban Giám Hiệu */}
+                {(isApproved || isRejected || isReturnedToStaff) && (
                   <div
                     style={{
-                      backgroundColor: isApproved ? '#ECFDF5' : '#FEF2F2',
-                      border: `2px solid ${isApproved ? '#059669' : '#DC2626'}`,
+                      backgroundColor: isApproved ? '#ECFDF5' : isReturnedToStaff ? '#FFF7ED' : '#FEF2F2',
+                      border: `2px solid ${isApproved ? '#059669' : isReturnedToStaff ? '#EA580C' : '#DC2626'}`,
                       borderRadius: 12,
                       padding: '12px 16px',
                     }}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 800, color: isApproved ? '#047857' : '#B91C1C', marginBottom: 2 }}>
-                      {isApproved ? 'QUYẾT ĐỊNH PHÊ DUYỆT CỦA BAN GIÁM HIỆU:' : 'LÝ DO TỪ CHỐI CỦA BAN GIÁM HIỆU:'}
+                    <div style={{ fontSize: 12, fontWeight: 800, color: isApproved ? '#047857' : isReturnedToStaff ? '#9A3412' : '#B91C1C', marginBottom: 2 }}>
+                      {isApproved
+                        ? 'QUYẾT ĐỊNH PHÊ DUYỆT CỦA BAN GIÁM HIỆU:'
+                        : isReturnedToStaff
+                          ? 'YÊU CẦU CHỈNH SỬA GỬI BỘ PHẬN GIÁO VỤ (CHỜ TRÌNH LẠI):'
+                          : 'LÝ DO TỪ CHỐI CỦA BAN GIÁM HIỆU:'}
                     </div>
-                    <div style={{ fontSize: 13, color: isApproved ? '#065F46' : '#991B1B', fontWeight: 600, lineHeight: 1.5 }}>
-                      "{req.schoolBoardNotes || req.reviewerNotes || (isApproved ? 'Đồng ý phê duyệt đề xuất.' : 'Không đủ điều kiện phê duyệt.')}"
+                    <div style={{ fontSize: 13, color: isApproved ? '#065F46' : isReturnedToStaff ? '#7C2D12' : '#991B1B', fontWeight: 600, lineHeight: 1.5 }}>
+                      &quot;{req.schoolBoardNotes || req.reviewerNotes || (isApproved ? 'Đồng ý phê duyệt đề xuất.' : 'Không đủ điều kiện phê duyệt.')}&quot;
                     </div>
                     {req.schoolBoardApprovedAt && (
                       <div style={{ fontSize: 11, color: '#64748B', marginTop: 6 }}>
-                        Thời gian phê duyệt: {new Date(req.schoolBoardApprovedAt).toLocaleString('vi-VN')}
+                        Thời gian phê duyệt: {formatDDMMYYYYHHMM(req.schoolBoardApprovedAt)}
                       </div>
                     )}
                   </div>

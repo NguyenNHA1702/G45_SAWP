@@ -70,7 +70,15 @@ public static class AuditActions
     public const string LeaveRequestResubmit = "LEAVE_REQUEST_RESUBMIT";
     public const string LeaveRequestWithdraw = "LEAVE_REQUEST_WITHDRAW";
     public const string ClassTransferRequestExecute = "CLASS_TRANSFER_REQUEST_EXECUTE";
+    public const string AdministrativeRequestSubmit = "ADMINISTRATIVE_REQUEST_SUBMIT";
+    public const string AdministrativeRequestAmendment = "ADMINISTRATIVE_REQUEST_AMENDMENT";
+    public const string AdministrativeRequestResubmit = "ADMINISTRATIVE_REQUEST_RESUBMIT";
+    public const string AdministrativeRequestEndorse = "ADMINISTRATIVE_REQUEST_ENDORSE";
+    public const string AdministrativeRequestDirectIssue = "ADMINISTRATIVE_REQUEST_DIRECT_ISSUE";
+    public const string AdministrativeRequestBoardReturn = "ADMINISTRATIVE_REQUEST_BOARD_RETURN";
+    public const string AdministrativeRequestApprove = "ADMINISTRATIVE_REQUEST_APPROVE";
     public const string AdministrativeRequestReject = "ADMINISTRATIVE_REQUEST_REJECT";
+    public const string AdministrativeRequestCancel = "ADMINISTRATIVE_REQUEST_CANCEL";
 
     // Lunch and boarding
     public const string LunchServiceDayConfigure = "LUNCH_SERVICE_DAY_CONFIGURE";

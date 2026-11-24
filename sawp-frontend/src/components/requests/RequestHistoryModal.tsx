@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Clock, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
-import { formatDDMMYYYY } from '../../utils/date';
+import { formatDDMMYYYYHHMM } from '../../utils/date';
 import type { RequestHistoryItem } from '../../types/request.types';
 
 interface RequestHistoryModalProps {
@@ -156,14 +156,18 @@ export const RequestHistoryModal: React.FC<RequestHistoryModalProps> = ({
               />
               {history.map((item, index) => {
                 const isFinal = index === history.length - 1;
-                const isRejected = item.status === 'Rejected';
-                const isCompleted = item.status === 'Completed';
+                const isRejected = item.status === 'Rejected' || item.status === 'Cancelled';
+                const isCompleted = item.status === 'Completed' || item.status === 'Approved';
+                const isReturned = item.status === 'ReturnedToStaff' || item.status === 'NeedMoreInfo';
 
                 let dotColor = '#4F46E5';
                 let dotBg = '#EEF2FF';
                 if (isRejected) {
                   dotColor = '#EF4444';
                   dotBg = '#FEE2E2';
+                } else if (isReturned) {
+                  dotColor = '#EA580C';
+                  dotBg = '#FFF7ED';
                 } else if (isCompleted) {
                   dotColor = '#10B981';
                   dotBg = '#D1FAE5';
@@ -197,7 +201,7 @@ export const RequestHistoryModal: React.FC<RequestHistoryModalProps> = ({
                     >
                       {isCompleted ? (
                         <CheckCircle2 size={20} />
-                      ) : isRejected ? (
+                      ) : isRejected || isReturned ? (
                         <AlertCircle size={20} />
                       ) : (
                         <Clock size={18} />
@@ -224,8 +228,8 @@ export const RequestHistoryModal: React.FC<RequestHistoryModalProps> = ({
                         }}
                       >
                         <strong style={{ fontSize: 14, color: '#1E293B' }}>{item.action}</strong>
-                        <span style={{ fontSize: 12, color: '#64748B' }}>
-                          {formatDDMMYYYY(item.timestamp)}
+                        <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>
+                          {formatDDMMYYYYHHMM(item.timestamp)}
                         </span>
                       </div>
                       <p

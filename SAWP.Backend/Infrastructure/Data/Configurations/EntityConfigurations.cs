@@ -424,6 +424,8 @@ public class AdministrativeRequestConfiguration : IEntityTypeConfiguration<Admin
         builder.HasKey(ar => ar.Id);
         builder.Property(ar => ar.RequestNumber).HasMaxLength(50).IsRequired();
         builder.HasIndex(ar => ar.RequestNumber).IsUnique();
+        builder.HasIndex(ar => new { ar.RequestType, ar.Status, ar.SubmissionDate });
+        builder.HasIndex(ar => new { ar.RequesterUserId, ar.RequestType, ar.SubmissionDate });
         builder.Property(ar => ar.RequestType).HasMaxLength(100).IsRequired();
         builder.Property(ar => ar.ReviewerNotes).HasMaxLength(1000);
         builder.Property(ar => ar.AttachmentUrl).HasMaxLength(4000);
@@ -523,6 +525,7 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
         builder.Property(al => al.EntityName).HasMaxLength(100).IsRequired();
         builder.Property(al => al.EntityId).HasMaxLength(50);
         builder.Property(al => al.IpAddress).HasMaxLength(50);
+        builder.HasIndex(al => new { al.EntityName, al.EntityId, al.Timestamp });
 
         builder.HasOne(al => al.User)
                .WithMany(u => u.AuditLogs)
