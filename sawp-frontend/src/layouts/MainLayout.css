@@ -93,7 +93,7 @@
   transition: background-color 150ms ease, border-color 150ms ease, transform 180ms var(--ease-bounce), box-shadow 180ms var(--ease-bounce);
 }
 
-.nav-link:hover {
+.nav-link:hover:not(.nav-link--active) {
   background: var(--color-muted);
   border-color: var(--color-border);
   transform: translateX(3px);
@@ -148,7 +148,7 @@
   transition: background-color 150ms ease, border-color 150ms ease, transform 180ms var(--ease-bounce), box-shadow 180ms var(--ease-bounce);
 }
 
-.nav-parent-btn:hover {
+.nav-parent-btn:hover:not(.nav-parent-btn--active) {
   background: var(--color-muted);
   border-color: var(--color-border);
   transform: translateX(3px);
@@ -212,15 +212,16 @@
   transition: all 150ms ease;
 }
 
-.nav-sublink:hover {
+.nav-sublink:hover:not(.nav-sublink--active) {
   background: var(--color-muted);
   border-color: var(--color-border);
   transform: translateX(2px);
 }
 
-.nav-sublink--active {
+.nav-sublink--active,
+.nav-sublink--active:hover {
   background: var(--color-accent);
-  color: #ffffff !important;
+  color: #ffffff;
   border-color: var(--color-fg);
   box-shadow: 2px 2px 0 0 var(--color-fg);
   font-weight: 700;

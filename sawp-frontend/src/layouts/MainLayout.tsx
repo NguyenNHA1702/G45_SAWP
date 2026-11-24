@@ -93,83 +93,131 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  // --- Quản lý Giáo vụ: Học sinh & Xếp lớp (OfficeStaff, SchoolBoard) ---
+  // --- Giáo vụ & Văn phòng (OfficeStaff) ---
   {
     id: 'office-students-group',
-    label: 'Học sinh & Lớp học',
+    label: 'Giáo vụ & Văn phòng',
     icon: Users,
-    roles: ['OfficeStaff', 'SchoolBoard'],
+    roles: ['OfficeStaff'],
     children: [
       {
         id: 'office-students',
         label: 'Hồ sơ học sinh',
         path: '/students',
-        roles: ['OfficeStaff'],
         icon: Users,
       },
       {
         id: 'office-classes',
         label: 'Lớp học & Xếp lớp',
         path: '/classes',
-        roles: ['OfficeStaff', 'SchoolBoard'],
         icon: GraduationCap,
       },
       {
         id: 'office-account-requests',
         label: 'Yêu cầu cấp tài khoản',
         path: '/office/account-requests',
-        roles: ['OfficeStaff'],
         icon: UserPlus,
+      },
+      {
+        id: 'office-requests',
+        label: 'Xử lý đơn hành chính',
+        path: '/office/requests',
+        icon: FileCheck,
+      },
+      {
+        id: 'office-attendance',
+        label: 'Theo dõi chuyên cần',
+        path: '/teacher/attendance',
+        icon: CalendarCheck2,
       },
       {
         id: 'office-calendar',
         label: 'Lịch năm học & Học bù',
         path: '/admin/config',
-        roles: ['OfficeStaff'],
         icon: CalendarCheck2,
+      },
+      {
+        id: 'office-audit-logs',
+        label: 'Nhật ký hệ thống',
+        path: '/system/audit-logs',
+        icon: ShieldAlert,
       },
     ],
   },
-  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, SchoolBoard — ATT-8: không gồm ServiceStaff) ---
+  // --- Ban giám hiệu (SchoolBoard) ---
+  {
+    id: 'board-group',
+    label: 'Ban giám hiệu',
+    icon: ShieldCheck,
+    roles: ['SchoolBoard'],
+    children: [
+      {
+        id: 'board-classes',
+        label: 'Lớp học & Xếp lớp',
+        path: '/classes',
+        icon: GraduationCap,
+      },
+      {
+        id: 'board-requests',
+        label: 'Phê duyệt đơn cấp trường',
+        path: '/board/requests',
+        icon: ShieldCheck,
+      },
+      {
+        id: 'board-leave',
+        label: 'Duyệt đơn xin nghỉ',
+        path: '/teacher/leave-requests',
+        icon: FileCheck,
+      },
+      {
+        id: 'board-attendance',
+        label: 'Theo dõi chuyên cần',
+        path: '/teacher/attendance',
+        icon: CalendarCheck2,
+      },
+      {
+        id: 'board-audit-logs',
+        label: 'Nhật ký hệ thống',
+        path: '/system/audit-logs',
+        icon: ShieldAlert,
+      },
+    ],
+  },
+  // --- Giáo viên chủ nhiệm (Teacher) ---
   {
     id: 'teacher-group',
-    label: 'Điểm danh & Lớp học',
+    label: 'Giáo viên chủ nhiệm',
     icon: CalendarCheck2,
-    roles: ['Teacher', 'OfficeStaff', 'SchoolBoard'],
+    roles: ['Teacher'],
     children: [
       {
         id: 'teacher-roster',
         label: 'Lớp chủ nhiệm',
         path: '/teacher/roster',
-        roles: ['Teacher'],
         icon: GraduationCap,
       },
       {
         id: 'teacher-boarding',
         label: 'Bán trú lớp học',
         path: '/teacher/boarding',
-        roles: ['Teacher'],
         icon: UtensilsCrossed,
       },
       {
         id: 'teacher-attendance',
-        label: 'Điểm danh & Tình trạng chuyên cần',
+        label: 'Điểm danh & Chuyên cần',
         path: '/teacher/attendance',
-        roles: ['Teacher', 'OfficeStaff', 'SchoolBoard'],
         icon: CalendarCheck2,
       },
       {
         id: 'teacher-leave',
         label: 'Duyệt đơn xin nghỉ',
         path: '/teacher/leave-requests',
-        roles: ['Teacher', 'SchoolBoard'],
         icon: FileCheck,
       },
       {
         id: 'teacher-contact-book',
         label: 'Sổ liên lạc lớp',
         path: '/teacher/contact-book',
-        roles: ['Teacher'],
         icon: Newspaper,
       },
     ],
@@ -177,7 +225,7 @@ const NAV_ITEMS: NavItem[] = [
   // --- Cổng phụ huynh (Parent) ---
   {
     id: 'parent-group',
-    label: 'Theo dõi con & Bán trú',
+    label: 'Cổng phụ huynh',
     icon: HeartHandshake,
     roles: ['Parent'],
     children: [
@@ -211,42 +259,11 @@ const NAV_ITEMS: NavItem[] = [
         path: '/parent/attendance',
         icon: ClipboardList,
       },
-    ],
-  },
-  // --- Đơn hành chính & Giấy tờ (Parent, OfficeStaff, SchoolBoard) ---
-  {
-    id: 'administrative-requests-group',
-    label: 'Đơn từ & Hành chính',
-    icon: FileCheck,
-    roles: ['Parent', 'OfficeStaff', 'SchoolBoard'],
-    children: [
       {
         id: 'parent-requests',
         label: 'Gửi đơn & Giấy tờ',
         path: '/parent/requests',
-        roles: ['Parent'],
         icon: FileCheck,
-      },
-      {
-        id: 'office-requests',
-        label: 'Xử lý đơn hành chính',
-        path: '/office/requests',
-        roles: ['OfficeStaff'],
-        icon: FileCheck,
-      },
-      {
-        id: 'board-requests',
-        label: 'Phê duyệt đơn cấp trường',
-        path: '/board/requests',
-        roles: ['SchoolBoard'],
-        icon: ShieldCheck,
-      },
-      {
-        id: 'office-audit-logs',
-        label: 'Nhật ký hệ thống',
-        path: '/system/audit-logs',
-        roles: ['OfficeStaff', 'SchoolBoard'],
-        icon: ShieldAlert,
       },
     ],
   },
@@ -261,28 +278,24 @@ const NAV_ITEMS: NavItem[] = [
         id: 'admin-users',
         label: 'Quản lý tài khoản',
         path: '/admin/users',
-        roles: ['Admin'],
         icon: UserCog,
       },
       {
         id: 'admin-account-requests',
         label: 'Duyệt yêu cầu cấp tài khoản',
         path: '/admin/account-requests',
-        roles: ['Admin'],
         icon: UserPlus,
       },
       {
         id: 'admin-config',
         label: 'Cấu hình hệ thống',
         path: '/admin/config',
-        roles: ['Admin'],
         icon: Settings,
       },
       {
         id: 'admin-audit-logs',
         label: 'Nhật ký hệ thống',
         path: '/system/audit-logs',
-        roles: ['Admin'],
         icon: ShieldAlert,
       },
     ],
@@ -325,7 +338,7 @@ export function MainLayout() {
   const hasRoleMatch = (rolesList?: string[]) =>
     !rolesList ||
     rolesList.some((r) =>
-      userRoles.some((ur) => typeof ur === 'string' && (ur.toLowerCase() === r.toLowerCase() || ur.toLowerCase() === 'admin'))
+      userRoles.some((ur) => typeof ur === 'string' && ur.toLowerCase() === r.toLowerCase())
     );
 
   const isChildActive = (targetPathWithQuery: string) => {
@@ -520,10 +533,12 @@ export function MainLayout() {
                 <div className="user-name" title={currentUser?.fullName}>
                   {currentUser?.fullName ?? 'Người dùng'}
                 </div>
-                <div className="user-role-badge">
-                  <span className="badge badge--mint" style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
-                    {userRoles[0] ?? 'User'}
-                  </span>
+                <div className="user-role-badge" style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {(userRoles.length > 0 ? userRoles : ['User']).map((role) => (
+                    <span key={role} className="badge badge--mint" style={{ fontSize: '0.7rem', padding: '1px 6px' }}>
+                      {role}
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>

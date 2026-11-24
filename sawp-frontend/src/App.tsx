@@ -83,7 +83,7 @@ function RequireRole({ roles, children }: { roles: string[]; children: React.Rea
   const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles : [String(rawRoles)];
 
   const hasRole = roles.some((r) =>
-    userRoles.some((ur) => typeof ur === 'string' && (ur.toLowerCase() === r.toLowerCase() || ur.toLowerCase() === 'admin'))
+    userRoles.some((ur) => typeof ur === 'string' && ur.toLowerCase() === r.toLowerCase())
   );
   if (!hasRole) {
     toast.error('Bạn không có quyền truy cập trang này.');
@@ -161,7 +161,7 @@ export default function App() {
           <Route
             path="/teacher/contact-book"
             element={
-              <RequireRole roles={['Teacher', 'SchoolBoard', 'Admin']}>
+              <RequireRole roles={['Teacher']}>
                 <TeacherContactBookPage />
               </RequireRole>
             }
@@ -305,7 +305,7 @@ export default function App() {
           <Route
             path="/admin/config"
             element={
-              <RequireRole roles={['Admin']}>
+              <RequireRole roles={['Admin', 'OfficeStaff']}>
                 <SystemConfigPage />
               </RequireRole>
             }
