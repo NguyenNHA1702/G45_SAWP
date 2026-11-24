@@ -672,7 +672,6 @@ public class EContactBookService : IEContactBookService
             .ToListAsync(cancellationToken);
 
         bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
-        bool isParentCaller = false;
 
         if (!isPrivileged)
         {
@@ -688,7 +687,6 @@ public class EContactBookService : IEContactBookService
                 {
                     return ApiResponse<List<StudentEvaluationDto>>.Fail(SystemMessages.MSG10);
                 }
-                isParentCaller = true;
             }
         }
 
@@ -702,13 +700,7 @@ public class EContactBookService : IEContactBookService
             .ThenByDescending(se => se.EvaluationDate)
             .ToListAsync(cancellationToken);
 
-        var result = evaluations.Select(e =>
-        {
-            var dto = MapToDto(e, student.FullName, student.StudentCode, e.Class.ClassName);
-            // BR-51: Không để lộ ghi chú riêng nội bộ của giáo viên cho phụ huynh
-            if (isParentCaller) dto.PrivateRemind = null;
-            return dto;
-        }).ToList();
+        var result = evaluations.Select(e => MapToDto(e, student.FullName, student.StudentCode, e.Class.ClassName)).ToList();
         return ApiResponse<List<StudentEvaluationDto>>.Ok(result);
     }
 
@@ -731,9 +723,9 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Tuần học phải nằm trong khoảng 1 đến 52." });
         }
 
-        if (request.TeacherNote.Trim().Length > 2000 || (request.PrivateRemind?.Trim().Length ?? 0) > 1000)
+        if (request.TeacherNote.Trim().Length > 1500 || (request.PrivateRemind?.Trim().Length ?? 0) > 500)
         {
-            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Nhận xét vượt quá độ dài cho phép." });
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Nhận xét tối đa 1500 ký tự và dặn dò riêng tối đa 500 ký tự." });
         }
 
         var targetClass = await _context.Classes.FindAsync(new object[] { request.ClassId }, cancellationToken);

@@ -3,6 +3,7 @@ import { CalendarDays, Clock, Save, Settings } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAuthUser } from '../../services/apiClient';
 import { adminApi } from '../../services/implementations/adminApi';
+import { asApiError } from '../../utils/apiError';
 import type { LunchCutoffDayDto, SchoolCalendarDayDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 
@@ -23,16 +24,20 @@ export default function SystemConfigPage() {
 
   // Calendar tab
   const [calendarDays, setCalendarDays] = useState<SchoolCalendarDayDto[]>([]);
-  const [calDate, setCalDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [calStartDate, setCalStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [calEndDate, setCalEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [calIsSchoolDay, setCalIsSchoolDay] = useState<boolean>(true);
   const [calNote, setCalNote] = useState<string>('');
+  const [savingCalendar, setSavingCalendar] = useState(false);
 
   // Lunch cutoff tab
   const [lunchDays, setLunchDays] = useState<LunchCutoffDayDto[]>([]);
-  const [lunchDate, setLunchDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [lunchStartDate, setLunchStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [lunchEndDate, setLunchEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [lunchServing, setLunchServing] = useState<boolean>(true);
   const [lunchCutoff, setLunchCutoff] = useState<string>('08:15');
   const [lunchRemarks, setLunchRemarks] = useState<string>('');
+  const [savingLunch, setSavingLunch] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
@@ -57,43 +62,106 @@ export default function SystemConfigPage() {
     loadTab();
   }, [loadTab]);
 
-  const handleSaveCalendarDay = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const buildDateRange = (startStr: string, endStr: string): string[] => {
+    const start = new Date(`${startStr}T00:00:00Z`);
+    const end = new Date(`${endStr}T00:00:00Z`);
+    const dates: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return dates;
+  };
+
+  const saveDateRange = async (
+    startDate: string,
+    endDate: string,
+    setSaving: (v: boolean) => void,
+    saveOne: (date: string) => Promise<{ success: boolean; message?: string | null; errors?: string[] | null }>,
+    fallbackError: string
+  ) => {
+    if (!startDate || !endDate) {
+      toast.error('Vui lòng chọn đầy đủ Từ ngày và Đến ngày.');
+      return;
+    }
+    if (endDate < startDate) {
+      toast.error('Đến ngày phải lớn hơn hoặc bằng Từ ngày.');
+      return;
+    }
+
+    const dates = buildDateRange(startDate, endDate);
+    if (dates.length > 90) {
+      toast.error('Chỉ hỗ trợ cập nhật tối đa 90 ngày mỗi lần.');
+      return;
+    }
+
+    setSaving(true);
     try {
-      const res = await adminApi.upsertCalendarDay({
-        date: calDate,
-        isSchoolDay: calIsSchoolDay,
-        note: calNote || undefined,
-      });
-      if (res.success) {
-        toast.success(getSystemMessage('MSG44')?.content || 'Đã lưu cấu hình hệ thống.');
+      let successCount = 0;
+      let firstError: string | undefined;
+
+      for (const date of dates) {
+        const res = await saveOne(date);
+        if (res.success) {
+          successCount += 1;
+        } else if (!firstError) {
+          firstError = res.errors?.[0] || res.message || `Lỗi khi lưu ngày ${date}.`;
+        }
+      }
+
+      if (successCount === dates.length) {
+        toast.success(
+          dates.length === 1
+            ? getSystemMessage('MSG44')?.content || 'Đã lưu cấu hình hệ thống.'
+            : `Đã cập nhật cấu hình cho ${successCount} ngày.`
+        );
+        loadTab();
+      } else if (successCount > 0) {
+        toast.error(`Đã lưu ${successCount}/${dates.length} ngày. ${firstError ?? ''}`);
         loadTab();
       } else {
-        toast.error(res.message || 'Lỗi khi lưu lịch ngày học.');
+        toast.error(firstError || fallbackError);
       }
-    } catch {
-      toast.error(getSystemMessage('MSG50')?.content || 'Đã xảy ra lỗi hệ thống.');
+    } catch (err) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || fallbackError);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const handleSaveCalendarDay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveDateRange(
+      calStartDate,
+      calEndDate,
+      setSavingCalendar,
+      (date) =>
+        adminApi.upsertCalendarDay({
+          date,
+          isSchoolDay: calIsSchoolDay,
+          note: calNote || undefined,
+        }),
+      'Lỗi khi lưu lịch ngày học.'
+    );
   };
 
   const handleSaveLunchCutoff = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const res = await adminApi.upsertLunchCutoff({
-        date: lunchDate,
-        isServing: lunchServing,
-        cutoffTime: lunchCutoff,
-        remarks: lunchRemarks || undefined,
-      });
-      if (res.success) {
-        toast.success(getSystemMessage('MSG44')?.content || 'Đã lưu cấu hình hệ thống.');
-        loadTab();
-      } else {
-        toast.error(res.errors?.[0] || res.message || 'Lỗi khi lưu cấu hình bán trú.');
-      }
-    } catch {
-      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng kiểm tra dữ liệu nhập.');
-    }
+    await saveDateRange(
+      lunchStartDate,
+      lunchEndDate,
+      setSavingLunch,
+      (date) =>
+        adminApi.upsertLunchCutoff({
+          date,
+          isServing: lunchServing,
+          cutoffTime: lunchCutoff,
+          remarks: lunchRemarks || undefined,
+        }),
+      'Lỗi khi lưu cấu hình bán trú.'
+    );
   };
 
   return (
@@ -138,11 +206,39 @@ export default function SystemConfigPage() {
       {activeTab === 'calendar' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
           <form onSubmit={handleSaveCalendarDay} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <h3 style={{ margin: 0 }}>Cập nhật ngày học</h3>
-            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-              Ngày áp dụng
-              <input type="date" className="input" style={{ width: '100%', marginTop: 4 }} value={calDate} onChange={(e) => setCalDate(e.target.value)} />
-            </label>
+            <h3 style={{ margin: 0 }}>Cập nhật lịch ngày học / nghỉ</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+                Từ ngày
+                <input
+                  type="date"
+                  className="input"
+                  style={{ width: '100%', marginTop: 4 }}
+                  value={calStartDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCalStartDate(val);
+                    if (calEndDate < val) setCalEndDate(val);
+                  }}
+                />
+              </label>
+              <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+                Đến ngày
+                <input
+                  type="date"
+                  className="input"
+                  style={{ width: '100%', marginTop: 4 }}
+                  min={calStartDate}
+                  value={calEndDate}
+                  onChange={(e) => setCalEndDate(e.target.value)}
+                />
+              </label>
+            </div>
+            {calStartDate && calEndDate && calEndDate >= calStartDate && (
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                Áp dụng cho {buildDateRange(calStartDate, calEndDate).length} ngày
+              </div>
+            )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', fontWeight: 700, cursor: 'pointer' }}>
               <input type="checkbox" checked={calIsSchoolDay} onChange={(e) => setCalIsSchoolDay(e.target.checked)} />
               Là ngày học chính thức (bỏ tích = ngày nghỉ)
@@ -151,8 +247,8 @@ export default function SystemConfigPage() {
               Ghi chú
               <input className="input" style={{ width: '100%', marginTop: 4 }} placeholder="VD: Nghỉ lễ Quốc khánh..." value={calNote} onChange={(e) => setCalNote(e.target.value)} />
             </label>
-            <button type="submit" className="btn btn--primary btn--sm">
-              <Save size={15} /> Lưu cấu hình
+            <button type="submit" className="btn btn--primary btn--sm" disabled={savingCalendar}>
+              <Save size={15} /> {savingCalendar ? 'Đang lưu...' : 'Lưu cấu hình'}
             </button>
           </form>
 
@@ -178,7 +274,9 @@ export default function SystemConfigPage() {
                       key={d.id}
                       style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
                       onClick={() => {
-                        setCalDate(d.date.slice(0, 10));
+                        const dateStr = d.date.slice(0, 10);
+                        setCalStartDate(dateStr);
+                        setCalEndDate(dateStr);
                         setCalIsSchoolDay(d.isSchoolDay);
                         setCalNote(d.note || '');
                       }}
@@ -201,10 +299,38 @@ export default function SystemConfigPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
           <form onSubmit={handleSaveLunchCutoff} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <h3 style={{ margin: 0 }}>Cập nhật giờ chốt bán trú</h3>
-            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-              Ngày phục vụ
-              <input type="date" className="input" style={{ width: '100%', marginTop: 4 }} value={lunchDate} onChange={(e) => setLunchDate(e.target.value)} />
-            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+                Từ ngày
+                <input
+                  type="date"
+                  className="input"
+                  style={{ width: '100%', marginTop: 4 }}
+                  value={lunchStartDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLunchStartDate(val);
+                    if (lunchEndDate < val) setLunchEndDate(val);
+                  }}
+                />
+              </label>
+              <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+                Đến ngày
+                <input
+                  type="date"
+                  className="input"
+                  style={{ width: '100%', marginTop: 4 }}
+                  min={lunchStartDate}
+                  value={lunchEndDate}
+                  onChange={(e) => setLunchEndDate(e.target.value)}
+                />
+              </label>
+            </div>
+            {lunchStartDate && lunchEndDate && lunchEndDate >= lunchStartDate && (
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                Áp dụng cho {buildDateRange(lunchStartDate, lunchEndDate).length} ngày
+              </div>
+            )}
             <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
               Giờ chốt suất (HH:mm)
               <input type="time" className="input" style={{ width: '100%', marginTop: 4 }} value={lunchCutoff} onChange={(e) => setLunchCutoff(e.target.value)} />
@@ -217,8 +343,8 @@ export default function SystemConfigPage() {
               Ghi chú
               <input className="input" style={{ width: '100%', marginTop: 4 }} placeholder="Ghi chú vận hành..." value={lunchRemarks} onChange={(e) => setLunchRemarks(e.target.value)} />
             </label>
-            <button type="submit" className="btn btn--primary btn--sm">
-              <Save size={15} /> Lưu cấu hình
+            <button type="submit" className="btn btn--primary btn--sm" disabled={savingLunch}>
+              <Save size={15} /> {savingLunch ? 'Đang lưu...' : 'Lưu cấu hình'}
             </button>
           </form>
 
@@ -245,7 +371,9 @@ export default function SystemConfigPage() {
                       key={d.id}
                       style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer' }}
                       onClick={() => {
-                        setLunchDate(d.date.slice(0, 10));
+                        const dateStr = d.date.slice(0, 10);
+                        setLunchStartDate(dateStr);
+                        setLunchEndDate(dateStr);
                         setLunchServing(d.isServing);
                         setLunchCutoff(d.cutoffTime);
                         setLunchRemarks(d.remarks || '');

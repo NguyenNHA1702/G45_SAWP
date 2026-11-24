@@ -307,7 +307,7 @@ public class EContactBookServiceTests
     }
 
     [Fact]
-    public async Task GetStudentEvaluations_ByParent_ShouldHidePrivateRemind()
+    public async Task GetStudentEvaluations_ByParent_ShouldIncludePrivateRemind()
     {
         var parentRole = new Role { Id = 6, Name = "Parent" };
         var teacherUser = new User { Id = 10, Username = "gv1", FullName = "GV 1" };
@@ -324,7 +324,7 @@ public class EContactBookServiceTests
             WeekNumber = 5,
             Rating = "Good",
             TeacherNote = "Chăm ngoan",
-            PrivateRemind = "Ghi chú riêng nội bộ của GV",
+            PrivateRemind = "Dặn dò riêng cho phụ huynh",
             EvaluationDate = DateTime.UtcNow
         };
         _context.Roles.Add(parentRole);
@@ -341,7 +341,44 @@ public class EContactBookServiceTests
 
         result.Success.Should().BeTrue();
         result.Data.Should().HaveCount(1);
-        result.Data![0].PrivateRemind.Should().BeNull();
+        result.Data![0].PrivateRemind.Should().Be("Dặn dò riêng cho phụ huynh");
+    }
+
+    [Fact]
+    public async Task CreateOrUpdateEvaluation_ExceedingMaxLengths_ShouldFail()
+    {
+        var teacher = new User { Id = 10, Username = "gv1", FullName = "GV 1" };
+        var staff = new StaffProfile { Id = 1, UserId = 10, StaffCode = "GV01" };
+        var cls = new Class { Id = 1, ClassName = "2A", HomeroomTeacherId = 1 };
+        var student = new Student { Id = 1, StudentCode = "HS001", FullName = "Bé An" };
+        _context.Users.Add(teacher);
+        _context.StaffProfiles.Add(staff);
+        _context.Classes.Add(cls);
+        _context.Students.Add(student);
+        await _context.SaveChangesAsync();
+
+        var tooLongRemind = new CreateStudentEvaluationDto
+        {
+            StudentId = 1,
+            ClassId = 1,
+            WeekNumber = 5,
+            Rating = "Good",
+            TeacherNote = "Chăm ngoan",
+            PrivateRemind = new string('A', 501)
+        };
+        var remindRes = await _service.CreateOrUpdateEvaluationAsync(10, tooLongRemind);
+        remindRes.Success.Should().BeFalse();
+
+        var tooLongNote = new CreateStudentEvaluationDto
+        {
+            StudentId = 1,
+            ClassId = 1,
+            WeekNumber = 5,
+            Rating = "Good",
+            TeacherNote = new string('B', 1501)
+        };
+        var noteRes = await _service.CreateOrUpdateEvaluationAsync(10, tooLongNote);
+        noteRes.Success.Should().BeFalse();
     }
 
     [Fact]

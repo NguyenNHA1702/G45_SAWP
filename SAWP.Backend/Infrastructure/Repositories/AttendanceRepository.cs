@@ -35,6 +35,31 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AttendanceRecord>> GetDailyStudentAttendanceAsync(
+        IEnumerable<int> studentIds,
+        DateTime date,
+        AttendanceSession session,
+        bool track = false,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = studentIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return Array.Empty<AttendanceRecord>();
+        }
+
+        IQueryable<AttendanceRecord> query = _context.AttendanceRecords;
+        if (!track)
+        {
+            query = query.AsNoTracking();
+        }
+
+        return await query
+            .Include(ar => ar.Student)
+            .Where(ar => ids.Contains(ar.StudentId) && ar.Date == date && ar.Session == session)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<AttendanceRecord?> GetByIdWithStudentClassAsync(int id, CancellationToken ct = default)
     {
         return await _context.AttendanceRecords
@@ -129,6 +154,56 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             return d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday;
         }
 
+        var activeRoster = await _context.ClassAssignments
+            .AsNoTracking()
+            .Where(ca => ca.ClassId == classId && ca.IsActive)
+            .Select(ca => new
+            {
+                ca.StudentId,
+                ca.Student.StudentCode,
+                ca.Student.FullName
+            })
+            .ToListAsync(ct);
+
+        if (activeRoster.Count > 0)
+        {
+            var rosterIds = activeRoster.Select(s => s.StudentId).ToList();
+            var rosterRecords = (await _context.AttendanceRecords
+                .AsNoTracking()
+                .Where(ar => rosterIds.Contains(ar.StudentId) && ar.Date >= fromDate && ar.Date <= toDate)
+                .Select(ar => new
+                {
+                    ar.Date,
+                    ar.StudentId,
+                    ar.Status
+                })
+                .ToListAsync(ct))
+                .Where(x => IsValidSchoolDay(x.Date))
+                .GroupBy(x => x.StudentId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            return activeRoster
+                .Select(s =>
+                {
+                    var studentRecords = rosterRecords.TryGetValue(s.StudentId, out var list)
+                        ? list
+                        : null;
+
+                    return new StudentAttendanceRowDto
+                    {
+                        StudentId = s.StudentId,
+                        StudentCode = s.StudentCode,
+                        FullName = s.FullName,
+                        Present = studentRecords?.Count(x => x.Status == AttendanceStatus.Present) ?? 0,
+                        Late = studentRecords?.Count(x => x.Status == AttendanceStatus.Late) ?? 0,
+                        ExcusedAbsence = studentRecords?.Count(x => x.Status == AttendanceStatus.ExcusedAbsence) ?? 0,
+                        UnexcusedAbsence = studentRecords?.Count(x => x.Status == AttendanceStatus.UnexcusedAbsence) ?? 0
+                    };
+                })
+                .OrderBy(x => x.FullName)
+                .ToList();
+        }
+
         var records = await _context.AttendanceRecords
             .AsNoTracking()
             .Where(ar => ar.ClassId == classId && ar.Date >= fromDate && ar.Date <= toDate)
@@ -166,20 +241,36 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         CancellationToken ct = default)
     {
         var classIdList = classIds.ToList();
+        if (classIdList.Count == 0)
+        {
+            return new HashSet<int>();
+        }
+
+        var activeCounts = await _context.ClassAssignments
+            .AsNoTracking()
+            .Where(ca => classIdList.Contains(ca.ClassId) && ca.IsActive)
+            .GroupBy(ca => ca.ClassId)
+            .Select(g => new { ClassId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ClassId, x => x.Count, ct);
 
         // Bản ghi Vắng có phép tự sinh khi duyệt đơn (LeaveRequestId != null && UpdatedByUserId == null)
-        // KHÔNG tính là giáo viên đã nộp điểm danh lớp (A3)
-        var submittedIds = await _context.AttendanceRecords
+        // KHÔNG tính là giáo viên đã nộp điểm danh lớp (A3).
+        // Chỉ đánh dấu "Đã lưu" khi toàn bộ học sinh hiện tại của lớp đều đã được điểm danh.
+        var submittedCounts = await _context.AttendanceRecords
             .AsNoTracking()
             .Where(ar => classIdList.Contains(ar.ClassId)
                       && ar.Date == date
                       && ar.Session == session
-                      && (ar.LeaveRequestId == null || ar.UpdatedByUserId != null))
-            .Select(ar => ar.ClassId)
-            .Distinct()
+                      && (ar.LeaveRequestId == null || ar.UpdatedByUserId != null)
+                      && _context.ClassAssignments.Any(ca => ca.ClassId == ar.ClassId && ca.StudentId == ar.StudentId && ca.IsActive))
+            .GroupBy(ar => ar.ClassId)
+            .Select(g => new { ClassId = g.Key, Count = g.Select(ar => ar.StudentId).Distinct().Count() })
             .ToListAsync(ct);
 
-        return submittedIds.ToHashSet();
+        return submittedCounts
+            .Where(x => activeCounts.TryGetValue(x.ClassId, out var total) && total > 0 && x.Count >= total)
+            .Select(x => x.ClassId)
+            .ToHashSet();
     }
 
     public async Task<IReadOnlyList<AttendanceRecord>> GetStudentAttendanceHistoryAsync(

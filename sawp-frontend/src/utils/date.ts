@@ -24,8 +24,16 @@ export const formatViDate = (iso: string): string => {
   return `${d}/${m}/${y}`;
 };
 
+const ensureUtcSuffix = (iso: string): string => {
+  const trimmed = iso.trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(trimmed) && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(trimmed)) {
+    return `${trimmed}Z`;
+  }
+  return trimmed;
+};
+
 export const formatViDateTime = (iso: string): string =>
-  new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+  new Date(ensureUtcSuffix(iso)).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 
 /** Tính ngày Thứ Hai của tuần kế tiếp (dạng YYYY-MM-DD theo giờ máy) */
 export const getNextMondayIso = (baseDate: Date = new Date()): string => {

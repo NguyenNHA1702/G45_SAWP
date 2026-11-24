@@ -7,6 +7,7 @@ namespace Core.Interfaces;
 public interface IAttendanceRepository : IRepository<AttendanceRecord>
 {
     Task<IReadOnlyList<AttendanceRecord>> GetDailyClassAttendanceAsync(int classId, DateTime date, AttendanceSession session, bool track = false, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AttendanceRecord>> GetDailyStudentAttendanceAsync(IEnumerable<int> studentIds, DateTime date, AttendanceSession session, bool track = false, CancellationToken cancellationToken = default);
     Task<AttendanceRecord?> GetByIdWithStudentClassAsync(int id, CancellationToken ct = default);
     Task<Dictionary<int, LeaveIndicatorDto>> GetActiveLeavesCoveringDateAsync(IEnumerable<int> studentIds, DateTime date, AttendanceSession session, CancellationToken ct = default);
     Task<IReadOnlyList<StudentAttendanceRowDto>> GetClassStatusCountsAsync(int classId, DateTime from, DateTime to, CancellationToken ct = default);
