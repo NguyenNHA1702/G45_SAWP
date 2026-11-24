@@ -105,7 +105,7 @@ public class LeaveRequestServiceTests : TestBase
     {
         // Arrange
         SetupRepository(new List<Guardian>());
-        var request = new CreateLeaveRequestDto { StudentId = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" };
+        var request = new CreateLeaveRequestDto { StudentId = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Cháu bị ốm" };
 
         // Act
         var result = await _service.SubmitLeaveRequestAsync(999, request);
@@ -122,7 +122,7 @@ public class LeaveRequestServiceTests : TestBase
         // Arrange
         var guardian = new Guardian { Id = 1, UserId = 25, StudentGuardians = new List<StudentGuardian>() };
         SetupRepository(new List<Guardian> { guardian });
-        var request = new CreateLeaveRequestDto { StudentId = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" };
+        var request = new CreateLeaveRequestDto { StudentId = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Cháu bị ốm" };
 
         // Act
         var result = await _service.SubmitLeaveRequestAsync(25, request);
@@ -231,7 +231,7 @@ public class LeaveRequestServiceTests : TestBase
             LeaveRequest = new LeaveRequest { StartDate = DefaultTestDate, EndDate = DefaultTestDate }
         };
         SetupRepository(new List<AdministrativeRequest> { existingLeave });
-        var request = new CreateLeaveRequestDto { StudentId = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" };
+        var request = new CreateLeaveRequestDto { StudentId = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Cháu bị ốm" };
 
         // Act
         var result = await _service.SubmitLeaveRequestAsync(20, request);
@@ -1348,5 +1348,191 @@ public class LeaveRequestServiceTests : TestBase
         multiDayReq.Status.Should().Be(RequestStatus.Approved);
         multiDayReq.LeaveRequest!.EndDate.Should().Be(day1);
         multiDayReq.LeaveRequest.IsLunchCancelled.Should().BeFalse();
+    }
+
+    // ==================== Round 2 Regression Tests (L-A..L-F) ====================
+
+    [Fact]
+    public async Task LA_SchoolBoardReviewsShortSubmittedLeave_UsesSchoolBoardLabelsNotTeacher()
+    {
+        // Arrange: Đơn 1 ngày (Submitted), Hiệu trưởng (SchoolBoard) yêu cầu bổ sung rồi sau đó duyệt trực tiếp
+        var req = new AdministrativeRequest
+        {
+            Id = 120,
+            RequestNumber = "LR-120",
+            RequesterUserId = 20,
+            StudentId = 1,
+            Student = new Student { Id = 1, FullName = "Nguyễn Minh Anh" },
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Submitted,
+            LeaveRequest = new LeaveRequest { Id = 120, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Session = LeaveSession.FullDay, Reason = "Bị sốt cao" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<Notification>());
+
+        // Act: BGH yêu cầu bổ sung trên đơn 1 ngày Submitted
+        var moreInfoRes = await _service.ReviewLeaveRequestAsync(120, 99, new ReviewLeaveRequestDto
+        {
+            IsRequestMoreInfo = true,
+            ReviewerNotes = "Vui lòng bổ sung giấy khám bệnh"
+        }, new[] { UserRoles.SchoolBoard });
+
+        // Assert
+        moreInfoRes.Success.Should().BeTrue();
+        req.ReviewerNotes.Should().StartWith("[BGH yêu cầu bổ sung]:");
+    }
+
+    [Fact]
+    public async Task LB_ApproveFutureLeaveWithoutLunch_ShowsUnregisteredNotPastCutoff()
+    {
+        // Arrange: Đơn nghỉ ngày tương lai (chưa tới 08:15), không có đăng ký bán trú (CancelMealForLeaveAsync trả false)
+        var futureDate = DefaultTestDate.AddDays(2);
+        _clockMock.Setup(c => c.Now).Returns(DefaultTestDate.AddHours(9));
+        var req = new AdministrativeRequest
+        {
+            Id = 121,
+            RequestNumber = "LR-121",
+            RequesterUserId = 20,
+            StudentId = 1,
+            Student = new Student { Id = 1, FullName = "Nguyễn Minh Anh" },
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Submitted,
+            LeaveRequest = new LeaveRequest { Id = 121, StartDate = futureDate, EndDate = futureDate, Session = LeaveSession.FullDay, Reason = "Gia đình có việc" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<ClassAssignment>());
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<Notification>());
+        _lunchServiceMock.Setup(l => l.CancelMealForLeaveAsync(1, futureDate, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ApiResponse<bool>.Ok(false));
+
+        // Act
+        var res = await _service.ReviewLeaveRequestAsync(121, 99, new ReviewLeaveRequestDto
+        {
+            IsApproved = true
+        }, new[] { UserRoles.SchoolBoard });
+
+        // Assert
+        res.Success.Should().BeTrue();
+        res.Data!.MealSyncMessage.Should().Contain("chưa đăng ký suất ăn bán trú");
+        res.Data.MealSyncMessage.Should().NotContain("đã qua giờ chốt");
+    }
+
+    [Fact]
+    public async Task LC_ReviewRejectOrMoreInfo_ShortNotesUnder5Chars_FailsWithMSG01()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 122,
+            RequestNumber = "LR-122",
+            RequesterUserId = 20,
+            StudentId = 1,
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Submitted,
+            LeaveRequest = new LeaveRequest { Id = 122, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Session = LeaveSession.FullDay, Reason = "Xin nghỉ học" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<SchoolCalendarDay>());
+
+        var shortMoreInfo = await _service.ReviewLeaveRequestAsync(122, 99, new ReviewLeaveRequestDto
+        {
+            IsRequestMoreInfo = true,
+            ReviewerNotes = "ok"
+        }, new[] { UserRoles.SchoolBoard });
+
+        var shortReject = await _service.ReviewLeaveRequestAsync(122, 99, new ReviewLeaveRequestDto
+        {
+            IsApproved = false,
+            ReviewerNotes = "no"
+        }, new[] { UserRoles.SchoolBoard });
+
+        shortMoreInfo.Success.Should().BeFalse();
+        shortMoreInfo.Code.Should().Be(SystemMessages.MSG01.Code);
+        shortReject.Success.Should().BeFalse();
+        shortReject.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task LD_UpdateNeedMoreInfo_MissingRequestedAttachmentOrNoChanges_FailsWithMSG01()
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 123,
+            RequestNumber = "LR-123",
+            RequesterUserId = 20,
+            StudentId = 1,
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.NeedMoreInfo,
+            RequiresAmendment = true,
+            AmendmentNotes = "Vui lòng đính kèm giấy khám bệnh",
+            LeaveRequest = new LeaveRequest { Id = 123, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Session = LeaveSession.FullDay, Reason = "Cháu bị sốt cao" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<SchoolCalendarDay>());
+
+        // Gửi lại không có tệp đính kèm khi yêu cầu bổ sung giấy khám -> phải chặn
+        var res = await _service.UpdateLeaveRequestAsync(123, 20, new UpdateLeaveRequestDto
+        {
+            StartDate = DefaultTestDate,
+            EndDate = DefaultTestDate,
+            Session = LeaveSession.FullDay,
+            Reason = "Cháu bị sốt cao 39 độ",
+            DoctorNoteAttachmentUrl = null
+        });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG01.Code);
+        res.Errors.Should().Contain(e => e.Contains("giấy khám"));
+    }
+
+    [Fact]
+    public async Task LE_GetMyLeaveRequests_DistinguishesWithdrawnFromCancelled()
+    {
+        var withdrawnReq = new AdministrativeRequest
+        {
+            Id = 124,
+            RequestNumber = "LR-124",
+            RequesterUserId = 20,
+            StudentId = 1,
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Cancelled,
+            SubmissionDate = DateTime.UtcNow.AddHours(-2),
+            LeaveRequest = new LeaveRequest { Id = 124, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Session = LeaveSession.FullDay, Reason = "Bị ốm nhẹ" }
+        };
+        var cancelledReq = new AdministrativeRequest
+        {
+            Id = 125,
+            RequestNumber = "LR-125",
+            RequesterUserId = 20,
+            StudentId = 1,
+            RequestType = RequestTypes.Leave,
+            Status = RequestStatus.Cancelled,
+            SubmissionDate = DateTime.UtcNow.AddHours(-1),
+            LeaveRequest = new LeaveRequest { Id = 125, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Session = LeaveSession.FullDay, Reason = "Việc gia đình" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { withdrawnReq, cancelledReq });
+        SetupRepository(new List<ClassAssignment>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<AuditLog>
+        {
+            new() { Id = 1, EntityName = nameof(AdministrativeRequest), EntityId = "124", Action = AuditActions.LeaveRequestWithdraw, Timestamp = DateTime.UtcNow },
+            new() { Id = 2, EntityName = nameof(AdministrativeRequest), EntityId = "125", Action = AuditActions.LeaveRequestCancel, Timestamp = DateTime.UtcNow }
+        });
+        SetupRepository(new List<User>());
+
+        var res = await _service.GetMyLeaveRequestsAsync(20);
+
+        res.Success.Should().BeTrue();
+        var dto124 = res.Data!.Single(x => x.Id == 124);
+        var dto125 = res.Data!.Single(x => x.Id == 125);
+        dto124.IsWithdrawn.Should().BeTrue();
+        dto124.StatusName.Should().Be("Đã thu hồi");
+        dto125.IsWithdrawn.Should().BeFalse();
+        dto125.StatusName.Should().Be("Đã hủy");
     }
 }

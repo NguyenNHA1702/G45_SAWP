@@ -44,6 +44,11 @@ export const contactBookApi = {
     return res.data;
   },
 
+  toggleCommentsLock: async (postId: number): Promise<ApiResponse<boolean>> => {
+    const res = await apiClient.patch<ApiResponse<boolean>>(`/contact-book/posts/${postId}/comments-lock`);
+    return res.data;
+  },
+
   deleteClassPost: async (postId: number): Promise<ApiResponse<boolean>> => {
     const res = await apiClient.delete<ApiResponse<boolean>>(`/contact-book/posts/${postId}`);
     return res.data;

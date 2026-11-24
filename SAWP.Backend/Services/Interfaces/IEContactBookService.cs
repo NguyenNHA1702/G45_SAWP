@@ -9,6 +9,7 @@ public interface IEContactBookService
     Task<ApiResponse<List<ClassPostDto>>> GetClassPostsAsync(int currentUserId, int classId, CancellationToken cancellationToken = default);
     Task<ApiResponse<ClassPostDto>> CreateClassPostAsync(int teacherUserId, CreateClassPostDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> TogglePinPostAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> ToggleCommentsLockAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> DeleteClassPostAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default);
     Task<ApiResponse<PostCommentDto>> AddCommentAsync(int userId, int postId, CreatePostCommentDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> DeleteCommentAsync(int currentUserId, int commentId, CancellationToken cancellationToken = default);

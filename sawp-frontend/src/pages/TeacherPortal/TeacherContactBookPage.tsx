@@ -53,7 +53,7 @@ export default function TeacherContactBookPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
-  const [postCategory, setPostCategory] = useState('Dặn dò bài vở');
+  const [postCategory] = useState('General');
   const [postIsPinned, setPostIsPinned] = useState(false);
   const [postAllowComments, setPostAllowComments] = useState(true);
   const [postImageUrl, setPostImageUrl] = useState('');
@@ -220,6 +220,16 @@ export default function TeacherContactBookPage() {
     }
   };
 
+  const handleToggleCommentsLock = async (postId: number) => {
+    try {
+      const res = await contactBookApi.toggleCommentsLock(postId);
+      toast.success(res.data ? 'Đã mở bình luận cho bài viết.' : 'Đã khóa bình luận cho bài viết.');
+      if (homeroom) loadPosts(homeroom.classId);
+    } catch {
+      toast.error('Lỗi khi cập nhật trạng thái bình luận.');
+    }
+  };
+
   const handleDeletePost = async (postId: number) => {
     if (!window.confirm(getSystemMessage('MSG45')?.content || 'Bạn có chắc chắn muốn xóa bài viết này?')) {
       return;
@@ -343,7 +353,7 @@ export default function TeacherContactBookPage() {
               Lớp chủ nhiệm <span className="squiggle">{homeroom.className}</span>
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0 }}>
-              Sĩ số: <strong>{homeroom.totalStudents} học sinh</strong> · Năm học: <strong>{homeroom.schoolYearName}</strong>
+              Sĩ số: <strong>{homeroom.totalEnrolled ?? homeroom.totalStudents ?? homeroom.students?.length ?? 0} học sinh</strong> · Năm học: <strong>{homeroom.academicYear || homeroom.schoolYearName || '—'}</strong>
             </p>
           </div>
 
@@ -440,6 +450,14 @@ export default function TeacherContactBookPage() {
                         title={post.isPinned ? 'Gỡ ghim' : 'Ghim lên đầu'}
                       >
                         <Pin size={14} /> {post.isPinned ? 'Gỡ ghim' : 'Ghim'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--outline btn--sm"
+                        onClick={() => handleToggleCommentsLock(post.id)}
+                        title={post.allowComments ? 'Khóa bình luận' : 'Mở bình luận'}
+                      >
+                        {post.allowComments ? 'Khóa BL' : 'Mở BL'}
                       </button>
                       <button
                         type="button"
@@ -645,29 +663,13 @@ export default function TeacherContactBookPage() {
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         title="Đăng bài viết mới cho lớp"
-        subtitle={`Lớp ${homeroom?.className} · Năm học ${homeroom?.schoolYearName}`}
+        subtitle={`Lớp ${homeroom?.className} · Năm học ${homeroom?.academicYear || homeroom?.schoolYearName || '—'}`}
         badgeText="Bảng tin lớp"
         badgeColor="violet"
         icon={<Newspaper size={24} color="#1E293B" />}
         maxWidth="md"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
-              Phân loại bài viết
-            </label>
-            <select
-              className="input"
-              value={postCategory}
-              onChange={(e) => setPostCategory(e.target.value)}
-            >
-              <option value="Dặn dò bài vở">Dặn dò bài vở & Đồ dùng học tập</option>
-              <option value="Hoạt động lớp">Hoạt động trải nghiệm / Ngoại khóa</option>
-              <option value="Bán trú">Nhật ký giờ ăn & Ngủ bán trú</option>
-              <option value="Thông báo chung">Thông báo chung của lớp</option>
-            </select>
-          </div>
-
           <div>
             <label style={{ display: 'block', fontWeight: 700, fontSize: '0.85rem', marginBottom: 4 }}>
               Tiêu đề bài viết (*)
