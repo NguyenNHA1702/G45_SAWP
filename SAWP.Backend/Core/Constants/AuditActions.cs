@@ -42,6 +42,9 @@ public static class AuditActions
     public const string StudentActivate = "STUDENT_ACTIVATE";
     public const string StudentResolveDuplicate = "STUDENT_RESOLVE_DUPLICATE";
     public const string StudentBulkImport = "STUDENT_BULK_IMPORT";
+    public const string StudentGuardianLink = "STUDENT_GUARDIAN_LINK";
+    public const string StudentGuardianUpdate = "STUDENT_GUARDIAN_UPDATE";
+    public const string StudentGuardianUnlink = "STUDENT_GUARDIAN_UNLINK";
 
     // Attendance
     public const string AttendanceSubmit = "ATTENDANCE_SUBMIT";

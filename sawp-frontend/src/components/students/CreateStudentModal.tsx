@@ -6,6 +6,49 @@ import { studentApi } from '../../services/implementations/studentApi';
 import type { CreateStudentDto, StudentProfileDto } from '../../types/student.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
+/** What the form edits; sent to the API with the backend's field names (toCreateStudentPayload). */
+interface StudentFormState {
+  studentCode: string;
+  fullName: string;
+  dateOfBirth: string;
+  gender: string;
+  address?: string;
+  classId?: number;
+  parentFullName?: string;
+  parentPhone?: string;
+  parentEmail?: string;
+  parentIdentityCard?: string;
+  parentRelationship?: string;
+}
+
+const RELATIONSHIP_VALUE: Record<string, number> = { 'Bố': 1, 'Mẹ': 2, 'Người giám hộ': 3 };
+
+/**
+ * Maps the form to POST /students. The form used to send classId / address / parent* fields that the backend does not
+ * read, so the class, the address and the guardian were silently dropped.
+ */
+const toCreateStudentPayload = (f: StudentFormState): CreateStudentDto => {
+  const guardianName = f.parentFullName?.trim();
+  return {
+    studentCode: f.studentCode.trim().toUpperCase(),
+    fullName: f.fullName.trim(),
+    dateOfBirth: f.dateOfBirth,
+    gender: f.gender,
+    residentialArea: f.address?.trim() || undefined,
+    initialClassId: f.classId,
+    initialGuardian: guardianName
+      ? {
+          fullName: guardianName,
+          phoneNumber: f.parentPhone?.trim() || undefined,
+          email: f.parentEmail?.trim() || undefined,
+          identityCardNumber: f.parentIdentityCard?.trim() || undefined,
+          relationship: RELATIONSHIP_VALUE[f.parentRelationship ?? ''] ?? 3,
+          isPrimaryContact: true,
+        }
+      : undefined,
+  };
+};
+
 interface CreateStudentModalProps {
   open: boolean;
   onClose: () => void;
@@ -21,7 +64,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
   onCreated,
   onDuplicateDetected,
 }) => {
-  const [formData, setFormData] = useState<CreateStudentDto>({
+  const [formData, setFormData] = useState<StudentFormState>({
     studentCode: '',
     fullName: '',
     dateOfBirth: '2020-01-01',
@@ -30,6 +73,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     classId: undefined,
     parentFullName: '',
     parentPhone: '',
+    parentEmail: '',
     parentIdentityCard: '',
     parentRelationship: 'Bố',
   });
@@ -62,12 +106,9 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     }
 
     setLoading(true);
+    const payload = toCreateStudentPayload(formData);
     try {
-      const res = await studentApi.createStudent({
-        ...formData,
-        studentCode: formData.studentCode.trim().toUpperCase(),
-        fullName: formData.fullName.trim(),
-      });
+      const res = await studentApi.createStudent(payload);
 
       if (res.success && res.data) {
         toast.success(res.message || 'Tạo hồ sơ học sinh thành công!');
@@ -83,11 +124,12 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
         // fetch existing info
         const dupRes = await studentApi.checkDuplicate(formData.studentCode.trim().toUpperCase());
         if (dupRes.data?.existingStudent) {
-          onDuplicateDetected(formData, dupRes.data.existingStudent);
+          onDuplicateDetected(payload, dupRes.data.existingStudent);
           onClose();
         }
       } else {
-        toast.error(err.response?.data?.message || 'Lỗi khi tạo hồ sơ học sinh.');
+        // e.g. MSG01 with the reason (invalid email, conflicting identity card / email of guardian records)
+        toast.error(err.response?.data?.errors?.[0] || err.response?.data?.message || 'Lỗi khi tạo hồ sơ học sinh.');
       }
     } finally {
       setLoading(false);
@@ -230,6 +272,20 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 value={formData.parentPhone || ''}
                 onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
               />
+            </div>
+
+            <div className="field">
+              <label className="label">Email phụ huynh</label>
+              <input
+                type="email"
+                className="input"
+                placeholder="ten@example.com"
+                value={formData.parentEmail || ''}
+                onChange={(e) => setFormData({ ...formData, parentEmail: e.target.value })}
+              />
+              <small style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                Không bắt buộc. Cần có email để sau này cấp tài khoản phụ huynh.
+              </small>
             </div>
 
             <div className="field">
