@@ -3,7 +3,11 @@ namespace Core.DTOs;
 public class GuardianInputDto
 {
     public string FullName { get; set; } = string.Empty;
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+
+    /// <summary>Contact email of the guardian record; needed for an account later (BR-64).</summary>
+    public string? Email { get; set; }
+
     public string? IdentityCardNumber { get; set; }
     public string? Occupation { get; set; }
     public string? Address { get; set; }
@@ -128,7 +132,16 @@ public class ImportStudentRowDto
     public string GuardianName { get; set; } = string.Empty;
     public string GuardianPhone { get; set; } = string.Empty;
     public string GuardianIdentityCard { get; set; } = string.Empty;
+    public string? GuardianEmail { get; set; }
     public string Relationship { get; set; } = "Phụ huynh";
+
+    /// <summary>Preview only (UC-09 step 3): "New", "Reused", "Conflict" or "None"; recomputed when the import is confirmed.</summary>
+    public string GuardianMatch { get; set; } = "None";
+    public string? GuardianMatchNote { get; set; }
+
+    /// <summary>Preview only: the guardian has an email address and no account, so an account can be requested later (BR-64).</summary>
+    public bool GuardianEligibleForAccount { get; set; }
+
     public bool IsValid { get; set; } = true;
     public bool IsDuplicate { get; set; } = false;
     public string? ErrorMessage { get; set; }
@@ -148,4 +161,41 @@ public class ImportStudentsResultDto
     public int ErrorCount { get; set; }
     public List<string> ImportedStudentCodes { get; set; } = new();
     public List<string> Errors { get; set; } = new();
+
+    public int GuardiansCreated { get; set; }
+    public int GuardiansReused { get; set; }
+
+    /// <summary>Imported guardians without an email address: not eligible for an account (UC-09 A4).</summary>
+    public int GuardiansWithoutEmail { get; set; }
+
+    /// <summary>Guardian records from this import that have an email and no account (for an account request, UC-09 A5).</summary>
+    public List<int> GuardiansEligibleForAccountIds { get; set; } = new();
+}
+
+/// <summary>A guardian record found by search (UC-10 step 2).</summary>
+public class GuardianRecordDto
+{
+    public int Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? Email { get; set; }
+    public string? IdentityCardNumber { get; set; }
+    public bool HasAccount { get; set; }
+    public int LinkedStudentCount { get; set; }
+}
+
+/// <summary>UC-10: link an existing guardian record (GuardianId) or a new one (NewGuardian) to a student.</summary>
+public class LinkGuardianRequestDto
+{
+    public int? GuardianId { get; set; }
+    public GuardianInputDto? NewGuardian { get; set; }
+    public int Relationship { get; set; } = 3;
+    public bool IsPrimaryContact { get; set; }
+}
+
+/// <summary>UC-10: change the relationship type or the primary contact of an existing link.</summary>
+public class UpdateGuardianLinkRequestDto
+{
+    public int Relationship { get; set; } = 3;
+    public bool IsPrimaryContact { get; set; }
 }

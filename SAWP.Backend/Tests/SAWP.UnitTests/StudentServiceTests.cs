@@ -892,7 +892,7 @@ public class StudentServiceTests : TestBase
     }
 
     [Fact]
-    public async Task UTCID02_CreateStudent_NewGuardian_RecordHoldsNameAndPhoneButNoPlaceholderEmail()
+    public async Task UTCID02_CreateStudent_NewGuardian_CreatesRecordWithoutAccount()
     {
         // Arrange
         var request = new CreateStudentDto
@@ -924,8 +924,161 @@ public class StudentServiceTests : TestBase
         var guardian = guardians.Should().ContainSingle().Subject;
         guardian.FullName.Should().Be("Tran Van Bo");
         guardian.PhoneNumber.Should().Be("0901234567");
-        guardian.Email.Should().BeNull("the placeholder login email is not a real contact address");
-        users.Should().ContainSingle().Which.Email.Should().Be("0901234567@parent.sawp.edu.vn");
+        guardian.Email.Should().BeNull();
+        guardian.UserId.Should().BeNull();
+        users.Should().BeEmpty("a guardian record never creates a user account (SSAWP-152, BR-66)");
+    }
+
+    #endregion
+
+    #region Method 09: guardian records and UC-10 (SSAWP-152, UC-09 A3, BR-13, BR-66) (UTCID01 - UTCID09)
+
+    private (List<Guardian> Guardians, List<StudentGuardian> Links, Student Student) SetupStudentWithGuardians(string status = "Active")
+    {
+        var student = new Student { Id = 1, StudentCode = "HS001", FullName = "Nguyen Van A", Status = status };
+        var mother = new Guardian { Id = 5, FullName = "Tran Thi Me", Email = "me@example.com", IdentityCardNumber = "001100000005" };
+        var father = new Guardian { Id = 6, FullName = "Nguyen Van Bo", PhoneNumber = "0902222222" };
+        var other = new Guardian { Id = 7, FullName = "Le Van Chu", Email = "chu@example.com", IdentityCardNumber = "001100000007" };
+        var guardians = new List<Guardian> { mother, father, other };
+        var links = new List<StudentGuardian>
+        {
+            new() { StudentId = 1, GuardianId = 5, Guardian = mother, Relationship = RelationshipTypes.Mother, IsPrimaryContact = true },
+            new() { StudentId = 1, GuardianId = 6, Guardian = father, Relationship = RelationshipTypes.Father, IsPrimaryContact = false }
+        };
+        student.StudentGuardians = links;
+        SetupRepository(new List<Student> { student });
+        SetupRepository(guardians);
+        SetupRepository(links);
+        // Like the database reload: each link comes back with its guardian record
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(() =>
+        {
+            foreach (var link in links.Where(l => l.Guardian == null))
+            {
+                link.Guardian = guardians.First(g => g.Id == link.GuardianId);
+            }
+            return student;
+        });
+        return (guardians, links, student);
+    }
+
+    [Fact]
+    public async Task UTCID01_LinkGuardian_ExistingRecord_AddsNonPrimaryLink()
+    {
+        var (_, links, _) = SetupStudentWithGuardians();
+
+        var result = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto { GuardianId = 7, Relationship = 3 }, 10);
+
+        result.Code.Should().Be(SystemMessages.MSG08.Code);
+        links.Should().ContainSingle(l => l.GuardianId == 7).Which.IsPrimaryContact.Should().BeFalse();
+        links.Single(l => l.GuardianId == 5).IsPrimaryContact.Should().BeTrue();
+        AuditServiceMock.Verify(a => a.LogActionAsync(10, AuditActions.StudentGuardianLink, It.IsAny<string>(), "1:7",
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID02_LinkGuardian_NewGuardianWithKnownEmail_ReusesRecord_NoAccount()
+    {
+        var (guardians, links, _) = SetupStudentWithGuardians();
+        var users = new List<User>();
+        SetupRepository(users);
+
+        var result = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto
+        {
+            NewGuardian = new GuardianInputDto { FullName = "Le Van Chu", Email = "CHU@example.com", PhoneNumber = "0999999999" },
+            Relationship = 3
+        });
+
+        result.Success.Should().BeTrue();
+        guardians.Should().HaveCount(3, "the record with the same email is reused");
+        links.Should().Contain(l => l.GuardianId == 7);
+        guardians.Single(g => g.Id == 7).PhoneNumber.Should().Be("0999999999", "only an empty field is filled");
+        users.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UTCID03_LinkGuardian_SamePhoneOnly_CreatesNewRecord()
+    {
+        var (guardians, _, _) = SetupStudentWithGuardians();
+
+        var result = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto
+        {
+            NewGuardian = new GuardianInputDto { FullName = "Nguoi Khac", PhoneNumber = "0902222222" },
+            Relationship = 4
+        });
+
+        result.Success.Should().BeTrue();
+        guardians.Should().HaveCount(4, "a phone number never matches a record (BR-66)");
+    }
+
+    [Fact]
+    public async Task UTCID04_LinkGuardian_AlreadyLinked_ReturnsMSG01()
+    {
+        SetupStudentWithGuardians();
+
+        var result = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto { GuardianId = 6, Relationship = 1 });
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task UTCID05_LinkGuardian_IdentityCardAndEmailOfDifferentRecords_ReturnsMSG01()
+    {
+        var (guardians, _, _) = SetupStudentWithGuardians();
+
+        var result = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto
+        {
+            NewGuardian = new GuardianInputDto { FullName = "X", IdentityCardNumber = "001100000005", Email = "chu@example.com" },
+            Relationship = 3
+        });
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        guardians.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task UTCID06_UnlinkGuardian_PrimaryOfActiveStudent_ReturnsMSG01()
+    {
+        var (_, links, _) = SetupStudentWithGuardians();
+
+        var result = await _service.UnlinkGuardianAsync(1, 5);
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        links.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task UTCID07_UnlinkGuardian_NonPrimary_RemovesLinkButKeepsRecord()
+    {
+        var (guardians, links, _) = SetupStudentWithGuardians();
+
+        var result = await _service.UnlinkGuardianAsync(1, 6, 10);
+
+        result.Code.Should().Be(SystemMessages.MSG08.Code);
+        links.Should().NotContain(l => l.GuardianId == 6);
+        guardians.Should().Contain(g => g.Id == 6);
+    }
+
+    [Fact]
+    public async Task UTCID08_UpdateGuardianLink_MakePrimary_MovesPrimaryFromOtherGuardian()
+    {
+        var (_, links, _) = SetupStudentWithGuardians();
+
+        var result = await _service.UpdateGuardianLinkAsync(1, 6, new UpdateGuardianLinkRequestDto { Relationship = 1, IsPrimaryContact = true });
+
+        result.Success.Should().BeTrue();
+        links.Single(l => l.GuardianId == 6).IsPrimaryContact.Should().BeTrue();
+        links.Single(l => l.GuardianId == 5).IsPrimaryContact.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID09_UpdateGuardianLink_RemovePrimaryFlagOfOnlyPrimary_ReturnsMSG01()
+    {
+        var (_, links, _) = SetupStudentWithGuardians();
+
+        var result = await _service.UpdateGuardianLinkAsync(1, 5, new UpdateGuardianLinkRequestDto { Relationship = 2, IsPrimaryContact = false });
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        links.Single(l => l.GuardianId == 5).IsPrimaryContact.Should().BeTrue();
     }
 
     #endregion

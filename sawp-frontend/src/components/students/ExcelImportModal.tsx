@@ -17,6 +17,30 @@ interface ExcelImportModalProps {
   onImportCompleted: (result: ImportStudentsResultDto) => void;
 }
 
+/** UC-09 step 3: whether a new guardian record is created or an existing one reused, and account eligibility (A4). */
+const GuardianMatchBadge: React.FC<{ row: ImportStudentRowDto }> = ({ row }) => {
+  if (!row.guardianName || !row.guardianMatch || row.guardianMatch === 'None') return <>-</>;
+  if (row.guardianMatch === 'Conflict') {
+    return (
+      <span className="badge badge--pink" title={row.guardianMatchNote}>
+        Xung đột hồ sơ
+      </span>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+      <span className="badge badge--violet" title={row.guardianMatchNote}>
+        {row.guardianMatch === 'Reused' ? 'Dùng hồ sơ có sẵn' : 'Tạo hồ sơ mới'}
+      </span>
+      {!row.guardianEligibleForAccount && (
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+          {row.guardianEmail ? 'Đã có tài khoản' : 'Chưa có email'}
+        </span>
+      )}
+    </div>
+  );
+};
+
 export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   open,
   onClose,
@@ -27,6 +51,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [parsedRows, setParsedRows] = useState<ImportStudentRowDto[]>([]);
   const [parsing, setParsing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [importResult, setImportResult] = useState<ImportStudentsResultDto | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,6 +83,15 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     }
   };
 
+  // Start clean next time the modal opens
+  const handleClose = () => {
+    setSelectedFile(null);
+    setParsedRows([]);
+    setImportResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    onClose();
+  };
+
   const validRows = parsedRows.filter((r) => r.isValid && !r.isDuplicate);
   const duplicateRows = parsedRows.filter((r) => r.isDuplicate);
   const invalidRows = parsedRows.filter((r) => !r.isValid);
@@ -72,11 +106,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     try {
       const res = await studentApi.confirmImport({ validRows });
       if (res.success && res.data) {
-        toast.success(
-          `Nhập thành công ${res.data.successCount} học sinh mới vào hệ thống!`
-        );
+        toast.success(res.message || `Nhập thành công ${res.data.successCount} học sinh mới vào hệ thống!`);
+        // UC-09 step 6: show the totals and the error list before closing
+        setImportResult(res.data);
         onImportCompleted(res.data);
-        onClose();
       } else {
         toast.error(res.message || 'Lỗi khi nhập dữ liệu.');
       }
@@ -94,7 +127,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   return (
     <GeometricModal
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title="Nhập danh sách học sinh từ Excel"
       badgeText="Nhập liệu hàng loạt"
       badgeColor="amber"
@@ -169,6 +202,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   <th>Giới tính</th>
                   <th>Lớp dự kiến</th>
                   <th>Phụ huynh</th>
+                  <th>Hồ sơ phụ huynh</th>
                   <th>Trạng thái</th>
                 </tr>
               </thead>
@@ -191,7 +225,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     <td>{r.gender}</td>
                     <td>{r.className || '-'}</td>
                     <td>
-                      {r.guardianName ? `${r.guardianName} (${r.guardianPhone || ''})` : '-'}
+                      {r.guardianName ? (
+                        <>
+                          {r.guardianName}
+                          {r.guardianPhone ? ` (${r.guardianPhone})` : ''}
+                          {r.guardianEmail && (
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{r.guardianEmail}</div>
+                          )}
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td>
+                      <GuardianMatchBadge row={r} />
                     </td>
                     <td>
                       {r.isDuplicate ? (
@@ -213,16 +260,42 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           </div>
         )}
 
+        {importResult && (
+          <div className="card" role="status" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <strong>Kết quả nhập dữ liệu</strong>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span className="badge badge--mint">Học sinh đã nhập: {importResult.successCount}</span>
+              {importResult.skippedCount > 0 && <span className="badge badge--amber">Bỏ qua: {importResult.skippedCount}</span>}
+              <span className="badge badge--violet">Hồ sơ phụ huynh mới: {importResult.guardiansCreated}</span>
+              <span className="badge badge--violet">Dùng hồ sơ có sẵn: {importResult.guardiansReused}</span>
+              {importResult.guardiansWithoutEmail > 0 && (
+                <span className="badge badge--pink">Chưa có email (chưa đủ điều kiện cấp tài khoản): {importResult.guardiansWithoutEmail}</span>
+              )}
+            </div>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)' }}>
+              Không tạo tài khoản người dùng nào. {importResult.guardiansEligibleForAccountIds.length} phụ huynh có email và chưa có
+              tài khoản, có thể được yêu cầu cấp tài khoản.
+            </p>
+            {importResult.errors && importResult.errors.length > 0 && (
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--fs-sm)', color: '#B45309' }}>
+                {importResult.errors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-          <button type="button" className="btn btn--secondary" onClick={onClose} disabled={confirming}>
+          <button type="button" className="btn btn--secondary" onClick={handleClose} disabled={confirming}>
             Đóng
           </button>
           <button
             type="button"
             className="btn btn--primary"
             onClick={handleConfirmImport}
-            disabled={validRows.length === 0 || confirming || parsing}
+            disabled={validRows.length === 0 || confirming || parsing || importResult !== null}
           >
             {confirming ? 'Đang nhập...' : `Xác nhận nhập ${validRows.length} học sinh hợp lệ`}
           </button>
