@@ -27,7 +27,7 @@ import { ClassDetailModal } from '../../components/classes/ClassDetailModal';
 import { GeneratePlacementModal } from '../../components/placement/GeneratePlacementModal';
 import { DraftPlacementPreview } from '../../components/placement/DraftPlacementPreview';
 import { PlacementPlanHistoryList } from '../../components/placement/PlacementPlanHistoryList';
-import { USER_KEY } from '../../services/apiClient';
+import { getAuthUser } from '../../services/apiClient';
 import type { ClassSummaryDto, SchoolYearDto } from '../../types/class.types';
 import type {
   PlacementPlanDetailDto,
@@ -65,10 +65,23 @@ export default function ClassesPage() {
   const [selectedPlanDetail, setSelectedPlanDetail] = useState<PlacementPlanDetailDto | null>(null);
   const [generatePlacementOpen, setGeneratePlacementOpen] = useState(false);
 
-  // User roles
-  const userJson = localStorage.getItem(USER_KEY);
-  const currentUser = userJson ? JSON.parse(userJson) : null;
-  const userRoles: string[] = currentUser?.roles ?? [];
+  // User roles (robust against session/localStorage format, case-insensitivity, single role vs roles array)
+  const getUserRoles = (): string[] => {
+    const raw = getAuthUser();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      const roles = parsed?.roles ?? (parsed?.role ? [parsed.role] : []);
+      return Array.isArray(roles) ? roles : [String(roles)];
+    } catch {
+      return [];
+    }
+  };
+
+  const userRoles = getUserRoles();
+  const canManage = userRoles.some(
+    (r) => typeof r === 'string' && (r.toLowerCase() === 'officestaff' || r.toLowerCase() === 'admin')
+  );
 
   useEffect(() => {
     loadSchoolYears();
@@ -97,15 +110,31 @@ export default function ClassesPage() {
       ]);
 
       if (allRes.success && allRes.data) {
-        setSchoolYears(allRes.data);
+        // Sanitize names by stripping HTML and sort descending by start date
+        const sanitizedYears = allRes.data
+          .map((y) => ({
+            ...y,
+            yearName: y.yearName ? y.yearName.replace(/<[^>]*>?/gm, '').trim() : '',
+          }))
+          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+
+        setSchoolYears(sanitizedYears);
       }
 
       if (activeRes.success && activeRes.data) {
-        setActiveSchoolYear(activeRes.data);
-        setSelectedYearId(activeRes.data.id);
+        const sanitizedActive = {
+          ...activeRes.data,
+          yearName: activeRes.data.yearName ? activeRes.data.yearName.replace(/<[^>]*>?/gm, '').trim() : '',
+        };
+        setActiveSchoolYear(sanitizedActive);
+        setSelectedYearId(sanitizedActive.id);
       } else if (allRes.data && allRes.data.length > 0) {
-        setActiveSchoolYear(allRes.data[0]);
-        setSelectedYearId(allRes.data[0].id);
+        const firstYear = {
+          ...allRes.data[0],
+          yearName: allRes.data[0].yearName ? allRes.data[0].yearName.replace(/<[^>]*>?/gm, '').trim() : '',
+        };
+        setActiveSchoolYear(firstYear);
+        setSelectedYearId(firstYear.id);
       }
     } catch {
       // ignore
@@ -208,6 +237,11 @@ export default function ClassesPage() {
       return;
     }
 
+    if (c.homeroomTeacherStaffId || c.homeroomTeacherUserId || c.homeroomTeacherName) {
+      toast.error(`Lớp ${c.className} đang có Giáo viên chủ nhiệm phân công. Vui lòng gỡ GVCN trước khi xóa lớp.`);
+      return;
+    }
+
     if (!window.confirm(`Bạn có chắc chắn muốn xóa Lớp ${c.className}? Hành động này sẽ xóa lớp khỏi danh sách năm học.`)) {
       return;
     }
@@ -218,11 +252,42 @@ export default function ClassesPage() {
         toast.success(`Đã xóa lớp ${c.className} thành công!`);
         loadClasses();
       } else {
-        toast.error(res.message || 'Xóa lớp học thất bại.');
+        const errorMsg = res.errors?.[0] || res.message || 'Xóa lớp học thất bại.';
+        toast.error(errorMsg);
       }
     } catch (err: any) {
       const msg = err.response?.data?.errors?.[0] || err.response?.data?.message || 'Có lỗi xảy ra khi xóa lớp học.';
       toast.error(msg);
+    }
+  };
+
+  const handleDeleteSchoolYear = async () => {
+    if (!selectedYearId || !activeSchoolYear) return;
+    if (activeSchoolYear.isActive) {
+      toast.error('Không thể xóa năm học đang hoạt động (Active).');
+      return;
+    }
+    if (publishedClassesCount > 0) {
+      toast.error('Không thể xóa năm học vì đã có lớp học được công bố phân lớp.');
+      return;
+    }
+    if (totalEnrolled > 0) {
+      toast.error(`Không thể xóa năm học vì đang có ${totalEnrolled} học sinh phân công vào các lớp.`);
+      return;
+    }
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa năm học "${activeSchoolYear.yearName}" và toàn bộ lớp học nháp bên trong? Thao tác này không thể hoàn tác.`)) {
+      return;
+    }
+    try {
+      const res = await classApi.deleteSchoolYear(selectedYearId);
+      if (res.success) {
+        toast.success(`Đã xóa năm học "${activeSchoolYear.yearName}" thành công!`);
+        await loadSchoolYears();
+      } else {
+        toast.error(res.errors?.[0] || res.message || 'Không thể xóa năm học.');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.errors?.[0] || err.response?.data?.message || 'Lỗi khi xóa năm học.');
     }
   };
 
@@ -266,16 +331,46 @@ export default function ClassesPage() {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  style={{ minHeight: 32, padding: '2px 10px', fontSize: 'var(--fs-xs)', gap: 4 }}
-                  onClick={() => setCreateYearModalOpen(true)}
-                  title="Khởi tạo năm học mới"
-                >
-                  <CalendarPlus size={14} color="var(--color-tertiary)" />
-                  + Năm học mới
-                </button>
+                {canManage && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      style={{ minHeight: 32, padding: '2px 10px', fontSize: 'var(--fs-xs)', gap: 4 }}
+                      onClick={() => setCreateYearModalOpen(true)}
+                      title="Khởi tạo năm học mới"
+                    >
+                      <CalendarPlus size={14} color="var(--color-tertiary)" />
+                      + Năm học mới
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      style={{
+                        minHeight: 32,
+                        padding: '2px 10px',
+                        fontSize: 'var(--fs-xs)',
+                        gap: 4,
+                        color: !activeSchoolYear || activeSchoolYear.isActive ? '#94A3B8' : '#DC2626',
+                        borderColor: !activeSchoolYear || activeSchoolYear.isActive ? '#CBD5E1' : '#FECACA',
+                        backgroundColor: !activeSchoolYear || activeSchoolYear.isActive ? '#F1F5F9' : '#FEF2F2',
+                        cursor: !activeSchoolYear || activeSchoolYear.isActive ? 'not-allowed' : 'pointer',
+                        opacity: !activeSchoolYear || activeSchoolYear.isActive ? 0.6 : 1,
+                      }}
+                      disabled={!activeSchoolYear || activeSchoolYear.isActive}
+                      onClick={handleDeleteSchoolYear}
+                      title={
+                        !activeSchoolYear
+                          ? 'Chưa chọn năm học'
+                          : activeSchoolYear.isActive
+                          ? 'Không thể xóa năm học đang hoạt động (Active)'
+                          : 'Xóa năm học chưa công bố này'
+                      }
+                    >
+                      <Trash2 size={13} /> Xóa năm học
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <h1 style={{ margin: '4px 0 8px' }}>
@@ -287,45 +382,47 @@ export default function ClassesPage() {
           </div>
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {activeTab === 'classes' ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={handlePublishAll}
-                  disabled={publishingAll || classes.length === 0}
-                  title="Công bố kết quả xếp lớp cho toàn trường"
-                >
-                  <Megaphone size={16} color="var(--color-secondary)" />
-                  {publishingAll ? 'Đang công bố...' : 'Công bố toàn trường'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--secondary"
-                  onClick={() => setCreateClassModalOpen(true)}
-                  title="Thêm một lớp học đơn lẻ"
-                >
-                  <PlusCircle size={18} /> + Thêm lớp học
-                </button>
+          {canManage && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {activeTab === 'classes' ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={handlePublishAll}
+                    disabled={publishingAll || classes.length === 0}
+                    title="Công bố kết quả xếp lớp cho toàn trường"
+                  >
+                    <Megaphone size={16} color="var(--color-secondary)" />
+                    {publishingAll ? 'Đang công bố...' : 'Công bố toàn trường'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => setCreateClassModalOpen(true)}
+                    title="Thêm một lớp học đơn lẻ"
+                  >
+                    <PlusCircle size={18} /> + Thêm lớp học
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    onClick={() => setBatchModalOpen(true)}
+                  >
+                    <Layers size={18} /> Khởi tạo lớp hàng loạt
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
                   className="btn btn--primary"
-                  onClick={() => setBatchModalOpen(true)}
+                  onClick={() => setGeneratePlacementOpen(true)}
                 >
-                  <Layers size={18} /> Khởi tạo lớp hàng loạt
+                  <Sparkles size={18} /> Lập phương án mới
                 </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={() => setGeneratePlacementOpen(true)}
-              >
-                <Sparkles size={18} /> Lập phương án mới
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Tab Switcher: Lớp học chính thức vs Phương án xếp lớp đầu năm */}
@@ -536,7 +633,20 @@ export default function ClassesPage() {
                 const isFull = availableSlots <= 0;
 
                 return (
-                  <div key={c.id} className="class-card">
+                  <div
+                    key={c.id}
+                    className="class-card card"
+                    style={{
+                      background: '#FFFFFF',
+                      border: '2px solid #1E293B',
+                      borderRadius: 16,
+                      boxShadow: '4px 4px 0 0 #1E293B',
+                      padding: '18px 20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                    }}
+                  >
                     {/* Header Row 1: Tên lớp, Khối, Trạng thái Công bố */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
@@ -581,25 +691,36 @@ export default function ClassesPage() {
                         Phòng: <strong>{c.roomNumber || 'Chưa xếp'}</strong>
                       </div>
 
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        style={{
-                          padding: '3px 8px',
-                          minHeight: 24,
-                          color: '#DC2626',
-                          borderColor: '#FECACA',
-                          backgroundColor: '#FEF2F2',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          gap: 4,
-                          borderRadius: 6,
-                        }}
-                        onClick={() => handleDeleteClass(c)}
-                        title="Xóa lớp học (chỉ khi sĩ số = 0)"
-                      >
-                        <Trash2 size={12} /> Xóa lớp học
-                      </button>
+                      {canManage && (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{
+                            padding: '3px 8px',
+                            minHeight: 24,
+                            color: enrolled > 0 ? '#94A3B8' : '#DC2626',
+                            borderColor: enrolled > 0 ? '#E2E8F0' : '#FECACA',
+                            backgroundColor: enrolled > 0 ? '#F1F5F9' : '#FEF2F2',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            gap: 4,
+                            borderRadius: 6,
+                            cursor: enrolled > 0 ? 'not-allowed' : 'pointer',
+                            opacity: enrolled > 0 ? 0.6 : 1,
+                          }}
+                          disabled={enrolled > 0}
+                          onClick={() => handleDeleteClass(c)}
+                          title={
+                            enrolled > 0
+                              ? `Không thể xóa vì lớp đang có ${enrolled} học sinh`
+                              : (c.homeroomTeacherStaffId || c.homeroomTeacherUserId || c.homeroomTeacherName)
+                              ? 'Vui lòng gỡ GVCN trước khi xóa lớp'
+                              : 'Xóa lớp học (chỉ khi sĩ số = 0)'
+                          }
+                        >
+                          <Trash2 size={12} /> Xóa lớp học
+                        </button>
+                      )}
                     </div>
 
                     {/* Capacity and Enrollment Progress */}

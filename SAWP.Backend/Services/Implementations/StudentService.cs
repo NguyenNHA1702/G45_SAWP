@@ -131,11 +131,52 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Mã học sinh và Họ tên là bắt buộc." });
         }
 
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.StudentCode.Trim(), @"^[a-zA-Z0-9_\-]{3,30}$"))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Mã học sinh chỉ được chứa chữ cái, chữ số, dấu gạch ngang (-) và gạch dưới (_) từ 3 đến 30 ký tự." });
+        }
+
+        if (request.FullName.Contains('<') || request.FullName.Contains('>'))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML." });
+        }
+
+        var validGenders = new[] { "Nam", "Nữ", "Male", "Female" };
+        if (!string.IsNullOrWhiteSpace(request.Gender) && !validGenders.Contains(request.Gender.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Giới tính không hợp lệ. Vui lòng chọn 'Nam' hoặc 'Nữ'." });
+        }
+
         // 2. Duplicate Student Code Check (BR-09, MSG12)
         var exists = await _unitOfWork.Students.ExistsByStudentCodeAsync(request.StudentCode.Trim(), null, cancellationToken);
         if (exists)
         {
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG12);
+        }
+
+        // 3. Date of birth & Age validation (BR-01, 5 to 15 years old)
+        if (request.DateOfBirth != default)
+        {
+            if (request.DateOfBirth.Year < 1900 || request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
+            {
+                return ApiResponse<StudentProfileDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Ngày sinh không hợp lệ (không thể là ngày trong tương lai)." });
+            }
+
+            var age = DateTime.UtcNow.Year - request.DateOfBirth.Year;
+            if (age < 5 || age > 15)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
+            }
         }
 
         // Guardian checked before anything is saved: a conflicting identity card number / email stops the creation
@@ -228,6 +269,43 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG11);
         }
 
+        if (request.DateOfBirth == default || request.DateOfBirth.Year < 1900)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Vui lòng nhập ngày sinh hợp lệ của học sinh." });
+        }
+
+        if (request.DateOfBirth >= DateTime.UtcNow.Date.AddDays(1))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Ngày sinh không hợp lệ (không thể là ngày trong tương lai)." });
+        }
+
+        var updateAge = DateTime.UtcNow.Year - request.DateOfBirth.Year;
+        if (updateAge < 5 || updateAge > 15)
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({updateAge} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
+        }
+
+        if (request.FullName.Contains('<') || request.FullName.Contains('>'))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML." });
+        }
+
+        var validUpdateGenders = new[] { "Nam", "Nữ", "Male", "Female" };
+        if (!string.IsNullOrWhiteSpace(request.Gender) && !validUpdateGenders.Contains(request.Gender.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            return ApiResponse<StudentProfileDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Giới tính không hợp lệ. Vui lòng chọn 'Nam' hoặc 'Nữ'." });
+        }
+
         var oldValues = new { student.FullName, student.DateOfBirth, student.Gender, student.Status };
 
         student.FullName = request.FullName.Trim();
@@ -248,16 +326,24 @@ public class StudentService : IStudentService
             var activeAssignments = student.ClassAssignments.Where(ca => ca.IsActive).ToList();
             if (activeAssignments.Count == 0 || activeAssignments.Any(ca => ca.ClassId != request.CurrentClassId.Value))
             {
-                foreach (var oldCa in activeAssignments)
-                {
-                    oldCa.IsActive = false;
-                    oldCa.EndDate = DateTime.UtcNow.Date;
-                    await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(oldCa, cancellationToken);
-                }
-
                 var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.CurrentClassId.Value, cancellationToken);
                 if (targetClass != null)
                 {
+                    var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
+                    if (enrolledCount >= targetClass.Capacity)
+                    {
+                        return ApiResponse<StudentProfileDto>.Fail(
+                            SystemMessages.MSG01,
+                            new List<string> { $"Lớp {targetClass.ClassName} đã đủ sĩ số tối đa ({targetClass.Capacity} học sinh). Không thể chuyển học sinh vào lớp này." });
+                    }
+
+                    foreach (var oldCa in activeAssignments)
+                    {
+                        oldCa.IsActive = false;
+                        oldCa.EndDate = DateTime.UtcNow.Date;
+                        await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(oldCa, cancellationToken);
+                    }
+
                     var newAssignment = new ClassAssignment
                     {
                         ClassId = targetClass.Id,
@@ -677,6 +763,15 @@ public class StudentService : IStudentService
         if (!string.IsNullOrWhiteSpace(input.Email) && !GuardianMatcher.IsValidEmail(input.Email))
         {
             return (new GuardianMatch(GuardianMatchKind.None, null, null), "Email người giám hộ không hợp lệ.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.PhoneNumber))
+        {
+            var phone = input.PhoneNumber.Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(phone, @"^0\d{9}$"))
+            {
+                return (new GuardianMatch(GuardianMatchKind.None, null, null), "Số điện thoại người giám hộ không hợp lệ. Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0 (ví dụ: 0912345678).");
+            }
         }
 
         var id = GuardianMatcher.NormalizeIdentityCard(input.IdentityCardNumber);

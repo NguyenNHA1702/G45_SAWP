@@ -34,9 +34,12 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
   const [roster, setRoster] = useState<ClassRosterDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [removingBatch, setRemovingBatch] = useState(false);
 
   useEffect(() => {
     if (open && targetClass) {
+      setSelectedStudentIds([]);
       loadRoster();
     }
   }, [open, targetClass]);
@@ -75,9 +78,53 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
     }
   };
 
+  const handleToggleStudent = (studentId: number) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  };
+
+  const handleToggleAll = () => {
+    if (!roster?.students) return;
+    if (selectedStudentIds.length === roster.students.length) {
+      setSelectedStudentIds([]);
+    } else {
+      setSelectedStudentIds(roster.students.map((s) => s.studentId));
+    }
+  };
+
+  const handleRemoveSelected = async () => {
+    if (!targetClass || selectedStudentIds.length === 0) return;
+
+    if (
+      !window.confirm(
+        `Bạn có chắc chắn muốn gỡ ${selectedStudentIds.length} học sinh đã chọn khỏi lớp ${targetClass.className}? Thao tác này sẽ đưa các em về trạng thái chưa phân lớp.`
+      )
+    ) {
+      return;
+    }
+
+    setRemovingBatch(true);
+    try {
+      const res = await classApi.removeStudentsBatch(targetClass.id, selectedStudentIds);
+      if (res.success) {
+        toast.success(res.message || `Đã gỡ thành công ${selectedStudentIds.length} học sinh khỏi lớp!`);
+        setSelectedStudentIds([]);
+        loadRoster();
+        onRosterUpdated();
+      } else {
+        toast.error(res.message || 'Gỡ học sinh thất bại.');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Có lỗi xảy ra khi gỡ học sinh khỏi lớp.');
+    } finally {
+      setRemovingBatch(false);
+    }
+  };
+
   const handleRemoveStudent = async (studentId: number, studentName: string) => {
     if (!targetClass) return;
-    if (!window.confirm(`Bạn có chắc muốn gỡ học sinh ${studentName} khỏi lớp ${targetClass.className}?`)) {
+    if (!window.confirm(`Bạn có chắc chắn muốn gỡ học sinh ${studentName} khỏi lớp ${targetClass.className}?`)) {
       return;
     }
 
@@ -85,6 +132,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
       const res = await classApi.removeStudent(targetClass.id, studentId);
       if (res.success) {
         toast.success(`Đã gỡ học sinh khỏi lớp!`);
+        setSelectedStudentIds((prev) => prev.filter((id) => id !== studentId));
         loadRoster();
         onRosterUpdated();
       } else {
@@ -97,9 +145,14 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
 
   const handleDeleteClass = async () => {
     if (!targetClass) return;
-    const enrolled = roster?.students?.length ?? targetClass.enrolledStudentsCount ?? 0;
+    const enrolled = roster?.students?.length ?? targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0;
     if (enrolled > 0) {
       toast.error(`Không thể xóa lớp học vì lớp đang có ${enrolled} học sinh. Chỉ có thể xóa lớp học khi sĩ số bằng 0.`);
+      return;
+    }
+
+    if (targetClass.homeroomTeacherStaffId || targetClass.homeroomTeacherUserId || targetClass.homeroomTeacherName) {
+      toast.error(`Lớp ${targetClass.className} đang có Giáo viên chủ nhiệm phân công. Vui lòng gỡ GVCN trước khi xóa lớp.`);
       return;
     }
 
@@ -176,7 +229,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <span className="badge badge--mint">
-                {targetClass.enrolledStudentsCount} / {targetClass.capacity} học sinh
+                {roster?.students?.length ?? targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0} / {targetClass.capacity} học sinh
               </span>
               {roster?.isPlacementPublished ? (
                 <span className="badge badge--violet">
@@ -191,7 +244,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
 
         {/* Action Row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn btn--primary btn--sm"
@@ -200,6 +253,25 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             >
               <UserPlus size={16} /> Xếp thêm học sinh
             </button>
+            {selectedStudentIds.length > 0 && (
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={handleRemoveSelected}
+                disabled={removingBatch}
+                title="Gỡ các học sinh đã chọn ra khỏi lớp"
+                style={{
+                  color: '#DC2626',
+                  borderColor: '#FECACA',
+                  backgroundColor: '#FEF2F2',
+                  fontWeight: 800,
+                  gap: 6,
+                }}
+              >
+                <Trash2 size={15} />
+                {removingBatch ? 'Đang gỡ...' : `Gỡ ${selectedStudentIds.length} học sinh đã chọn`}
+              </button>
+            )}
             {!roster?.isPlacementPublished && (
               <button
                 type="button"
@@ -213,7 +285,15 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             )}
           </div>
           <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-            Danh sách gồm <strong>{roster?.students.length ?? 0}</strong> học sinh
+            {selectedStudentIds.length > 0 ? (
+              <>
+                Đã chọn <strong>{selectedStudentIds.length}</strong> / <strong>{roster?.students.length ?? 0}</strong> học sinh
+              </>
+            ) : (
+              <>
+                Danh sách gồm <strong>{roster?.students.length ?? 0}</strong> học sinh
+              </>
+            )}
           </span>
         </div>
 
@@ -232,6 +312,15 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: 38, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={roster.students.length > 0 && selectedStudentIds.length === roster.students.length}
+                      onChange={handleToggleAll}
+                      title="Chọn / Bỏ chọn tất cả học sinh"
+                      style={{ cursor: 'pointer', width: 16, height: 16 }}
+                    />
+                  </th>
                   <th>STT</th>
                   <th>Mã HS</th>
                   <th>Họ và tên</th>
@@ -239,32 +328,49 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
                   <th>Giới tính</th>
                   <th>Phụ huynh</th>
                   <th>SĐT Phụ huynh</th>
-                  <th>Thao tác</th>
+                  <th style={{ textAlign: 'center' }}>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
-                {roster.students.map((s, idx) => (
-                  <tr key={s.studentId}>
-                    <td>{idx + 1}</td>
-                    <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
-                    <td>{s.fullName}</td>
-                    <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
-                    <td>{s.gender}</td>
-                    <td>{s.primaryGuardianName || '-'}</td>
-                    <td>{s.primaryGuardianPhone || '-'}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        style={{ padding: '4px 8px', color: 'var(--color-secondary)' }}
-                        onClick={() => handleRemoveStudent(s.studentId, s.fullName)}
-                        title="Gỡ khỏi lớp"
-                      >
-                        <Trash2 size={14} /> Gỡ
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {roster.students.map((s, idx) => {
+                  const isSelected = selectedStudentIds.includes(s.studentId);
+                  return (
+                    <tr
+                      key={s.studentId}
+                      style={{
+                        backgroundColor: isSelected ? 'var(--color-tertiary-soft, #FEF9C3)' : undefined,
+                        transition: 'background-color 0.15s ease',
+                      }}
+                    >
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleStudent(s.studentId)}
+                          style={{ cursor: 'pointer', width: 16, height: 16 }}
+                        />
+                      </td>
+                      <td>{idx + 1}</td>
+                      <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
+                      <td>{s.fullName}</td>
+                      <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
+                      <td>{s.gender}</td>
+                      <td>{s.primaryGuardianName || '-'}</td>
+                      <td>{s.primaryGuardianPhone || '-'}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{ padding: '4px 8px', color: '#DC2626', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}
+                          onClick={() => handleRemoveStudent(s.studentId, s.fullName)}
+                          title="Gỡ học sinh này khỏi lớp"
+                        >
+                          <Trash2 size={14} /> Gỡ
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

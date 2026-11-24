@@ -22,7 +22,7 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
   const [yearName, setYearName] = useState(`${nextYear}-${nextYear + 1}`);
   const [startDate, setStartDate] = useState(`${nextYear}-09-01`);
   const [endDate, setEndDate] = useState(`${nextYear + 1}-05-31`);
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,20 +47,29 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
       return;
     }
 
-    // Validate tên năm học phải trùng khớp với năm bắt đầu và năm kết thúc
-    const yearMatch = trimmedName.match(/^(\d{4})[-–/](\d{4})$/);
-    if (yearMatch) {
-      const expectedStartYear = parseInt(yearMatch[1], 10);
-      const expectedEndYear = parseInt(yearMatch[2], 10);
-      const startYear = start.getFullYear();
-      const endYear = end.getFullYear();
+    // Validate tên năm học phải đúng định dạng YYYY-YYYY và năm kết thúc = năm bắt đầu + 1
+    const yearMatch = trimmedName.match(/^(\d{4})-(\d{4})$/);
+    if (!yearMatch) {
+      toast.error('Tên năm học phải có định dạng YYYY-YYYY (ví dụ: 2026-2027)');
+      return;
+    }
 
-      if (startYear !== expectedStartYear || endYear !== expectedEndYear) {
-        toast.error(
-          `Năm của ngày bắt đầu (${startYear}) và ngày kết thúc (${endYear}) phải trùng khớp với tên năm học (${expectedStartYear}-${expectedEndYear})!`
-        );
-        return;
-      }
+    const expectedStartYear = parseInt(yearMatch[1], 10);
+    const expectedEndYear = parseInt(yearMatch[2], 10);
+
+    if (expectedEndYear !== expectedStartYear + 1) {
+      toast.error(`Năm kết thúc (${expectedEndYear}) phải bằng năm bắt đầu (${expectedStartYear}) + 1. Ví dụ: ${expectedStartYear}-${expectedStartYear + 1}`);
+      return;
+    }
+
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+
+    if (startYear !== expectedStartYear || endYear !== expectedEndYear) {
+      toast.error(
+        `Năm của ngày bắt đầu (${startYear}) và ngày kết thúc (${endYear}) phải trùng khớp với tên năm học (${expectedStartYear}-${expectedEndYear})!`
+      );
+      return;
     }
 
     const diffDays = (end.getTime() - start.getTime()) / (1000 * 3600 * 24);

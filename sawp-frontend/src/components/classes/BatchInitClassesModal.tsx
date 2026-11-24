@@ -35,8 +35,8 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
       return;
     }
 
-    if (isNaN(capacity) || capacity < 15 || capacity > 50) {
-      toast.error('Sĩ số mỗi lớp phải từ 15 đến 50 học sinh (Quy chuẩn thông thường: 30 - 35 em/lớp).');
+    if (isNaN(capacity) || capacity < 25 || capacity > 40) {
+      toast.error('Sĩ số mỗi lớp phải từ 25 đến 40 học sinh (Quy chuẩn thông thường: 30 - 35 em/lớp).');
       return;
     }
 
@@ -128,10 +128,12 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
             className="input"
             value={capacity}
             onChange={(e) => setCapacity(Number(e.target.value))}
+            min={25}
+            max={40}
             required
           />
           <small style={{ color: 'var(--color-muted-fg)' }}>
-            Quy chuẩn trường tiểu học: 30 - 35 học sinh / lớp (hệ thống cho phép thiết lập linh hoạt từ 15 - 50 học sinh).
+            Quy chuẩn trường tiểu học: 30 - 35 học sinh / lớp (hệ thống hỗ trợ linh hoạt từ 25 - 40 học sinh).
           </small>
         </div>
 

@@ -320,7 +320,13 @@ export function MainLayout() {
     };
   }, []);
 
-  const userRoles: string[] = currentUser?.roles ?? [];
+  const rawRoles = currentUser?.roles ?? (currentUser?.role ? [currentUser.role] : []);
+  const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles : [String(rawRoles)];
+  const hasRoleMatch = (rolesList?: string[]) =>
+    !rolesList ||
+    rolesList.some((r) =>
+      userRoles.some((ur) => typeof ur === 'string' && (ur.toLowerCase() === r.toLowerCase() || ur.toLowerCase() === 'admin'))
+    );
 
   const isChildActive = (targetPathWithQuery: string) => {
     const [targetPath, targetQuery] = targetPathWithQuery.split('?');
@@ -393,11 +399,11 @@ export function MainLayout() {
   // Lọc menu theo roles
   const allowedNav = NAV_ITEMS.filter((item) => {
     if (item.roles && item.roles.length > 0) {
-      if (!item.roles.some((r) => userRoles.includes(r))) return false;
+      if (!hasRoleMatch(item.roles)) return false;
     }
     if (item.children && item.children.length > 0) {
       const hasVisibleChild = item.children.some(
-        (c) => !c.roles || c.roles.some((r) => userRoles.includes(r))
+        (c) => !c.roles || hasRoleMatch(c.roles)
       );
       if (!hasVisibleChild) return false;
     }
@@ -426,7 +432,7 @@ export function MainLayout() {
             {allowedNav.map((item) => {
               const Icon = item.icon;
               const visibleChildren = item.children
-                ? item.children.filter((c) => !c.roles || c.roles.some((r) => userRoles.includes(r)))
+                ? item.children.filter((c) => !c.roles || hasRoleMatch(c.roles))
                 : [];
 
               const hasChildren = visibleChildren.length > 0;

@@ -20,11 +20,13 @@ public static class AuditActions
     // School years, classes and placement
     public const string SchoolYearCreate = "SCHOOL_YEAR_CREATE";
     public const string SchoolYearActivate = "SCHOOL_YEAR_ACTIVATE";
+    public const string SchoolYearDelete = "SCHOOL_YEAR_DELETE";
     public const string SchoolYearPublishPlacements = "SCHOOL_YEAR_PUBLISH_PLACEMENTS";
     public const string ClassCreate = "CLASS_CREATE";
     public const string ClassInitializeBatch = "CLASS_INITIALIZE_BATCH";
     public const string ClassUpdate = "CLASS_UPDATE";
     public const string ClassAssignHomeroomTeacher = "CLASS_ASSIGN_HOMEROOM_TEACHER";
+    public const string ClassUnassignHomeroomTeacher = "CLASS_UNASSIGN_HOMEROOM_TEACHER";
     public const string ClassAssignStudents = "CLASS_ASSIGN_STUDENTS";
     public const string ClassRemoveStudent = "CLASS_REMOVE_STUDENT";
     public const string ClassDelete = "CLASS_DELETE";

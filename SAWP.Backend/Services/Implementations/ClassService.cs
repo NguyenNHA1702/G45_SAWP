@@ -44,28 +44,39 @@ public class ClassService : IClassService
             return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { "Thời lượng năm học không được vượt quá 15 tháng (tối đa 450 ngày). Vui lòng kiểm tra lại năm bắt đầu và kết thúc." });
         }
 
-        // Validate tên năm học phải trùng với năm bắt đầu và năm kết thúc (VD: 2028-2029)
-        var yearMatch = System.Text.RegularExpressions.Regex.Match(request.YearName.Trim(), @"^(\d{4})[-–/](\d{4})$");
-        if (yearMatch.Success)
+        // Validate tên năm học phải đúng định dạng YYYY-YYYY và năm kết thúc = năm bắt đầu + 1
+        var yearMatch = System.Text.RegularExpressions.Regex.Match(request.YearName.Trim(), @"^(\d{4})-(\d{4})$");
+        if (!yearMatch.Success)
         {
-            var expectedStartYear = int.Parse(yearMatch.Groups[1].Value);
-            var expectedEndYear = int.Parse(yearMatch.Groups[2].Value);
-            if (request.StartDate.Year != expectedStartYear || request.EndDate.Year != expectedEndYear)
-            {
-                return ApiResponse<SchoolYearDto>.Fail(
-                    SystemMessages.MSG01,
-                    new List<string> { $"Năm của ngày bắt đầu ({request.StartDate.Year}) và ngày kết thúc ({request.EndDate.Year}) phải trùng khớp với tên năm học ({expectedStartYear}-{expectedEndYear})." });
-            }
+            return ApiResponse<SchoolYearDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Tên năm học phải có định dạng YYYY-YYYY (ví dụ: 2026-2027)." });
+        }
+
+        var expectedStartYear = int.Parse(yearMatch.Groups[1].Value);
+        var expectedEndYear = int.Parse(yearMatch.Groups[2].Value);
+        if (expectedEndYear != expectedStartYear + 1)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Năm kết thúc ({expectedEndYear}) phải bằng năm bắt đầu ({expectedStartYear}) + 1. Ví dụ: {expectedStartYear}-{expectedStartYear + 1}." });
+        }
+
+        if (request.StartDate.Year != expectedStartYear || request.EndDate.Year != expectedEndYear)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Năm của ngày bắt đầu ({request.StartDate.Year}) và ngày kết thúc ({request.EndDate.Year}) phải trùng khớp với tên năm học ({expectedStartYear}-{expectedEndYear})." });
         }
 
         var existingYears = await _unitOfWork.Classes.GetAllSchoolYearsAsync(cancellationToken);
-        if (existingYears.Any(y => y.YearName.Trim().Equals(request.YearName.Trim(), StringComparison.OrdinalIgnoreCase)))
+        if (existingYears != null && existingYears.Any(y => y.YearName.Trim().Equals(request.YearName.Trim(), StringComparison.OrdinalIgnoreCase)))
         {
             return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { $"Năm học '{request.YearName.Trim()}' đã tồn tại trong hệ thống." });
         }
 
         // BR-14: Exactly one school year may be designated as the current active school year at a time
-        if (request.IsActive)
+        if (request.IsActive && existingYears != null)
         {
             foreach (var sy in existingYears.Where(y => y.IsActive))
             {
@@ -173,15 +184,97 @@ public class ClassService : IClassService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
+    public async Task<ApiResponse<bool>> DeleteSchoolYearAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default)
+    {
+        var schoolYear = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(schoolYearId, cancellationToken);
+        if (schoolYear == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG14, new List<string> { "Năm học không tồn tại." });
+        }
+
+        if (schoolYear.IsActive)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học đang hoạt động (Active). Vui lòng chuyển trạng thái hoạt động sang năm học khác trước khi xóa." });
+        }
+
+        var classesInYear = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(schoolYearId, null, null, cancellationToken);
+
+        // Check if any class has published placement
+        if (classesInYear.Any(c => c.IsPlacementPublished))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đã có lớp học được công bố phân lớp (Published)." });
+        }
+
+        // Check if any class has enrolled students
+        if (classesInYear.Any(c => c.ClassAssignments != null && c.ClassAssignments.Any(ca => ca.IsActive)))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đang có học sinh phân công vào các lớp trong năm học này." });
+        }
+
+        // Check if any attendance records exist
+        var classIds = classesInYear.Select(c => c.Id).ToList();
+        var hasAttendance = (await _unitOfWork.Repository<AttendanceRecord>().FindAsync(a => classIds.Contains(a.ClassId), cancellationToken)).Any();
+        if (hasAttendance)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đã có dữ liệu điểm danh phát sinh." });
+        }
+
+        // Safe to delete: remove plan items, assignments, schedules, classes, and then the school year
+        foreach (var cls in classesInYear)
+        {
+            var planItems = await _unitOfWork.Repository<PlacementPlanItem>().FindAsync(p => p.ClassId == cls.Id, cancellationToken);
+            foreach (var pi in planItems)
+            {
+                await _unitOfWork.Repository<PlacementPlanItem>().DeleteAsync(pi, cancellationToken);
+            }
+
+            var assignments = await _unitOfWork.Repository<ClassAssignment>().FindAsync(ca => ca.ClassId == cls.Id, cancellationToken);
+            foreach (var ca in assignments)
+            {
+                await _unitOfWork.Repository<ClassAssignment>().DeleteAsync(ca, cancellationToken);
+            }
+
+            var schedules = await _unitOfWork.Repository<ClassSchedule>().FindAsync(s => s.ClassId == cls.Id, cancellationToken);
+            foreach (var s in schedules)
+            {
+                await _unitOfWork.Repository<ClassSchedule>().DeleteAsync(s, cancellationToken);
+            }
+
+            await _unitOfWork.Classes.DeleteAsync(cls, cancellationToken);
+        }
+
+        await _unitOfWork.Repository<SchoolYear>().DeleteAsync(schoolYear, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogActionAsync(
+            actorUserId,
+            AuditActions.ClassDelete,
+            nameof(SchoolYear),
+            schoolYearId.ToString(),
+            new { schoolYear.YearName, DeletedClassCount = classesInYear.Count },
+            null,
+            null,
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<bool>.Ok(true, "Đã xóa năm học thành công.");
+    }
+
     #endregion
 
     #region Classes Management
 
     public async Task<ApiResponse<ClassSummaryDto>> CreateClassAsync(CreateClassDto request, int? actorUserId = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.ClassName) || request.Grade < 1 || request.Grade > 5 || request.Capacity <= 0)
+        if (string.IsNullOrWhiteSpace(request.ClassName) || request.Grade < 1 || request.Grade > 5)
         {
-            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5 và sĩ số tối đa phải lớn hơn 0." });
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5." });
+        }
+
+        if (request.Capacity < 25 || request.Capacity > 40)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Sĩ số tối đa mỗi lớp phải từ 25 đến 40 học sinh (BR-15)." });
         }
 
         var schoolYear = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(request.SchoolYearId, cancellationToken);
@@ -191,7 +284,7 @@ public class ClassService : IClassService
         }
 
         var existingClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(request.SchoolYearId, null, null, cancellationToken);
-        if (existingClasses.Any(c => c.ClassName.Equals(request.ClassName.Trim(), StringComparison.OrdinalIgnoreCase)))
+        if (existingClasses != null && existingClasses.Any(c => c.ClassName.Equals(request.ClassName.Trim(), StringComparison.OrdinalIgnoreCase)))
         {
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { $"Lớp {request.ClassName} đã tồn tại trong năm học {schoolYear.YearName}." });
         }
@@ -523,12 +616,19 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Lớp học không tồn tại." });
         }
 
-        var activeEnrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
+        var activeEnrolledCount = targetClass.ClassAssignments?.Count(ca => ca.IsActive) ?? 0;
         if (activeEnrolledCount > 0)
         {
             return ApiResponse<bool>.Fail(
                 SystemMessages.MSG09,
                 new List<string> { $"Không thể xóa lớp học vì lớp đang có {activeEnrolledCount} học sinh. Chỉ có thể xóa lớp học khi sĩ số bằng 0." });
+        }
+
+        if (targetClass.HomeroomTeacherId.HasValue || targetClass.HomeroomTeacher != null)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG09,
+                new List<string> { "Không thể xóa lớp học vì lớp đang có Giáo viên chủ nhiệm phân công. Vui lòng gỡ GVCN trước khi xóa lớp." });
         }
 
         var hasAttendance = (await _unitOfWork.Repository<AttendanceRecord>().FindAsync(a => a.ClassId == classId, cancellationToken)).Any();
@@ -689,6 +789,53 @@ public class ClassService : IClassService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
+    public async Task<ApiResponse<bool>> UnassignHomeroomTeacherAsync(int classId, int? actorUserId = null, CancellationToken cancellationToken = default)
+    {
+        var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(classId, cancellationToken);
+        if (targetClass == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
+        }
+
+        if (!targetClass.HomeroomTeacherId.HasValue)
+        {
+            return ApiResponse<bool>.Ok(true, "Lớp này hiện chưa có Giáo viên chủ nhiệm.");
+        }
+
+        var priorTeacherId = targetClass.HomeroomTeacherId.Value;
+        var teacherProfile = await _unitOfWork.Repository<StaffProfile>().GetByIdAsync(priorTeacherId, cancellationToken);
+
+        targetClass.HomeroomTeacherId = null;
+        if (teacherProfile != null)
+        {
+            // Check if teacher is assigned to any other classes in the school year
+            var otherClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(targetClass.SchoolYearId, null, null, cancellationToken);
+            var isCNAnother = otherClasses != null && otherClasses.Any(c => c.Id != classId && c.HomeroomTeacherId == priorTeacherId);
+            if (!isCNAnother)
+            {
+                teacherProfile.IsHomeroomTeacher = false;
+                await _unitOfWork.Repository<StaffProfile>().UpdateAsync(teacherProfile, cancellationToken);
+            }
+        }
+
+        await _unitOfWork.Classes.UpdateAsync(targetClass, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogActionAsync(
+            actorUserId,
+            AuditActions.ClassAssignHomeroomTeacher,
+            nameof(Class),
+            targetClass.Id.ToString(),
+            new { HomeroomTeacherId = priorTeacherId },
+            new { HomeroomTeacherId = (int?)null },
+            null,
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<bool>.Ok(true, "Đã gỡ Giáo viên chủ nhiệm khỏi lớp thành công.");
+    }
+
     #endregion
 
     #region Student Placement / Class Assignment (UC-16)
@@ -719,10 +866,10 @@ public class ClassService : IClassService
                 IsSpecialNeeds = s.IsSpecialNeeds,
                 SpecialNeedsNotes = s.SpecialNeedsNotes,
                 EnrolledDate = s.EnrollmentDate,
-                PrimaryGuardianName = primaryGuardian?.FullName,
-                PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
+                PrimaryGuardianName = primaryGuardian?.User?.FullName,
+                PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
                 PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString(),
-                EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.PhoneNumber ?? primaryGuardian?.PhoneNumber
+                EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.User?.PhoneNumber ?? primaryGuardian?.User?.PhoneNumber
             };
         }).ToList();
 
@@ -819,6 +966,48 @@ public class ClassService : IClassService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
+    }
+
+    public async Task<ApiResponse<bool>> RemoveStudentsBatchFromClassAsync(int classId, List<int> studentIds, int? actorUserId = null, CancellationToken cancellationToken = default)
+    {
+        if (studentIds == null || !studentIds.Any())
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn ít nhất một học sinh để gỡ khỏi lớp." });
+        }
+
+        var distinctIds = studentIds.Distinct().ToList();
+        var assignments = await _unitOfWork.Repository<ClassAssignment>()
+            .FindAsync(ca => ca.ClassId == classId && distinctIds.Contains(ca.StudentId) && ca.IsActive, cancellationToken);
+
+        var list = assignments.ToList();
+        if (!list.Any())
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy học sinh nào đang phân công trong lớp này." });
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var assignment in list)
+        {
+            assignment.IsActive = false;
+            assignment.EndDate = now;
+            await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(assignment, cancellationToken);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogActionAsync(
+            actorUserId,
+            AuditActions.ClassRemoveStudent,
+            nameof(Class),
+            classId.ToString(),
+            new { RemovedCount = list.Count, StudentIds = distinctIds },
+            new { IsActive = false, EndDate = now },
+            null,
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<bool>.Ok(true, $"Đã gỡ thành công {list.Count} học sinh khỏi lớp học.");
     }
 
     #endregion
@@ -1005,10 +1194,10 @@ public class ClassService : IClassService
                     IsSpecialNeeds = s.IsSpecialNeeds,
                     SpecialNeedsNotes = s.SpecialNeedsNotes,
                     EnrolledDate = s.EnrollmentDate,
-                    PrimaryGuardianName = primaryGuardian?.FullName,
-                    PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
+                    PrimaryGuardianName = primaryGuardian?.User?.FullName,
+                    PrimaryGuardianPhone = primaryGuardian?.User?.PhoneNumber,
                     PrimaryGuardianRelationship = s.StudentGuardians.FirstOrDefault(sg => sg.IsPrimaryContact)?.Relationship.ToString(),
-                    EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.PhoneNumber ?? primaryGuardian?.PhoneNumber
+                    EmergencyContactPhone = s.StudentGuardians.FirstOrDefault(sg => !sg.IsPrimaryContact)?.Guardian?.User?.PhoneNumber ?? primaryGuardian?.User?.PhoneNumber
                 };
             }).OrderBy(s => s.FullName).ToList()
         };

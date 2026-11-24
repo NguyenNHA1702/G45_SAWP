@@ -189,6 +189,109 @@ public class ClassServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
+    [Fact]
+    public async Task UTCID08_CreateSchoolYear_Fail_InvalidFormat_NonYearString()
+    {
+        var request = new CreateSchoolYearDto
+        {
+            YearName = "abc",
+            StartDate = new DateTime(2026, 9, 1),
+            EndDate = new DateTime(2027, 5, 31)
+        };
+
+        var result = await _service.CreateSchoolYearAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("YYYY-YYYY"));
+    }
+
+    [Fact]
+    public async Task UTCID09_CreateSchoolYear_Fail_EndYearNotStartYearPlusOne()
+    {
+        var request = new CreateSchoolYearDto
+        {
+            YearName = "2026-2028",
+            StartDate = new DateTime(2026, 9, 1),
+            EndDate = new DateTime(2027, 5, 31)
+        };
+
+        var result = await _service.CreateSchoolYearAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("Năm kết thúc"));
+    }
+
+    [Fact]
+    public async Task UTCID10_CreateClass_Fail_CapacityBelow25()
+    {
+        var schoolYear = new SchoolYear { Id = 1, YearName = "2026-2027" };
+        SetupRepository(new List<SchoolYear> { schoolYear });
+
+        var request = new CreateClassDto { SchoolYearId = 1, ClassName = "1A", Grade = 1, Capacity = 20 };
+        var result = await _service.CreateClassAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("25 đến 40"));
+    }
+
+    [Fact]
+    public async Task UTCID11_CreateClass_Fail_CapacityAbove40()
+    {
+        var schoolYear = new SchoolYear { Id = 1, YearName = "2026-2027" };
+        SetupRepository(new List<SchoolYear> { schoolYear });
+
+        var request = new CreateClassDto { SchoolYearId = 1, ClassName = "1A", Grade = 1, Capacity = 45 };
+        var result = await _service.CreateClassAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("25 đến 40"));
+    }
+
+    [Fact]
+    public async Task UTCID12_DeleteClass_Fail_HasHomeroomTeacher()
+    {
+        var cls = new Class
+        {
+            Id = 1,
+            ClassName = "1A",
+            HomeroomTeacherId = 5,
+            ClassAssignments = new List<ClassAssignment>()
+        };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cls);
+
+        var result = await _service.DeleteClassAsync(1, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        result.Errors.Should().Contain(e => e.Contains("Giáo viên chủ nhiệm"));
+    }
+
+    [Fact]
+    public async Task UTCID13_UnassignHomeroomTeacher_Success()
+    {
+        var cls = new Class
+        {
+            Id = 1,
+            ClassName = "1A",
+            HomeroomTeacherId = 5,
+            ClassAssignments = new List<ClassAssignment>()
+        };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cls);
+        SetupRepository(new List<Class> { cls });
+        SetupRepository(new List<StaffProfile> { new() { Id = 5, IsHomeroomTeacher = true } });
+
+        var result = await _service.UnassignHomeroomTeacherAsync(1, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        cls.HomeroomTeacherId.Should().BeNull();
+    }
+
     #endregion
 
     #region Method 11: GetSchoolYearsAsync (UTCID01 - UTCID02)
@@ -1049,6 +1152,51 @@ public class ClassServiceTests : TestBase
 
         // Act
         var result = await _service.RemoveStudentFromClassAsync(1, 999, 10);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task UTCID03_RemoveStudentsBatchFromClass_Success()
+    {
+        // Arrange
+        var a1 = new ClassAssignment { Id = 1, ClassId = 1, StudentId = 10, IsActive = true };
+        var a2 = new ClassAssignment { Id = 2, ClassId = 1, StudentId = 11, IsActive = true };
+        SetupRepository(new List<ClassAssignment> { a1, a2 });
+
+        // Act
+        var result = await _service.RemoveStudentsBatchFromClassAsync(1, new List<int> { 10, 11 }, 10);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        a1.IsActive.Should().BeFalse();
+        a2.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID04_RemoveStudentsBatchFromClass_EmptyList_Fails()
+    {
+        // Act
+        var result = await _service.RemoveStudentsBatchFromClassAsync(1, new List<int>(), 10);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task UTCID05_RemoveStudentsBatchFromClass_NoneFound_Fails()
+    {
+        // Arrange
+        SetupRepository(new List<ClassAssignment>());
+
+        // Act
+        var result = await _service.RemoveStudentsBatchFromClassAsync(1, new List<int> { 999 }, 10);
 
         // Assert
         result.Should().NotBeNull();

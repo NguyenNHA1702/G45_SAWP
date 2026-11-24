@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import LoginPage from './pages/Auth/LoginPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 import SetPasswordPage from './pages/Auth/SetPasswordPage';
@@ -70,6 +70,28 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Chặn phân quyền truy cập Route theo vai trò người dùng (Role-based Route Guard) */
+function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const userJson = getAuthUser();
+  let currentUser: any = null;
+  try {
+    currentUser = userJson ? JSON.parse(userJson) : null;
+  } catch {
+    currentUser = null;
+  }
+  const rawRoles = currentUser?.roles ?? (currentUser?.role ? [currentUser.role] : []);
+  const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles : [String(rawRoles)];
+
+  const hasRole = roles.some((r) =>
+    userRoles.some((ur) => typeof ur === 'string' && (ur.toLowerCase() === r.toLowerCase() || ur.toLowerCase() === 'admin'))
+  );
+  if (!hasRole) {
+    toast.error('Bạn không có quyền truy cập trang này.');
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+}
+
 /** Signed in, but without the temporary-password redirect (the Change Password page itself). */
 function RequireToken({ children }: { children: React.ReactNode }) {
   const token = sessionStorage.getItem(TOKEN_KEY);
@@ -120,27 +142,174 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/teacher/attendance" element={<AttendancePage />} />
-          <Route path="/teacher/leave-requests" element={<LeaveApprovalPage />} />
-          <Route path="/teacher/contact-book" element={<TeacherContactBookPage />} />
-          <Route path="/parent/attendance" element={<ChildAttendancePage />} />
-          <Route path="/parent/leave-requests" element={<LeaveRequestPage />} />
-          <Route path="/parent/requests" element={<AdministrativeRequestsPage />} />
-          <Route path="/parent/lunch" element={<ParentLunchPage />} />
-          <Route path="/parent/contact-book" element={<EContactBookPage />} />
-          <Route path="/service/headcount" element={<MealHeadcountPage />} />
-          <Route path="/students" element={<StudentsPage />} />
-          <Route path="/classes" element={<ClassesPage />} />
-          <Route path="/office/requests" element={<AdminRequestsManagementPage />} />
-          <Route path="/board/requests" element={<AdministrativeApprovalPage />} />
-          <Route path="/teacher/roster" element={<HomeroomRosterPage />} />
-          <Route path="/teacher/boarding" element={<TeacherBoardingPage />} />
-          <Route path="/parent/children" element={<ChildDashboardPage />} />
-          <Route path="/system/audit-logs" element={<AuditLogsPage />} />
-          <Route path="/admin/users" element={<UsersManagementPage />} />
-          <Route path="/admin/account-requests" element={<AccountRequestReviewPage />} />
-          <Route path="/office/account-requests" element={<AccountRequestsPage />} />
-          <Route path="/admin/config" element={<SystemConfigPage />} />
+          <Route
+            path="/teacher/attendance"
+            element={
+              <RequireRole roles={['Teacher', 'OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <AttendancePage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/leave-requests"
+            element={
+              <RequireRole roles={['Teacher', 'SchoolBoard', 'Admin']}>
+                <LeaveApprovalPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/contact-book"
+            element={
+              <RequireRole roles={['Teacher', 'SchoolBoard', 'Admin']}>
+                <TeacherContactBookPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/attendance"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <ChildAttendancePage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/leave-requests"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <LeaveRequestPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/requests"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <AdministrativeRequestsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/lunch"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <ParentLunchPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/contact-book"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <EContactBookPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/service/headcount"
+            element={
+              <RequireRole roles={['ServiceStaff', 'OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <MealHeadcountPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/students"
+            element={
+              <RequireRole roles={['OfficeStaff', 'Admin']}>
+                <StudentsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/classes"
+            element={
+              <RequireRole roles={['OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <ClassesPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/office/requests"
+            element={
+              <RequireRole roles={['OfficeStaff', 'Admin']}>
+                <AdminRequestsManagementPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/board/requests"
+            element={
+              <RequireRole roles={['SchoolBoard', 'Admin']}>
+                <AdministrativeApprovalPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/roster"
+            element={
+              <RequireRole roles={['Teacher', 'Admin']}>
+                <HomeroomRosterPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/teacher/boarding"
+            element={
+              <RequireRole roles={['Teacher', 'Admin']}>
+                <TeacherBoardingPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/parent/children"
+            element={
+              <RequireRole roles={['Parent', 'Admin']}>
+                <ChildDashboardPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/system/audit-logs"
+            element={
+              <RequireRole roles={['OfficeStaff', 'SchoolBoard', 'Admin']}>
+                <AuditLogsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <RequireRole roles={['Admin']}>
+                <UsersManagementPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/account-requests"
+            element={
+              <RequireRole roles={['Admin']}>
+                <AccountRequestReviewPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/office/account-requests"
+            element={
+              <RequireRole roles={['OfficeStaff', 'Admin']}>
+                <AccountRequestsPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/config"
+            element={
+              <RequireRole roles={['Admin']}>
+                <SystemConfigPage />
+              </RequireRole>
+            }
+          />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 

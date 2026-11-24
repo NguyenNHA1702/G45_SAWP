@@ -82,9 +82,26 @@ export const StudentGuardiansSection: React.FC<Props> = ({ student, canManage, o
       toast.error('Vui lòng chọn một hồ sơ người giám hộ.');
       return;
     }
-    if (mode === 'new' && !newGuardian.fullName.trim()) {
-      toast.error('Vui lòng nhập họ tên người giám hộ.');
-      return;
+    if (mode === 'new') {
+      if (!newGuardian.fullName.trim()) {
+        toast.error('Vui lòng nhập họ tên người giám hộ.');
+        return;
+      }
+      const phone = newGuardian.phoneNumber.trim();
+      if (phone && !/^0\d{9}$/.test(phone)) {
+        toast.error('Số điện thoại phải gồm đúng 10 chữ số (bắt đầu bằng số 0, ví dụ: 0912345678).');
+        return;
+      }
+      const email = newGuardian.email.trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        toast.error('Email người giám hộ không đúng định dạng!');
+        return;
+      }
+      const cccd = newGuardian.identityCardNumber.trim();
+      if (cccd && !/^\d{9}(\d{3})?$/.test(cccd)) {
+        toast.error('Số CCCD/CMND phải gồm 9 hoặc 12 chữ số!');
+        return;
+      }
     }
     void run(
       () =>

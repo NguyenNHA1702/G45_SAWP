@@ -35,7 +35,7 @@ export function StaffReviewDocumentModal({
     if (request?.documentRequest) {
       setEndorsement(
         request.documentRequest.staffEndorsement ||
-          'Hồ sơ học sinh đầy đủ, xác thực thông tin theo học chính khóa tại nhà trường.'
+        'Hồ sơ học sinh đầy đủ, xác thực thông tin theo học chính khóa tại nhà trường.'
       );
       setAmendmentNotes(request.amendmentNotes || '');
       setCertificateNumber(`SAWP-GXN-${new Date().getFullYear()}-${request.id.toString().padStart(4, '0')}`);

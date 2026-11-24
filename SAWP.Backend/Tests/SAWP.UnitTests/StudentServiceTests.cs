@@ -433,6 +433,116 @@ public class StudentServiceTests : TestBase
     }
 
     [Fact]
+    public async Task UTCID14_CreateStudent_Fail_FutureDateOfBirth()
+    {
+        var request = new CreateStudentDto
+        {
+            StudentCode = "HS_FUT",
+            FullName = "Nguyen Future",
+            DateOfBirth = DateTime.UtcNow.Date.AddDays(10),
+            Gender = "Nam"
+        };
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_FUT", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.CreateStudentAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("tương lai"));
+    }
+
+    [Fact]
+    public async Task UTCID15_CreateStudent_Fail_AgeBelow5()
+    {
+        var request = new CreateStudentDto
+        {
+            StudentCode = "HS_BABY",
+            FullName = "Nguyen Baby",
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-3),
+            Gender = "Nam"
+        };
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_BABY", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.CreateStudentAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("5 đến 15"));
+    }
+
+    [Fact]
+    public async Task UTCID16_CreateStudent_Fail_AgeAbove15()
+    {
+        var request = new CreateStudentDto
+        {
+            StudentCode = "HS_OLD",
+            FullName = "Nguyen Old",
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-20),
+            Gender = "Nam"
+        };
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_OLD", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.CreateStudentAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("5 đến 15"));
+    }
+
+    [Fact]
+    public async Task UTCID17_CreateStudent_Fail_GuardianPhoneNot10Digits()
+    {
+        var request = new CreateStudentDto
+        {
+            StudentCode = "HS_PHONE_9",
+            FullName = "Nguyen Test Phone",
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-7),
+            Gender = "Nam",
+            InitialGuardian = new GuardianInputDto
+            {
+                FullName = "Phu Huynh A",
+                PhoneNumber = "091234567" // 9 digits
+            }
+        };
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_PHONE_9", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.CreateStudentAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("10 chữ số"));
+    }
+
+    [Fact]
+    public async Task UTCID18_CreateStudent_Fail_GuardianPhoneNotStartingWithZero()
+    {
+        var request = new CreateStudentDto
+        {
+            StudentCode = "HS_PHONE_NZ",
+            FullName = "Nguyen Test Phone",
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-7),
+            Gender = "Nam",
+            InitialGuardian = new GuardianInputDto
+            {
+                FullName = "Phu Huynh A",
+                PhoneNumber = "1912345678" // 10 digits but starts with 1
+            }
+        };
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_PHONE_NZ", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.CreateStudentAsync(request, 10);
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("10 chữ số"));
+    }
+
+    [Fact]
     public async Task UTCID05_CreateStudent_Boundary_ClassAtFullCapacity_StudentCreatedWithoutAssignment()
     {
         // Arrange

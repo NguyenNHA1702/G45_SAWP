@@ -60,6 +60,20 @@ public class ClassesController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HttpDelete("school-years/{id}")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteSchoolYear(int id, CancellationToken cancellationToken)
+    {
+        var result = await _classService.DeleteSchoolYearAsync(id, User.GetUserId(), cancellationToken);
+        if (result.Success) return Ok(result);
+        if (result.Errors != null && result.Errors.Any(e => e.Contains("không tồn tại")))
+            return NotFound(result);
+        return BadRequest(result);
+    }
+
     #endregion
 
     #region Classes Management (UC-14)
@@ -121,10 +135,14 @@ public class ClassesController : ControllerBase
     [Authorize(Roles = "OfficeStaff,Admin")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteClass(int id, CancellationToken cancellationToken)
     {
         var result = await _classService.DeleteClassAsync(id, User.GetUserId(), cancellationToken);
-        return result.Success ? Ok(result) : BadRequest(result);
+        if (result.Success) return Ok(result);
+        if (result.Errors != null && result.Errors.Any(e => e.Contains("không tồn tại")))
+            return NotFound(result);
+        return BadRequest(result);
     }
 
     #endregion
@@ -147,6 +165,16 @@ public class ClassesController : ControllerBase
     public async Task<IActionResult> AssignHomeroomTeacher(int id, [FromBody] AssignTeacherDto request, CancellationToken cancellationToken)
     {
         var result = await _classService.AssignHomeroomTeacherAsync(id, request, User.GetUserId(), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{id}/unassign-homeroom-teacher")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> UnassignHomeroomTeacher(int id, CancellationToken cancellationToken)
+    {
+        var result = await _classService.UnassignHomeroomTeacherAsync(id, User.GetUserId(), cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
@@ -180,6 +208,16 @@ public class ClassesController : ControllerBase
     public async Task<IActionResult> RemoveStudent(int id, int studentId, CancellationToken cancellationToken)
     {
         var result = await _classService.RemoveStudentFromClassAsync(id, studentId, User.GetUserId(), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{id}/remove-students-batch")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RemoveStudentsBatch(int id, [FromBody] RemoveStudentsBatchDto request, CancellationToken cancellationToken)
+    {
+        var result = await _classService.RemoveStudentsBatchFromClassAsync(id, request.StudentIds, User.GetUserId(), cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 

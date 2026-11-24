@@ -98,10 +98,64 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     }
   };
 
+  const currentYear = new Date().getFullYear();
+  const maxBirthDate = `${currentYear - 5}-12-31`;
+  const minBirthDate = `${currentYear - 15}-01-01`;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.studentCode.trim() || !formData.fullName.trim()) {
       toast.error('Vui lòng điền đầy đủ Mã học sinh và Họ tên!');
+      return;
+    }
+
+    const code = formData.studentCode.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{3,30}$/.test(code)) {
+      toast.error('Mã học sinh chỉ được chứa chữ cái, chữ số, dấu gạch ngang (-) và gạch dưới (_) từ 3 đến 30 ký tự!');
+      return;
+    }
+
+    const name = formData.fullName.trim();
+    if (name.includes('<') || name.includes('>')) {
+      toast.error('Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML!');
+      return;
+    }
+
+    if (!formData.dateOfBirth) {
+      toast.error('Vui lòng chọn ngày sinh của học sinh!');
+      return;
+    }
+
+    const birthDate = new Date(formData.dateOfBirth);
+    const today = new Date();
+    if (isNaN(birthDate.getTime()) || birthDate >= today) {
+      toast.error('Ngày sinh không hợp lệ (không thể là ngày trong tương lai)!');
+      return;
+    }
+
+    const age = today.getFullYear() - birthDate.getFullYear();
+    if (age < 5 || age > 15) {
+      toast.error(`Độ tuổi của học sinh không hợp lệ (${age} tuổi). Độ tuổi tiểu học hợp lệ là từ 5 đến 15 tuổi.`);
+      return;
+    }
+
+    const phone = formData.parentPhone?.trim();
+    if (phone) {
+      if (!/^0\d{9}$/.test(phone)) {
+        toast.error('Số điện thoại liên hệ phải gồm đúng 10 chữ số (bắt đầu bằng số 0, ví dụ: 0912345678)!');
+        return;
+      }
+    }
+
+    const email = formData.parentEmail?.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Email phụ huynh không đúng định dạng (ví dụ: phuhuynh@gmail.com)!');
+      return;
+    }
+
+    const cccd = formData.parentIdentityCard?.trim();
+    if (cccd && !/^\d{9}(\d{3})?$/.test(cccd)) {
+      toast.error('Số CCCD/CMND phụ huynh phải gồm 9 hoặc 12 chữ số!');
       return;
     }
 
@@ -194,9 +248,14 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 type="date"
                 className="input"
                 required
+                max={maxBirthDate}
+                min={minBirthDate}
                 value={formData.dateOfBirth}
                 onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
               />
+              <small style={{ color: 'var(--color-muted-fg)', marginTop: 4, display: 'block' }}>
+                Độ tuổi tiểu học hợp lệ: từ 5 đến 15 tuổi (sinh năm {currentYear - 15} – {currentYear - 5}).
+              </small>
             </div>
 
             <div className="field">
@@ -236,11 +295,14 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 }
               >
                 <option value="">-- Chưa xếp lớp (Xếp lớp sau) --</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Lớp {c.className} (Khối {c.grade}) - Hiện có {c.enrolledStudentsCount}/{c.capacity} học sinh
-                  </option>
-                ))}
+                {classes.map((c) => {
+                  const enrolled = c.enrolledCount ?? c.enrolledStudentsCount ?? 0;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      Lớp {c.className} (Khối {c.grade}) - Hiện có {enrolled}/{c.capacity} học sinh
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -269,9 +331,13 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 type="tel"
                 className="input"
                 placeholder="0912345678"
+                maxLength={10}
                 value={formData.parentPhone || ''}
                 onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
               />
+              <small style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                Bao gồm đúng 10 chữ số, bắt đầu bằng số 0 (ví dụ: 0912345678).
+              </small>
             </div>
 
             <div className="field">

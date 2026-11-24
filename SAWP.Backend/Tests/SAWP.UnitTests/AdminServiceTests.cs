@@ -171,7 +171,7 @@ public class AdminServiceTests : TestBase
     }
 
     [Fact]
-    public async Task ATT6_UpsertCalendarDay_NonExistentSchoolYear_FailsWithMSG14()
+    public async Task ATT6_UpsertCalendarDay_NonExistentSchoolYear_FailsWithMSG43()
     {
         SetupRepository(new List<SchoolYear>
         {
@@ -181,6 +181,20 @@ public class AdminServiceTests : TestBase
         var result = await _service.UpsertCalendarDayAsync(1, new UpdateCalendarDayDto
         {
             SchoolYearId = 999,
+            Date = new DateTime(2026, 11, 24),
+            IsSchoolDay = false
+        });
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG43.Code);
+    }
+
+    [Fact]
+    public async Task ATT6_UpsertCalendarDay_NoActiveSchoolYear_FailsWithMSG14()
+    {
+        SetupRepository(new List<SchoolYear>());
+
+        var result = await _service.UpsertCalendarDayAsync(1, new UpdateCalendarDayDto
+        {
             Date = new DateTime(2026, 11, 24),
             IsSchoolDay = false
         });
