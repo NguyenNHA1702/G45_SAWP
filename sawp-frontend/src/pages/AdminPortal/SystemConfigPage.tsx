@@ -3,6 +3,7 @@ import { CalendarDays, Clock, Save, Settings } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAuthUser } from '../../services/apiClient';
 import { adminApi } from '../../services/implementations/adminApi';
+import { asApiError } from '../../utils/apiError';
 import type { LunchCutoffDayDto, SchoolCalendarDayDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 
@@ -122,8 +123,9 @@ export default function SystemConfigPage() {
       } else {
         toast.error(firstError || fallbackError);
       }
-    } catch {
-      toast.error(getSystemMessage('MSG50')?.content || 'Đã xảy ra lỗi hệ thống.');
+    } catch (err) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || fallbackError);
     } finally {
       setSaving(false);
     }

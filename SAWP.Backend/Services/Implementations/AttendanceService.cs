@@ -163,9 +163,7 @@ public class AttendanceService : IAttendanceService
 
         var studentIds = roster.Select(s => s.Id).ToList();
 
-        var existingRecords = (await _unitOfWork.Attendance
-            .GetDailyClassAttendanceAsync(classId, targetDate, session, track: false, ct))
-            .ToDictionary(r => r.StudentId);
+        var existingRecords = await LoadExistingRecordsForRosterAsync(classId, studentIds, targetDate, session, track: false, ct);
 
         var leaves = await _unitOfWork.Attendance
             .GetActiveLeavesCoveringDateAsync(studentIds, targetDate, session, ct);
@@ -174,7 +172,7 @@ public class AttendanceService : IAttendanceService
             .GetRegistrationsForStudentsAsync(studentIds, targetDate, track: false, ct);
 
         // Xác định quyền sửa & lý do khóa (D1 + A7)
-        var submittedRecords = existingRecords.Values.Where(IsTeacherSubmittedRecord).ToList();
+        var submittedRecords = existingRecords.Values.Where(r => r.ClassId == classId && IsTeacherSubmittedRecord(r)).ToList();
         var hasTeacherSubmittedAttendance = submittedRecords.Count > 0;
         bool canEdit = false;
         string? lockReason = null;
@@ -407,13 +405,11 @@ public class AttendanceService : IAttendanceService
             }
         }
 
-        // Tải bản ghi hiện có trước V6 để hỗ trợ ATT-3 (không chặn lưu lớp nếu HS cũ vốn đang là Vắng có phép không đổi)
-        var existingRecords = (await _unitOfWork.Attendance
-            .GetDailyClassAttendanceAsync(classId, targetDate, session, track: true, ct))
-            .ToDictionary(r => r.StudentId);
+        // Tải bản ghi hiện có theo lớp + học sinh trong danh sách lớp (bao gồm HS mới chuyển lớp trong ngày để tránh đụng unique index StudentId+Date+Session)
+        var existingRecords = await LoadExistingRecordsForRosterAsync(classId, rosterIds, targetDate, session, track: true, ct);
 
         // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt ngay cả với Giáo vụ/Admin
-        if (targetDate < _clock.Today && existingRecords.Values.Any(IsTeacherSubmittedRecord))
+        if (targetDate < _clock.Today && existingRecords.Values.Any(r => r.ClassId == classId && IsTeacherSubmittedRecord(r)))
         {
             return ApiResponse<AttendanceSubmitResultDto>.Fail(
                 SystemMessages.MSG19,
@@ -469,13 +465,15 @@ public class AttendanceService : IAttendanceService
                         ? (leaves.TryGetValue(entry.StudentId, out var l) ? l.LeaveRequestId : rec.LeaveRequestId)
                         : null;
 
-                    var hasChanged = rec.Status != entry.Status
+                    var hasChanged = rec.ClassId != classId
+                        || rec.Status != entry.Status
                         || (rec.Remarks ?? string.Empty) != (entry.Remarks ?? string.Empty)
                         || rec.LeaveRequestId != leaveRequestId;
                     var needsTeacherConfirmation = !IsTeacherSubmittedRecord(rec);
 
                     if (hasChanged || needsTeacherConfirmation)
                     {
+                        rec.ClassId = classId;
                         rec.Status = entry.Status;
                         rec.Remarks = entry.Remarks;
                         rec.LeaveRequestId = leaveRequestId;
@@ -886,15 +884,24 @@ public class AttendanceService : IAttendanceService
             .Select(r => r.Date.Date)
             .Distinct()
             .Count(d => IsSchoolDayByMap(d, calMap));
+        var recordedSessionSlots = classRecords
+            .Where(r => IsSchoolDayByMap(r.Date, calMap))
+            .Select(r => new { Date = r.Date.Date, r.Session })
+            .Distinct()
+            .Count();
+
+        var markedTotal = rows.Sum(r => r.Present + r.Late + r.ExcusedAbsence + r.UnexcusedAbsence);
+        var expectedSlots = rows.Count * recordedSessionSlots;
+        var notMarked = Math.Max(0, expectedSlots - markedTotal);
 
         var totals = new AttendanceSummaryDto
         {
-            Total = rows.Sum(r => r.Present + r.Late + r.ExcusedAbsence + r.UnexcusedAbsence),
+            Total = markedTotal,
             Present = rows.Sum(r => r.Present),
             Late = rows.Sum(r => r.Late),
             ExcusedAbsence = rows.Sum(r => r.ExcusedAbsence),
             UnexcusedAbsence = rows.Sum(r => r.UnexcusedAbsence),
-            NotMarked = 0
+            NotMarked = notMarked
         };
 
         decimal rate = totals.Total == 0 ? 0 : Math.Round((decimal)(totals.Present + totals.Late) * 100m / totals.Total, 2);
@@ -1086,6 +1093,33 @@ public class AttendanceService : IAttendanceService
 
         var activeYears = await yearRepo.FindAsync(y => y.IsActive, ct);
         return activeYears.OrderByDescending(y => y.StartDate).FirstOrDefault();
+    }
+
+    private async Task<Dictionary<int, AttendanceRecord>> LoadExistingRecordsForRosterAsync(
+        int classId,
+        IReadOnlyCollection<int> studentIds,
+        DateTime targetDate,
+        AttendanceSession session,
+        bool track,
+        CancellationToken ct)
+    {
+        var byClass = await _unitOfWork.Attendance.GetDailyClassAttendanceAsync(classId, targetDate, session, track, ct);
+        var map = (byClass ?? Array.Empty<AttendanceRecord>()).ToDictionary(r => r.StudentId);
+
+        var missingIds = studentIds.Where(id => !map.ContainsKey(id)).ToList();
+        if (missingIds.Count > 0)
+        {
+            var byStudents = await _unitOfWork.Attendance.GetDailyStudentAttendanceAsync(missingIds, targetDate, session, track, ct);
+            if (byStudents != null)
+            {
+                foreach (var rec in byStudents)
+                {
+                    map[rec.StudentId] = rec;
+                }
+            }
+        }
+
+        return map;
     }
 
     private async Task<Dictionary<int, int>> GetClassStudentCountsAsync(

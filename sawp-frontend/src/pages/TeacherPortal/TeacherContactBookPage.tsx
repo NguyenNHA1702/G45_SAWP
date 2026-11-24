@@ -818,12 +818,6 @@ export default function TeacherContactBookPage() {
                       ? new Date(selectedStudent.evaluation.acknowledgedAt).toLocaleString('vi-VN')
                       : ''}
                   </div>
-                  {selectedStudent.evaluation?.parentFeedback && (
-                    <div style={{ marginTop: 8, fontSize: '0.875rem', color: '#14532D', background: '#DCFCE7', padding: '8px 12px', borderRadius: 8 }}>
-                      <strong>Ý kiến phản hồi từ phụ huynh:</strong>
-                      <div style={{ fontStyle: 'italic', marginTop: 2 }}>"{selectedStudent.evaluation.parentFeedback}"</div>
-                    </div>
-                  )}
                   <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#15803D' }}>
                     🔒 Theo BR-59, phiếu đánh giá đã khóa (Read-only). Không thể chỉnh sửa sau khi phụ huynh đã ký nhận.
                   </div>
@@ -939,6 +933,7 @@ export default function TeacherContactBookPage() {
                 <textarea
                   className="input"
                   rows={3}
+                  maxLength={1500}
                   disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                   placeholder="Ghi nhận xét về nề nếp, sinh hoạt, sự tiến bộ của em..."
                   value={evalNote}
@@ -954,6 +949,7 @@ export default function TeacherContactBookPage() {
                 <input
                   type="text"
                   className="input"
+                  maxLength={500}
                   disabled={Boolean(selectedStudent.evaluation?.isAcknowledged)}
                   placeholder="Ví dụ: Nhắc phụ huynh bọc lại vở bài tập Toán của con..."
                   value={evalRemind}
