@@ -137,13 +137,12 @@ export default function MealHeadcountPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get('tab') as 'summary' | 'students' | 'logs' | 'report') || 'summary';
 
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
+  const todayStr = useMemo(() => {
     const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const isFutureSelectedDate = selectedDate > todayStr;
   const [board, setBoard] = useState<DailyMealBoard | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
@@ -198,6 +197,23 @@ export default function MealHeadcountPage() {
   const [loadingReport, setLoadingReport] = useState<boolean>(false);
 
   const fetchPeriodReport = async (from: string, to: string) => {
+    if (!from || !to) {
+      toast.error('Vui lòng chọn đầy đủ Từ ngày và Đến ngày.');
+      return;
+    }
+    if (to < from) {
+      toast.error('Từ ngày phải trước hoặc bằng Đến ngày.');
+      setPeriodReport(null);
+      return;
+    }
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    const diffDays = Math.round((new Date(ty, tm - 1, td).getTime() - new Date(fy, fm - 1, fd).getTime()) / 86_400_000);
+    if (diffDays > 92) {
+      toast.error('Khoảng thời gian báo cáo tối đa 92 ngày.');
+      setPeriodReport(null);
+      return;
+    }
     try {
       setLoadingReport(true);
       const data = await lunchApi.getPeriodReport(from, to);
@@ -335,6 +351,22 @@ export default function MealHeadcountPage() {
   };
 
   const handleSaveConfig = async () => {
+    if (!cfgCutoffTime || cfgCutoffTime < '06:00' || cfgCutoffTime > '11:00') {
+      toast.error('Giờ chốt suất ăn phải nằm trong khoảng 06:00 đến 11:00 (trước giờ ăn trưa).');
+      return;
+    }
+    if (!cfgApplyFullWeek && cfgRemarks.trim().length > 250) {
+      toast.error('Ghi chú / thực đơn không được vượt quá 250 ký tự.');
+      return;
+    }
+    if (cfgApplyFullWeek) {
+      const weekdaysCheck = getWeekdaysOfDate(selectedDate);
+      const tooLongDay = weekdaysCheck.find((d) => (cfgWeeklyMenus[d] ?? cfgRemarks).trim().length > 250);
+      if (tooLongDay) {
+        toast.error(`Thực đơn ngày ${formatDateDDMMYYYY(tooLongDay)} vượt quá 250 ký tự.`);
+        return;
+      }
+    }
     try {
       setActionLoading(true);
       if (cfgApplyFullWeek) {
@@ -591,22 +623,24 @@ export default function MealHeadcountPage() {
               <button
                 type="button"
                 className="btn"
+                disabled={isFutureSelectedDate}
+                title={isFutureSelectedDate ? 'Chỉ được chốt suất cho ngày hôm nay hoặc ngày đã qua' : undefined}
                 onClick={() => setShowLockModal(true)}
                 style={{
                   borderRadius: 'var(--radius-full)',
                   border: '2px solid var(--color-fg)',
-                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  boxShadow: isFutureSelectedDate ? 'none' : '3px 3px 0 0 var(--color-fg)',
                   fontWeight: 800,
                   fontSize: 'var(--fs-sm)',
                   padding: '0 22px',
                   height: 42,
                   boxSizing: 'border-box',
-                  background: 'var(--color-accent)',
-                  color: '#FFFFFF',
+                  background: isFutureSelectedDate ? 'var(--color-muted)' : 'var(--color-accent)',
+                  color: isFutureSelectedDate ? 'var(--color-muted-fg)' : '#FFFFFF',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  cursor: 'pointer',
+                  cursor: isFutureSelectedDate ? 'not-allowed' : 'pointer',
                 }}
               >
                 <Lock size={15} />
@@ -979,7 +1013,7 @@ export default function MealHeadcountPage() {
                 </div>
 
                 <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 800, color: '#E11D48', fontFamily: 'var(--font-heading)' }}>
-                  -{board.totalAutoCancelled}{' '}
+                  {board.totalAutoCancelled > 0 ? `-${board.totalAutoCancelled}` : '0'}{' '}
                   <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--color-muted-fg)' }}>suất</span>
                 </div>
 
@@ -1950,7 +1984,9 @@ export default function MealHeadcountPage() {
                 </div>
                 <div className="card" style={{ background: '#FFF1F2', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
                   <div className="label" style={{ color: '#E11D48' }}>TỔNG ĐÃ HỦY HỢP LỆ</div>
-                  <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, color: '#E11D48', fontFamily: 'var(--font-heading)' }}>-{periodReport.totalCancelled} suất</div>
+                  <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, color: '#E11D48', fontFamily: 'var(--font-heading)' }}>
+                    {periodReport.totalCancelled > 0 ? `-${periodReport.totalCancelled}` : '0'} suất
+                  </div>
                 </div>
               </div>
 
@@ -2355,6 +2391,8 @@ export default function MealHeadcountPage() {
               <input
                 id="cfg-cutoff"
                 type="time"
+                min="06:00"
+                max="11:00"
                 className="input"
                 value={cfgCutoffTime}
                 onChange={(e) => setCfgCutoffTime(e.target.value)}
@@ -2468,6 +2506,7 @@ export default function MealHeadcountPage() {
               className="input"
               rows={3}
               placeholder="VD: Cơm trắng, Thịt gà kho nấm, Canh bí đỏ nấu tôm, Chuối tiêu..."
+              maxLength={250}
               value={cfgRemarks}
               onChange={(e) => setCfgRemarks(e.target.value)}
               style={{ resize: 'vertical', minHeight: 76, width: '100%', boxSizing: 'border-box' }}
@@ -2557,6 +2596,7 @@ export default function MealHeadcountPage() {
                     <input
                       type="text"
                       className="input"
+                      maxLength={250}
                       value={cfgWeeklyMenus[d] ?? ''}
                       onChange={(e) => setCfgWeeklyMenus((prev) => ({ ...prev, [d]: e.target.value }))}
                       placeholder={`Nhập thực đơn ${dayNames[idx]}...`}
@@ -2637,26 +2677,29 @@ export default function MealHeadcountPage() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center' }}>
-              <span style={{ fontWeight: 600 }}>Tổng suất cần nấu hôm nay:</span>
+              <span style={{ fontWeight: 600 }}>Tổng suất cần nấu ngày {formatDateDDMMYYYY(selectedDate)}:</span>
               <span className="badge badge--mint" style={{ fontSize: 'var(--fs-sm)', padding: '4px 10px', fontWeight: 800 }}>
                 {board?.totalActiveToCook} suất
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#e11d48' }}>
               <span style={{ fontWeight: 600 }}>Tổng suất hủy hợp lệ:</span>
-              <strong style={{ fontSize: 'var(--fs-sm)' }}>-{board?.totalAutoCancelled} suất</strong>
+              <strong style={{ fontSize: 'var(--fs-sm)' }}>
+                {(board?.totalAutoCancelled ?? 0) > 0 ? `-${board?.totalAutoCancelled}` : '0'} suất
+              </strong>
             </div>
           </div>
 
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)', marginBottom: 16, lineHeight: 1.5 }}>
-            Sau khi bấm chốt, hệ thống sẽ <strong>khóa bảng số liệu</strong> ngày hôm nay. Các đơn nghỉ hoặc yêu cầu hủy gửi muộn sau {effectiveCutoffLabel} sẽ giữ nguyên đăng ký hiện tại theo quy định.
+            Sau khi bấm chốt, hệ thống sẽ <strong>khóa bảng số liệu</strong> ngày {formatDateDDMMYYYY(selectedDate)}. Các đơn nghỉ hoặc yêu cầu hủy gửi muộn sau {effectiveCutoffLabel} sẽ giữ nguyên đăng ký hiện tại theo quy định.
           </p>
 
           <div className="field" style={{ marginBottom: 20 }}>
-            <label className="label" htmlFor="lock-notes">Ghi chú gửi Nhà bếp / Kế toán:</label>
+            <label className="label" htmlFor="lock-notes">Ghi chú gửi Nhà bếp / Kế toán (tối đa 250 ký tự):</label>
             <textarea
               id="lock-notes"
               className="input"
+              maxLength={250}
               value={lockNotes}
               onChange={(e) => setLockNotes(e.target.value)}
               rows={3}
@@ -2724,6 +2767,7 @@ export default function MealHeadcountPage() {
             <textarea
               className="input"
               rows={3}
+              maxLength={250}
               value={unlockReason}
               onChange={(e) => setUnlockReason(e.target.value)}
               placeholder="Ví dụ: Bấm nhầm khóa sớm, cần mở lại để điều chỉnh suất ăn..."

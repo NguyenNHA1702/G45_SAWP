@@ -3,12 +3,15 @@ using System.Text;
 using API.Common;
 using API.Middlewares;
 using Core.Configuration;
+using Core.Constants;
+using Core.DTOs;
 using Core.Interfaces;
 using Infrastructure.Common;
 using Infrastructure.Data;
 using Infrastructure.ExternalServices;
 using Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -72,6 +75,7 @@ builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<ISchoolCalendarService, SchoolCalendarService>();
 builder.Services.AddScoped<IStudentImporter, StudentImporter>();
 builder.Services.AddScoped<IStaffImporter, StaffImporter>();
 builder.Services.AddScoped<IPlacementPlanService, PlacementPlanService>();
@@ -145,10 +149,69 @@ builder.Services.AddAuthorization();
 
 // 6. API Controllers & Swagger with JWT support
 builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var errors = context.ModelState
+                .Where(kvp => kvp.Value?.Errors.Count > 0)
+                .SelectMany(kvp => kvp.Value!.Errors.Select(err =>
+                {
+                    var msg = err.ErrorMessage;
+                    if (string.IsNullOrWhiteSpace(msg)
+                        || msg.Contains("Core.Enums.", StringComparison.Ordinal)
+                        || msg.Contains("could not be converted to", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return $"Giá trị trường '{kvp.Key}' không hợp lệ.";
+                    }
+                    return msg;
+                }))
+                .Distinct()
+                .ToList();
+
+            var response = Core.DTOs.ApiResponse<object>.Fail(Core.Constants.SystemMessages.MSG01, errors);
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
+        };
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
         options.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+    })
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var errors = new List<string>();
+            foreach (var (key, entry) in context.ModelState)
+            {
+                if (entry.Errors.Count == 0) continue;
+                var fieldName = string.IsNullOrWhiteSpace(key) ? "Dữ liệu" : key.TrimStart('$', '.');
+                foreach (var err in entry.Errors)
+                {
+                    var msg = err.ErrorMessage;
+                    if (string.IsNullOrWhiteSpace(msg)
+                        || msg.Contains("Core.", StringComparison.Ordinal)
+                        || msg.Contains("System.", StringComparison.Ordinal)
+                        || msg.Contains("JSON value could not be converted", StringComparison.OrdinalIgnoreCase)
+                        || msg.Contains("is not valid", StringComparison.OrdinalIgnoreCase))
+                    {
+                        errors.Add($"Giá trị của trường '{fieldName}' không hợp lệ.");
+                    }
+                    else
+                    {
+                        errors.Add(msg);
+                    }
+                }
+            }
+
+            if (errors.Count == 0)
+            {
+                errors.Add("Dữ liệu gửi lên không hợp lệ.");
+            }
+
+            return new BadRequestObjectResult(ApiResponse<object>.Fail(SystemMessages.MSG01, errors.Distinct().ToList()));
+        };
     });
 builder.Services.AddEndpointsApiExplorer();
 

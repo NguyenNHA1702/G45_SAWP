@@ -17,6 +17,12 @@ public class LunchService : ILunchService
     private readonly ISchoolClock _clock;
     private readonly SchoolOptions _options;
     private readonly IAuditService _auditService;
+    private readonly ISchoolCalendarService _calendarService;
+
+    private static readonly TimeSpan MinCutoffTime = new(6, 0, 0);
+    private static readonly TimeSpan MaxCutoffTime = new(11, 0, 0);
+    private const int MaxRemarksLength = 250;
+    private const int MaxCancelReasonLength = 300;
 
     private static readonly string[] DefaultMenus =
     {
@@ -31,12 +37,14 @@ public class LunchService : ILunchService
         IUnitOfWork unitOfWork,
         ISchoolClock clock,
         IOptions<SchoolOptions> options,
-        IAuditService auditService)
+        IAuditService auditService,
+        ISchoolCalendarService? calendarService = null)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _options = options.Value;
         _auditService = auditService;
+        _calendarService = calendarService ?? new SchoolCalendarService(unitOfWork);
     }
 
     private async Task<Dictionary<DateTime, bool>> GetCalendarDayMapAsync(DateTime startDate, DateTime endDate, CancellationToken ct)
@@ -71,7 +79,7 @@ public class LunchService : ILunchService
         var targetDate = date.Date;
         // Nếu SchoolCalendarDay có cấu hình rõ ràng (VD: học bù T7 IsSchoolDay=true, hoặc nghỉ lễ 02/12 IsSchoolDay=false) thì ưu tiên theo lịch nhà trường
         var defaultServing = isCalendarSchoolDay ?? SchoolCalendarHelper.IsDefaultSchoolDay(targetDate);
-        var isServing = day != null ? day.IsServing : defaultServing;
+        var isServing = isCalendarSchoolDay == false ? false : (day != null ? day.IsServing : defaultServing);
         var cutoff = (day != null && day.CutoffTime != TimeSpan.Zero) ? day.CutoffTime : _options.LunchCutoff;
         var isLocked = day?.IsLocked ?? false;
         var lockedAt = day?.LockedAt;
@@ -140,6 +148,8 @@ public class LunchService : ILunchService
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
         var calendarMap = await GetCalendarDayMapAsync(start, end, cancellationToken);
 
+        var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(start, end, cancellationToken);
+
         var result = new List<LunchServiceDayConfigDto>();
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
         {
@@ -170,9 +180,19 @@ public class LunchService : ILunchService
             return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn ít nhất một ngày để cấu hình." });
         }
 
-        if (!TimeSpan.TryParse(request.CutoffTime, out var parsedCutoff) || parsedCutoff <= TimeSpan.Zero || parsedCutoff >= TimeSpan.FromDays(1))
+        if (!TimeSpan.TryParse(request.CutoffTime, out var parsedCutoff) || parsedCutoff < MinCutoffTime || parsedCutoff > MaxCutoffTime)
         {
-            return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(SystemMessages.MSG01, new List<string> { "Hạn đăng ký/hủy (CutoffTime) không đúng định dạng HH:mm." });
+            return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Giờ chốt suất ăn (CutoffTime) phải có định dạng HH:mm trong khoảng 06:00 đến 11:00 (trước giờ ăn trưa)." });
+        }
+
+        var normalizedRemarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
+        if (normalizedRemarks != null && normalizedRemarks.Length > MaxRemarksLength)
+        {
+            return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Ghi chú / thực đơn không được vượt quá {MaxRemarksLength} ký tự." });
         }
 
         var targetDates = request.Dates.Select(d => d.Date).Distinct().OrderBy(d => d).ToList();
@@ -193,12 +213,6 @@ public class LunchService : ILunchService
         }
 
         var updatedDtos = new List<LunchServiceDayConfigDto>();
-
-        var normalizedRemarks = request.Remarks?.Trim();
-        if (normalizedRemarks != null && normalizedRemarks.Length > 250)
-        {
-            normalizedRemarks = normalizedRemarks[..250];
-        }
 
         foreach (var d in targetDates)
         {
@@ -232,6 +246,67 @@ public class LunchService : ILunchService
             });
         }
 
+        // D-D: Khi đóng ngày phục vụ (IsServing = false), tự động hủy các suất đã đăng ký và thông báo phụ huynh
+        var autoCancelledCount = 0;
+        if (!request.IsServing)
+        {
+            var regRepo = _unitOfWork.Repository<LunchRegistration>();
+            if (regRepo != null)
+            {
+                var activeRegsToCancel = await regRepo.Query()
+                    .Include(r => r.Student)
+                    .Where(r => targetDates.Contains(r.Date) && r.IsActive)
+                    .ToListAsync(cancellationToken);
+
+                if (activeRegsToCancel.Count > 0)
+                {
+                    var utcNow = DateTime.UtcNow;
+                    foreach (var reg in activeRegsToCancel)
+                    {
+                        var reasonBase = $"Nhà trường đóng phục vụ bán trú ngày {reg.Date:dd-MM-yyyy}";
+                        var fullReason = !string.IsNullOrWhiteSpace(normalizedRemarks)
+                            ? $"{reasonBase}: {normalizedRemarks}"
+                            : reasonBase;
+                        if (fullReason.Length > MaxCancelReasonLength)
+                        {
+                            fullReason = fullReason[..MaxCancelReasonLength];
+                        }
+
+                        reg.IsActive = false;
+                        reg.IsWaitlisted = false;
+                        reg.CancellationSource = LunchCancellationSource.Staff;
+                        reg.CancelledAt = utcNow;
+                        reg.CancelledByUserId = userId > 0 ? userId : null;
+                        reg.CancellationReason = fullReason;
+                    }
+                    autoCancelledCount = activeRegsToCancel.Count;
+
+                    var notifRepo = _unitOfWork.Repository<Notification>();
+                    if (notifRepo != null && _unitOfWork.Students != null)
+                    {
+                        var studentIds = activeRegsToCancel.Select(r => r.StudentId).Distinct().ToList();
+                        var guardianMap = await _unitOfWork.Students.GetGuardianUserIdsAsync(studentIds, cancellationToken);
+                        foreach (var reg in activeRegsToCancel)
+                        {
+                            if (!guardianMap.TryGetValue(reg.StudentId, out var guardianUserIds)) continue;
+                            foreach (var gUserId in guardianUserIds.Distinct())
+                            {
+                                await notifRepo.AddAsync(new Notification
+                                {
+                                    UserId = gUserId,
+                                    Title = "Thông báo hủy suất ăn do đóng ngày phục vụ",
+                                    Content = $"Suất ăn bán trú ngày {reg.Date:dd-MM-yyyy} của học sinh {reg.Student?.FullName ?? $"#{reg.StudentId}"} đã được tự động hủy do nhà trường không phục vụ bán trú ngày này.",
+                                    LinkUrl = $"/parent/lunch?studentId={reg.StudentId}&month={reg.Date:yyyy-MM}",
+                                    CreatedAt = utcNow,
+                                    IsRead = false
+                                }, cancellationToken);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogActionAsync(
@@ -240,12 +315,14 @@ public class LunchService : ILunchService
             nameof(LunchServiceDay),
             null,
             null,
-            new { Dates = targetDates.Select(d => d.ToString("yyyy-MM-dd")).ToList(), request.IsServing, CutoffTime = parsedCutoff.ToString(@"hh\:mm"), Remarks = normalizedRemarks },
+            new { Dates = targetDates.Select(d => d.ToString("yyyy-MM-dd")).ToList(), request.IsServing, CutoffTime = parsedCutoff.ToString(@"hh\:mm"), Remarks = normalizedRemarks, AutoCancelledRegistrations = autoCancelledCount },
             null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<List<LunchServiceDayConfigDto>>.Ok(updatedDtos, SystemMessages.MSG44);
+        return autoCancelledCount > 0
+            ? ApiResponse<List<LunchServiceDayConfigDto>>.Ok(updatedDtos, $"Đã cập nhật cấu hình ngày phục vụ và tự động hủy {autoCancelledCount} suất ăn đã đăng ký.")
+            : ApiResponse<List<LunchServiceDayConfigDto>>.Ok(updatedDtos, SystemMessages.MSG44);
     }
 
     /// <summary>
@@ -309,6 +386,8 @@ public class LunchService : ILunchService
             .Query()
             .Where(r => r.StudentId == studentId && r.Date >= startOfMonth && r.Date <= endOfMonth)
             .ToDictionaryAsync(r => r.Date.Date, cancellationToken);
+
+        var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(startOfMonth, endOfMonth, cancellationToken);
 
         var days = new List<StudentLunchDayDto>();
         for (var cur = startOfMonth; cur <= endOfMonth; cur = cur.AddDays(1))
@@ -374,6 +453,23 @@ public class LunchService : ILunchService
             return ApiResponse<BatchLunchRegistrationResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh và ít nhất một ngày phục vụ." });
         }
 
+        // D-B: Chế độ ăn đặc biệt bắt buộc có mô tả dị ứng / kiêng khem cụ thể
+        var trimmedRemarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
+        if (request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
+        {
+            return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Khi chọn chế độ ăn đặc biệt, vui lòng nhập mô tả dị ứng / kiêng khem cụ thể để nhà bếp chuẩn bị." });
+        }
+
+        // D-C: Chặn ghi chú vượt độ dài cột DB (250 ký tự)
+        if (trimmedRemarks != null && trimmedRemarks.Length > MaxRemarksLength)
+        {
+            return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Ghi chú suất ăn không được vượt quá {MaxRemarksLength} ký tự." });
+        }
+
         var student = await _unitOfWork.Repository<Student>()
             .Query()
             .FirstOrDefaultAsync(s => s.Id == request.StudentId, cancellationToken);
@@ -395,6 +491,39 @@ public class LunchService : ILunchService
 
         var targetDates = request.Dates.Select(d => d.Date).Distinct().OrderBy(d => d).ToList();
 
+        // D-A: Không cho phép đăng ký lại suất ăn trên ngày đang có đơn xin nghỉ đã được phê duyệt (buổi Sáng / Cả ngày, không giữ suất ăn)
+        var leaveRepo = _unitOfWork.Repository<LeaveRequest>();
+        if (leaveRepo != null && targetDates.Count > 0)
+        {
+            var minTarget = targetDates.First();
+            var maxTarget = targetDates.Last();
+            var approvedLeaves = await leaveRepo.Query()
+                .Include(lr => lr.AdministrativeRequest)
+                .Where(lr => lr.AdministrativeRequest != null
+                          && lr.AdministrativeRequest.StudentId == request.StudentId
+                          && lr.AdministrativeRequest.RequestType == RequestTypes.Leave
+                          && lr.AdministrativeRequest.Status == RequestStatus.Approved
+                          && !lr.KeepLunchService
+                          && (lr.Session == LeaveSession.FullDay || lr.Session == LeaveSession.Morning)
+                          && lr.StartDate <= maxTarget
+                          && lr.EndDate >= minTarget)
+                .ToListAsync(cancellationToken);
+
+            if (approvedLeaves.Count > 0)
+            {
+                var conflictDates = targetDates
+                    .Where(d => approvedLeaves.Any(lr => lr.StartDate.Date <= d && lr.EndDate.Date >= d))
+                    .ToList();
+                if (conflictDates.Count > 0)
+                {
+                    var conflictStr = string.Join(", ", conflictDates.Select(d => d.ToString("dd-MM-yyyy")));
+                    return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
+                        SystemMessages.MSG09,
+                        new List<string> { $"Học sinh đã có đơn xin nghỉ được phê duyệt cho ngày {conflictStr}. Vui lòng thu hồi đơn xin nghỉ trước khi đăng ký lại suất ăn." });
+                }
+            }
+        }
+
         var serviceDays = await _unitOfWork.Repository<LunchServiceDay>()
             .Query()
             .Where(d => targetDates.Contains(d.Date))
@@ -402,6 +531,10 @@ public class LunchService : ILunchService
         var calendarMap = targetDates.Count > 0
             ? await GetCalendarDayMapAsync(targetDates.First(), targetDates.Last(), cancellationToken)
             : new Dictionary<DateTime, bool>();
+
+        var calendarSchoolDays = targetDates.Count > 0
+            ? await _calendarService.GetSchoolDaysInRangeAsync(targetDates.First(), targetDates.Last(), cancellationToken)
+            : new HashSet<DateTime>();
 
         // Kiểm tra ngày phục vụ (MSG28) và hạn đăng ký (MSG27)
         foreach (var d in targetDates)
@@ -518,6 +651,14 @@ public class LunchService : ILunchService
         if (request.StudentId <= 0)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01);
+        }
+
+        var trimmedCancelReason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+        if (trimmedCancelReason != null && trimmedCancelReason.Length > MaxCancelReasonLength)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Lý do hủy suất ăn không được vượt quá {MaxCancelReasonLength} ký tự." });
         }
 
         var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
@@ -1010,6 +1151,14 @@ public class LunchService : ILunchService
                 new List<string> { "Chỉ được chốt/khóa suất ăn cho ngày hôm nay hoặc ngày đã qua." });
         }
 
+        var trimmedLockNotes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        if (trimmedLockNotes != null && trimmedLockNotes.Length > MaxRemarksLength)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Ghi chú chốt suất không được vượt quá {MaxRemarksLength} ký tự." });
+        }
+
         var serviceDay = await _unitOfWork.Repository<LunchServiceDay>()
             .Query()
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
@@ -1168,6 +1317,22 @@ public class LunchService : ILunchService
         if (request.StudentId <= 0)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01);
+        }
+
+        // D-B & D-C: Chế độ ăn đặc biệt bắt buộc có mô tả; ghi chú không vượt quá 250 ký tự
+        var trimmedRemarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
+        if (request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Khi chọn chế độ ăn đặc biệt, vui lòng nhập mô tả dị ứng / kiêng khem cụ thể để nhà bếp chuẩn bị." });
+        }
+
+        if (trimmedRemarks != null && trimmedRemarks.Length > MaxRemarksLength)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Ghi chú suất ăn không được vượt quá {MaxRemarksLength} ký tự." });
         }
 
         var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);

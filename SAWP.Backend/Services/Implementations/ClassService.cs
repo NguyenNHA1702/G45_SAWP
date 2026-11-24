@@ -914,7 +914,7 @@ public class ClassService : IClassService
                 ClassId = classId,
                 StudentId = studentId,
                 AcademicYear = academicYearName,
-                StartDate = DateTime.UtcNow,
+                StartDate = DateTime.UtcNow.Date,
                 IsActive = true
             };
             await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
