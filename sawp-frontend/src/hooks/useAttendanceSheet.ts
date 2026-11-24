@@ -126,7 +126,7 @@ export function useAttendanceSheet(classId: number | null, date: string, session
   }, [sheet, draft, session]);
 
   // 4. Submit
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (correctionReason?: string) => {
     if (!sheet || classId === null) throw new ApiError('Chưa chọn lớp.', 'MSG01');
     const entries = sheet.entries.map((e) => {
       const d = draft[e.studentId];
@@ -135,7 +135,12 @@ export function useAttendanceSheet(classId: number | null, date: string, session
     });
     setSaving(true);
     try {
-      const res = await attendanceApi.submitSheet(classId, { date, session, entries });
+      const res = await attendanceApi.submitSheet(classId, {
+        date,
+        session,
+        entries,
+        correctionReason: correctionReason?.trim() || null,
+      });
       setReloadKey((k) => k + 1);
       return res;
     } finally {

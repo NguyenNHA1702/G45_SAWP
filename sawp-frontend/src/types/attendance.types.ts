@@ -82,6 +82,7 @@ export interface SubmitAttendanceSheetPayload {
   date: string; // yyyy-MM-dd
   session: AttendanceSession;
   entries: DailyAttendanceEntry[];
+  correctionReason?: string | null;
 }
 
 export interface CorrectAttendancePayload {

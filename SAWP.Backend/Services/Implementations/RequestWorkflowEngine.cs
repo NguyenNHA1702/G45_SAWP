@@ -856,7 +856,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             });
         }
 
-        var effectiveDate = req.ClassTransferDetail.EffectiveDate ?? DateTime.UtcNow;
+        var effectiveDate = (req.ClassTransferDetail.EffectiveDate ?? DateTime.UtcNow).Date;
 
         // 1. Deactivate ALL active assignments for this student to prevent duplicate active records (BUG2)
         var activeAssignments = await _unitOfWork.Repository<ClassAssignment>()

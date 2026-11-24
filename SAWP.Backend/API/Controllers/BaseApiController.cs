@@ -35,6 +35,14 @@ public abstract class BaseApiController : ControllerBase
         {
             return Conflict(response);
         }
+        if (code == SystemMessages.MSG58.Code)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, response);
+        }
+        if (code == SystemMessages.MSG59.Code)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, response);
+        }
 
         return BadRequest(response);
     }

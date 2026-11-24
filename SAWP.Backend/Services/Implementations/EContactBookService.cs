@@ -14,10 +14,52 @@ public class EContactBookService : IEContactBookService
     private readonly ApplicationDbContext _context;
     private readonly IAuditService _auditService;
 
+    private static readonly HashSet<string> AllowedCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "General", "Homework", "Activity", "Announcement"
+    };
+
+    private static readonly HashSet<string> AllowedRatings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Excellent", "Good", "NeedsAttention",
+        "Xuất sắc", "Tốt", "Khá", "Cần cố gắng"
+    };
+
+    private static readonly HashSet<string> AllowedReactions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Like", "Heart", "Clap", "Smile"
+    };
+
     public EContactBookService(ApplicationDbContext context, IAuditService auditService)
     {
         _context = context;
         _auditService = auditService;
+    }
+
+    private static bool IsSafeInternalAttachmentUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        var trimmed = url.Trim();
+        if (trimmed.Contains("..", StringComparison.Ordinal)) return false;
+        return trimmed.StartsWith("/api/contact-book/attachment-file?path=", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("/api/contactbook/attachment-file?path=", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("/files/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSafeExternalOrInternalUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        var trimmed = url.Trim();
+        if (IsSafeInternalAttachmentUrl(trimmed)) return true;
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) return false;
+        return uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            || uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxLength) return value;
+        return value[..maxLength] + "...";
     }
 
     #region 1. Bảng tin lớp học (UC-61 & UC-62)
@@ -31,16 +73,22 @@ public class EContactBookService : IEContactBookService
         }
 
         // BR-56 & Data scope: Check if current user has access to this class
-        bool isStaff = await _context.StaffProfiles.AnyAsync(sp => sp.UserId == currentUserId, cancellationToken);
-        if (!isStaff)
+        var roleNames = await _context.UserRoles
+            .Where(ur => ur.UserId == currentUserId)
+            .Select(ur => ur.Role.Name)
+            .ToListAsync(cancellationToken);
+
+        bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
+        if (!isPrivileged)
         {
-            // If parent: verify if parent has a linked student in this class
+            var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == currentUserId, cancellationToken);
+            bool isHomeroom = staff != null && targetClass.HomeroomTeacherId == staff.Id;
             bool isLinkedParent = await _context.StudentGuardians.AnyAsync(sg =>
                 sg.Guardian.UserId == currentUserId &&
                 _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == classId && ca.IsActive),
                 cancellationToken);
 
-            if (!isLinkedParent)
+            if (!isHomeroom && !isLinkedParent)
             {
                 return ApiResponse<List<ClassPostDto>>.Fail(SystemMessages.MSG10);
             }
@@ -134,7 +182,18 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01);
         }
 
-        // BR-57: Validate homeroom authority
+        if (request.Title.Trim().Length > 200 || request.Content.Trim().Length > 5000)
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề tối đa 200 ký tự và nội dung tối đa 5000 ký tự." });
+        }
+
+        var category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim();
+        if (!AllowedCategories.Contains(category))
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Phân loại bài viết không hợp lệ." });
+        }
+
+        // BR-57: Validate homeroom authority (chỉ GVCN của lớp mới được đăng bài)
         var homeroomClass = await _context.Classes.FirstOrDefaultAsync(c => c.Id == request.ClassId, cancellationToken);
         if (homeroomClass == null)
         {
@@ -144,13 +203,7 @@ public class EContactBookService : IEContactBookService
         var staff = await _context.StaffProfiles.FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
         if (staff == null || homeroomClass.HomeroomTeacherId != staff.Id)
         {
-            // Allow if admin or office staff, else restrict by BR-57
-            bool isOfficeOrAdmin = await _context.UserRoles.AnyAsync(ur =>
-                ur.UserId == teacherUserId && (ur.Role.Name == "OfficeStaff" || ur.Role.Name == "Admin" || ur.Role.Name == "SchoolBoard"), cancellationToken);
-            if (!isOfficeOrAdmin)
-            {
-                return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG20);
-            }
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG20);
         }
 
         var post = new ClassPost
@@ -159,18 +212,22 @@ public class EContactBookService : IEContactBookService
             AuthorUserId = teacherUserId,
             Title = request.Title.Trim(),
             Content = request.Content.Trim(),
-            Category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category,
+            Category = category,
             IsPinned = request.IsPinned,
             AllowComments = request.AllowComments,
             CreatedAt = DateTime.UtcNow
         };
 
-        var allowedExts = new[] { ".jpg", ".jpeg", ".png", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx" };
+        var allowedExts = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
 
         if (request.Attachments != null && request.Attachments.Count > 0)
         {
             foreach (var att in request.Attachments)
             {
+                if (!IsSafeInternalAttachmentUrl(att.FileUrl))
+                {
+                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Đường dẫn tệp đính kèm không hợp lệ." });
+                }
                 if (att.FileSizeBytes > 5 * 1024 * 1024)
                 {
                     return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
@@ -183,9 +240,9 @@ public class EContactBookService : IEContactBookService
 
                 post.Attachments.Add(new PostAttachment
                 {
-                    FileUrl = att.FileUrl,
+                    FileUrl = att.FileUrl.Trim(),
                     FileName = att.FileName,
-                    FileType = att.FileType ?? (ext is ".jpg" or ".jpeg" or ".png" or ".webp" ? "Image" : "Document"),
+                    FileType = att.FileType ?? (ext is ".jpg" or ".jpeg" or ".png" ? "Image" : "Document"),
                     FileSizeBytes = att.FileSizeBytes,
                     CreatedAt = DateTime.UtcNow
                 });
@@ -199,6 +256,10 @@ public class EContactBookService : IEContactBookService
                 if (!string.IsNullOrWhiteSpace(rawUrl))
                 {
                     var url = rawUrl.Trim();
+                    if (!IsSafeExternalOrInternalUrl(url))
+                    {
+                        return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Liên kết đính kèm không hợp lệ hoặc không an toàn." });
+                    }
                     var isYouTube = url.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) ||
                                     url.Contains("youtu.be", StringComparison.OrdinalIgnoreCase);
 
@@ -322,6 +383,24 @@ public class EContactBookService : IEContactBookService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
+    public async Task<ApiResponse<bool>> ToggleCommentsLockAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default)
+    {
+        var post = await _context.ClassPosts.Include(p => p.Class).FirstOrDefaultAsync(p => p.Id == postId, cancellationToken);
+        if (post == null) return ApiResponse<bool>.Fail(SystemMessages.MSG43);
+
+        var staff = await _context.StaffProfiles.FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
+        if (staff == null || post.Class.HomeroomTeacherId != staff.Id)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG20);
+        }
+
+        post.AllowComments = !post.AllowComments;
+        post.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<bool>.Ok(post.AllowComments, SystemMessages.MSG08);
+    }
+
     public async Task<ApiResponse<bool>> DeleteClassPostAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default)
     {
         var post = await _context.ClassPosts.Include(p => p.Class).FirstOrDefaultAsync(p => p.Id == postId, cancellationToken);
@@ -349,6 +428,12 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<PostCommentDto>.Fail(SystemMessages.MSG01);
         }
 
+        var trimmedContent = request.Content.Trim();
+        if (trimmedContent.Length > 1000)
+        {
+            return ApiResponse<PostCommentDto>.Fail(SystemMessages.MSG01, new List<string> { "Bình luận không được vượt quá 1000 ký tự." });
+        }
+
         var post = await _context.ClassPosts.Include(p => p.Class).FirstOrDefaultAsync(p => p.Id == postId, cancellationToken);
         if (post == null)
         {
@@ -361,11 +446,16 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<PostCommentDto>.Fail(SystemMessages.MSG54);
         }
 
-        // Verify user belongs to class
-        bool isStaff = await _context.StaffProfiles.AnyAsync(sp => sp.UserId == userId, cancellationToken);
-        string roleLabel = isStaff ? "Giáo viên" : "Phụ huynh";
+        // Chỉ GVCN của lớp hoặc phụ huynh có con đang học lớp đó mới được bình luận
+        var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == userId, cancellationToken);
+        bool isHomeroom = staff != null && post.Class.HomeroomTeacherId == staff.Id;
+        string roleLabel;
 
-        if (!isStaff)
+        if (isHomeroom)
+        {
+            roleLabel = "Giáo viên chủ nhiệm";
+        }
+        else
         {
             var linkedStudent = await _context.StudentGuardians
                 .Where(sg => sg.Guardian.UserId == userId &&
@@ -380,35 +470,37 @@ public class EContactBookService : IEContactBookService
             roleLabel = $"Phụ huynh em {linkedStudent}";
         }
 
+        var user = await _context.Users.FindAsync(new object[] { userId }, cancellationToken);
+
         var comment = new PostComment
         {
             PostId = postId,
             UserId = userId,
-            Content = request.Content.Trim(),
+            Content = trimmedContent,
             CreatedAt = DateTime.UtcNow
         };
 
         await _context.PostComments.AddAsync(comment, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
 
-        var user = await _context.Users.FindAsync(new object[] { userId }, cancellationToken);
-
-        // Bắn thông báo cho GVCN tác giả bài đăng nếu người bình luận không phải chính tác giả
+        // Bắn thông báo cho GVCN tác giả bài đăng nếu người bình luận không phải chính tác giả (cắt ngắn preview tránh lỗi độ dài DB)
         if (post.AuthorUserId != userId)
         {
+            var titlePreview = Truncate(post.Title, 80);
+            var commentPreview = Truncate(comment.Content, 150);
             _context.Notifications.Add(new Notification
             {
                 UserId = post.AuthorUserId,
-                Title = $"Bình luận mới từ {roleLabel}",
-                Content = $"{user?.FullName ?? "Phụ huynh"} vừa bình luận bài \"{post.Title}\": \"{comment.Content}\"",
+                Title = Truncate($"Bình luận mới từ {roleLabel}", 150),
+                Content = Truncate($"{user?.FullName ?? "Phụ huynh"} vừa bình luận bài \"{titlePreview}\": \"{commentPreview}\"", 450),
                 Type = "PostComment",
                 ReferenceKey = $"POST:{post.Id}",
                 LinkUrl = "/teacher/contact-book",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
             });
-            await _context.SaveChangesAsync(cancellationToken);
         }
+
+        await _context.SaveChangesAsync(cancellationToken);
 
         var dto = new PostCommentDto
         {
@@ -463,10 +555,30 @@ public class EContactBookService : IEContactBookService
 
     public async Task<ApiResponse<bool>> ToggleReactionAsync(int userId, int postId, string reactionType, CancellationToken cancellationToken = default)
     {
-        var post = await _context.ClassPosts.FindAsync(new object[] { postId }, cancellationToken);
+        var normalizedReaction = string.IsNullOrWhiteSpace(reactionType) ? "Heart" : reactionType.Trim();
+        if (!AllowedReactions.Contains(normalizedReaction))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Loại cảm xúc không hợp lệ." });
+        }
+
+        var post = await _context.ClassPosts.Include(p => p.Class).FirstOrDefaultAsync(p => p.Id == postId, cancellationToken);
         if (post == null)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG43);
+        }
+
+        var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == userId, cancellationToken);
+        bool isHomeroom = staff != null && post.Class.HomeroomTeacherId == staff.Id;
+        if (!isHomeroom)
+        {
+            bool isLinkedParent = await _context.StudentGuardians.AnyAsync(sg =>
+                sg.Guardian.UserId == userId &&
+                _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == post.ClassId && ca.IsActive),
+                cancellationToken);
+            if (!isLinkedParent)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+            }
         }
 
         var existing = await _context.PostReactions.FirstOrDefaultAsync(r => r.PostId == postId && r.UserId == userId, cancellationToken);
@@ -480,7 +592,7 @@ public class EContactBookService : IEContactBookService
             {
                 PostId = postId,
                 UserId = userId,
-                ReactionType = string.IsNullOrWhiteSpace(reactionType) ? "Heart" : reactionType,
+                ReactionType = normalizedReaction,
                 CreatedAt = DateTime.UtcNow
             });
         }
@@ -499,6 +611,21 @@ public class EContactBookService : IEContactBookService
         if (targetClass == null)
         {
             return ApiResponse<List<StudentEvaluationRosterItemDto>>.Fail(SystemMessages.MSG43);
+        }
+
+        var roleNames = await _context.UserRoles
+            .Where(ur => ur.UserId == teacherUserId)
+            .Select(ur => ur.Role.Name)
+            .ToListAsync(cancellationToken);
+
+        bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
+        if (!isPrivileged)
+        {
+            var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
+            if (staff == null || targetClass.HomeroomTeacherId != staff.Id)
+            {
+                return ApiResponse<List<StudentEvaluationRosterItemDto>>.Fail(SystemMessages.MSG10);
+            }
         }
 
         var activeStudents = await _context.ClassAssignments
@@ -539,14 +666,29 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<List<StudentEvaluationDto>>.Fail(SystemMessages.MSG11);
         }
 
-        // BR-56: If parent, verify link
-        bool isStaff = await _context.StaffProfiles.AnyAsync(sp => sp.UserId == currentUserId, cancellationToken);
-        if (!isStaff)
+        var roleNames = await _context.UserRoles
+            .Where(ur => ur.UserId == currentUserId)
+            .Select(ur => ur.Role.Name)
+            .ToListAsync(cancellationToken);
+
+        bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
+        bool isParentCaller = false;
+
+        if (!isPrivileged)
         {
-            bool isParent = await _context.StudentGuardians.AnyAsync(sg => sg.Guardian.UserId == currentUserId && sg.StudentId == studentId, cancellationToken);
-            if (!isParent)
+            var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == currentUserId, cancellationToken);
+            bool isHomeroom = staff != null && await _context.ClassAssignments.AnyAsync(
+                ca => ca.StudentId == studentId && ca.IsActive && ca.Class.HomeroomTeacherId == staff.Id,
+                cancellationToken);
+
+            if (!isHomeroom)
             {
-                return ApiResponse<List<StudentEvaluationDto>>.Fail(SystemMessages.MSG10);
+                bool isParent = await _context.StudentGuardians.AnyAsync(sg => sg.Guardian.UserId == currentUserId && sg.StudentId == studentId, cancellationToken);
+                if (!isParent)
+                {
+                    return ApiResponse<List<StudentEvaluationDto>>.Fail(SystemMessages.MSG10);
+                }
+                isParentCaller = true;
             }
         }
 
@@ -560,7 +702,13 @@ public class EContactBookService : IEContactBookService
             .ThenByDescending(se => se.EvaluationDate)
             .ToListAsync(cancellationToken);
 
-        var result = evaluations.Select(e => MapToDto(e, student.FullName, student.StudentCode, e.Class.ClassName)).ToList();
+        var result = evaluations.Select(e =>
+        {
+            var dto = MapToDto(e, student.FullName, student.StudentCode, e.Class.ClassName);
+            // BR-51: Không để lộ ghi chú riêng nội bộ của giáo viên cho phụ huynh
+            if (isParentCaller) dto.PrivateRemind = null;
+            return dto;
+        }).ToList();
         return ApiResponse<List<StudentEvaluationDto>>.Ok(result);
     }
 
@@ -572,6 +720,22 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01);
         }
 
+        var rating = request.Rating.Trim();
+        if (!AllowedRatings.Contains(rating))
+        {
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Xếp loại nề nếp không hợp lệ (chỉ chấp nhận Excellent, Good, NeedsAttention)." });
+        }
+
+        if (request.WeekNumber < 1 || request.WeekNumber > 52)
+        {
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Tuần học phải nằm trong khoảng 1 đến 52." });
+        }
+
+        if (request.TeacherNote.Trim().Length > 2000 || (request.PrivateRemind?.Trim().Length ?? 0) > 1000)
+        {
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Nhận xét vượt quá độ dài cho phép." });
+        }
+
         var targetClass = await _context.Classes.FindAsync(new object[] { request.ClassId }, cancellationToken);
         var student = await _context.Students.FindAsync(new object[] { request.StudentId }, cancellationToken);
         if (targetClass == null || student == null)
@@ -579,16 +743,25 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG11);
         }
 
-        // BR-57: Check homeroom teacher
+        bool hasAnyActiveAssignment = await _context.ClassAssignments.AnyAsync(
+            ca => ca.StudentId == request.StudentId && ca.IsActive,
+            cancellationToken);
+        if (hasAnyActiveAssignment)
+        {
+            bool studentInClass = await _context.ClassAssignments.AnyAsync(
+                ca => ca.StudentId == request.StudentId && ca.ClassId == request.ClassId && ca.IsActive,
+                cancellationToken);
+            if (!studentInClass)
+            {
+                return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Học sinh không thuộc lớp học đã chọn." });
+            }
+        }
+
+        // BR-57: Check homeroom teacher (chỉ GVCN của lớp mới được tạo/sửa phiếu nhận xét)
         var staff = await _context.StaffProfiles.FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
         if (staff == null || targetClass.HomeroomTeacherId != staff.Id)
         {
-            bool isOfficeOrAdmin = await _context.UserRoles.AnyAsync(ur =>
-                ur.UserId == teacherUserId && (ur.Role.Name == "OfficeStaff" || ur.Role.Name == "Admin"), cancellationToken);
-            if (!isOfficeOrAdmin)
-            {
-                return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG20);
-            }
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG20);
         }
 
         // BR-61: Check existing evaluation for this week
@@ -609,12 +782,33 @@ public class EContactBookService : IEContactBookService
                 return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG09);
             }
 
-            existing.Rating = request.Rating;
+            existing.Rating = rating;
             existing.BadgesJson = JsonSerializer.Serialize(request.Badges ?? new List<string>());
             existing.TeacherNote = request.TeacherNote.Trim();
             existing.PrivateRemind = request.PrivateRemind?.Trim();
             existing.EvaluationDate = request.EvaluationDate;
             existing.UpdatedAt = DateTime.UtcNow;
+
+            var updateGuardianUserIds = await _context.StudentGuardians
+                .Where(sg => sg.StudentId == request.StudentId && sg.Guardian.UserId != null)
+                .Select(sg => sg.Guardian.UserId!.Value)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            foreach (var gUid in updateGuardianUserIds)
+            {
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = gUid,
+                    Title = $"Cập nhật phiếu nhận xét tuần {request.WeekNumber} của em {student.FullName}",
+                    Content = $"GVCN đã cập nhật nhận xét nề nếp tuần {request.WeekNumber}. Vui lòng xem lại và ký xác nhận.",
+                    Type = "StudentEvaluation",
+                    ReferenceKey = $"EVAL:{existing.Id}",
+                    LinkUrl = "/parent/contact-book",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+            }
 
             await _context.SaveChangesAsync(cancellationToken);
             return ApiResponse<StudentEvaluationDto>.Ok(MapToDto(existing, student.FullName, student.StudentCode, targetClass.ClassName), SystemMessages.MSG52);

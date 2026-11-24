@@ -1,9 +1,11 @@
+using Core.Configuration;
 using Core.Enums;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
 using Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Services.Interfaces;
 
 namespace Services.Implementations;
@@ -14,11 +16,15 @@ public class AdminService : IAdminService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditService _auditService;
+    private readonly IAccountLinkService _accountLinks;
+    private readonly SchoolOptions _options;
 
-    public AdminService(IUnitOfWork unitOfWork, IAuditService auditService)
+    public AdminService(IUnitOfWork unitOfWork, IAuditService auditService, IAccountLinkService accountLinks, IOptions<SchoolOptions>? options = null)
     {
         _unitOfWork = unitOfWork;
         _auditService = auditService;
+        _accountLinks = accountLinks;
+        _options = options?.Value ?? new SchoolOptions();
     }
 
     public async Task<ApiResponse<PaginatedResult<AdminUserDto>>> GetUsersPagedAsync(
@@ -94,11 +100,6 @@ public class AdminService : IAdminService
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập đầy đủ Tên đăng nhập, Email và Họ tên." });
         }
 
-        if (!PasswordPolicy.IsValid(request.Password))
-        {
-            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu phải có ít nhất 8 ký tự gồm chữ hoa, chữ thường, số và ký tự đặc biệt." });
-        }
-
         if (request.Roles == null || request.Roles.Count == 0)
         {
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn ít nhất một vai trò." });
@@ -124,14 +125,21 @@ public class AdminService : IAdminService
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vai trò được chọn không hợp lệ." });
         }
 
+        // UC-53 A3, BR-66: Parent accounts come from guardian records through account requests, not from here
+        if (dbRoles.Any(r => r.Name.Equals(UserRoles.Parent.ToString(), StringComparison.OrdinalIgnoreCase)))
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Tài khoản phụ huynh được tạo từ hồ sơ người giám hộ qua yêu cầu cấp tài khoản." });
+        }
+
         var user = new User
         {
             Username = username,
             Email = email,
             FullName = fullName,
             PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            Status = AccountStatus.Active, // TODO SSAWP-98: start in Pending Activation with an activation link (BR-63)
+            // BR-63, UC-53 step 5: no password; the holder sets it through the activation link
+            PasswordHash = string.Empty,
+            Status = AccountStatus.PendingActivation,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -169,7 +177,19 @@ public class AdminService : IAdminService
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        return ApiResponse<AdminUserDto>.Ok(MapToUserDto(user), SystemMessages.MSG38);
+        var result = ApiResponse<AdminUserDto>.Ok(MapToUserDto(user), SystemMessages.MSG38);
+        if (await _accountLinks.SendActivationLinkAsync(user, ct))
+        {
+            await _auditService.LogActionAsync(adminUserId, AuditActions.UserActivationLinkSent, nameof(User), user.Id.ToString(),
+                null, new { user.Email }, null, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        else
+        {
+            // The account exists; the holder can ask for a new link with "Quên mật khẩu" once email works (UC-66 A3)
+            result.Errors = new List<string> { SystemMessages.MSG59.Content };
+        }
+        return result;
     }
 
     public async Task<ApiResponse<AdminUserDto>> UpdateUserRolesAsync(int adminUserId, int targetUserId, UpdateUserRolesRequestDto request, CancellationToken ct = default)
@@ -234,6 +254,10 @@ public class AdminService : IAdminService
         }
 
         user.UpdatedAt = DateTime.UtcNow;
+        if (user.Id != adminUserId)
+        {
+            user.SessionVersion++; // roles live in the login token: the user signs in again to get the new ones
+        }
 
         await _auditService.LogActionAsync(
             adminUserId,
@@ -262,8 +286,23 @@ public class AdminService : IAdminService
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể tự vô hiệu hóa tài khoản đang đăng nhập." });
         }
 
+        if (isActive && user.Status == AccountStatus.PendingActivation)
+        {
+            // Only the holder activates the account, by setting a password through the link (BR-63)
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Tài khoản đang chờ kích hoạt qua email; người dùng có thể nhận liên kết mới bằng \"Quên mật khẩu\"." });
+        }
+
         var oldStatus = user.Status;
-        user.Status = isActive ? AccountStatus.Active : AccountStatus.Deactivated;
+        if (isActive)
+        {
+            // UC-53 A1: an account that never set a password goes back to waiting for activation
+            user.Status = string.IsNullOrEmpty(user.PasswordHash) ? AccountStatus.PendingActivation : AccountStatus.Active;
+        }
+        else
+        {
+            user.Status = AccountStatus.Deactivated;
+            user.SessionVersion++; // BR-48: existing sessions end now
+        }
         user.UpdatedAt = DateTime.UtcNow;
 
         await _auditService.LogActionAsync(
@@ -287,13 +326,23 @@ public class AdminService : IAdminService
             return ApiResponse<bool>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu mới chưa đáp ứng yêu cầu bảo mật (tối thiểu 8 ký tự, gồm hoa, thường, số, ký tự đặc biệt)." });
         }
 
-        var user = await _unitOfWork.Repository<User>().GetByIdAsync(targetUserId, ct);
+        var user = await _unitOfWork.Users.GetByIdWithRolesAsync(targetUserId, ct);
         if (user == null)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy tài khoản người dùng." });
         }
 
+        // UC-60 E1, BR-65: not for System Administrator accounts or accounts that are not Active
+        var isAdministrator = user.UserRoles.Any(ur => ur.Role != null && ur.Role.Name.Equals(UserRoles.Admin.ToString(), StringComparison.OrdinalIgnoreCase));
+        if (isAdministrator || user.Status != AccountStatus.Active)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+        }
+
+        // Temporary password, communicated outside SAWP; it must be changed at the next sign-in (UC-60 A1, BR-02)
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        user.MustChangePassword = true;
+        user.SessionVersion++; // UC-60 step 5, BR-03: active sessions end
         user.UpdatedAt = DateTime.UtcNow;
 
         await _auditService.LogActionAsync(
@@ -362,11 +411,11 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<SchoolCalendarDayDto>> UpsertCalendarDayAsync(int adminUserId, UpdateCalendarDayDto request, CancellationToken ct = default)
     {
-        if (request.Date == default)
+        if (request.Date == default || request.Date.Year < 2000 || request.Date.Year > 2100)
         {
             return ApiResponse<SchoolCalendarDayDto>.Fail(
                 SystemMessages.MSG01,
-                new List<string> { "Ngày cấu hình lịch học là bắt buộc." });
+                new List<string> { "Ngày cấu hình lịch học không hợp lệ." });
         }
 
         var trimmedNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
@@ -437,6 +486,50 @@ public class AdminService : IAdminService
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
+
+        // Đồng bộ bán trú theo lịch trường: ngày nghỉ đóng bán trú, ngày học bù T7/CN mở bán trú
+        var lunchDayRepo = _unitOfWork.Repository<LunchServiceDay>();
+        if (lunchDayRepo != null)
+        {
+            var isWeekend = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
+            var lunchDay = await lunchDayRepo.Query().FirstOrDefaultAsync(d => d.Date.Date == date, ct);
+            if (!request.IsSchoolDay)
+            {
+                if (lunchDay == null)
+                {
+                    await lunchDayRepo.AddAsync(new LunchServiceDay
+                    {
+                        Date = date,
+                        IsServing = false,
+                        CutoffTime = _options.LunchCutoff,
+                        Remarks = string.IsNullOrWhiteSpace(request.Note) ? "Đóng bán trú theo lịch nghỉ của trường" : request.Note.Trim()
+                    }, ct);
+                }
+                else
+                {
+                    lunchDay.IsServing = false;
+                }
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+            else if (isWeekend)
+            {
+                if (lunchDay == null)
+                {
+                    await lunchDayRepo.AddAsync(new LunchServiceDay
+                    {
+                        Date = date,
+                        IsServing = true,
+                        CutoffTime = _options.LunchCutoff,
+                        Remarks = string.IsNullOrWhiteSpace(request.Note) ? "Mở bán trú ngày học bù" : request.Note.Trim()
+                    }, ct);
+                }
+                else
+                {
+                    lunchDay.IsServing = true;
+                }
+                await _unitOfWork.SaveChangesAsync(ct);
+            }
+        }
 
         await _auditService.LogActionAsync(
             adminUserId,

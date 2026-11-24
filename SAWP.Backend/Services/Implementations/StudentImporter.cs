@@ -45,6 +45,9 @@ public class StudentImporter : IStudentImporter
 
             var seenCodesInFile = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            // Guardian preview (UC-09 step 3): existing records plus the ones earlier rows of this file would create
+            var knownGuardians = (await _unitOfWork.Repository<Guardian>().GetAllAsync(cancellationToken)).ToList();
+
             for (int r = 2; r <= range.RowCount(); r++)
             {
                 var row = worksheet.Row(r);
@@ -57,6 +60,8 @@ public class StudentImporter : IStudentImporter
                 var guardianPhone = row.Cell(7).GetString()?.Trim() ?? string.Empty;
                 var guardianIdCard = row.Cell(8).GetString()?.Trim() ?? string.Empty;
                 var relationship = row.Cell(9).GetString()?.Trim() ?? "Phụ huynh";
+                // Column 10 was added for SSAWP-152; older files without it still import (guardians without email)
+                var guardianEmail = row.Cell(10).GetString()?.Trim() ?? string.Empty;
 
                 // Check if row is entirely empty
                 if (string.IsNullOrWhiteSpace(studentCode) && string.IsNullOrWhiteSpace(fullName))
@@ -75,6 +80,7 @@ public class StudentImporter : IStudentImporter
                     GuardianName = guardianName,
                     GuardianPhone = guardianPhone,
                     GuardianIdentityCard = guardianIdCard,
+                    GuardianEmail = string.IsNullOrWhiteSpace(guardianEmail) ? null : guardianEmail,
                     Relationship = relationship,
                     IsValid = true,
                     IsDuplicate = false
@@ -104,9 +110,19 @@ public class StudentImporter : IStudentImporter
                     item.IsDuplicate = true;
                     item.ErrorMessage = $"Mã học sinh '{studentCode}' đã tồn tại trong cơ sở dữ liệu hệ thống.";
                 }
+                else if (!string.IsNullOrWhiteSpace(guardianEmail) && !GuardianMatcher.IsValidEmail(guardianEmail))
+                {
+                    item.IsValid = false;
+                    item.ErrorMessage = $"Email phụ huynh '{guardianEmail}' không hợp lệ.";
+                }
                 else
                 {
                     seenCodesInFile.Add(studentCode);
+                }
+
+                if (item.IsValid && !item.IsDuplicate)
+                {
+                    PreviewGuardian(item, knownGuardians);
                 }
 
                 rows.Add(item);
@@ -154,9 +170,6 @@ public class StudentImporter : IStudentImporter
         var classMap = classesInYear.ToDictionary(c => c.ClassName, c => c, StringComparer.OrdinalIgnoreCase);
         var enrolledCountByClassId = classesInYear.ToDictionary(c => c.Id, c => c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0);
 
-        var parentRole = (await _unitOfWork.Repository<Role>().FindAsync(r => r.Name == UserRoles.Parent.ToString(), cancellationToken)).FirstOrDefault();
-        var defaultPasswordHash = BCrypt.Net.BCrypt.HashPassword("Password@123");
-
         // Tối ưu hóa hiệu năng: Cache dữ liệu kiểm tra trùng lặp để xử lý mượt mà lên tới 5,000 học sinh
         var studentRepo = _unitOfWork.Repository<Student>();
         var existingStudents = studentRepo != null ? await studentRepo.GetAllAsync(cancellationToken) : null;
@@ -165,20 +178,10 @@ public class StudentImporter : IStudentImporter
             : new HashSet<string>();
         bool checkCodeWithRepo = existingStudents == null;
 
-        var userRepo = _unitOfWork.Repository<User>();
-        var existingParents = userRepo != null ? await userRepo.GetAllAsync(cancellationToken) : null;
-        var userByPhone = existingParents != null
-            ? existingParents.Where(u => !string.IsNullOrEmpty(u.PhoneNumber)).ToDictionary(u => u.PhoneNumber!, u => u, StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, User>(StringComparer.OrdinalIgnoreCase);
-        var userByUsername = existingParents != null
-            ? existingParents.ToDictionary(u => u.Username, u => u, StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, User>(StringComparer.OrdinalIgnoreCase);
-
-        var guardianRepo = _unitOfWork.Repository<Guardian>();
-        var allGuardians = guardianRepo != null ? await guardianRepo.GetAllAsync(cancellationToken) : null;
-        var guardianByUserId = allGuardians != null
-            ? allGuardians.Where(g => g.UserId != null).ToDictionary(g => g.UserId!.Value, g => g)
-            : new Dictionary<int, Guardian>();
+        // UC-09: guardian records only, never user accounts. Existing records plus the ones created by this import,
+        // so that siblings in one file share a record (matched by identity card number or email, never phone).
+        var knownGuardians = (await _unitOfWork.Repository<Guardian>().GetAllAsync(cancellationToken)).ToList();
+        var eligibleIds = new HashSet<Guardian>(ReferenceEqualityComparer.Instance);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
@@ -190,6 +193,7 @@ public class StudentImporter : IStudentImporter
             {
                 var chunk = validRowsList.Skip(i).Take(chunkSize).ToList();
                 var createdStudents = new List<(ImportStudentRowDto Row, Student Student)>();
+                var guardianOfStudent = new Dictionary<Student, Guardian>(ReferenceEqualityComparer.Instance);
 
                 // 1. Thêm danh sách Student trong chunk
                 foreach (var row in chunk)
@@ -200,6 +204,21 @@ public class StudentImporter : IStudentImporter
                     {
                         result.SkippedCount++;
                         result.Errors.Add($"Dòng {row.RowNumber}: Mã {code} đã tồn tại trong hệ thống, bỏ qua.");
+                        continue;
+                    }
+
+                    // Matching is recomputed here; the preview sent by the client is not trusted
+                    var match = GuardianMatcher.Match(row.GuardianName, row.GuardianEmail, row.GuardianIdentityCard, knownGuardians);
+                    if (match.Kind == GuardianMatchKind.Conflict)
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: {match.Note} Học sinh {code} chưa được nhập.");
+                        continue;
+                    }
+                    if (!string.IsNullOrWhiteSpace(row.GuardianEmail) && !GuardianMatcher.IsValidEmail(row.GuardianEmail))
+                    {
+                        result.SkippedCount++;
+                        result.Errors.Add($"Dòng {row.RowNumber}: email phụ huynh không hợp lệ. Học sinh {code} chưa được nhập.");
                         continue;
                     }
                     existingCodesInDb.Add(code);
@@ -226,6 +245,43 @@ public class StudentImporter : IStudentImporter
 
                     await _unitOfWork.Students.AddAsync(student, cancellationToken);
                     createdStudents.Add((row, student));
+
+                    // Guardian record, no account (UC-09 step 5, A3, A4). The match above already includes records
+                    // created by earlier rows of this import, so siblings share one record.
+                    Guardian? guardian = null;
+                    if (match.Kind == GuardianMatchKind.Reused)
+                    {
+                        guardian = match.Record!;
+                        GuardianMatcher.FillEmptyFields(guardian, row.GuardianPhone, row.GuardianEmail, row.GuardianIdentityCard);
+                        result.GuardiansReused++;
+                    }
+                    else if (match.Kind == GuardianMatchKind.New)
+                    {
+                        guardian = new Guardian
+                        {
+                            FullName = CapitalizeWords(row.GuardianName),
+                            PhoneNumber = string.IsNullOrWhiteSpace(row.GuardianPhone) ? null : row.GuardianPhone.Trim(),
+                            Email = string.IsNullOrWhiteSpace(row.GuardianEmail) ? null : row.GuardianEmail.Trim(),
+                            IdentityCardNumber = row.GuardianIdentityCard?.Trim() ?? string.Empty,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await _unitOfWork.Repository<Guardian>().AddAsync(guardian, cancellationToken);
+                        knownGuardians.Add(guardian);
+                        result.GuardiansCreated++;
+                    }
+
+                    if (guardian != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(guardian.Email))
+                        {
+                            result.GuardiansWithoutEmail++; // A4: imported, not eligible for an account
+                        }
+                        else if (guardian.UserId == null)
+                        {
+                            eligibleIds.Add(guardian);
+                        }
+                        guardianOfStudent[student] = guardian;
+                    }
                 }
 
                 if (!createdStudents.Any())
@@ -233,76 +289,8 @@ public class StudentImporter : IStudentImporter
                     continue;
                 }
 
-                // Lưu các Student để nhận về student.Id từ DB
+                // Save the students and new guardian records to get their ids
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                // 2. Tạo User cho phụ huynh mới trong chunk
-                var newUsersToCreate = new List<(User User, string IdCard)>();
-                foreach (var (row, student) in createdStudents)
-                {
-                    if (string.IsNullOrWhiteSpace(row.GuardianName)) continue;
-                    var phone = row.GuardianPhone?.Trim() ?? string.Empty;
-                    var code = student.StudentCode;
-                    var defaultUsername = !string.IsNullOrWhiteSpace(phone) ? phone : $"parent_{code.ToLowerInvariant()}";
-
-                    bool userExists = (!string.IsNullOrWhiteSpace(phone) && userByPhone.ContainsKey(phone))
-                                   || userByUsername.ContainsKey(defaultUsername);
-
-                    if (!userExists)
-                    {
-                        var newUser = new User
-                        {
-                            Username = defaultUsername,
-                            Email = !string.IsNullOrWhiteSpace(phone) ? $"{phone}@parent.sawp.edu.vn" : $"{code.ToLowerInvariant()}@parent.sawp.edu.vn",
-                            FullName = CapitalizeWords(row.GuardianName),
-                            PhoneNumber = phone,
-                            PasswordHash = defaultPasswordHash,
-                            Status = AccountStatus.Active,
-                            CreatedAt = DateTime.UtcNow
-                        };
-
-                        await _unitOfWork.Repository<User>().AddAsync(newUser, cancellationToken);
-                        userByUsername[defaultUsername] = newUser;
-                        if (!string.IsNullOrWhiteSpace(phone))
-                        {
-                            userByPhone[phone] = newUser;
-                        }
-                        newUsersToCreate.Add((newUser, row.GuardianIdentityCard?.Trim() ?? string.Empty));
-                    }
-                }
-
-                // Lưu các User mới để nhận về newUser.Id
-                if (newUsersToCreate.Any())
-                {
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                    foreach (var (newUser, idCard) in newUsersToCreate)
-                    {
-                        if (parentRole != null)
-                        {
-                            await _unitOfWork.Repository<UserRole>().AddAsync(new UserRole
-                            {
-                                UserId = newUser.Id,
-                                RoleId = parentRole.Id
-                            }, cancellationToken);
-                        }
-
-                        var g = new Guardian
-                        {
-                            UserId = newUser.Id,
-                            // Contact details live on the guardian record; the placeholder login email is not copied.
-                            FullName = newUser.FullName,
-                            PhoneNumber = string.IsNullOrWhiteSpace(newUser.PhoneNumber) ? null : newUser.PhoneNumber,
-                            IdentityCardNumber = idCard,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        await _unitOfWork.Repository<Guardian>().AddAsync(g, cancellationToken);
-                        guardianByUserId[newUser.Id] = g;
-                    }
-
-                    // Lưu các Guardian và UserRole mới để nhận về guardian.Id
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-                }
 
                 // 3. Phân lớp (ClassAssignment) và liên kết phụ huynh (StudentGuardian) với ID thực tế
                 foreach (var (row, student) in createdStudents)
@@ -318,7 +306,7 @@ public class StudentImporter : IStudentImporter
                                 ClassId = targetClass.Id,
                                 StudentId = student.Id,
                                 AcademicYear = schoolYearName,
-                                StartDate = DateTime.UtcNow,
+                                StartDate = DateTime.UtcNow.Date,
                                 IsActive = true
                             };
                             await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
@@ -326,46 +314,16 @@ public class StudentImporter : IStudentImporter
                         }
                     }
 
-                    // StudentGuardian
-                    if (!string.IsNullOrWhiteSpace(row.GuardianName))
+                    // StudentGuardian: linked as primary guardian (UC-09 step 5)
+                    if (guardianOfStudent.TryGetValue(student, out var guardian))
                     {
-                        var phone = row.GuardianPhone?.Trim() ?? string.Empty;
-                        Guardian? guardian = null;
-
-                        if (!string.IsNullOrWhiteSpace(phone) && userByPhone.TryGetValue(phone, out var user))
+                        await _unitOfWork.Repository<StudentGuardian>().AddAsync(new StudentGuardian
                         {
-                            guardianByUserId.TryGetValue(user.Id, out guardian);
-                        }
-                        else if (userByUsername.TryGetValue($"parent_{student.StudentCode.ToLowerInvariant()}", out var userByName))
-                        {
-                            guardianByUserId.TryGetValue(userByName.Id, out guardian);
-                        }
-
-                        if (guardian == null && userRepo != null)
-                        {
-                            var u = (await userRepo.FindAsync(x => x.Username == $"parent_{student.StudentCode.ToLowerInvariant()}", cancellationToken)).FirstOrDefault();
-                            if (u != null)
-                            {
-                                guardianByUserId.TryGetValue(u.Id, out guardian);
-                            }
-                        }
-
-                        if (guardian != null)
-                        {
-                            if (!string.IsNullOrWhiteSpace(row.GuardianIdentityCard) && string.IsNullOrEmpty(guardian.IdentityCardNumber))
-                            {
-                                guardian.IdentityCardNumber = row.GuardianIdentityCard.Trim();
-                            }
-
-                            var link = new StudentGuardian
-                            {
-                                StudentId = student.Id,
-                                GuardianId = guardian.Id,
-                                Relationship = ParseRelationship(row.Relationship),
-                                IsPrimaryContact = true
-                            };
-                            await _unitOfWork.Repository<StudentGuardian>().AddAsync(link, cancellationToken);
-                        }
+                            StudentId = student.Id,
+                            GuardianId = guardian.Id,
+                            Relationship = ParseRelationship(row.Relationship),
+                            IsPrimaryContact = true
+                        }, cancellationToken);
                     }
 
                     result.SuccessCount++;
@@ -382,14 +340,15 @@ public class StudentImporter : IStudentImporter
                 nameof(Student),
                 null,
                 null,
-                new { result.SuccessCount, result.SkippedCount },
+                new { result.SuccessCount, result.SkippedCount, result.GuardiansCreated, result.GuardiansReused, result.GuardiansWithoutEmail },
                 null, // TODO: pass the client IP address; it is not recorded yet.
                 cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
-            return ApiResponse<ImportStudentsResultDto>.Ok(result, SystemMessages.MSG48);
+            result.GuardiansEligibleForAccountIds = eligibleIds.Select(g => g.Id).Distinct().OrderBy(id => id).ToList();
+            return ApiResponse<ImportStudentsResultDto>.Ok(result, result.SuccessCount > 0 ? SystemMessages.MSG48 : SystemMessages.MSG49);
         }
         catch (Exception ex)
         {
@@ -415,7 +374,8 @@ public class StudentImporter : IStudentImporter
             "Họ tên phụ huynh",
             "SĐT phụ huynh",
             "CCCD phụ huynh",
-            "Quan hệ (Bố/Mẹ/Người giám hộ)"
+            "Quan hệ (Bố/Mẹ/Người giám hộ)",
+            "Email phụ huynh"
         };
 
         for (int i = 0; i < headers.Length; i++)
@@ -431,9 +391,9 @@ public class StudentImporter : IStudentImporter
         // Sample Data Rows
         var sampleRows = new[]
         {
-            new[] { "HS2026001", "Nguyễn Văn An", "2020-05-15", "Nam", "1A", "Nguyễn Văn Nam", "0912345678", "001200123456", "Bố" },
-            new[] { "HS2026002", "Trần Thị Mai", "2020-08-22", "Nữ", "1A", "Trần Đình Khang", "0987654321", "001200987654", "Bố" },
-            new[] { "HS2026003", "Lê Gia Bảo", "2020-03-10", "Nam", "1B", "Phạm Thu Hương", "0944556677", "001200334455", "Mẹ" }
+            new[] { "HS2026001", "Nguyễn Văn An", "2020-05-15", "Nam", "1A", "Nguyễn Văn Nam", "0912345678", "001200123456", "Bố", "nguyenvannam@example.com" },
+            new[] { "HS2026002", "Trần Thị Mai", "2020-08-22", "Nữ", "1A", "Trần Đình Khang", "0987654321", "001200987654", "Bố", "" },
+            new[] { "HS2026003", "Lê Gia Bảo", "2020-03-10", "Nam", "1B", "Phạm Thu Hương", "0944556677", "001200334455", "Mẹ", "phamthuhuong@example.com" }
         };
 
         for (int r = 0; r < sampleRows.Length; r++)
@@ -449,6 +409,36 @@ public class StudentImporter : IStudentImporter
         using var memoryStream = new MemoryStream();
         workbook.SaveAs(memoryStream);
         return memoryStream.ToArray();
+    }
+
+    /// <summary>
+    /// Fills the guardian columns of the preview: new / reused / conflict and account eligibility. A guardian that a
+    /// previous row of the same file creates is added to <paramref name="knownGuardians"/>, so siblings show "Reused".
+    /// </summary>
+    private static void PreviewGuardian(ImportStudentRowDto item, List<Guardian> knownGuardians)
+    {
+        var match = GuardianMatcher.Match(item.GuardianName, item.GuardianEmail, item.GuardianIdentityCard, knownGuardians);
+        item.GuardianMatch = match.Kind.ToString();
+        item.GuardianMatchNote = match.Note;
+        switch (match.Kind)
+        {
+            case GuardianMatchKind.Conflict:
+                item.IsValid = false;
+                item.ErrorMessage = match.Note;
+                break;
+            case GuardianMatchKind.New:
+                knownGuardians.Add(new Guardian
+                {
+                    FullName = item.GuardianName,
+                    Email = item.GuardianEmail,
+                    IdentityCardNumber = item.GuardianIdentityCard
+                });
+                item.GuardianEligibleForAccount = GuardianMatch.IsEligibleForAccount(item.GuardianEmail, null);
+                break;
+            case GuardianMatchKind.Reused:
+                item.GuardianEligibleForAccount = GuardianMatch.IsEligibleForAccount(item.GuardianEmail, match.Record);
+                break;
+        }
     }
 
     private static RelationshipTypes ParseRelationship(string? text)

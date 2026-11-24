@@ -12,12 +12,14 @@ namespace SAWP.UnitTests;
 public class AdminCalendarTests : TestBase
 {
     private readonly Mock<IAuditService> _auditMock;
+    private readonly Mock<IAccountLinkService> _accountLinksMock;
     private readonly AdminService _service;
 
     public AdminCalendarTests()
     {
         _auditMock = new Mock<IAuditService>();
-        _service = new AdminService(UnitOfWorkMock.Object, _auditMock.Object);
+        _accountLinksMock = new Mock<IAccountLinkService>();
+        _service = new AdminService(UnitOfWorkMock.Object, _auditMock.Object, _accountLinksMock.Object);
     }
 
     [Fact]

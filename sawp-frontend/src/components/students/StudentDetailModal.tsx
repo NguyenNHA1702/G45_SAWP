@@ -12,6 +12,8 @@ import {
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { studentApi } from '../../services/implementations/studentApi';
+import { getAuthUser } from '../../services/apiClient';
+import { StudentGuardiansSection } from './StudentGuardiansSection';
 import { formatDDMMYYYY } from '../../utils/date';
 import type { StudentProfileDto } from '../../types/student.types';
 
@@ -35,12 +37,15 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // A list row may not carry the guardians, so the full profile is always loaded when the modal opens
+    const id = studentId ?? student?.id;
     if (student) {
       setLoadedStudent(student);
-    } else if (studentId && open) {
+    }
+    if (id && open) {
       setLoading(true);
       studentApi
-        .getStudentProfile(studentId)
+        .getStudentProfile(id)
         .then((res) => {
           if (res.success && res.data) {
             setLoadedStudent(res.data);
@@ -52,12 +57,21 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
         .finally(() => {
           setLoading(false);
         });
-    } else {
+    } else if (!student) {
       setLoadedStudent(null);
     }
   }, [student, studentId, open]);
 
-  const activeStudent = student || loadedStudent;
+  // The loaded (and, after a change, updated) profile wins over the list row passed in
+  const activeStudent = loadedStudent ?? student;
+  const canManageGuardians = (() => {
+    try {
+      const roles: string[] = JSON.parse(getAuthUser() ?? '{}')?.roles ?? [];
+      return roles.includes('OfficeStaff') || roles.includes('Admin');
+    } catch {
+      return false;
+    }
+  })();
 
   if (!open) return null;
 
@@ -200,6 +214,15 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             </div>
           </div>
         </div>
+
+        <StudentGuardiansSection
+          student={activeStudent}
+          canManage={canManageGuardians}
+          onChanged={(updated) => {
+            setLoadedStudent(updated);
+            onUpdated?.(updated);
+          }}
+        />
 
         {/* Actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>

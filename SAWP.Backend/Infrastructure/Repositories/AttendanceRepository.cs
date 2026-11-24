@@ -96,6 +96,9 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         DateTime to, 
         CancellationToken ct = default)
     {
+        var fromDate = from.Date;
+        var toDate = to.Date;
+
         var classSchoolYearId = await _context.Classes
             .AsNoTracking()
             .Where(c => c.Id == classId)
@@ -104,9 +107,9 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
 
         var calendarQuery = _context.SchoolCalendarDays
             .AsNoTracking()
-            .Where(d => d.Date >= from.Date && d.Date <= to.Date);
+            .Where(d => d.Date >= fromDate && d.Date <= toDate);
 
-        if (classSchoolYearId.HasValue)
+        if (classSchoolYearId.HasValue && classSchoolYearId.Value > 0)
         {
             calendarQuery = calendarQuery.Where(d => d.SchoolYearId == classSchoolYearId.Value);
         }
@@ -119,9 +122,16 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             .GroupBy(d => d.Date.Date)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
 
-        var records = (await _context.AttendanceRecords
+        bool IsValidSchoolDay(DateTime dt)
+        {
+            var d = dt.Date;
+            if (calendarMap.TryGetValue(d, out var isSchoolDay)) return isSchoolDay;
+            return d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday;
+        }
+
+        var records = await _context.AttendanceRecords
             .AsNoTracking()
-            .Where(ar => ar.ClassId == classId && ar.Date >= from && ar.Date <= to)
+            .Where(ar => ar.ClassId == classId && ar.Date >= fromDate && ar.Date <= toDate)
             .Select(ar => new 
             {
                 ar.Date,
@@ -130,11 +140,10 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
                 ar.Student.FullName,
                 ar.Status
             })
-            .ToListAsync(ct))
-            .Where(r => SchoolCalendarHelper.IsSchoolDay(r.Date, calendarMap))
-            .ToList();
+            .ToListAsync(ct);
 
         return records
+            .Where(x => IsValidSchoolDay(x.Date))
             .GroupBy(x => new { x.StudentId, x.StudentCode, x.FullName })
             .Select(g => new StudentAttendanceRowDto
             {

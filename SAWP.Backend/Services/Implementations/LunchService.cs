@@ -17,6 +17,7 @@ public class LunchService : ILunchService
     private readonly ISchoolClock _clock;
     private readonly SchoolOptions _options;
     private readonly IAuditService _auditService;
+    private readonly ISchoolCalendarService _calendarService;
 
     private static readonly TimeSpan MinCutoffTime = new(6, 0, 0);
     private static readonly TimeSpan MaxCutoffTime = new(11, 0, 0);
@@ -36,12 +37,14 @@ public class LunchService : ILunchService
         IUnitOfWork unitOfWork,
         ISchoolClock clock,
         IOptions<SchoolOptions> options,
-        IAuditService auditService)
+        IAuditService auditService,
+        ISchoolCalendarService? calendarService = null)
     {
         _unitOfWork = unitOfWork;
         _clock = clock;
         _options = options.Value;
         _auditService = auditService;
+        _calendarService = calendarService ?? new SchoolCalendarService(unitOfWork);
     }
 
     private async Task<Dictionary<DateTime, bool>> GetCalendarDayMapAsync(DateTime startDate, DateTime endDate, CancellationToken ct)
@@ -76,7 +79,7 @@ public class LunchService : ILunchService
         var targetDate = date.Date;
         // Nếu SchoolCalendarDay có cấu hình rõ ràng (VD: học bù T7 IsSchoolDay=true, hoặc nghỉ lễ 02/12 IsSchoolDay=false) thì ưu tiên theo lịch nhà trường
         var defaultServing = isCalendarSchoolDay ?? SchoolCalendarHelper.IsDefaultSchoolDay(targetDate);
-        var isServing = day != null ? day.IsServing : defaultServing;
+        var isServing = isCalendarSchoolDay == false ? false : (day != null ? day.IsServing : defaultServing);
         var cutoff = (day != null && day.CutoffTime != TimeSpan.Zero) ? day.CutoffTime : _options.LunchCutoff;
         var isLocked = day?.IsLocked ?? false;
         var lockedAt = day?.LockedAt;
@@ -144,6 +147,8 @@ public class LunchService : ILunchService
             .Where(d => d.Date >= start && d.Date <= end)
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
         var calendarMap = await GetCalendarDayMapAsync(start, end, cancellationToken);
+
+        var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(start, end, cancellationToken);
 
         var result = new List<LunchServiceDayConfigDto>();
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
@@ -382,6 +387,8 @@ public class LunchService : ILunchService
             .Where(r => r.StudentId == studentId && r.Date >= startOfMonth && r.Date <= endOfMonth)
             .ToDictionaryAsync(r => r.Date.Date, cancellationToken);
 
+        var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(startOfMonth, endOfMonth, cancellationToken);
+
         var days = new List<StudentLunchDayDto>();
         for (var cur = startOfMonth; cur <= endOfMonth; cur = cur.AddDays(1))
         {
@@ -524,6 +531,10 @@ public class LunchService : ILunchService
         var calendarMap = targetDates.Count > 0
             ? await GetCalendarDayMapAsync(targetDates.First(), targetDates.Last(), cancellationToken)
             : new Dictionary<DateTime, bool>();
+
+        var calendarSchoolDays = targetDates.Count > 0
+            ? await _calendarService.GetSchoolDaysInRangeAsync(targetDates.First(), targetDates.Last(), cancellationToken)
+            : new HashSet<DateTime>();
 
         // Kiểm tra ngày phục vụ (MSG28) và hạn đăng ký (MSG27)
         foreach (var d in targetDates)

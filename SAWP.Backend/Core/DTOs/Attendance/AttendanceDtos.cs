@@ -15,6 +15,7 @@ public class SubmitAttendanceSheetDto
     public DateTime Date { get; set; }                    // yyyy-MM-dd
     public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
     public List<DailyAttendanceEntryDto> Entries { get; set; } = new();
+    public string? CorrectionReason { get; set; }         // bắt buộc 5..500 khi Giáo vụ/Admin bổ sung/sửa ngày quá khứ (ATT-4)
 }
 
 public class CorrectAttendanceDto

@@ -582,7 +582,7 @@ public class PlacementPlanService : IPlacementPlanService
                 foreach (var oldCa in existingActiveAssignments)
                 {
                     oldCa.IsActive = false;
-                    oldCa.EndDate = DateTime.UtcNow;
+                    oldCa.EndDate = DateTime.UtcNow.Date;
                 }
 
                 // Create official ClassAssignment records for all items in the plan
@@ -593,7 +593,7 @@ public class PlacementPlanService : IPlacementPlanService
                         ClassId = item.ClassId,
                         StudentId = item.StudentId,
                         AcademicYear = academicYear,
-                        StartDate = DateTime.UtcNow,
+                        StartDate = DateTime.UtcNow.Date,
                         IsActive = true
                     });
                 }
