@@ -33,6 +33,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
             .Include(c => c.HomeroomTeacher)
                 .ThenInclude(t => t!.User)
             .Include(c => c.ClassAssignments.Where(ca => ca.IsActive))
+            .AsSplitQuery()
             .Where(c => c.SchoolYearId == schoolYearId);
 
         if (grade.HasValue)
