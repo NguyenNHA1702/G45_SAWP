@@ -8,7 +8,6 @@ public class LunchRegistrationDto
     public DateTime Date { get; set; }
     public MealType MealType { get; set; }
     public bool IsActive { get; set; }
-    public bool IsWaitlisted { get; set; }
     public string? Remarks { get; set; }
     public string? AllergyWarning { get; set; }
 }
@@ -82,7 +81,6 @@ public class StudentMealOperationItemDto
     public int Grade { get; set; }
     public MealType MealType { get; set; }
     public bool IsActive { get; set; }
-    public bool IsWaitlisted { get; set; }
     public string? Remarks { get; set; }
     public string? AllergyWarning { get; set; }
     public LunchCancellationSource? CancellationSource { get; set; }
@@ -151,7 +149,6 @@ public class StudentLunchDayDto
     public string? ServiceRemarks { get; set; }
     public int? RegistrationId { get; set; }
     public bool IsRegistered { get; set; }
-    public bool IsWaitlisted { get; set; }
     public MealType? MealType { get; set; }
     public string? StudentRemarks { get; set; }
     public LunchCancellationSource? CancellationSource { get; set; }
@@ -186,9 +183,6 @@ public class BatchLunchRegistrationResultDto
     public int RegisteredCount { get; set; }
     public List<DateTime> RegisteredDates { get; set; } = new();
     public List<DateTime> SkippedDuplicateDates { get; set; } = new();
-    public int WaitlistedCount { get; set; }
-    public List<DateTime> WaitlistedDates { get; set; } = new();
-    public bool IsWaitlisted { get; set; }
 }
 
 // ---- UC-30: Phụ huynh hủy đăng ký còn hiệu lực ----
@@ -219,21 +213,4 @@ public class LunchPeriodReportDto
     public int TotalVegetarian { get; set; }
     public int TotalSpecialDiet { get; set; }
     public List<ClassMealSummaryDto> ClassSummaries { get; set; } = new();
-}
-
-// ---- Monthly Boarding Quota & Waitlist (TC_BDS_34) ----
-public class MonthlyBoardingQuotaDto
-{
-    public string Month { get; set; } = string.Empty; // YYYY-MM
-    public int? Quota { get; set; }
-    public int RegisteredCount { get; set; }
-    public int WaitlistedCount { get; set; }
-    public bool IsFull { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-}
-
-public class UpsertMonthlyBoardingQuotaRequestDto
-{
-    public string Month { get; set; } = string.Empty; // YYYY-MM
-    public int? Quota { get; set; }
 }

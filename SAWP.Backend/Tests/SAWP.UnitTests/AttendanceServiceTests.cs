@@ -236,9 +236,10 @@ public class AttendanceServiceTests : TestBase
     }
 
     // ==================== 54. RecordDailyAttendanceAsync (8 TCs) ====================
+    // OVR-01 (BR-62): submitting attendance never notifies parents.
 
     [Fact]
-    public async Task UTCID01_RecordDailyAttendance_Success_DeductsLunchAndNotifiesParent()
+    public async Task UTCID01_RecordDailyAttendance_Success_DeductsLunchAndDoesNotNotifyParent()
     {
         // Arrange
         var today = new DateTime(2026, 10, 28);
@@ -248,7 +249,7 @@ public class AttendanceServiceTests : TestBase
         SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
         SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
         SetupRepository(new List<LunchServiceDay>());
-        SetupRepository(new List<Notification>());
+        var notificationRepo = SetupRepository(new List<Notification>());
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Student>
             {
@@ -291,7 +292,7 @@ public class AttendanceServiceTests : TestBase
         result.Success.Should().BeTrue();
         result.Code.Should().Be(SystemMessages.MSG18.Code);
         result.Data!.LunchDeductedCount.Should().Be(1);
-        result.Data.ParentsNotifiedCount.Should().Be(1);
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -461,7 +462,7 @@ public class AttendanceServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
-    // ==================== 55. CorrectAttendanceAsync (6 TCs) ====================
+    // ==================== 55. CorrectAttendanceAsync (7 TCs) ====================
 
     [Fact]
     public async Task UTCID01_CorrectAttendance_ToExcusedAbsence_Success()
@@ -619,6 +620,46 @@ public class AttendanceServiceTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task UTCID07_CorrectAttendance_ToUnexcusedAbsenceToday_DoesNotNotifyParent()
+    {
+        // Arrange: OVR-01 (BR-62) - a correction never notifies parents
+        var today = new DateTime(2026, 10, 28);
+        var rec = new AttendanceRecord
+        {
+            Id = 10,
+            StudentId = 1,
+            ClassId = 1,
+            Date = today,
+            Session = AttendanceSession.Morning,
+            Status = AttendanceStatus.Present,
+            Student = new Student { Id = 1, StudentCode = "HS001", FullName = "Em A" },
+            Class = new Class { Id = 1, ClassName = "1A" }
+        };
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(rec);
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+        var notificationRepo = SetupRepository(new List<Notification>());
+        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int> { 20 } });
+
+        var dto = new CorrectAttendanceDto
+        {
+            Status = AttendanceStatus.UnexcusedAbsence,
+            CorrectionReason = "Giáo viên chọn nhầm trạng thái"
+        };
+
+        // Act
+        var result = await _service.CorrectAttendanceAsync(10, dto, 10);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        rec.Status.Should().Be(AttendanceStatus.UnexcusedAbsence);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ==================== 56. GetClassSummaryAsync (5 TCs) ====================
@@ -809,5 +850,310 @@ public class AttendanceServiceTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    [Fact]
+    public async Task UTCID07_A3_AutoLeaveAttendanceRecord_DoesNotMarkSubmittedAt()
+    {
+        // Arrange: lớp chỉ có bản ghi ExcusedAbsence tự sinh từ đơn xin nghỉ (LeaveRequestId != null, UpdatedByUserId == null)
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<SchoolCalendarDay>());
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student>
+            {
+                new() { Id = 1, StudentCode = "HS001", FullName = "Em A" },
+                new() { Id = 2, StudentCode = "HS002", FullName = "Em B" }
+            });
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>
+            {
+                new()
+                {
+                    Id = 100,
+                    StudentId = 1,
+                    ClassId = 1,
+                    Date = today,
+                    Session = AttendanceSession.Morning,
+                    Status = AttendanceStatus.ExcusedAbsence,
+                    LeaveRequestId = 5,
+                    UpdatedByUserId = null,
+                    RecordedByUserId = 30,
+                    CreatedAt = DateTime.UtcNow
+                }
+            });
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>
+            {
+                [1] = new LeaveIndicatorDto { LeaveRequestId = 5, RequestNumber = "LR-001", Status = RequestStatus.Approved }
+            });
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>
+            {
+                [1] = new LunchRegistration { Id = 10, StudentId = 1, Date = today, IsActive = false, CancellationSource = LunchCancellationSource.Leave }
+            });
+
+        // Act
+        var result = await _service.GetAttendanceSheetAsync(1, today, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Data!.SubmittedAt.Should().BeNull();
+        result.Data.Entries[0].HasLunch.Should().BeFalse();
+        result.Data.Entries[0].LunchCancelledBy.Should().Be(LunchCancellationSource.Leave);
+    }
+
+    [Fact]
+    public async Task UTCID08_A7_OfficeStaffPastDay_UnmarkedAllowsBulk_MarkedLocksWithPastDay()
+    {
+        // Arrange
+        var today = new DateTime(2026, 10, 28);
+        var pastDate = new DateTime(2026, 10, 26);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<SchoolCalendarDay>());
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, pastDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), pastDate, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), pastDate, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        // 1. Chưa có bản ghi do GV nộp -> Giáo vụ bổ sung được
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, pastDate, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+        var unmarkedRes = await _service.GetAttendanceSheetAsync(1, pastDate, AttendanceSession.Morning, 10, new[] { UserRoles.OfficeStaff });
+
+        // 2. Đã có bản ghi do GV nộp -> khóa sửa hàng loạt ("PastDay")
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, pastDate, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>
+            {
+                new() { Id = 200, StudentId = 1, ClassId = 1, Date = pastDate, Session = AttendanceSession.Morning, Status = AttendanceStatus.Present, LeaveRequestId = null }
+            });
+        var markedRes = await _service.GetAttendanceSheetAsync(1, pastDate, AttendanceSession.Morning, 10, new[] { UserRoles.OfficeStaff });
+
+        // Assert
+        unmarkedRes.Data!.CanEdit.Should().BeTrue();
+        markedRes.Data!.CanEdit.Should().BeFalse();
+        markedRes.Data.LockReason.Should().Be("PastDay");
+    }
+
+    [Fact]
+    public async Task UTCID09_MakeupSaturdayAndHolidayOverride_RespectedByGetAttendanceSheet()
+    {
+        // Arrange: 12/12/2026 (Thứ 7 học bù = true), 02/12/2026 (Thứ 4 nghỉ = false)
+        var makeupSat = new DateTime(2026, 12, 12);
+        var holidayWed = new DateTime(2026, 12, 2);
+        _clockMock.Setup(c => c.Today).Returns(makeupSat);
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<SchoolCalendarDay>
+        {
+            new() { Id = 1, Date = makeupSat, IsSchoolDay = true, Note = "Học bù 02/12" },
+            new() { Id = 2, Date = holidayWed, IsSchoolDay = false, Note = "Ngày nghỉ trường" }
+        });
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, It.IsAny<DateTime>(), AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<DateTime>(), AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<DateTime>(), false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        // Act
+        var satSheet = await _service.GetAttendanceSheetAsync(1, makeupSat, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
+        var wedSheet = await _service.GetAttendanceSheetAsync(1, holidayWed, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
+
+        // Assert
+        satSheet.Data!.IsSchoolDay.Should().BeTrue();
+        satSheet.Data.CanEdit.Should().BeTrue();
+        wedSheet.Data!.IsSchoolDay.Should().BeFalse();
+        wedSheet.Data.CanEdit.Should().BeFalse();
+        wedSheet.Data.LockReason.Should().Be("NonSchoolDay");
+    }
+
+    [Fact]
+    public async Task UTCID10_CorrectAttendance_PastDayToExcusedAbsence_Blocked_WhileOtherStatusAllowed()
+    {
+        // Arrange
+        var today = new DateTime(2026, 11, 24);
+        var yesterday = today.AddDays(-1);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(9));
+
+        var pastRec = new AttendanceRecord
+        {
+            Id = 500,
+            StudentId = 1,
+            ClassId = 1,
+            Date = yesterday,
+            Session = AttendanceSession.Morning,
+            Status = AttendanceStatus.UnexcusedAbsence,
+            Student = new Student { Id = 1, StudentCode = "HS001", FullName = "Nguyễn Văn A" },
+            Class = new Class { Id = 1, ClassName = "1A" }
+        };
+
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pastRec);
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), yesterday, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+        SetupRepository(new List<LunchServiceDay>());
+
+        // Act
+        var blockedExcused = await _service.CorrectAttendanceAsync(500, new CorrectAttendanceDto
+        {
+            Status = AttendanceStatus.ExcusedAbsence,
+            CorrectionReason = "Muốn đổi sang có phép ngày hôm qua"
+        }, 10);
+
+        var allowedPresent = await _service.CorrectAttendanceAsync(500, new CorrectAttendanceDto
+        {
+            Status = AttendanceStatus.Present,
+            CorrectionReason = "Giáo viên chấm nhầm dòng học sinh"
+        }, 10);
+
+        // Assert
+        blockedExcused.Success.Should().BeFalse();
+        blockedExcused.Code.Should().Be(SystemMessages.MSG01.Code);
+        allowedPresent.Success.Should().BeTrue();
+        pastRec.Status.Should().Be(AttendanceStatus.Present);
+    }
+
+    // ==================== 58. SendAbsenceNoticeAsync (6 TCs) - OVR-01, UC-23 A2 ====================
+
+    private AttendanceRecord UnexcusedRecord(int id = 10) => new()
+    {
+        Id = id,
+        StudentId = 1,
+        ClassId = 1,
+        Date = new DateTime(2026, 10, 28),
+        Session = AttendanceSession.Morning,
+        Status = AttendanceStatus.UnexcusedAbsence,
+        Student = new Student { Id = 1, StudentCode = "HS001", FullName = "Em A" },
+        Class = new Class { Id = 1, ClassName = "1A" }
+    };
+
+    private void SetupNoLeaveAndGuardians(params int[] guardianUserIds)
+    {
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<DateTime>(), It.IsAny<AttendanceSession>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int>(guardianUserIds) });
+    }
+
+    [Fact]
+    public async Task UTCID01_SendAbsenceNotice_UnexcusedAbsence_NotifiesEveryLinkedParent()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupNoLeaveAndGuardians(20, 21);
+        var notificationRepo = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG55.Code);
+        result.Data!.ParentsNotifiedCount.Should().Be(2);
+        rec.AbsenceNoticeSentAt.Should().NotBeNull();
+        rec.AbsenceNoticeSentByUserId.Should().Be(40);
+        notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n => n.ReferenceKey == NotificationTemplates.AbsenceNoticeKey(10)), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        AuditServiceMock.Verify(a => a.LogActionAsync(40, AuditActions.AttendanceAbsenceNoticeSend, nameof(AttendanceRecord), "10",
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID02_SendAbsenceNotice_AlreadySent_FailsWithMSG09()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        rec.AbsenceNoticeSentAt = new DateTime(2026, 10, 28, 9, 0, 0, DateTimeKind.Utc);
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        var notificationRepo = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(AttendanceStatus.Present)]
+    [InlineData(AttendanceStatus.Late)]
+    [InlineData(AttendanceStatus.ExcusedAbsence)]
+    public async Task UTCID03_SendAbsenceNotice_NotUnexcusedAbsence_FailsWithMSG09(AttendanceStatus status)
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        rec.Status = status;
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UTCID04_SendAbsenceNotice_CoveredByApprovedLeave_FailsWithMSG09()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), rec.Date, rec.Session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>
+            {
+                [1] = new LeaveIndicatorDto { LeaveRequestId = 5, Status = RequestStatus.Approved }
+            });
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UTCID05_SendAbsenceNotice_NoLinkedParent_FailsWithMSG09()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupNoLeaveAndGuardians();
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UTCID06_SendAbsenceNotice_RecordNotFound_FailsWithMSG43()
+    {
+        // Arrange
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((AttendanceRecord?)null);
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(999, 40);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG43.Code);
     }
 }

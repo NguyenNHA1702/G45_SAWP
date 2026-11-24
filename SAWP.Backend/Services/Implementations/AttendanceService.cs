@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Configuration;
 using Core.Constants;
 using Core.DTOs;
@@ -149,7 +150,9 @@ public class AttendanceService : IAttendanceService
         var lunches = await _unitOfWork.Lunch
             .GetRegistrationsForStudentsAsync(studentIds, targetDate, track: false, ct);
 
-        // Xác định quyền sửa & lý do khóa (D1)
+        // Xác định quyền sửa & lý do khóa (D1 + A7)
+        var submittedRecords = existingRecords.Values.Where(IsTeacherSubmittedRecord).ToList();
+        var hasTeacherSubmittedAttendance = submittedRecords.Count > 0;
         bool canEdit = false;
         string? lockReason = null;
 
@@ -167,9 +170,15 @@ public class AttendanceService : IAttendanceService
                 canEdit = false;
                 lockReason = "Future";
             }
+            else if (targetDate < _clock.Today && hasTeacherSubmittedAttendance)
+            {
+                // A7: Ngày quá khứ ĐÃ có điểm danh -> khóa sửa hàng loạt, buộc đi qua điều chỉnh từng bản ghi kèm lý do
+                canEdit = false;
+                lockReason = "PastDay";
+            }
             else
             {
-                // Admin / Giáo vụ được mở khóa toàn quyền sửa bất kỳ lớp nào (cả hôm nay lẫn ngày đã qua)
+                // Hôm nay hoặc ngày quá khứ CHƯA có điểm danh (Giáo vụ bổ sung lần đầu)
                 canEdit = true;
                 lockReason = null;
             }
@@ -235,20 +244,22 @@ public class AttendanceService : IAttendanceService
                 Remarks = effectiveRemarks,
                 Leave = leave,
                 HasLunch = lunch != null && lunch.IsActive,
-                LunchCancelledBy = (lunch != null && !lunch.IsActive) ? lunch.CancellationSource : null
+                LunchCancelledBy = (lunch != null && !lunch.IsActive) ? lunch.CancellationSource : null,
+                AbsenceNoticeSentAt = rec?.AbsenceNoticeSentAt
             });
         }
 
         var summary = BuildSummary(entries);
 
-        DateTime? submittedAt = existingRecords.Count > 0 ? existingRecords.Values.Min(r => r.CreatedAt) : null;
+        DateTime? submittedAt = submittedRecords.Count > 0 ? submittedRecords.Min(r => r.CreatedAt) : null;
         DateTime? lastUpdatedAt = existingRecords.Count > 0 ? existingRecords.Values.Max(r => r.UpdatedAt ?? r.CreatedAt) : null;
         string? submittedByName = null;
 
-        if (existingRecords.Count > 0)
+        if (submittedRecords.Count > 0)
         {
-            var earliest = existingRecords.Values.OrderBy(r => r.CreatedAt).First();
-            var user = await _unitOfWork.Repository<User>().GetByIdAsync(earliest.RecordedByUserId, ct);
+            var earliest = submittedRecords.OrderBy(r => r.CreatedAt).First();
+            var userRepo = _unitOfWork.Repository<User>();
+            var user = userRepo != null ? await userRepo.GetByIdAsync(earliest.RecordedByUserId, ct) : null;
             submittedByName = user?.FullName;
         }
 
@@ -378,6 +389,14 @@ public class AttendanceService : IAttendanceService
             .GetDailyClassAttendanceAsync(classId, targetDate, session, track: true, ct))
             .ToDictionary(r => r.StudentId);
 
+        // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt ngay cả với Giáo vụ/Admin
+        if (targetDate < _clock.Today && existingRecords.Values.Any(IsTeacherSubmittedRecord))
+        {
+            return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                SystemMessages.MSG19,
+                new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng sử dụng chức năng điều chỉnh từng bản ghi kèm lý do." });
+        }
+
         var changes = new List<(int StudentId, AttendanceStatus? OldStatus, AttendanceStatus NewStatus, bool RemarksChanged)>();
         foreach (var entry in dto.Entries)
         {
@@ -391,7 +410,6 @@ public class AttendanceService : IAttendanceService
             }
         }
 
-        var newlyUnexcused = changes.Where(c => c.NewStatus == AttendanceStatus.UnexcusedAbsence && c.OldStatus != AttendanceStatus.UnexcusedAbsence).Select(c => c.StudentId).ToList();
         var newlyExcused = changes.Where(c => c.NewStatus == AttendanceStatus.ExcusedAbsence && c.OldStatus != AttendanceStatus.ExcusedAbsence).Select(c => c.StudentId).ToList();
         var leftExcused = changes.Where(c => c.OldStatus == AttendanceStatus.ExcusedAbsence && (c.NewStatus == AttendanceStatus.Present || c.NewStatus == AttendanceStatus.Late)).Select(c => c.StudentId).ToList();
 
@@ -429,6 +447,9 @@ public class AttendanceService : IAttendanceService
                         Remarks = entry.Remarks,
                         RecordedByUserId = userId,
                         CreatedAt = utcNow,
+                        // Đánh dấu bản ghi do GV nộp (kể cả khi giữ nguyên Vắng có phép) để tách biệt với bản ghi tự sinh từ đơn nghỉ (A3)
+                        UpdatedAt = leaveRequestId.HasValue ? utcNow : null,
+                        UpdatedByUserId = leaveRequestId.HasValue ? userId : null,
                         LeaveRequestId = leaveRequestId
                     };
                     await _unitOfWork.Attendance.AddAsync(newRecord, ct);
@@ -501,45 +522,8 @@ public class AttendanceService : IAttendanceService
                 }
             }
 
-            // T3: Gửi thông báo cho phụ huynh (chỉ newlyUnexcused)
-            if (newlyUnexcused.Count > 0)
-            {
-                var guardians = await _unitOfWork.Students.GetGuardianUserIdsAsync(newlyUnexcused, ct);
-                var keys = newlyUnexcused.Select(id => NotificationTemplates.AbsentKey(id, targetDate)).ToList();
-                var allGuardianUserIds = guardians.Values.SelectMany(u => u).Distinct().ToList();
-                var existingKeys = await _unitOfWork.Notifications.GetExistingKeysAsync(allGuardianUserIds, keys, ct);
-
-                var cls = await _unitOfWork.Repository<Class>().GetByIdAsync(classId, ct);
-                var className = cls?.ClassName ?? string.Empty;
-
-                foreach (var studentId in newlyUnexcused)
-                {
-                    if (guardians.TryGetValue(studentId, out var guardianUserIds))
-                    {
-                        var studentName = rosterMap.TryGetValue(studentId, out var st) ? st.FullName : $"HS #{studentId}";
-                        var key = NotificationTemplates.AbsentKey(studentId, targetDate);
-
-                        foreach (var guardianUserId in guardianUserIds)
-                        {
-                            if (existingKeys.Contains($"{guardianUserId}|{key}")) continue;
-
-                            var notification = new Notification
-                            {
-                                UserId = guardianUserId,
-                                Type = NotificationTemplates.AttendanceAbsentType,
-                                Title = NotificationTemplates.AttendanceAbsentTitle,
-                                Content = string.Format(NotificationTemplates.AttendanceAbsentContent, studentName, className, $"{targetDate:dd/MM/yyyy}"),
-                                LinkUrl = $"/parent/attendance?studentId={studentId}&month={targetDate:yyyy-MM}",
-                                ReferenceKey = key,
-                                CreatedAt = utcNow,
-                                IsRead = false
-                            };
-                            await _unitOfWork.Repository<Notification>().AddAsync(notification, ct);
-                            result.ParentsNotifiedCount++;
-                        }
-                    }
-                }
-            }
+            // OVR-01 (BR-62): recording attendance never notifies parents; Office Staff send an
+            // absence notice separately (SendAbsenceNoticeAsync).
 
             // T4: Lưu thay đổi
             await _unitOfWork.SaveChangesAsync(ct);
@@ -599,6 +583,13 @@ public class AttendanceService : IAttendanceService
 
         if (dto.Status == AttendanceStatus.ExcusedAbsence)
         {
+            if (rec.Date.Date < _clock.Today && rec.Status != AttendanceStatus.ExcusedAbsence)
+            {
+                return ApiResponse<AttendanceSheetEntryDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Điều chỉnh điểm danh ngày quá khứ chỉ dùng để sửa lỗi nhập liệu, không cho phép chuyển sang Vắng có phép." });
+            }
+
             var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
             if (!leaves.TryGetValue(rec.StudentId, out var leave) || leave.Status != RequestStatus.Approved)
             {
@@ -671,33 +662,7 @@ public class AttendanceService : IAttendanceService
                 }
             }
 
-            // Gửi thông báo phụ huynh nếu chuyển SANG UnexcusedAbsence và trong đúng ngày hôm nay
-            if (dto.Status == AttendanceStatus.UnexcusedAbsence && oldStatus != AttendanceStatus.UnexcusedAbsence && rec.Date == _clock.Today)
-            {
-                var guardians = await _unitOfWork.Students.GetGuardianUserIdsAsync(new[] { rec.StudentId }, ct);
-                var key = NotificationTemplates.AbsentKey(rec.StudentId, rec.Date);
-                if (guardians.TryGetValue(rec.StudentId, out var guardianUserIds))
-                {
-                    var existingKeys = await _unitOfWork.Notifications.GetExistingKeysAsync(guardianUserIds, new[] { key }, ct);
-                    foreach (var gUserId in guardianUserIds)
-                    {
-                        if (existingKeys.Contains($"{gUserId}|{key}")) continue;
-
-                        var notification = new Notification
-                        {
-                            UserId = gUserId,
-                            Type = NotificationTemplates.AttendanceAbsentType,
-                            Title = NotificationTemplates.AttendanceAbsentTitle,
-                            Content = string.Format(NotificationTemplates.AttendanceAbsentContent, rec.Student.FullName, rec.Class.ClassName, $"{rec.Date:dd/MM/yyyy}"),
-                            LinkUrl = $"/parent/attendance?studentId={rec.StudentId}&month={rec.Date:yyyy-MM}",
-                            ReferenceKey = key,
-                            CreatedAt = utcNow,
-                            IsRead = false
-                        };
-                        await _unitOfWork.Repository<Notification>().AddAsync(notification, ct);
-                    }
-                }
-            }
+            // OVR-01 (BR-62): a correction never notifies parents either.
 
             await _unitOfWork.SaveChangesAsync(ct);
 
@@ -727,6 +692,97 @@ public class AttendanceService : IAttendanceService
         };
 
         return ApiResponse<AttendanceSheetEntryDto>.Ok(entryDto, SystemMessages.MSG18);
+    }
+    #endregion
+
+    #region OVR-01: SendAbsenceNoticeAsync (Office Staff send an absence notice, UC-23 A2)
+    public async Task<ApiResponse<AbsenceNoticeResultDto>> SendAbsenceNoticeAsync(
+        int recordId,
+        int userId,
+        CancellationToken ct = default)
+    {
+        var rec = await _unitOfWork.Attendance.GetByIdWithStudentClassAsync(recordId, ct);
+        if (rec == null)
+        {
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG43);
+        }
+
+        // Only an unexcused absence, at most one notice per record (BR-62, UC-23 E2)
+        if (rec.Status != AttendanceStatus.UnexcusedAbsence || rec.AbsenceNoticeSentAt != null)
+        {
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+        }
+
+        // An absence covered by an approved leave is not unexcused, even if the record says so
+        var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
+        if (leaves.TryGetValue(rec.StudentId, out var leave) && leave.Status == RequestStatus.Approved)
+        {
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+        }
+
+        var guardians = await _unitOfWork.Students.GetGuardianUserIdsAsync(new[] { rec.StudentId }, ct);
+        var guardianUserIds = guardians.TryGetValue(rec.StudentId, out var ids) ? ids.Distinct().ToList() : new List<int>();
+        if (guardianUserIds.Count == 0)
+        {
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+        }
+
+        var utcNow = DateTime.UtcNow;
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            var key = NotificationTemplates.AbsenceNoticeKey(rec.Id);
+            foreach (var guardianUserId in guardianUserIds)
+            {
+                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                {
+                    UserId = guardianUserId,
+                    Type = NotificationTemplates.AttendanceAbsentType,
+                    Title = NotificationTemplates.AttendanceAbsentTitle,
+                    Content = string.Format(NotificationTemplates.AttendanceAbsentContent, rec.Student.FullName, rec.Class.ClassName, $"{rec.Date:dd/MM/yyyy}"),
+                    LinkUrl = $"/parent/attendance?studentId={rec.StudentId}&month={rec.Date:yyyy-MM}",
+                    ReferenceKey = key,
+                    CreatedAt = utcNow,
+                    IsRead = false
+                }, ct);
+            }
+
+            rec.AbsenceNoticeSentAt = utcNow;
+            rec.AbsenceNoticeSentByUserId = userId;
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            // TODO: pass the client IP address; it is not recorded yet.
+            await _auditService.LogActionAsync(
+                userId,
+                AuditActions.AttendanceAbsenceNoticeSend,
+                nameof(AttendanceRecord),
+                rec.Id.ToString(),
+                null,
+                new { rec.StudentId, Date = rec.Date.ToString("yyyy-MM-dd"), Session = rec.Session.ToString(), ParentsNotified = guardianUserIds.Count },
+                null,
+                ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            await _unitOfWork.CommitTransactionAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // e.g. another Office Staff member sent the notice at the same time
+            await _unitOfWork.RollbackTransactionAsync(ct);
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(ct);
+            throw;
+        }
+
+        return ApiResponse<AbsenceNoticeResultDto>.Ok(new AbsenceNoticeResultDto
+        {
+            RecordId = rec.Id,
+            AbsenceNoticeSentAt = utcNow,
+            ParentsNotifiedCount = guardianUserIds.Count
+        }, SystemMessages.MSG55);
     }
     #endregion
 
@@ -760,10 +816,14 @@ public class AttendanceService : IAttendanceService
 
         var rows = await _unitOfWork.Attendance.GetClassStatusCountsAsync(classId, fromDate, toDate, ct);
 
-        // Số ngày học thực tế có bản ghi
+        // Số ngày học thực tế có bản ghi (chỉ tính ngày học thực tế theo SchoolCalendarDay, không tính ngày nghỉ / cuối tuần trừ học bù)
         var classRecords = await _unitOfWork.Repository<AttendanceRecord>()
             .FindAsync(r => r.ClassId == classId && r.Date >= fromDate && r.Date <= toDate, ct);
-        var schoolDaysCount = classRecords.Select(r => r.Date).Distinct().Count();
+        var calMap = await GetCalendarDayMapAsync(fromDate, toDate, ct);
+        var schoolDaysCount = classRecords
+            .Select(r => r.Date.Date)
+            .Distinct()
+            .Count(d => IsSchoolDayByMap(d, calMap));
 
         var totals = new AttendanceSummaryDto
         {
@@ -951,28 +1011,42 @@ public class AttendanceService : IAttendanceService
         return false;
     }
 
+    private static bool IsTeacherSubmittedRecord(AttendanceRecord r) =>
+        r.LeaveRequestId == null || r.UpdatedByUserId != null;
+
+    private async Task<Dictionary<DateTime, bool>> GetCalendarDayMapAsync(DateTime fromDate, DateTime toDate, CancellationToken ct)
+    {
+        var repo = _unitOfWork.Repository<SchoolCalendarDay>();
+        if (repo == null) return new Dictionary<DateTime, bool>();
+
+        var days = await repo.FindAsync(d => d.Date >= fromDate.Date && d.Date <= toDate.Date, ct);
+        return days
+            .GroupBy(d => d.Date.Date)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
+    }
+
+    private static bool IsSchoolDayByMap(DateTime date, IReadOnlyDictionary<DateTime, bool> calendarMap) =>
+        SchoolCalendarHelper.IsSchoolDay(date, calendarMap);
+
     /// <summary>
-    /// Kiểm tra xem một ngày có phải ngày học theo lịch của trường không
+    /// Kiểm tra xem một ngày có phải ngày học theo lịch của trường không.
+    /// Ưu tiên kiểm tra SchoolCalendarDay trước để hỗ trợ ngày học bù (T7/CN có IsSchoolDay = true) và ngày nghỉ lễ riêng.
     /// </summary>
     private async Task<bool> ValidateSchoolDayAsync(DateTime date, CancellationToken ct = default)
     {
-        // Thứ 7 và Chủ nhật không phải ngày học (TC_ATT_13 / SSAWP-20)
-        if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
-        {
-            return false;
-        }
-
-        var calendarDays = await _unitOfWork.Repository<SchoolCalendarDay>()
-            .FindAsync(d => d.Date == date, ct);
-        var calendarDay = calendarDays.FirstOrDefault();
+        var repo = _unitOfWork.Repository<SchoolCalendarDay>();
+        var calendarDays = repo != null
+            ? await repo.FindAsync(d => d.Date == date.Date, ct)
+            : Array.Empty<SchoolCalendarDay>();
+        var calendarDay = calendarDays.OrderByDescending(d => d.Id).FirstOrDefault();
 
         if (calendarDay != null)
         {
             return calendarDay.IsSchoolDay;
         }
 
-        // Mặc định Thứ 2 đến Thứ 6 là ngày học
-        return true;
+        // Mặc định Thứ 2 đến Thứ 6 trừ ngày lễ cố định là ngày học
+        return SchoolCalendarHelper.IsDefaultSchoolDay(date);
     }
 
     #endregion

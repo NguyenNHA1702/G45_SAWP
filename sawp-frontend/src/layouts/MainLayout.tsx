@@ -23,6 +23,7 @@ import {
   Settings,
   UserCog,
   ShieldAlert,
+  UserPlus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clearAuthSession, getAuthUser } from '../services/apiClient';
@@ -114,11 +115,11 @@ const NAV_ITEMS: NavItem[] = [
         icon: GraduationCap,
       },
       {
-        id: 'office-link-requests',
-        label: 'Duyệt liên kết phụ huynh',
-        path: '/link-requests',
+        id: 'office-account-requests',
+        label: 'Yêu cầu cấp tài khoản',
+        path: '/office/account-requests',
         roles: ['OfficeStaff'],
-        icon: HeartHandshake,
+        icon: UserPlus,
       },
     ],
   },
@@ -257,6 +258,13 @@ const NAV_ITEMS: NavItem[] = [
         icon: UserCog,
       },
       {
+        id: 'admin-account-requests',
+        label: 'Duyệt yêu cầu cấp tài khoản',
+        path: '/admin/account-requests',
+        roles: ['Admin'],
+        icon: UserPlus,
+      },
+      {
         id: 'admin-config',
         label: 'Cấu hình hệ thống',
         path: '/admin/config',
@@ -305,7 +313,13 @@ export function MainLayout() {
     };
   }, []);
 
-  const userRoles: string[] = currentUser?.roles ?? [];
+  const rawRoles = currentUser?.roles ?? (currentUser?.role ? [currentUser.role] : []);
+  const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles : [String(rawRoles)];
+  const hasRoleMatch = (rolesList?: string[]) =>
+    !rolesList ||
+    rolesList.some((r) =>
+      userRoles.some((ur) => typeof ur === 'string' && (ur.toLowerCase() === r.toLowerCase() || ur.toLowerCase() === 'admin'))
+    );
 
   const isChildActive = (targetPathWithQuery: string) => {
     const [targetPath, targetQuery] = targetPathWithQuery.split('?');
@@ -378,11 +392,11 @@ export function MainLayout() {
   // Lọc menu theo roles
   const allowedNav = NAV_ITEMS.filter((item) => {
     if (item.roles && item.roles.length > 0) {
-      if (!item.roles.some((r) => userRoles.includes(r))) return false;
+      if (!hasRoleMatch(item.roles)) return false;
     }
     if (item.children && item.children.length > 0) {
       const hasVisibleChild = item.children.some(
-        (c) => !c.roles || c.roles.some((r) => userRoles.includes(r))
+        (c) => !c.roles || hasRoleMatch(c.roles)
       );
       if (!hasVisibleChild) return false;
     }
@@ -411,7 +425,7 @@ export function MainLayout() {
             {allowedNav.map((item) => {
               const Icon = item.icon;
               const visibleChildren = item.children
-                ? item.children.filter((c) => !c.roles || c.roles.some((r) => userRoles.includes(r)))
+                ? item.children.filter((c) => !c.roles || hasRoleMatch(c.roles))
                 : [];
 
               const hasChildren = visibleChildren.length > 0;

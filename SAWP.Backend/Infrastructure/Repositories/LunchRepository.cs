@@ -57,14 +57,23 @@ public class LunchRepository : Repository<LunchRegistration>, ILunchRepository
 
         var studentIds = regs.Select(r => r.StudentId).Distinct().ToList();
 
-        // Mỗi học sinh chỉ lấy duy nhất 1 bản ghi xếp lớp còn hiệu lực mới nhất theo StartDate / Id (chống đếm trùng)
+        var activeSchoolYearId = await _context.SchoolYears
+            .AsNoTracking()
+            .Where(sy => sy.IsActive)
+            .OrderByDescending(sy => sy.Id)
+            .Select(sy => (int?)sy.Id)
+            .FirstOrDefaultAsync(ct);
+
+        // Mỗi học sinh chỉ lấy duy nhất 1 bản ghi xếp lớp còn hiệu lực mới nhất thuộc năm học hiện tại (chống đếm trùng & lệch năm học)
         var assignments = await _context.ClassAssignments
             .AsNoTracking()
             .Include(ca => ca.Class)
             .Where(ca => studentIds.Contains(ca.StudentId)
                 && ca.IsActive
                 && ca.StartDate <= targetDate
-                && (ca.EndDate == null || ca.EndDate >= targetDate))
+                && (ca.EndDate == null || ca.EndDate >= targetDate)
+                && ca.Class.Status == "Active"
+                && (activeSchoolYearId == null || ca.Class.SchoolYearId == activeSchoolYearId.Value || ca.Class.SchoolYearId == 0))
             .ToListAsync(ct);
 
         var latestClassByStudent = assignments

@@ -3,7 +3,9 @@ import type { ApiResponse, PaginatedResult } from '../../types/common.types';
 import type {
   CreateStudentDto,
   DuplicateCheckResultDto,
+  GuardianRecordDto,
   ImportStudentRowDto,
+  LinkGuardianRequestDto,
   ImportStudentsConfirmDto,
   ImportStudentsResultDto,
   ResolveDuplicateStudentDto,
@@ -66,6 +68,31 @@ export const studentApi = {
     const res = await apiClient.post<ApiResponse<ImportStudentsResultDto>>('/students/import/confirm', payload, {
       timeout: 300000,
     });
+    return res.data;
+  },
+
+  // UC-10 Link or Unlink Guardian to Student
+  async searchGuardianRecords(search: string): Promise<ApiResponse<GuardianRecordDto[]>> {
+    const res = await apiClient.get<ApiResponse<GuardianRecordDto[]>>('/students/guardian-records', { params: { search } });
+    return res.data;
+  },
+
+  async linkGuardian(studentId: number, payload: LinkGuardianRequestDto): Promise<ApiResponse<StudentProfileDto>> {
+    const res = await apiClient.post<ApiResponse<StudentProfileDto>>(`/students/${studentId}/guardians`, payload);
+    return res.data;
+  },
+
+  async updateGuardianLink(
+    studentId: number,
+    guardianId: number,
+    payload: { relationship: number; isPrimaryContact: boolean },
+  ): Promise<ApiResponse<StudentProfileDto>> {
+    const res = await apiClient.put<ApiResponse<StudentProfileDto>>(`/students/${studentId}/guardians/${guardianId}`, payload);
+    return res.data;
+  },
+
+  async unlinkGuardian(studentId: number, guardianId: number): Promise<ApiResponse<StudentProfileDto>> {
+    const res = await apiClient.delete<ApiResponse<StudentProfileDto>>(`/students/${studentId}/guardians/${guardianId}`);
     return res.data;
   },
 

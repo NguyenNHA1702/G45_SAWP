@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Ban,
   Calendar,
   RefreshCw,
   Search,
@@ -49,6 +50,34 @@ function getAllergyText(item: StudentMealOperationItem): string | null {
   return null;
 }
 
+function formatCancelSource(src: StudentMealOperationItem['cancellationSource']): string {
+  switch (src) {
+    case 'Parent':
+    case 1:
+      return 'Phụ huynh hủy';
+    case 'Leave':
+    case 2:
+      return 'Đơn xin nghỉ';
+    case 'Attendance':
+    case 3:
+      return 'Điểm danh vắng';
+    case 'Staff':
+    case 4:
+      return 'Giáo vụ / Bếp';
+    default:
+      return 'Khác';
+  }
+}
+
+function formatDateTimeDDMMYYYY(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return formatDateDDMMYYYY(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${formatDateDDMMYYYY(d)} ${hh}:${mm}`;
+}
+
 export default function TeacherBoardingPage() {
   const [selectedDate, setSelectedDate] = useState<string>(getTodayIso);
   const [selectedClassId, setSelectedClassId] = useState<number | undefined>(undefined);
@@ -75,6 +104,11 @@ export default function TeacherBoardingPage() {
   }, [selectedDate, selectedClassId]);
 
   const studentMeals = board?.studentMeals ?? [];
+
+  const cancelledStudents = useMemo(
+    () => studentMeals.filter((s) => !s.isActive),
+    [studentMeals]
+  );
 
   const allergyCount = useMemo(
     () => studentMeals.filter((s) => getAllergyText(s) !== null).length,
@@ -179,7 +213,7 @@ export default function TeacherBoardingPage() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
           gap: 16,
           marginBottom: 24,
         }}
@@ -192,6 +226,12 @@ export default function TeacherBoardingPage() {
           <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#065F46' }}>SUẤT THỰC ĂN</div>
           <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#047857', marginTop: 4 }}>
             {board?.totalActiveToCook ?? 0}
+          </div>
+        </div>
+        <div className="card" style={{ padding: 18, background: '#FFFBEB' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#92400E' }}>HỦY SUẤT TRONG NGÀY</div>
+          <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#B45309', marginTop: 4 }}>
+            {board?.totalAutoCancelled ?? cancelledStudents.length}
           </div>
         </div>
         <div className="card" style={{ padding: 18, background: '#FEF2F2' }}>
@@ -310,6 +350,64 @@ export default function TeacherBoardingPage() {
                     </tr>
                   );
                 })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* A12: Danh sách học sinh hủy suất ăn trong ngày */}
+      <section className="card" style={{ padding: 20, marginTop: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Ban size={18} color="#B45309" />
+            <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900 }}>
+              Số lượng học sinh hủy suất ăn trong ngày ({formatDateDDMMYYYY(selectedDate)})
+            </h2>
+          </div>
+          <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+            {cancelledStudents.length} học sinh đã hủy suất
+          </span>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--color-fg)', textAlign: 'left', background: '#FFFBEB' }}>
+                <th style={{ padding: '10px 12px', fontWeight: 800 }}>Mã HS</th>
+                <th style={{ padding: '10px 12px', fontWeight: 800 }}>Họ và tên</th>
+                <th style={{ padding: '10px 12px', fontWeight: 800 }}>Lớp</th>
+                <th style={{ padding: '10px 12px', fontWeight: 800 }}>Nguồn hủy</th>
+                <th style={{ padding: '10px 12px', fontWeight: 800 }}>Lý do hủy</th>
+                <th style={{ padding: '10px 12px', fontWeight: 800 }}>Thời gian hủy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cancelledStudents.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: 20, textAlign: 'center', color: 'var(--color-muted-fg)' }}>
+                    {loading ? 'Đang tải...' : 'Chưa có học sinh nào hủy suất ăn trong ngày này.'}
+                  </td>
+                </tr>
+              ) : (
+                cancelledStudents.map((s) => (
+                  <tr key={`cancelled-${s.studentId}-${s.registrationId}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 800 }}>{s.studentCode}</td>
+                    <td style={{ padding: '10px 12px', fontWeight: 700 }}>{s.studentName}</td>
+                    <td style={{ padding: '10px 12px' }}>{s.className}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                        {formatCancelSource(s.cancellationSource)}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'var(--color-fg)' }}>
+                      {s.cancellationReason || 'Không ghi chú'}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                      {formatDateTimeDDMMYYYY(s.cancelledAt)}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

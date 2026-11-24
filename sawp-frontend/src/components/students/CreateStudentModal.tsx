@@ -6,6 +6,49 @@ import { studentApi } from '../../services/implementations/studentApi';
 import type { CreateStudentDto, StudentProfileDto } from '../../types/student.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
+/** What the form edits; sent to the API with the backend's field names (toCreateStudentPayload). */
+interface StudentFormState {
+  studentCode: string;
+  fullName: string;
+  dateOfBirth: string;
+  gender: string;
+  address?: string;
+  classId?: number;
+  parentFullName?: string;
+  parentPhone?: string;
+  parentEmail?: string;
+  parentIdentityCard?: string;
+  parentRelationship?: string;
+}
+
+const RELATIONSHIP_VALUE: Record<string, number> = { 'Bố': 1, 'Mẹ': 2, 'Người giám hộ': 3 };
+
+/**
+ * Maps the form to POST /students. The form used to send classId / address / parent* fields that the backend does not
+ * read, so the class, the address and the guardian were silently dropped.
+ */
+const toCreateStudentPayload = (f: StudentFormState): CreateStudentDto => {
+  const guardianName = f.parentFullName?.trim();
+  return {
+    studentCode: f.studentCode.trim().toUpperCase(),
+    fullName: f.fullName.trim(),
+    dateOfBirth: f.dateOfBirth,
+    gender: f.gender,
+    residentialArea: f.address?.trim() || undefined,
+    initialClassId: f.classId,
+    initialGuardian: guardianName
+      ? {
+          fullName: guardianName,
+          phoneNumber: f.parentPhone?.trim() || undefined,
+          email: f.parentEmail?.trim() || undefined,
+          identityCardNumber: f.parentIdentityCard?.trim() || undefined,
+          relationship: RELATIONSHIP_VALUE[f.parentRelationship ?? ''] ?? 3,
+          isPrimaryContact: true,
+        }
+      : undefined,
+  };
+};
+
 interface CreateStudentModalProps {
   open: boolean;
   onClose: () => void;
@@ -21,7 +64,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
   onCreated,
   onDuplicateDetected,
 }) => {
-  const [formData, setFormData] = useState<CreateStudentDto>({
+  const [formData, setFormData] = useState<StudentFormState>({
     studentCode: '',
     fullName: '',
     dateOfBirth: '2020-01-01',
@@ -30,6 +73,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     classId: undefined,
     parentFullName: '',
     parentPhone: '',
+    parentEmail: '',
     parentIdentityCard: '',
     parentRelationship: 'Bố',
   });
@@ -65,6 +109,18 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
       return;
     }
 
+    const code = formData.studentCode.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{3,30}$/.test(code)) {
+      toast.error('Mã học sinh chỉ được chứa chữ cái, chữ số, dấu gạch ngang (-) và gạch dưới (_) từ 3 đến 30 ký tự!');
+      return;
+    }
+
+    const name = formData.fullName.trim();
+    if (name.includes('<') || name.includes('>')) {
+      toast.error('Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML!');
+      return;
+    }
+
     if (!formData.dateOfBirth) {
       toast.error('Vui lòng chọn ngày sinh của học sinh!');
       return;
@@ -83,13 +139,30 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
       return;
     }
 
+    const phone = formData.parentPhone?.trim();
+    if (phone) {
+      if (!/^0\d{9}$/.test(phone)) {
+        toast.error('Số điện thoại liên hệ phải gồm đúng 10 chữ số (bắt đầu bằng số 0, ví dụ: 0912345678)!');
+        return;
+      }
+    }
+
+    const email = formData.parentEmail?.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Email phụ huynh không đúng định dạng (ví dụ: phuhuynh@gmail.com)!');
+      return;
+    }
+
+    const cccd = formData.parentIdentityCard?.trim();
+    if (cccd && !/^\d{9}(\d{3})?$/.test(cccd)) {
+      toast.error('Số CCCD/CMND phụ huynh phải gồm 9 hoặc 12 chữ số!');
+      return;
+    }
+
     setLoading(true);
+    const payload = toCreateStudentPayload(formData);
     try {
-      const res = await studentApi.createStudent({
-        ...formData,
-        studentCode: formData.studentCode.trim().toUpperCase(),
-        fullName: formData.fullName.trim(),
-      });
+      const res = await studentApi.createStudent(payload);
 
       if (res.success && res.data) {
         toast.success(res.message || 'Tạo hồ sơ học sinh thành công!');
@@ -105,11 +178,12 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
         // fetch existing info
         const dupRes = await studentApi.checkDuplicate(formData.studentCode.trim().toUpperCase());
         if (dupRes.data?.existingStudent) {
-          onDuplicateDetected(formData, dupRes.data.existingStudent);
+          onDuplicateDetected(payload, dupRes.data.existingStudent);
           onClose();
         }
       } else {
-        toast.error(err.response?.data?.message || 'Lỗi khi tạo hồ sơ học sinh.');
+        // e.g. MSG01 with the reason (invalid email, conflicting identity card / email of guardian records)
+        toast.error(err.response?.data?.errors?.[0] || err.response?.data?.message || 'Lỗi khi tạo hồ sơ học sinh.');
       }
     } finally {
       setLoading(false);
@@ -221,11 +295,14 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 }
               >
                 <option value="">-- Chưa xếp lớp (Xếp lớp sau) --</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Lớp {c.className} (Khối {c.grade}) - Hiện có {c.enrolledStudentsCount}/{c.capacity} học sinh
-                  </option>
-                ))}
+                {classes.map((c) => {
+                  const enrolled = c.enrolledCount ?? c.enrolledStudentsCount ?? 0;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      Lớp {c.className} (Khối {c.grade}) - Hiện có {enrolled}/{c.capacity} học sinh
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -254,9 +331,27 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 type="tel"
                 className="input"
                 placeholder="0912345678"
+                maxLength={10}
                 value={formData.parentPhone || ''}
                 onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
               />
+              <small style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                Bao gồm đúng 10 chữ số, bắt đầu bằng số 0 (ví dụ: 0912345678).
+              </small>
+            </div>
+
+            <div className="field">
+              <label className="label">Email phụ huynh</label>
+              <input
+                type="email"
+                className="input"
+                placeholder="ten@example.com"
+                value={formData.parentEmail || ''}
+                onChange={(e) => setFormData({ ...formData, parentEmail: e.target.value })}
+              />
+              <small style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                Không bắt buộc. Cần có email để sau này cấp tài khoản phụ huynh.
+              </small>
             </div>
 
             <div className="field">

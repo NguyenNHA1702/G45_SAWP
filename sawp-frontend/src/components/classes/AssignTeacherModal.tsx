@@ -22,6 +22,7 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [unassigning, setUnassigning] = useState(false);
 
   useEffect(() => {
     if (open && targetClass) {
@@ -41,6 +42,28 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
       toast.error('Lỗi khi tải danh sách giáo viên.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUnassign = async () => {
+    if (!targetClass) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn gỡ Giáo viên chủ nhiệm khỏi lớp ${targetClass.className}?`)) {
+      return;
+    }
+    setUnassigning(true);
+    try {
+      const res = await classApi.unassignHomeroomTeacher(targetClass.id);
+      if (res.success) {
+        toast.success(`Đã gỡ GVCN của lớp ${targetClass.className} thành công!`);
+        onAssigned();
+        onClose();
+      } else {
+        toast.error(res.errors?.[0] || res.message || 'Gỡ GVCN thất bại.');
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.errors?.[0] || err.response?.data?.message || 'Lỗi khi gỡ GVCN.');
+    } finally {
+      setUnassigning(false);
     }
   };
 
@@ -142,19 +165,33 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-          <button type="button" className="btn btn--secondary" onClick={onClose} disabled={submitting}>
-            Hủy
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={handleAssign}
-            disabled={!selectedUserId || submitting}
-          >
-            {submitting ? 'Đang lưu...' : 'Lưu phân công'}
-            <Check size={18} />
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 10 }}>
+          <div>
+            {(targetClass.homeroomTeacherStaffId || targetClass.homeroomTeacherUserId || targetClass.homeroomTeacherName) && (
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={handleUnassign}
+                disabled={submitting || unassigning}
+              >
+                {unassigning ? 'Đang gỡ...' : 'Gỡ GVCN'}
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" className="btn btn--secondary" onClick={onClose} disabled={submitting || unassigning}>
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleAssign}
+              disabled={!selectedUserId || submitting || unassigning}
+            >
+              {submitting ? 'Đang lưu...' : 'Lưu phân công'}
+              <Check size={18} />
+            </button>
+          </div>
         </div>
       </div>
     </GeometricModal>

@@ -37,6 +37,11 @@ export const classApi = {
     return res.data;
   },
 
+  async deleteSchoolYear(id: number): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/classes/school-years/${id}`);
+    return res.data;
+  },
+
   // Classes
   async getClasses(
     schoolYearId?: number,
@@ -91,6 +96,11 @@ export const classApi = {
     return res.data;
   },
 
+  async unassignHomeroomTeacher(classId: number): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/classes/${classId}/unassign-homeroom-teacher`);
+    return res.data;
+  },
+
   // Student Placement
   async getEligibleStudents(classId: number): Promise<ApiResponse<RosterStudentItemDto[]>> {
     const res = await apiClient.get<ApiResponse<RosterStudentItemDto[]>>(`/classes/${classId}/eligible-students`);
@@ -105,6 +115,11 @@ export const classApi = {
 
   async removeStudent(classId: number, studentId: number): Promise<ApiResponse<boolean>> {
     const res = await apiClient.delete<ApiResponse<boolean>>(`/classes/${classId}/remove-student/${studentId}`);
+    return res.data;
+  },
+
+  async removeStudentsBatch(classId: number, studentIds: number[]): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/classes/${classId}/remove-students-batch`, { studentIds });
     return res.data;
   },
 

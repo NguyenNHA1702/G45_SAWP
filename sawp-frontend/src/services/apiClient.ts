@@ -41,6 +41,15 @@ apiClient.interceptors.response.use(
         window.location.href = '/login?expired=1';
       }
     }
+    // UC-60 A1: the temporary password must be changed before anything else
+    if (
+      axios.isAxiosError(error) &&
+      error.response?.status === 403 &&
+      error.response.headers?.['x-password-change-required'] === 'true' &&
+      window.location.pathname !== '/change-password'
+    ) {
+      window.location.href = '/change-password';
+    }
     return Promise.reject(error);
   },
 );

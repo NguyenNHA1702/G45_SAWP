@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import LoginPage from './pages/Auth/LoginPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 import SetPasswordPage from './pages/Auth/SetPasswordPage';
@@ -73,10 +73,18 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 /** Chặn phân quyền truy cập Route theo vai trò người dùng (Role-based Route Guard) */
 function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
   const userJson = getAuthUser();
-  const currentUser = userJson ? JSON.parse(userJson) : null;
-  const userRoles: string[] = currentUser?.roles ?? [];
+  let currentUser: any = null;
+  try {
+    currentUser = userJson ? JSON.parse(userJson) : null;
+  } catch {
+    currentUser = null;
+  }
+  const rawRoles = currentUser?.roles ?? (currentUser?.role ? [currentUser.role] : []);
+  const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles : [String(rawRoles)];
 
-  const hasRole = roles.some((r) => userRoles.includes(r));
+  const hasRole = roles.some((r) =>
+    userRoles.some((ur) => typeof ur === 'string' && (ur.toLowerCase() === r.toLowerCase() || ur.toLowerCase() === 'admin'))
+  );
   if (!hasRole) {
     toast.error('Bạn không có quyền truy cập trang này.');
     return <Navigate to="/dashboard" replace />;

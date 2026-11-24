@@ -23,5 +23,15 @@ public class SchoolClock : ISchoolClock
 
     public DateTime Now => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _schoolTimeZone);
     public DateTime Today => Now.Date;
-    public DateTime ToSchoolTime(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(utc, _schoolTimeZone);
+    public DateTime ToSchoolTime(DateTime utc)
+    {
+        var normalizedUtc = utc.Kind switch
+        {
+            DateTimeKind.Utc => utc,
+            DateTimeKind.Local => utc.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(utc, DateTimeKind.Utc)
+        };
+
+        return TimeZoneInfo.ConvertTimeFromUtc(normalizedUtc, _schoolTimeZone);
+    }
 }

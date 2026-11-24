@@ -11,6 +11,8 @@ export interface AdminUserDto {
   fullName: string;
   phoneNumber: string | null;
   isActive: boolean;
+  /** Account state (BR-63); isActive is true only for 'Active'. */
+  status: 'PendingActivation' | 'Active' | 'Deactivated';
   createdAt: string;
   roles: string[];
   staffCode: string | null;
@@ -31,7 +33,7 @@ export interface CreateUserPayload {
   email: string;
   fullName: string;
   phoneNumber?: string;
-  password: string;
+  // No password: the account starts Pending Activation and gets an activation link (BR-63)
   roles: string[];
   staffCode?: string;
   position?: string;

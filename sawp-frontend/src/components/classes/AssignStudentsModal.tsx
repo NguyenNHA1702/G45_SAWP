@@ -65,9 +65,11 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
   const handleAssign = async () => {
     if (!targetClass || selectedIds.length === 0) return;
 
-    if (targetClass.enrolledStudentsCount + selectedIds.length > targetClass.capacity) {
+    const currentEnrolled = targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0;
+    const remainingSpots = targetClass.availableCapacity ?? (targetClass.capacity - currentEnrolled);
+    if (currentEnrolled + selectedIds.length > targetClass.capacity) {
       toast.error(
-        `Số lượng chọn (${selectedIds.length}) vượt quá sức chứa còn lại (${targetClass.availableCapacity} chỗ)!`
+        `Số lượng chọn (${selectedIds.length}) vượt quá sức chứa còn lại (${remainingSpots} chỗ)!`
       );
       return;
     }
@@ -97,7 +99,8 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
       s.studentCode.toLowerCase().includes(search.toLowerCase())
   );
 
-  const availableSpots = targetClass.availableCapacity;
+  const currentEnrolled = targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0;
+  const availableSpots = targetClass.availableCapacity ?? (targetClass.capacity - currentEnrolled);
 
   return (
     <GeometricModal
@@ -128,7 +131,7 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
             </>
           ) : (
             <div>
-              Hiện lớp đã có <strong>{targetClass.enrolledStudentsCount}</strong> học sinh. Bạn có thể
+              Hiện lớp đã có <strong>{currentEnrolled}</strong> học sinh. Bạn có thể
               chọn tối đa thêm <strong>{availableSpots}</strong> học sinh vào lớp này.
             </div>
           )}

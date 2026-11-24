@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { LogIn, School, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
 import { authApi } from '../../services/implementations/authApi';
@@ -89,8 +89,9 @@ export default function LoginPage() {
       const res = await authApi.login({ username: username.trim(), password });
       toast.success(res.message || SYSTEM_MESSAGES.MSG05.content);
 
-      // Sau khi đăng nhập thành công, tất cả các role đều vào trang chủ Dashboard
-      navigate('/dashboard');
+      // A temporary password from an administrator must be changed first (UC-60 A1); otherwise every role
+      // goes to the Dashboard
+      navigate(res.data?.mustChangePassword ? '/change-password' : '/dashboard');
     } catch (err) {
       const apiErr = asApiError(err);
       toast.error(apiErr.message);
@@ -206,7 +207,9 @@ export default function LoginPage() {
 
         <footer className="login-footer">
           <p className="login-note">
-            Quên mật khẩu? Vui lòng liên hệ <strong>Quản trị viên nhà trường</strong> để được cấp lại mật khẩu.
+            <Link id="link-forgot-password" to="/forgot-password">
+              Quên mật khẩu?
+            </Link>
           </p>
         </footer>
       </div>

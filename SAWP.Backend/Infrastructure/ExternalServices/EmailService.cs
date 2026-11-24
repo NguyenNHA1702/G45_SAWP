@@ -56,6 +56,52 @@ public class EmailService : IEmailService
         _logger.LogInformation("Sent email '{Subject}' to {Recipient} via {Host}:{Port}", subject, toEmail, _options.Host, _options.Port);
     }
 
+    private static readonly TimeSpan AvailabilityCacheTime = TimeSpan.FromSeconds(30);
+    private static readonly object AvailabilityLock = new();
+    private static (DateTime CheckedAt, bool Available)? _lastAvailability;
+
+    public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
+    {
+        lock (AvailabilityLock)
+        {
+            if (_lastAvailability is { } last && DateTime.UtcNow - last.CheckedAt < AvailabilityCacheTime)
+            {
+                return last.Available;
+            }
+        }
+
+        bool available;
+        if (string.IsNullOrWhiteSpace(_options.Host) || string.IsNullOrWhiteSpace(_options.FromAddress))
+        {
+            available = false;
+        }
+        else
+        {
+            try
+            {
+                using var client = new SmtpClient { Timeout = Math.Min(_options.TimeoutSeconds, 10) * 1000 };
+                await client.ConnectAsync(_options.Host, _options.Port, ToSecureSocketOptions(_options.Security), cancellationToken);
+                if (!string.IsNullOrEmpty(_options.Username))
+                {
+                    await client.AuthenticateAsync(_options.Username, _options.Password ?? string.Empty, cancellationToken);
+                }
+                await client.DisconnectAsync(true, cancellationToken);
+                available = true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "SMTP server {Host}:{Port} is not available", _options.Host, _options.Port);
+                available = false;
+            }
+        }
+
+        lock (AvailabilityLock)
+        {
+            _lastAvailability = (DateTime.UtcNow, available);
+        }
+        return available;
+    }
+
     private static SecureSocketOptions ToSecureSocketOptions(SmtpSecurity security) => security switch
     {
         SmtpSecurity.None => SecureSocketOptions.None,

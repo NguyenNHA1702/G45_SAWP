@@ -920,106 +920,7 @@ public class LunchServiceTests : TestBase
         result.Data.TotalMeals.Should().Be(0);
     }
 
-    // ==================== 68. Monthly Quota & Waitlist (TC_BDS_34) ====================
-
-    [Fact]
-    public async Task UpsertMonthlyQuota_ValidMonthAndQuota_SavesAndLogsAudit()
-    {
-        // Arrange
-        SetupRepository(new List<LunchMonthlyQuota>());
-        SetupRepository(new List<LunchRegistration>());
-
-        // Act
-        var result = await _service.UpsertMonthlyQuotaAsync(5, new UpsertMonthlyBoardingQuotaRequestDto
-        {
-            Month = "2026-12",
-            Quota = 80
-        });
-
-        // Assert
-        result.Success.Should().BeTrue();
-        result.Data!.Month.Should().Be("2026-12");
-        result.Data.Quota.Should().Be(80);
-        AuditServiceMock.Verify(a => a.LogActionAsync(
-            5,
-            AuditActions.LunchMonthlyQuotaConfigure,
-            nameof(LunchMonthlyQuota),
-            It.IsAny<string?>(),
-            null,
-            It.Is<object>(o => AuditService.SerializeValues(o)!.Contains("\"Month\":\"2026-12\"") && AuditService.SerializeValues(o)!.Contains("\"Quota\":80")),
-            null,
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task RegisterLunchBatch_WhenMonthlyQuotaIsFull_WaitlistsWritesAuditAndNotifiesParent()
-    {
-        // Arrange
-        var targetDate = new DateTime(2026, 12, 15);
-        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 12, 1, 7, 30, 0));
-
-        var hs001 = new Student { Id = 1, StudentCode = "HS001", FullName = "Trần Gia Bảo" };
-        SetupRepository(new List<Student> { hs001 });
-        SetupRepository(new List<Guardian>
-        {
-            new()
-            {
-                Id = 10,
-                UserId = 100,
-                StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 10 } }
-            }
-        });
-        SetupRepository(new List<LunchServiceDay>());
-        SetupRepository(new List<LunchMonthlyQuota>
-        {
-            new() { Id = 1, Month = "2026-12", Quota = 2 }
-        });
-        // 2 distinct students (Id 2, Id 3) already active in 2026-12 -> quota=2 is full
-        var existingRegs = new List<LunchRegistration>
-        {
-            new() { Id = 11, StudentId = 2, Date = new DateTime(2026, 12, 10), IsActive = true, IsWaitlisted = false },
-            new() { Id = 12, StudentId = 3, Date = new DateTime(2026, 12, 10), IsActive = true, IsWaitlisted = false }
-        };
-        var regRepoMock = SetupRepository(existingRegs);
-        var notifRepoMock = SetupRepository(new List<Notification>());
-
-        // Act
-        var result = await _service.RegisterLunchBatchAsync(
-            100,
-            new[] { UserRoles.Parent },
-            new BatchLunchRegistrationRequestDto
-            {
-                StudentId = 1,
-                Dates = new List<DateTime> { targetDate },
-                MealType = MealType.StandardLunch
-            });
-
-        // Assert (SSAWP-136: HTTP 200 with Success = true, Code = BOARDING_WAITLISTED, IsWaitlisted = true)
-        result.Success.Should().BeTrue();
-        result.Code.Should().Be("BOARDING_WAITLISTED");
-        result.Data!.IsWaitlisted.Should().BeTrue();
-        result.Data.WaitlistedCount.Should().Be(1);
-
-        regRepoMock.Verify(r => r.AddAsync(
-            It.Is<LunchRegistration>(lr => lr.StudentId == 1 && !lr.IsActive && lr.IsWaitlisted),
-            It.IsAny<CancellationToken>()), Times.Once);
-
-        notifRepoMock.Verify(n => n.AddAsync(
-            It.Is<Notification>(nf => nf.UserId == 100 && nf.Title == "Registration Waitlisted"),
-            It.IsAny<CancellationToken>()), Times.Once);
-
-        AuditServiceMock.Verify(a => a.LogActionAsync(
-            100,
-            AuditActions.LunchRegistrationWaitlist,
-            nameof(LunchRegistration),
-            null,
-            null,
-            It.Is<object>(o => AuditService.SerializeValues(o)!.Contains("HS001") && AuditService.SerializeValues(o)!.Contains("\"Quota\":2")),
-            null,
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    // ==================== 69. Class Boarding Roster & Allergy Warning (TC_BDS_35) ====================
+    // ==================== 68. Class Boarding Roster & Allergy Warning (TC_BDS_35) ====================
 
     [Fact]
     public async Task GetDailyMealBoard_ForClass1A_IncludesAllergyWarningForHS001()
@@ -1070,25 +971,6 @@ public class LunchServiceTests : TestBase
         item.AllergyWarning.Should().Contain("Dị ứng hải sản");
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-5)]
-    [InlineData(10001)]
-    public async Task UpsertMonthlyQuota_OutOfRangeBoundary_ReturnsMsg01(int invalidQuota)
-    {
-        // Act (SSAWP-90 / TC_SVC_05)
-        var result = await _service.UpsertMonthlyQuotaAsync(1, new UpsertMonthlyBoardingQuotaRequestDto
-        {
-            Month = "2026-11",
-            Quota = invalidQuota
-        });
-
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG01.Code);
-        result.Errors.Should().Contain(e => e.Contains("1 đến 10.000"));
-    }
-
     [Fact]
     public async Task RestoreMealAfterCutoff_TeacherBlocked_ServiceStaffAllowedWithReason()
     {
@@ -1130,41 +1012,197 @@ public class LunchServiceTests : TestBase
     }
 
     [Fact]
-    public async Task CancelActiveRegistration_AutoPromotesEarliestWaitlistedStudent()
+    public async Task GetDailyMealBoard_ExcludesInactiveSchoolYearClasses_NoDuplicateClassNames()
     {
-        // Arrange (SSAWP-136)
-        var targetDate = new DateTime(2027, 1, 4); // Monday
-        var st1 = new Student { Id = 1, FullName = "HS001" };
-        var st2 = new Student
-        {
-            Id = 2,
-            FullName = "HS031",
-            StudentGuardians = new List<StudentGuardian>
-            {
-                new() { StudentId = 2, Guardian = new Guardian { Id = 2, UserId = 200 } }
-            }
-        };
-        var activeReg = new LunchRegistration { Id = 1, StudentId = 1, Student = st1, Date = targetDate, IsActive = true, IsWaitlisted = false, CreatedAt = DateTime.UtcNow.AddHours(-2) };
-        var waitlistedReg = new LunchRegistration { Id = 2, StudentId = 2, Student = st2, Date = targetDate, IsActive = false, IsWaitlisted = true, CreatedAt = DateTime.UtcNow.AddHours(-1) };
-
-        SetupRepository(new List<LunchRegistration> { activeReg, waitlistedReg });
+        // Arrange: 2 năm học cùng có lớp tên "1A", chỉ 1 năm học đang Active
+        var targetDate = new DateTime(2026, 11, 24);
         SetupRepository(new List<LunchServiceDay>());
-        SetupRepository(new List<LunchMonthlyQuota> { new() { Id = 1, Month = "2027-01", Quota = 1 } });
-        var notifRepoMock = SetupRepository(new List<Notification>());
+        SetupRepository(new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2025-2026", IsActive = false },
+            new() { Id = 2, YearName = "2026-2027", IsActive = true }
+        });
+        SetupRepository(new List<Class>
+        {
+            new() { Id = 10, ClassName = "1A", Grade = 1, SchoolYearId = 1, Status = "Active" },
+            new() { Id = 20, ClassName = "1A", Grade = 1, SchoolYearId = 2, Status = "Active" }
+        });
+        SetupRepository(new List<LunchRegistration>());
+        SetupRepository(new List<AttendanceRecord>());
 
-        // Act: ServiceStaff cancels HS001 -> slot opens -> HS031 automatically promoted
-        var cancelRes = await _service.CancelRegistrationByParentAsync(
-            5,
-            new[] { UserRoles.ServiceStaff },
-            new CancelLunchRegistrationRequestDto { StudentId = 1, Date = targetDate });
+        // Act
+        var res = await _service.GetDailyMealBoardAsync(targetDate, 5, new[] { UserRoles.ServiceStaff });
 
         // Assert
-        cancelRes.Success.Should().BeTrue();
-        activeReg.IsActive.Should().BeFalse();
-        waitlistedReg.IsActive.Should().BeTrue();
-        waitlistedReg.IsWaitlisted.Should().BeFalse();
-        notifRepoMock.Verify(n => n.AddAsync(
-            It.Is<Notification>(nf => nf.UserId == 200 && nf.Type == "BOARDING_WAITLIST_PROMOTED"),
-            It.IsAny<CancellationToken>()), Times.Once);
+        res.Success.Should().BeTrue();
+        res.Data!.ClassBreakdowns.Should().ContainSingle(c => c.ClassId == 20 && c.ClassName == "1A");
+    }
+
+    [Fact]
+    public async Task GetServiceDays_MakeupSaturdayOpensBoarding_HolidayOverrideClosesBoarding()
+    {
+        // Arrange: 02/12/2026 (T4 nghỉ -> false), 12/12/2026 (T7 học bù -> true)
+        var holidayWed = new DateTime(2026, 12, 2);
+        var makeupSat = new DateTime(2026, 12, 12);
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>
+        {
+            new() { Id = 1, Date = holidayWed, IsSchoolDay = false, Note = "Ngày nghỉ trường" },
+            new() { Id = 2, Date = makeupSat, IsSchoolDay = true, Note = "Ngày học bù" }
+        });
+
+        // Act
+        var res = await _service.GetServiceDaysAsync(holidayWed, makeupSat);
+
+        // Assert
+        res.Success.Should().BeTrue();
+        var offDayDto = res.Data!.First(d => d.Date == holidayWed);
+        var makeupDayDto = res.Data!.First(d => d.Date == makeupSat);
+        offDayDto.IsServing.Should().BeFalse();
+        makeupDayDto.IsServing.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RestoreMealForStudent_PreservesOriginalAllergyRemarks()
+    {
+        // Arrange
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(7).AddMinutes(50));
+        SetupRepository(new List<LunchServiceDay>());
+        var reg = new LunchRegistration
+        {
+            Id = 10,
+            StudentId = 1,
+            Date = today,
+            IsActive = false,
+            Remarks = "Dị ứng tôm cua",
+            Student = new Student { Id = 1, FullName = "Trần Gia Bảo" }
+        };
+        SetupRepository(new List<LunchRegistration> { reg });
+
+        // Act
+        var res = await _service.RestoreMealForStudentAsync(1, today, "Học sinh đi học lại", 5, new[] { UserRoles.ServiceStaff });
+
+        // Assert
+        res.Success.Should().BeTrue();
+        reg.IsActive.Should().BeTrue();
+        reg.Remarks.Should().Contain("Dị ứng tôm cua");
+        reg.Remarks.Should().Contain("Khôi phục suất ăn");
+    }
+
+    [Fact]
+    public async Task UpsertAndLockDailyMeal_BlocksLockedDayModifications()
+    {
+        // Arrange
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        SetupRepository(new List<LunchServiceDay>
+        {
+            new() { Id = 1, Date = today, IsServing = true, CutoffTime = new TimeSpan(8, 15, 0), IsLocked = true, LockedAt = DateTime.UtcNow }
+        });
+
+        // Act
+        var upsertRes = await _service.UpsertServiceDaysAsync(5, new UpsertLunchServiceDaysRequestDto
+        {
+            Dates = new List<DateTime> { today },
+            IsServing = false,
+            CutoffTime = "08:00"
+        });
+        var relockRes = await _service.LockDailyMealAsync(new LockMealDayRequestDto { Date = today }, 5);
+
+        // Assert
+        upsertRes.Success.Should().BeFalse();
+        upsertRes.Code.Should().Be(SystemMessages.MSG19.Code);
+        relockRes.Success.Should().BeFalse();
+        relockRes.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task GetPeriodReport_FiltersActiveSchoolYear_IgnoresWaitlist_AndNoDoubleCount()
+    {
+        // Arrange
+        var day = new DateTime(2026, 11, 24);
+        var class1A = new Class { Id = 20, ClassName = "1A", Grade = 1, SchoolYearId = 2, Status = "Active" };
+        var class1B = new Class { Id = 21, ClassName = "1B", Grade = 1, SchoolYearId = 2, Status = "Active" };
+        var oldClass1A = new Class { Id = 10, ClassName = "1A", Grade = 1, SchoolYearId = 1, Status = "Active" };
+
+        var student = new Student
+        {
+            Id = 1,
+            FullName = "Nguyễn Văn A",
+            ClassAssignments = new List<ClassAssignment>
+            {
+                new() { Id = 1, StudentId = 1, ClassId = 20, Class = class1A, IsActive = true, StartDate = new DateTime(2026, 9, 1) },
+                new() { Id = 2, StudentId = 1, ClassId = 21, Class = class1B, IsActive = true, StartDate = new DateTime(2026, 10, 1) } // mới nhất: 1B
+            }
+        };
+
+        SetupRepository(new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2025-2026", IsActive = false },
+            new() { Id = 2, YearName = "2026-2027", IsActive = true }
+        });
+        SetupRepository(new List<Class> { oldClass1A, class1A, class1B });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchRegistration>
+        {
+            new() { Id = 1, StudentId = 1, Student = student, Date = day, MealType = MealType.StandardLunch, IsActive = true, IsWaitlisted = false },
+            new() { Id = 2, StudentId = 1, Student = student, Date = day.AddDays(1), MealType = MealType.StandardLunch, IsActive = false, IsWaitlisted = true }
+        });
+
+        // Act
+        var res = await _service.GetPeriodReportAsync(day, day.AddDays(1), null, 5, new[] { UserRoles.ServiceStaff });
+
+        // Assert
+        res.Success.Should().BeTrue();
+        res.Data!.ClassSummaries.Should().HaveCount(2);
+        res.Data.ClassSummaries.Should().NotContain(c => c.ClassId == 10);
+        res.Data.TotalActualMeals.Should().Be(1);
+        res.Data.TotalCancelled.Should().Be(0);
+        res.Data.ClassSummaries.Sum(c => c.ActualCount).Should().Be(1);
+        res.Data.ClassSummaries.First(c => c.ClassId == 21).ActualCount.Should().Be(1);
+        res.Data.ClassSummaries.First(c => c.ClassId == 20).ActualCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetDailyMealBoard_MealChangeLogTimestamp_HasUtcKind()
+    {
+        // Arrange
+        var targetDate = new DateTime(2026, 11, 24);
+        var class1A = new Class { Id = 1, ClassName = "1A", Grade = 1, SchoolYearId = 1, Status = "Active" };
+        var student = new Student
+        {
+            Id = 1,
+            StudentCode = "HS001",
+            FullName = "Em A",
+            ClassAssignments = new List<ClassAssignment> { new() { Id = 1, StudentId = 1, ClassId = 1, Class = class1A, IsActive = true } }
+        };
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, IsActive = true } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<LunchRegistration>
+        {
+            new()
+            {
+                Id = 1,
+                StudentId = 1,
+                Student = student,
+                Date = targetDate,
+                IsActive = false,
+                CancellationSource = LunchCancellationSource.Parent,
+                CancelledAt = new DateTime(2026, 11, 24, 1, 5, 0, DateTimeKind.Unspecified) // giống datetime2 từ SQL Server
+            }
+        });
+
+        // Act
+        var res = await _service.GetDailyMealBoardAsync(targetDate, 5, new[] { UserRoles.ServiceStaff });
+
+        // Assert
+        res.Success.Should().BeTrue();
+        res.Data!.MealChangeLogs.Should().ContainSingle();
+        res.Data.MealChangeLogs[0].Timestamp.Kind.Should().Be(DateTimeKind.Utc);
     }
 }

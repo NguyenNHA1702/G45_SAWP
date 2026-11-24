@@ -13,6 +13,30 @@ public class CreateLeaveRequestDto
     public string? DoctorNoteAttachmentUrl { get; set; }
 }
 
+public class UpdateLeaveRequestDto
+{
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public LeaveSession Session { get; set; } = LeaveSession.FullDay;
+    public bool KeepLunchService { get; set; } = false;
+    public string Reason { get; set; } = string.Empty;
+    public string? DoctorNoteAttachmentUrl { get; set; }
+}
+
+public class WithdrawLeaveRequestDto
+{
+    public string? Reason { get; set; }
+}
+
+public class LeaveStatusHistoryItemDto
+{
+    public string Action { get; set; } = string.Empty;
+    public string ActionLabel { get; set; } = string.Empty;
+    public string? ActorName { get; set; }
+    public string? Notes { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
 public class LeaveRequestItemDto
 {
     public int Id { get; set; }
@@ -45,8 +69,10 @@ public class LeaveRequestItemDto
     public string Reason { get; set; } = string.Empty;
     public string? DoctorNoteAttachmentUrl { get; set; }
 
-    public int TotalDays => (EndDate.Date - StartDate.Date).Days + 1;
-    public bool IsEscalated => TotalDays >= 3;
+    public int TotalDays { get; set; }
+    public bool IsEscalated { get; set; }
+    public bool CanEdit { get; set; }
+    public bool CanWithdraw { get; set; }
 
     public RequestStatus Status { get; set; }
     public string StatusName => Status switch
@@ -56,6 +82,7 @@ public class LeaveRequestItemDto
         RequestStatus.Approved => "Đã duyệt",
         RequestStatus.Rejected => "Từ chối",
         RequestStatus.Cancelled => "Đã hủy",
+        RequestStatus.NeedMoreInfo => "Yêu cầu bổ sung thông tin",
         _ => Status.ToString()
     };
 
@@ -64,12 +91,14 @@ public class LeaveRequestItemDto
     public string? ReviewerName { get; set; }
     public DateTime? ProcessedDate { get; set; }
     public string? ReviewerNotes { get; set; }
+    public List<LeaveStatusHistoryItemDto> StatusHistory { get; set; } = new();
 }
 
 public class ReviewLeaveRequestDto
 {
     public bool IsApproved { get; set; }
     public bool IsForwardToSchoolBoard { get; set; } = false;
+    public bool IsRequestMoreInfo { get; set; } = false;
     public string? ReviewerNotes { get; set; }
 }
 
@@ -80,6 +109,7 @@ public class SyncLeaveResultDto
     public bool IsAttendanceSyncSuggested { get; set; }
     public List<DateTime> CancelledMealDates { get; set; } = new();
     public string MealSyncMessage { get; set; } = string.Empty;
+    public List<string> AttendanceWarnings { get; set; } = new();
 }
 
 public class AttachmentUploadResultDto
