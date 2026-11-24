@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, Clock, Save, Settings } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getAuthUser } from '../../services/apiClient';
 import { adminApi } from '../../services/implementations/adminApi';
 import type { LunchCutoffDayDto, SchoolCalendarDayDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 
 export default function SystemConfigPage() {
+  const isAdmin = (() => {
+    try {
+      const user = JSON.parse(getAuthUser() ?? '{}');
+      const rawRoles = user?.roles ?? (user?.role ? [user.role] : []);
+      const roles: string[] = Array.isArray(rawRoles) ? rawRoles : [String(rawRoles)];
+      return roles.some((r) => typeof r === 'string' && r.toLowerCase() === 'admin');
+    } catch {
+      return false;
+    }
+  })();
+
   const [activeTab, setActiveTab] = useState<'calendar' | 'lunch'>('calendar');
   const [month, setMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
 
@@ -112,13 +124,15 @@ export default function SystemConfigPage() {
         >
           <CalendarDays size={15} /> Lịch ngày học / Ngày nghỉ
         </button>
-        <button
-          type="button"
-          className={activeTab === 'lunch' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
-          onClick={() => setActiveTab('lunch')}
-        >
-          <Clock size={15} /> Giờ chốt bán trú (Cutoff)
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            className={activeTab === 'lunch' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+            onClick={() => setActiveTab('lunch')}
+          >
+            <Clock size={15} /> Giờ chốt bán trú (Cutoff)
+          </button>
+        )}
       </div>
 
       {activeTab === 'calendar' ? (
