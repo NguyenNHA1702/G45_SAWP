@@ -92,6 +92,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpGet("calendar")]
+    [Authorize(Roles = "Admin,OfficeStaff")]
     public async Task<IActionResult> GetCalendarDays([FromQuery] int? schoolYearId = null, [FromQuery] string? month = null, CancellationToken ct = default)
     {
         var result = await _adminService.GetCalendarDaysAsync(schoolYearId, month, ct);
@@ -99,6 +100,7 @@ public class AdminController : BaseApiController
     }
 
     [HttpPut("calendar/day")]
+    [Authorize(Roles = "Admin,OfficeStaff")]
     public async Task<IActionResult> UpsertCalendarDay([FromBody] UpdateCalendarDayDto request, CancellationToken ct = default)
     {
         var userId = User.GetUserId();

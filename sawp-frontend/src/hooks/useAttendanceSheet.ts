@@ -109,21 +109,21 @@ export function useAttendanceSheet(classId: number | null, date: string, session
     [sheet, draft],
   );
 
-  /** Ảnh hưởng của lần lưu này – hiển thị trong hộp xác nhận */
+  /** Ảnh hưởng của lần lưu này – hiển thị trong hộp xác nhận (ATT-10: chỉ hủy suất ăn khi Vắng có phép mới buổi Sáng) */
   const impact = useMemo(() => {
-    let newlyUnexcused = 0;
+    let newlyExcused = 0;
     let lunchToDeduct = 0;
     if (sheet) {
       for (const e of sheet.entries) {
         const d = draft[e.studentId];
-        if (d?.status === 'UnexcusedAbsence' && e.status !== 'UnexcusedAbsence') {
-          newlyUnexcused++;
-          if (e.hasLunch) lunchToDeduct++;
+        if (d?.status === 'ExcusedAbsence' && e.status !== 'ExcusedAbsence') {
+          newlyExcused++;
+          if (session === 'Morning' && e.hasLunch) lunchToDeduct++;
         }
       }
     }
-    return { newlyUnexcused, lunchToDeduct };
-  }, [sheet, draft]);
+    return { newlyExcused, lunchToDeduct };
+  }, [sheet, draft, session]);
 
   // 4. Submit
   const submit = useCallback(async () => {

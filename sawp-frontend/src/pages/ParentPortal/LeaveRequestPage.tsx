@@ -42,6 +42,18 @@ export default function LeaveRequestPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
+  const [editingItem, setEditingItem] = useState<LeaveRequestItem | null>(null);
+
+  const ATTACHMENT_KEYWORDS = [
+    'giấy khám', 'giay kham', 'đính kèm', 'dinh kem', 'minh chứng', 'minh chung',
+    'đơn thuốc', 'don thuoc', 'xác nhận', 'xac nhan', 'hồ sơ', 'ho so',
+    'tệp', 'file', 'hình ảnh', 'hinh anh', 'chụp ảnh', 'chup anh', 'gửi ảnh', 'gui anh',
+    'bác sĩ', 'bac si', 'bệnh viện', 'benh vien',
+  ];
+  const requiresAttachmentForAmendment =
+    editingItem?.status === 'NeedMoreInfo' &&
+    Boolean(editingItem.reviewerNotes) &&
+    ATTACHMENT_KEYWORDS.some((k) => editingItem.reviewerNotes!.toLowerCase().includes(k));
 
   // Modal thu hồi đơn đã duyệt (A8)
   const [withdrawingItem, setWithdrawingItem] = useState<LeaveRequestItem | null>(null);
@@ -211,6 +223,7 @@ export default function LeaveRequestPage() {
 
   const resetForm = () => {
     setEditingRequestId(null);
+    setEditingItem(null);
     setStartDate(todayStr);
     setEndDate(todayStr);
     setSession(3);
@@ -226,6 +239,7 @@ export default function LeaveRequestPage() {
 
   const openEditModal = (item: LeaveRequestItem) => {
     setEditingRequestId(item.id);
+    setEditingItem(item);
     setSelectedStudentId(item.studentId);
     setStartDate(item.startDate.slice(0, 10));
     setEndDate(item.endDate.slice(0, 10));
@@ -248,6 +262,16 @@ export default function LeaveRequestPage() {
     setShowModal(true);
   };
 
+  const addDaysIso = (iso: string, days: number): string => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + days);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+  const maxStartDateStr = addDaysIso(todayStr, 365);
+  const maxEndDateStr = startDate ? addDaysIso(startDate, 29) : maxStartDateStr;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentId) {
@@ -262,8 +286,13 @@ export default function LeaveRequestPage() {
       toast.error('Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.');
       return;
     }
-    if (!reason.trim()) {
-      toast.error('Vui lòng nhập lý do xin nghỉ.');
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 5 || trimmedReason.length > 500) {
+      toast.error('Lý do xin nghỉ học phải từ 5 đến 500 ký tự.');
+      return;
+    }
+    if (requiresAttachmentForAmendment && attachments.filter((a) => a.uploadedUrl.trim()).length === 0) {
+      toast.error('Đơn được yêu cầu bổ sung giấy khám / tệp minh chứng. Vui lòng đính kèm tệp trước khi gửi lại.');
       return;
     }
     if (startDate < todayStr) {
@@ -450,8 +479,8 @@ export default function LeaveRequestPage() {
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', lineHeight: 1.6 }}>
             <strong style={{ fontSize: 'var(--fs-base)' }}>Quy tắc đồng bộ bán trú & điểm danh:</strong>
             <p style={{ margin: '4px 0 0' }}>
-              Nhà bếp thực hiện chốt thực phẩm lúc <strong>{LUNCH_CUTOFF_LABEL}</strong> mỗi ngày. 
-              Các đơn nghỉ được phê duyệt trước {LUNCH_CUTOFF_LABEL} của ngày áp dụng sẽ được hệ thống <strong>tự động hủy suất ăn</strong> để không tính phí bán trú. 
+              Nhà bếp thực hiện chốt thực phẩm theo <strong>mốc giờ chốt từng ngày phục vụ</strong> (mặc định <strong>{LUNCH_CUTOFF_LABEL}</strong>, có thể thay đổi theo cấu hình nhà trường). 
+              Các đơn nghỉ được phê duyệt trước giờ chốt của ngày áp dụng sẽ được hệ thống <strong>tự động hủy suất ăn</strong> để không tính phí bán trú. 
               Trường hợp học sinh chỉ nghỉ học buổi sáng nhưng trưa vẫn vào trường ăn bán trú, phụ huynh vui lòng tích chọn ô <em>"Vẫn giữ suất ăn bán trú"</em>.
             </p>
           </div>
@@ -531,9 +560,15 @@ export default function LeaveRequestPage() {
                       </span>
                     )}
                     {r.status === 'Cancelled' && (
-                      <span className="badge badge--muted">
-                        Đã hủy
-                      </span>
+                      r.isWithdrawn ? (
+                        <span className="badge badge--amber">
+                          <RotateCcw size={13} /> Đã thu hồi
+                        </span>
+                      ) : (
+                        <span className="badge badge--muted">
+                          Đã hủy
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
@@ -574,9 +609,25 @@ export default function LeaveRequestPage() {
                         <UtensilsCrossed size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
                         Giữ suất ăn theo yêu cầu
                       </span>
+                    ) : r.session === 'Afternoon' ? (
+                      <span style={{ color: 'var(--color-muted-fg)' }}>
+                        Nghỉ buổi chiều (không ảnh hưởng bữa trưa)
+                      </span>
+                    ) : r.status === 'Submitted' || r.status === 'UnderReview' || r.status === 'NeedMoreInfo' ? (
+                      <span style={{ color: 'var(--color-muted-fg)' }}>
+                        Chờ duyệt (tự động hủy nếu duyệt trước {LUNCH_CUTOFF_LABEL})
+                      </span>
+                    ) : r.status === 'Rejected' || r.status === 'Cancelled' ? (
+                      <span style={{ color: 'var(--color-muted-fg)' }}>
+                        Không áp dụng
+                      </span>
                     ) : r.isLunchCancelled ? (
                       <span style={{ color: '#16a34a', fontWeight: 700 }}>
-                        ✓ Tự động hủy trước {LUNCH_CUTOFF_LABEL}
+                        ✓ Đã tự động hủy trước {LUNCH_CUTOFF_LABEL}
+                      </span>
+                    ) : r.startDate.slice(0, 10) > todayStr ? (
+                      <span style={{ color: 'var(--color-muted-fg)' }}>
+                        Không đăng ký bán trú ngày này
                       </span>
                     ) : (
                       <span style={{ color: 'var(--color-muted-fg)' }}>
@@ -723,6 +774,22 @@ export default function LeaveRequestPage() {
         maxWidth="lg"
       >
         <form onSubmit={handleSubmit} noValidate>
+          {editingItem?.status === 'NeedMoreInfo' && editingItem.reviewerNotes && (
+            <div
+              className="card"
+              style={{
+                marginBottom: 14,
+                padding: '10px 14px',
+                background: '#FFF1F2',
+                borderColor: 'var(--color-secondary)',
+                fontSize: 'var(--fs-xs)',
+                color: '#9F1239',
+                fontWeight: 600,
+              }}
+            >
+              <strong>Yêu cầu bổ sung từ nhà trường:</strong> {editingItem.reviewerNotes}
+            </div>
+          )}
           <div className="modal-grid-2col">
             {/* CỘT TRÁI: THÔNG TIN NGHỈ HỌC */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
@@ -756,7 +823,7 @@ export default function LeaveRequestPage() {
                 )}
               </div>
 
-              {/* Ngày nghỉ */}
+              {/* Ngày nghỉ (L-F: min/max trên input date) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div className="field">
                   <label className="label" htmlFor="leave-start-date">Từ ngày *</label>
@@ -764,8 +831,16 @@ export default function LeaveRequestPage() {
                     id="leave-start-date"
                     type="date"
                     className="input"
+                    min={todayStr}
+                    max={maxStartDateStr}
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => {
+                      const nextStart = e.target.value;
+                      setStartDate(nextStart);
+                      if (nextStart && (!endDate || endDate < nextStart)) {
+                        setEndDate(nextStart);
+                      }
+                    }}
                   />
                 </div>
                 <div className="field">
@@ -774,6 +849,8 @@ export default function LeaveRequestPage() {
                     id="leave-end-date"
                     type="date"
                     className="input"
+                    min={startDate || todayStr}
+                    max={maxEndDateStr}
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
@@ -869,13 +946,18 @@ export default function LeaveRequestPage() {
 
             {/* CỘT PHẢI: LÝ DO & MINH CHỨNG */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-              {/* Lý do */}
+              {/* Lý do (L-F: minLength / maxLength + đếm ký tự) */}
               <div className="field">
-                <label className="label" htmlFor="leave-reason">Lý do xin nghỉ học *</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="label" htmlFor="leave-reason">Lý do xin nghỉ học (5–500 ký tự) *</label>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{reason.trim().length}/500</span>
+                </div>
                 <textarea
                   id="leave-reason"
                   className="input"
                   rows={3}
+                  minLength={5}
+                  maxLength={500}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="Ví dụ: Cháu bị sốt nhẹ, gia đình xin phép cô cho cháu nghỉ một buổi để đi khám..."
@@ -888,7 +970,7 @@ export default function LeaveRequestPage() {
               <div className="field" style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <label className="label" style={{ marginBottom: 0 }}>
-                    Tài liệu đính kèm (giấy khám, đơn thuốc nếu có)
+                    Tài liệu đính kèm {requiresAttachmentForAmendment ? '(bắt buộc theo yêu cầu bổ sung) *' : '(giấy khám, đơn thuốc nếu có)'}
                   </label>
                   {attachments.length > 0 && (
                     <span className="badge badge--violet" style={{ fontSize: '10px', padding: '2px 8px' }}>
@@ -1119,6 +1201,7 @@ export default function LeaveRequestPage() {
               id="withdraw-reason"
               className="input"
               rows={2}
+              maxLength={500}
               value={withdrawReason}
               onChange={(e) => setWithdrawReason(e.target.value)}
               placeholder="Ví dụ: Cháu đã hết sốt và gia đình cho đi học trở lại..."

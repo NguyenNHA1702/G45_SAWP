@@ -7,10 +7,11 @@ const TEXT: Record<SheetLockReason, string> = {
   NotAssigned: SYSTEM_MESSAGES.MSG20.content,
   NonSchoolDay: 'Ngày đã chọn không phải ngày học.',
   Future: 'Chưa thể điểm danh cho ngày trong tương lai.',
+  EmptyRoster: 'Lớp hiện chưa có học sinh nào được xếp vào ngày đã chọn.',
 };
 
 export function LockedBanner({ reason }: { reason: SheetLockReason | null }) {
-  if (!reason) return null;
+  if (!reason || reason === 'EmptyRoster') return null;
   return (
     <div className="banner banner--warning" role="status">
       <Lock size={20} aria-hidden="true" />

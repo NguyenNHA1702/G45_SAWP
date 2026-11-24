@@ -15,10 +15,11 @@ import {
   ExternalLink,
   HelpCircle,
   Clock,
+  RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
-import { USER_KEY } from '../../services/apiClient';
+import { getAuthUser } from '../../services/apiClient';
 import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
@@ -26,12 +27,13 @@ export default function LeaveApprovalPage() {
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // User role detection
-  const userJson = localStorage.getItem(USER_KEY);
+  // L-A: Đọc phiên người dùng qua getAuthUser() (sessionStorage, fallback localStorage)
+  const userJson = getAuthUser();
   const currentUser = userJson ? JSON.parse(userJson) : null;
   const userRoles: string[] = currentUser?.roles ?? [];
   const isSchoolBoard = userRoles.includes('SchoolBoard');
   const isAdmin = userRoles.includes('Admin');
+  const isBoardOrAdmin = isSchoolBoard || isAdmin;
 
   // Status Filter: default 'UnderReview' for SchoolBoard, 'Submitted' for Teacher
   const [statusFilter, setStatusFilter] = useState<string>(isSchoolBoard ? 'UnderReview' : 'Submitted');
@@ -70,19 +72,22 @@ export default function LeaveApprovalPage() {
     fetchRequests();
   }, [statusFilter]);
 
-  // GVCN duyệt đơn thông thường (<= 3 ngày học)
+  // Duyệt đơn thông thường (<= 3 ngày học) — hiển thị đúng vai trò GVCN hoặc BGH (L-A)
   const handleApprove = async (item: LeaveRequestItem) => {
-    if (!window.confirm(`Xác nhận PHÊ DUYỆT đơn xin nghỉ cho học sinh ${item.studentName}?`)) return;
+    const actorTitle = isBoardOrAdmin ? 'Ban Giám Hiệu' : 'GVCN';
+    if (!window.confirm(`${actorTitle} xác nhận PHÊ DUYỆT đơn xin nghỉ cho học sinh ${item.studentName}?`)) return;
 
     try {
       setProcessing(true);
       const res = await leaveRequestApi.review(item.id, {
         isApproved: true,
-        reviewerNotes: 'GVCN đồng ý cho học sinh nghỉ học.',
+        reviewerNotes: isBoardOrAdmin
+          ? 'Ban Giám Hiệu đồng ý cho học sinh nghỉ học.'
+          : 'GVCN đồng ý cho học sinh nghỉ học.',
       });
 
       if (res.success) {
-        toast.success(`Đã duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
+        toast.success(`${actorTitle} đã duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
         if (res.data.attendanceWarnings && res.data.attendanceWarnings.length > 0) {
           toast(res.data.attendanceWarnings.join(' '), { icon: '⚠️', duration: 7000 });
         }
@@ -126,11 +131,12 @@ export default function LeaveApprovalPage() {
     }
   };
 
-  // Yêu cầu phụ huynh bổ sung thông tin (A10)
+  // Yêu cầu phụ huynh bổ sung thông tin (A10 + L-C)
   const handleConfirmRequestMoreInfo = async () => {
     if (!moreInfoItem) return;
-    if (!moreInfoNotes.trim()) {
-      toast.error('Vui lòng nhập nội dung cần phụ huynh bổ sung.');
+    const trimmed = moreInfoNotes.trim();
+    if (trimmed.length < 5 || trimmed.length > 500) {
+      toast.error('Nội dung yêu cầu bổ sung bắt buộc từ 5 đến 500 ký tự.');
       return;
     }
 
@@ -139,11 +145,15 @@ export default function LeaveApprovalPage() {
       const res = await leaveRequestApi.review(moreInfoItem.id, {
         isApproved: false,
         isRequestMoreInfo: true,
-        reviewerNotes: moreInfoNotes.trim(),
+        reviewerNotes: trimmed,
       });
 
       if (res.success) {
-        toast.success('Đã gửi yêu cầu bổ sung thông tin tới phụ huynh.');
+        toast.success(
+          isBoardOrAdmin
+            ? 'Ban Giám Hiệu đã gửi yêu cầu bổ sung thông tin tới phụ huynh.'
+            : 'Đã gửi yêu cầu bổ sung thông tin tới phụ huynh.'
+        );
         setMoreInfoItem(null);
         setMoreInfoNotes('');
         fetchRequests();
@@ -158,11 +168,12 @@ export default function LeaveApprovalPage() {
     }
   };
 
-  // Xác nhận từ chối đơn (GVCN hoặc BGH)
+  // Xác nhận từ chối đơn (GVCN hoặc BGH — L-A + L-C)
   const handleConfirmReject = async () => {
     if (!rejectingItem) return;
-    if (!rejectReason.trim()) {
-      toast.error('Bắt buộc phải nhập lý do từ chối.');
+    const trimmed = rejectReason.trim();
+    if (trimmed.length < 5 || trimmed.length > 500) {
+      toast.error('Lý do từ chối bắt buộc từ 5 đến 500 ký tự.');
       return;
     }
 
@@ -170,12 +181,12 @@ export default function LeaveApprovalPage() {
       setProcessing(true);
       const res = await leaveRequestApi.review(rejectingItem.id, {
         isApproved: false,
-        reviewerNotes: rejectReason.trim(),
+        reviewerNotes: trimmed,
       });
 
       if (res.success) {
         toast.success(
-          isSchoolBoard
+          isBoardOrAdmin
             ? 'Ban Giám Hiệu đã từ chối đơn và gửi thông báo đến phụ huynh.'
             : 'Giáo viên đã từ chối đơn và gửi thông báo đến phụ huynh.'
         );
@@ -354,9 +365,15 @@ export default function LeaveApprovalPage() {
                       </span>
                     )}
                     {r.status === 'Cancelled' && (
-                      <span className="badge badge--muted">
-                        Đã hủy
-                      </span>
+                      r.isWithdrawn ? (
+                        <span className="badge badge--amber">
+                          <RotateCcw size={13} /> Đã thu hồi
+                        </span>
+                      ) : (
+                        <span className="badge badge--muted">
+                          Đã hủy
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
@@ -675,11 +692,16 @@ export default function LeaveApprovalPage() {
           </p>
 
           <div className="field" style={{ marginBottom: 16 }}>
-            <label className="label" htmlFor="reject-reason">Lý do từ chối *</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="label" htmlFor="reject-reason">Lý do từ chối (5–500 ký tự) *</label>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{rejectReason.trim().length}/500</span>
+            </div>
             <textarea
               id="reject-reason"
               className="input"
               rows={3}
+              minLength={5}
+              maxLength={500}
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="Ví dụ: Tuần này có bài kiểm tra khảo sát chất lượng, phụ huynh vui lòng cho con đi học đầy đủ..."
@@ -778,11 +800,16 @@ export default function LeaveApprovalPage() {
           </p>
 
           <div className="field" style={{ marginBottom: 16 }}>
-            <label className="label" htmlFor="more-info-notes">Nội dung yêu cầu bổ sung *</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="label" htmlFor="more-info-notes">Nội dung yêu cầu bổ sung (5–500 ký tự) *</label>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{moreInfoNotes.trim().length}/500</span>
+            </div>
             <textarea
               id="more-info-notes"
               className="input"
               rows={3}
+              minLength={5}
+              maxLength={500}
               value={moreInfoNotes}
               onChange={(e) => setMoreInfoNotes(e.target.value)}
               placeholder="Ví dụ: Phụ huynh vui lòng đính kèm giấy khám bệnh hoặc xác nhận của bác sĩ..."

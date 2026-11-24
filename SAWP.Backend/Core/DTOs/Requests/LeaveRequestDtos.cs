@@ -73,6 +73,7 @@ public class LeaveRequestItemDto
     public bool IsEscalated { get; set; }
     public bool CanEdit { get; set; }
     public bool CanWithdraw { get; set; }
+    public bool IsWithdrawn { get; set; }
 
     public RequestStatus Status { get; set; }
     public string StatusName => Status switch
@@ -81,7 +82,7 @@ public class LeaveRequestItemDto
         RequestStatus.UnderReview => "Chờ BGH duyệt",
         RequestStatus.Approved => "Đã duyệt",
         RequestStatus.Rejected => "Từ chối",
-        RequestStatus.Cancelled => "Đã hủy",
+        RequestStatus.Cancelled => IsWithdrawn ? "Đã thu hồi" : "Đã hủy",
         RequestStatus.NeedMoreInfo => "Yêu cầu bổ sung thông tin",
         _ => Status.ToString()
     };

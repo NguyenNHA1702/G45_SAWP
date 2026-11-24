@@ -140,9 +140,9 @@ public class LunchServiceTests : TestBase
     }
 
     [Fact]
-    public async Task UTCID02_UpsertServiceDays_LongRemarks_TruncatesTo250Chars()
+    public async Task UTCID02_UpsertServiceDays_LongRemarks_FailsWithMSG01()
     {
-        // Arrange
+        // Arrange (D-C: Ghi chú vượt 250 ký tự phải trả MSG01 thay vì cắt thầm hoặc lỗi EF)
         SetupRepository(new List<LunchServiceDay>());
         var request = new UpsertLunchServiceDaysRequestDto
         {
@@ -157,8 +157,8 @@ public class LunchServiceTests : TestBase
 
         // Assert
         result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        result.Data![0].Remarks!.Length.Should().Be(250);
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
     [Fact]
@@ -1204,5 +1204,159 @@ public class LunchServiceTests : TestBase
         res.Success.Should().BeTrue();
         res.Data!.MealChangeLogs.Should().ContainSingle();
         res.Data.MealChangeLogs[0].Timestamp.Kind.Should().Be(DateTimeKind.Utc);
+    }
+
+    // ==================== Round 2 Regression Tests (D-A..D-E) ====================
+
+    [Fact]
+    public async Task DA_RegisterLunchBatch_OnApprovedLeaveDayWithoutKeepLunch_FailsWithMSG09()
+    {
+        var targetDate = new DateTime(2026, 10, 29);
+        _clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 10, 28));
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 10, 28, 7, 30, 0));
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Trần Gia Bảo" } });
+        SetupRepository(new List<LeaveRequest>
+        {
+            new()
+            {
+                Id = 10,
+                StartDate = targetDate,
+                EndDate = targetDate,
+                Session = LeaveSession.FullDay,
+                KeepLunchService = false,
+                AdministrativeRequest = new AdministrativeRequest
+                {
+                    Id = 10,
+                    StudentId = 1,
+                    RequestType = RequestTypes.Leave,
+                    Status = RequestStatus.Approved
+                }
+            }
+        });
+
+        var res = await _service.RegisterLunchBatchAsync(5, new[] { UserRoles.ServiceStaff }, new BatchLunchRegistrationRequestDto
+        {
+            StudentId = 1,
+            Dates = new List<DateTime> { targetDate },
+            MealType = MealType.StandardLunch
+        });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG09.Code);
+        res.Errors.Should().Contain(e => e.Contains("29-10-2026"));
+    }
+
+    [Fact]
+    public async Task DB_RegisterOrUpdateSpecialDiet_WithoutRemarks_FailsWithMSG01()
+    {
+        var targetDate = new DateTime(2026, 10, 29);
+
+        var regRes = await _service.RegisterLunchBatchAsync(5, new[] { UserRoles.ServiceStaff }, new BatchLunchRegistrationRequestDto
+        {
+            StudentId = 1,
+            Dates = new List<DateTime> { targetDate },
+            MealType = MealType.SpecialDiet,
+            Remarks = "   "
+        });
+
+        var updRes = await _service.UpdateRegistrationMealTypeAsync(5, new[] { UserRoles.ServiceStaff }, new UpdateLunchRegistrationMealTypeDto
+        {
+            StudentId = 1,
+            Date = targetDate,
+            MealType = MealType.SpecialDiet,
+            Remarks = null
+        });
+
+        regRes.Success.Should().BeFalse();
+        regRes.Code.Should().Be(SystemMessages.MSG01.Code);
+        updRes.Success.Should().BeFalse();
+        updRes.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task DC_RegisterOrConfigure_RemarksExceeds250Chars_FailsWithMSG01()
+    {
+        var longText = new string('A', 251);
+        var targetDate = new DateTime(2026, 10, 29);
+
+        var regRes = await _service.RegisterLunchBatchAsync(5, new[] { UserRoles.ServiceStaff }, new BatchLunchRegistrationRequestDto
+        {
+            StudentId = 1,
+            Dates = new List<DateTime> { targetDate },
+            MealType = MealType.StandardLunch,
+            Remarks = longText
+        });
+
+        var cfgRes = await _service.UpsertServiceDaysAsync(5, new UpsertLunchServiceDaysRequestDto
+        {
+            Dates = new List<DateTime> { targetDate },
+            IsServing = true,
+            CutoffTime = "08:15",
+            Remarks = longText
+        });
+
+        regRes.Success.Should().BeFalse();
+        regRes.Code.Should().Be(SystemMessages.MSG01.Code);
+        cfgRes.Success.Should().BeFalse();
+        cfgRes.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task DD_CloseServiceDay_CancelsActiveRegistrationsAndNotifiesGuardians()
+    {
+        var targetDate = new DateTime(2026, 10, 29);
+        var reg = new LunchRegistration
+        {
+            Id = 55,
+            StudentId = 1,
+            Student = new Student { Id = 1, FullName = "Trần Gia Bảo" },
+            Date = targetDate,
+            IsActive = true,
+            MealType = MealType.StandardLunch
+        };
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<LunchRegistration> { reg });
+        var notifRepoMock = SetupRepository(new List<Notification>());
+        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new() { 20 } });
+
+        var res = await _service.UpsertServiceDaysAsync(5, new UpsertLunchServiceDaysRequestDto
+        {
+            Dates = new List<DateTime> { targetDate },
+            IsServing = false,
+            CutoffTime = "08:15",
+            Remarks = "Nghỉ vệ sinh trường"
+        });
+
+        res.Success.Should().BeTrue();
+        reg.IsActive.Should().BeFalse();
+        reg.CancellationSource.Should().Be(LunchCancellationSource.Staff);
+        reg.CancellationReason.Should().Contain("29-10-2026");
+        notifRepoMock.Verify(n => n.AddAsync(It.Is<Notification>(x => x.UserId == 20), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DE_UpsertServiceDays_CutoffOutside0600To1100_FailsWithMSG01()
+    {
+        var targetDate = new DateTime(2026, 10, 29);
+
+        var lateRes = await _service.UpsertServiceDaysAsync(5, new UpsertLunchServiceDaysRequestDto
+        {
+            Dates = new List<DateTime> { targetDate },
+            IsServing = true,
+            CutoffTime = "23:59"
+        });
+
+        var earlyRes = await _service.UpsertServiceDaysAsync(5, new UpsertLunchServiceDaysRequestDto
+        {
+            Dates = new List<DateTime> { targetDate },
+            IsServing = true,
+            CutoffTime = "05:30"
+        });
+
+        lateRes.Success.Should().BeFalse();
+        lateRes.Code.Should().Be(SystemMessages.MSG01.Code);
+        earlyRes.Success.Should().BeFalse();
+        earlyRes.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 }

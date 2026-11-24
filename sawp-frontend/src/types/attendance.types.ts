@@ -11,12 +11,14 @@ export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected
 export type AttendanceSession = 'Morning' | 'Afternoon';
 export type LeaveSession = 'Morning' | 'Afternoon' | 'FullDay';
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff';
-export type SheetLockReason = 'PastDay' | 'NotAssigned' | 'NonSchoolDay' | 'Future';
+export type SheetLockReason = 'PastDay' | 'NotAssigned' | 'NonSchoolDay' | 'Future' | 'EmptyRoster';
 
 export interface TeacherClassOption {
   classId: number;
   className: string;
   grade: number;
+  schoolYearName?: string | null;
+  studentCount?: number;
   accessReason: 'Homeroom' | 'FirstPeriod' | 'SchoolAdmin';
   isSubmitted: boolean;
 }

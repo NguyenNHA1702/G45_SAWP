@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCheck, Clock, GraduationCap, PencilLine, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { BarChart3, CalendarCheck2, CheckCheck, Clock, GraduationCap, PencilLine, RotateCcw, Save, TriangleAlert, Users } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
 import { useAttendanceSheet } from '../../hooks/useAttendanceSheet';
 import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
-import { formatViDate, formatViDateTime, todayIso } from '../../utils/date';
+import { formatViDateTime, todayIso, toIsoDate } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import type {
   AttendanceSession,
   AttendanceSheetEntry,
   AttendanceStatus,
   AttendanceSubmitResult,
+  ClassAttendanceSummary,
   TeacherClassOption,
 } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
@@ -21,6 +22,17 @@ import { AttendanceRosterTable } from '../../components/attendance/AttendanceRos
 import { LockedBanner } from '../../components/attendance/LockedBanner';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { GeometricModal } from '../../components/common/GeometricModal';
+
+const formatDashDate = (iso: string): string => {
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return d && m && y ? `${d}-${m}-${y}` : iso;
+};
+
+const defaultSummaryFromIso = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return toIsoDate(d);
+};
 
 /** Roles of the signed-in user, as stored at login (sessionStorage, or localStorage in older sessions). */
 const currentRoles = (): string[] => {
@@ -37,6 +49,7 @@ export default function AttendancePage() {
   // OVR-01 (UC-23 A2): only Office Staff send absence notices; the API checks the role too.
   const isOfficeStaff = roles.includes('OfficeStaff');
   const isOfficeOrAdmin = isOfficeStaff || roles.includes('Admin');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'summary'>('sheet');
   const [noticeEntry, setNoticeEntry] = useState<AttendanceSheetEntry | null>(null);
   const [noticeSending, setNoticeSending] = useState(false);
   const [date, setDate] = useState<string>(todayIso());
@@ -51,6 +64,13 @@ export default function AttendancePage() {
   const [correctionReason, setCorrectionReason] = useState('');
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
 
+  // ATT-14: Tab Tổng hợp chuyên cần lớp (UC-23, UC-28, UC-50)
+  const [summaryFrom, setSummaryFrom] = useState<string>(defaultSummaryFromIso);
+  const [summaryTo, setSummaryTo] = useState<string>(todayIso);
+  const [classSummary, setClassSummary] = useState<ClassAttendanceSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
   const vm = useAttendanceSheet(classId, date, session);
   useUnsavedChangesWarning(vm.isDirty);
 
@@ -62,13 +82,53 @@ export default function AttendancePage() {
       .then((list) => {
         if (cancelled) return;
         setClasses(list);
-        setClassId((prev) => (prev !== null && list.some((c) => c.classId === prev) ? prev : list[0]?.classId ?? null));
+        setClassId((prev) => {
+          if (prev !== null && list.some((c) => c.classId === prev)) return prev;
+          // ATT-2: Ưu tiên chọn mặc định lớp đầu tiên có học sinh để tránh mở ra lớp rỗng
+          const firstNonEmpty = list.find((c) => (c.studentCount ?? 0) > 0);
+          return firstNonEmpty?.classId ?? list[0]?.classId ?? null;
+        });
       })
       .catch((e: unknown) => toast.error(asApiError(e).message));
     return () => {
       cancelled = true;
     };
   }, [date, session]);
+
+  // Load báo cáo tổng hợp chuyên cần lớp khi mở tab Tổng hợp
+  useEffect(() => {
+    if (activeTab !== 'summary' || classId === null) return;
+    if (!summaryFrom || !summaryTo) return;
+    if (summaryFrom > summaryTo) {
+      setClassSummary(null);
+      setSummaryError('Từ ngày phải trước hoặc bằng Đến ngày.');
+      return;
+    }
+    let cancelled = false;
+    setSummaryLoading(true);
+    setSummaryError(null);
+    attendanceApi
+      .getClassSummary(classId, summaryFrom, summaryTo)
+      .then((data) => {
+        if (!cancelled) setClassSummary(data);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const err = asApiError(e);
+        setClassSummary(null);
+        setSummaryError(
+          err.code === 'MSG43'
+            ? 'Không có dữ liệu chuyên cần trong khoảng thời gian đã chọn.'
+            : err.message
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setSummaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, classId, summaryFrom, summaryTo]);
 
   const guardDirty = () => !vm.isDirty || window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi?');
 
@@ -154,15 +214,57 @@ export default function AttendancePage() {
       <header className="page-header" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
           <span className="badge badge--violet" style={{ border: '2px solid var(--color-fg)', padding: '5px 14px', fontWeight: 800, borderRadius: 'var(--radius-full)' }}>
-            <GraduationCap size={15} /> Cổng Giáo Viên Chủ Nhiệm
+            <GraduationCap size={15} /> Quản lý Điểm danh &amp; Chuyên cần
           </span>
         </div>
         <h1 style={{ margin: '4px 0 8px' }}>
           Điểm Danh <span className="squiggle">Hằng Ngày</span>
         </h1>
-        <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)', maxWidth: '65ch' }}>
-          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng không phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Thông báo vắng mặt cho phụ huynh do Phòng Giáo vụ gửi.
+        <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)', maxWidth: '68ch' }}>
+          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng có phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Thông báo vắng mặt cho phụ huynh do Phòng Giáo vụ gửi.
         </p>
+
+        {/* ATT-14: Chuyển đổi giữa Điểm danh theo ngày & Tổng hợp chuyên cần lớp */}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }} role="tablist" aria-label="Chế độ xem điểm danh">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'sheet'}
+            className={`btn ${activeTab === 'sheet' ? 'btn--primary' : 'btn--secondary'}`}
+            onClick={() => setActiveTab('sheet')}
+            style={{
+              borderRadius: 'var(--radius-full)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: activeTab === 'sheet' ? '3px 3px 0 0 var(--color-fg)' : 'none',
+              fontWeight: 800,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <CalendarCheck2 size={16} aria-hidden="true" /> Điểm danh theo ngày
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'summary'}
+            className={`btn ${activeTab === 'summary' ? 'btn--primary' : 'btn--secondary'}`}
+            onClick={() => {
+              if (guardDirty()) setActiveTab('summary');
+            }}
+            style={{
+              borderRadius: 'var(--radius-full)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: activeTab === 'summary' ? '3px 3px 0 0 var(--color-fg)' : 'none',
+              fontWeight: 800,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <BarChart3 size={16} aria-hidden="true" /> Tổng hợp chuyên cần
+          </button>
+        </div>
       </header>
 
       {/* Toolbar */}
@@ -182,7 +284,7 @@ export default function AttendancePage() {
         }}
         aria-label="Bộ lọc"
       >
-        <div className="field" style={{ minWidth: 200, flex: 1 }}>
+        <div className="field" style={{ minWidth: 220, flex: 1 }}>
           <label className="label" htmlFor="attendance-class" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
             LỚP HỌC
           </label>
@@ -203,283 +305,439 @@ export default function AttendancePage() {
             }}
           >
             {classes.length === 0 && <option value="">Không có lớp được phân công</option>}
-            {classes.map((c) => (
-              <option key={c.classId} value={c.classId}>
-                Lớp {c.className} · {c.accessReason === 'Homeroom' ? 'Chủ nhiệm' : c.accessReason === 'SchoolAdmin' ? 'Toàn trường' : 'Tiết đầu'}
-                {c.isSubmitted ? ' ✓ (Đã lưu)' : ''}
-              </option>
-            ))}
+            {classes.map((c) => {
+              const yearPart = c.schoolYearName ? ` (${c.schoolYearName})` : '';
+              const countPart = typeof c.studentCount === 'number' ? ` · ${c.studentCount} HS` : '';
+              const rolePart = c.accessReason === 'Homeroom' ? ' · Chủ nhiệm' : '';
+              return (
+                <option key={c.classId} value={c.classId}>
+                  Lớp {c.className}{yearPart}{rolePart}{countPart}
+                  {activeTab === 'sheet' && c.isSubmitted ? ' ✓ (Đã lưu)' : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
 
-        <div className="field" style={{ minWidth: 160 }}>
-          <label className="label" htmlFor="attendance-date" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
-            NGÀY ĐIỂM DANH
-          </label>
-          <input
-            id="attendance-date"
-            type="date"
-            className="input"
-            value={date}
-            max={todayIso()}
-            onChange={(e) => {
-              if (e.target.value && guardDirty()) setDate(e.target.value);
-            }}
-            style={{
-              borderRadius: 'var(--radius-full)',
-              border: '2px solid var(--color-fg)',
-              fontWeight: 700,
-              padding: '8px 16px',
-            }}
-          />
-        </div>
+        {activeTab === 'sheet' ? (
+          <>
+            <div className="field" style={{ minWidth: 160 }}>
+              <label className="label" htmlFor="attendance-date" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
+                NGÀY ĐIỂM DANH
+              </label>
+              <input
+                id="attendance-date"
+                type="date"
+                className="input"
+                value={date}
+                max={todayIso()}
+                onChange={(e) => {
+                  if (e.target.value && guardDirty()) setDate(e.target.value);
+                }}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              />
+            </div>
 
-        <div className="field" style={{ minWidth: 150 }}>
-          <label className="label" htmlFor="attendance-session" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
-            BUỔI HỌC
-          </label>
-          <select
-            id="attendance-session"
-            className="select"
-            value={session}
-            onChange={(e) => {
-              if (guardDirty()) setSession(e.target.value as AttendanceSession);
-            }}
-            style={{
-              borderRadius: 'var(--radius-full)',
-              border: '2px solid var(--color-fg)',
-              fontWeight: 700,
-              padding: '8px 16px',
-            }}
-          >
-            <option value="Morning">Buổi sáng</option>
-            <option value="Afternoon">Buổi chiều</option>
-          </select>
-        </div>
+            <div className="field" style={{ minWidth: 150 }}>
+              <label className="label" htmlFor="attendance-session" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
+                BUỔI HỌC
+              </label>
+              <select
+                id="attendance-session"
+                className="select"
+                value={session}
+                onChange={(e) => {
+                  if (guardDirty()) setSession(e.target.value as AttendanceSession);
+                }}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              >
+                <option value="Morning">Buổi sáng</option>
+                <option value="Afternoon">Buổi chiều</option>
+              </select>
+            </div>
 
-        <div style={{ marginLeft: 'auto' }}>
-          <button
-            id="btn-fill-suggested"
-            type="button"
-            className="btn btn--secondary"
-            onClick={vm.fillSuggested}
-            disabled={!canEdit || vm.summary.notMarked === 0}
-            style={{
-              borderRadius: 'var(--radius-full)',
-              border: '2px solid var(--color-fg)',
-              boxShadow: (!canEdit || vm.summary.notMarked === 0) ? 'none' : '3px 3px 0 0 var(--color-fg)',
-              fontWeight: 800,
-              padding: '10px 20px',
-              background: (!canEdit || vm.summary.notMarked === 0) ? 'var(--color-muted)' : 'var(--color-tertiary)',
-              color: 'var(--color-fg)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              cursor: (!canEdit || vm.summary.notMarked === 0) ? 'not-allowed' : 'pointer',
-            }}
-          >
-            <CheckCheck size={18} aria-hidden="true" />
-            Điền &quot;Có mặt&quot; cho HS còn lại
-          </button>
-        </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                id="btn-fill-suggested"
+                type="button"
+                className="btn btn--secondary"
+                onClick={vm.fillSuggested}
+                disabled={!canEdit || vm.summary.notMarked === 0}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: (!canEdit || vm.summary.notMarked === 0) ? 'none' : '3px 3px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '10px 20px',
+                  background: (!canEdit || vm.summary.notMarked === 0) ? 'var(--color-muted)' : 'var(--color-tertiary)',
+                  color: 'var(--color-fg)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  cursor: (!canEdit || vm.summary.notMarked === 0) ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <CheckCheck size={18} aria-hidden="true" />
+                Điền &quot;Có mặt&quot; cho HS còn lại
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="field" style={{ minWidth: 160 }}>
+              <label className="label" htmlFor="summary-from" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
+                TỪ NGÀY
+              </label>
+              <input
+                id="summary-from"
+                type="date"
+                className="input"
+                value={summaryFrom}
+                max={summaryTo || todayIso()}
+                onChange={(e) => e.target.value && setSummaryFrom(e.target.value)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              />
+            </div>
+
+            <div className="field" style={{ minWidth: 160 }}>
+              <label className="label" htmlFor="summary-to" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
+                ĐẾN NGÀY
+              </label>
+              <input
+                id="summary-to"
+                type="date"
+                className="input"
+                value={summaryTo}
+                min={summaryFrom}
+                max={todayIso()}
+                onChange={(e) => e.target.value && setSummaryTo(e.target.value)}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                }}
+              />
+            </div>
+          </>
+        )}
       </section>
 
-      <LockedBanner reason={vm.sheet?.lockReason ?? null} />
+      {activeTab === 'summary' ? (
+        <section aria-label="Báo cáo tổng hợp chuyên cần lớp">
+          {summaryLoading && (
+            <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="skeleton" />
+              ))}
+            </div>
+          )}
 
-      {vm.sheet?.submittedAt && (
-        <div
-          className="banner pop-in"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '14px 20px',
-            background: '#EDE9FE',
-            border: '2px solid var(--color-fg)',
-            boxShadow: '3px 3px 0 0 var(--color-fg)',
-            borderRadius: 'var(--radius-md)',
-            marginBottom: 20,
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 600,
-          }}
-          role="status"
-        >
-          <Clock size={18} color="var(--color-accent)" />
-          <div>
-            Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
-            {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
-            {canEdit && (
-              <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
-                ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+          {!summaryLoading && summaryError && (
+            <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
+              <BarChart3 size={36} aria-hidden="true" />
+              <p style={{ margin: 0, fontWeight: 600 }}>{summaryError}</p>
+            </div>
+          )}
 
-      <AttendanceSummaryBar summary={vm.summary} />
+          {!summaryLoading && !summaryError && classSummary && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+                <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-muted-fg)' }}>SỐ NGÀY HỌC</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{classSummary.schoolDays}</div>
+                </div>
+                <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)', background: '#ECFDF5' }}>
+                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: '#065F46' }}>TỈ LỆ CHUYÊN CẦN</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669' }}>{classSummary.attendanceRate}%</div>
+                </div>
+                <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-muted-fg)' }}>KHOẢNG THỜI GIAN</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, marginTop: 6 }}>
+                    {formatDashDate(classSummary.from)} – {formatDashDate(classSummary.to)}
+                  </div>
+                </div>
+              </div>
 
-      {vm.loading && (
-        <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="skeleton" />
-          ))}
-        </div>
-      )}
+              <AttendanceSummaryBar summary={classSummary.totals} totalLabel="Tổng lượt điểm danh" />
 
-      {!vm.loading && vm.error && (
-        <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
-          <TriangleAlert size={40} aria-hidden="true" />
-          <p>{vm.error.code === 'MSG43' ? SYSTEM_MESSAGES.MSG43.content : vm.error.message}</p>
-          <button type="button" className="btn btn--secondary" onClick={vm.reload} style={{ borderRadius: 'var(--radius-full)' }}>
-            Thử lại
-          </button>
-        </div>
-      )}
+              <div
+                className="card pop-in"
+                style={{
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '4px 4px 0 0 var(--color-fg)',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'var(--color-card)',
+                  padding: 0,
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 48, fontWeight: 800 }}>#</th>
+                        <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 800 }}>Học sinh</th>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Có mặt</th>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đi muộn</th>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng có phép</th>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng không phép</th>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Tỉ lệ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classSummary.students.map((st, idx) => {
+                        const total = st.present + st.late + st.excusedAbsence + st.unexcusedAbsence;
+                        const rate = total > 0 ? Math.round(((st.present + st.late) * 10000) / total) / 100 : 0;
+                        return (
+                          <tr key={st.studentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600 }}>{idx + 1}</td>
+                            <td style={{ padding: '10px 16px' }}>
+                              <strong style={{ display: 'block' }}>{st.fullName}</strong>
+                              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>{st.studentCode}</span>
+                            </td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#059669' }}>{st.present}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#D97706' }}>{st.late}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#2563EB' }}>{st.excusedAbsence}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#DC2626' }}>{st.unexcusedAbsence}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800 }}>{rate}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      ) : (
+        <>
+          <LockedBanner reason={vm.sheet?.lockReason ?? null} />
 
-      {!vm.loading && !vm.error && vm.sheet && (
-        <AttendanceRosterTable
-          entries={vm.sheet.entries}
-          draft={vm.draft}
-          disabled={!canEdit || vm.saving}
-          onStatusChange={vm.setStatus}
-          onRemarksChange={vm.setRemarks}
-          onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
-          onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
-          absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
-        />
-      )}
-
-      {canEdit && vm.sheet && (
-        <footer
-          className="sticky-footer pop-in"
-          style={{
-            position: 'sticky',
-            bottom: 20,
-            zIndex: 10,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-            padding: '14px 24px',
-            background: '#FFFFFF',
-            border: '2px solid var(--color-fg)',
-            boxShadow: '4px 4px 0 0 var(--color-fg)',
-            borderRadius: 'var(--radius-full)',
-            marginTop: 24,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {vm.isDirty ? (
-              <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                ● Có thay đổi chưa lưu
-              </span>
-            ) : (
-              <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                ✓ Dữ liệu khớp sổ
-              </span>
-            )}
-            <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
-              {session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} · {formatViDate(date)}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', gap: 12 }}>
-            <button
-              id="btn-reset"
-              type="button"
-              className="btn btn--secondary"
-              onClick={vm.reset}
-              disabled={!vm.isDirty || vm.saving}
-              style={{
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: vm.isDirty ? '2px 2px 0 0 var(--color-fg)' : 'none',
-                fontWeight: 700,
-                padding: '8px 18px',
-              }}
-            >
-              <RotateCcw size={16} aria-hidden="true" /> Hoàn tác
-            </button>
-            <button
-              id="btn-save-attendance"
-              type="button"
-              className="btn btn--primary"
-              onClick={handleSaveClick}
-              disabled={vm.saving || (!vm.isDirty && !!vm.sheet.submittedAt)}
-              style={{
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '4px 4px 0 0 var(--color-fg)',
-                fontWeight: 800,
-                padding: '8px 24px',
-                background: 'var(--color-accent)',
-                color: '#FFFFFF',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <Save size={16} aria-hidden="true" />
-              {vm.saving ? 'Đang lưu…' : 'Lưu điểm danh'}
-            </button>
-          </div>
-        </footer>
-      )}
-
-      {result && (
-        <section
-          className="card pop-in"
-          style={{
-            marginTop: 24,
-            padding: '20px 24px',
-            background: '#ECFDF5',
-            border: '2px solid var(--color-fg)',
-            boxShadow: '4px 4px 0 0 var(--color-fg)',
-            borderRadius: 'var(--radius-lg)',
-          }}
-          aria-label="Kết quả lưu"
-        >
-          <h3 style={{ margin: '0 0 12px', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <CheckCheck size={20} color="#059669" />
-            Kết quả lưu điểm danh gần nhất
-          </h3>
-          <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--fs-sm)' }}>
-            <li>
-              Đã trừ <strong>{result.lunchDeductedCount}</strong> suất ăn do vắng
-            </li>
-            <li>
-              Khôi phục <strong>{result.lunchRestoredCount}</strong> suất ăn
-            </li>
-            {result.lunchRestoreSkippedCount > 0 && (
-              <li style={{ color: '#D97706' }}>
-                Không khôi phục được <strong>{result.lunchRestoreSkippedCount}</strong> suất (nhà bếp đã chốt)
-              </li>
-            )}
-          </ul>
-          {result.warnings && result.warnings.length > 0 && (
+          {vm.sheet?.submittedAt && (
             <div
+              className="banner pop-in"
               style={{
-                marginTop: 12,
-                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '14px 20px',
+                background: '#EDE9FE',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
                 borderRadius: 'var(--radius-md)',
-                background: '#FEF3C7',
-                border: '1.5px solid #D97706',
-                color: '#92400E',
+                marginBottom: 20,
                 fontSize: 'var(--fs-sm)',
                 fontWeight: 600,
               }}
-              role="alert"
+              role="status"
             >
-              <div style={{ fontWeight: 800, marginBottom: 4 }}>⚠️ Cảnh báo đồng bộ suất ăn:</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {result.warnings.map((w, idx) => (
-                  <li key={idx}>{w}</li>
-                ))}
-              </ul>
+              <Clock size={18} color="var(--color-accent)" />
+              <div>
+                Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
+                {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
+                {canEdit && (
+                  <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
+                    ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
+                  </span>
+                )}
+              </div>
             </div>
           )}
-        </section>
+
+          <AttendanceSummaryBar summary={vm.summary} />
+
+          {vm.loading && (
+            <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="skeleton" />
+              ))}
+            </div>
+          )}
+
+          {!vm.loading && vm.error && (
+            <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
+              <TriangleAlert size={40} aria-hidden="true" />
+              <p>{vm.error.code === 'MSG43' ? SYSTEM_MESSAGES.MSG43.content : vm.error.message}</p>
+              <button type="button" className="btn btn--secondary" onClick={vm.reload} style={{ borderRadius: 'var(--radius-full)' }}>
+                Thử lại
+              </button>
+            </div>
+          )}
+
+          {!vm.loading && !vm.error && vm.sheet && vm.sheet.entries.length === 0 && (
+            <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
+              <Users size={38} aria-hidden="true" />
+              <p style={{ margin: 0, fontWeight: 700 }}>
+                Lớp {vm.sheet.className} hiện chưa có học sinh nào được xếp vào ngày {formatDashDate(date)}.
+              </p>
+              <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+                Hãy chọn lớp khác hoặc kiểm tra lại danh sách xếp lớp của Phòng Giáo vụ.
+              </p>
+            </div>
+          )}
+
+          {!vm.loading && !vm.error && vm.sheet && vm.sheet.entries.length > 0 && (
+            <AttendanceRosterTable
+              entries={vm.sheet.entries}
+              draft={vm.draft}
+              disabled={!canEdit || vm.saving}
+              onStatusChange={vm.setStatus}
+              onRemarksChange={vm.setRemarks}
+              onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
+              onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
+              absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
+            />
+          )}
+
+          {canEdit && vm.sheet && vm.sheet.entries.length > 0 && (
+            <footer
+              className="sticky-footer pop-in"
+              style={{
+                position: 'sticky',
+                bottom: 20,
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 16,
+                padding: '14px 24px',
+                background: '#FFFFFF',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '4px 4px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-full)',
+                marginTop: 24,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {vm.isDirty ? (
+                  <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                    ● Có thay đổi chưa lưu
+                  </span>
+                ) : (
+                  <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                    ✓ Dữ liệu khớp sổ
+                  </span>
+                )}
+                <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                  {session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} · {formatDashDate(date)}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  id="btn-reset"
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={vm.reset}
+                  disabled={!vm.isDirty || vm.saving}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: vm.isDirty ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                    fontWeight: 700,
+                    padding: '8px 18px',
+                  }}
+                >
+                  <RotateCcw size={16} aria-hidden="true" /> Hoàn tác
+                </button>
+                <button
+                  id="btn-save-attendance"
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={handleSaveClick}
+                  disabled={vm.saving || (!vm.isDirty && !!vm.sheet.submittedAt)}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '4px 4px 0 0 var(--color-fg)',
+                    fontWeight: 800,
+                    padding: '8px 24px',
+                    background: 'var(--color-accent)',
+                    color: '#FFFFFF',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <Save size={16} aria-hidden="true" />
+                  {vm.saving ? 'Đang lưu…' : 'Lưu điểm danh'}
+                </button>
+              </div>
+            </footer>
+          )}
+
+          {result && (
+            <section
+              className="card pop-in"
+              style={{
+                marginTop: 24,
+                padding: '20px 24px',
+                background: '#ECFDF5',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '4px 4px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-lg)',
+              }}
+              aria-label="Kết quả lưu"
+            >
+              <h3 style={{ margin: '0 0 12px', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCheck size={20} color="#059669" />
+                Kết quả lưu điểm danh gần nhất
+              </h3>
+              <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--fs-sm)' }}>
+                <li>
+                  Đã trừ <strong>{result.lunchDeductedCount}</strong> suất ăn do vắng có phép
+                </li>
+                <li>
+                  Khôi phục <strong>{result.lunchRestoredCount}</strong> suất ăn
+                </li>
+                {result.lunchRestoreSkippedCount > 0 && (
+                  <li style={{ color: '#D97706' }}>
+                    Không khôi phục được <strong>{result.lunchRestoreSkippedCount}</strong> suất (nhà bếp đã chốt)
+                  </li>
+                )}
+              </ul>
+              {result.warnings && result.warnings.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: '#FEF3C7',
+                    border: '1.5px solid #D97706',
+                    color: '#92400E',
+                    fontSize: 'var(--fs-sm)',
+                    fontWeight: 600,
+                  }}
+                  role="alert"
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 4 }}>⚠️ Cảnh báo đồng bộ suất ăn:</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {result.warnings.map((w, idx) => (
+                      <li key={idx}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+        </>
       )}
 
       <ConfirmDialog
@@ -491,13 +749,17 @@ export default function AttendancePage() {
         onCancel={() => setConfirmOpen(false)}
       >
         <p>{SYSTEM_MESSAGES.MSG45.content}</p>
-        {vm.impact.newlyUnexcused > 0 ? (
+        {vm.impact.newlyExcused > 0 ? (
           <p>
-            <strong>{vm.impact.newlyUnexcused}</strong> học sinh vắng không phép mới → trừ{' '}
-            <strong>{vm.impact.lunchToDeduct}</strong> suất ăn.
+            <strong>{vm.impact.newlyExcused}</strong> học sinh vắng có phép mới
+            {vm.impact.lunchToDeduct > 0 ? (
+              <> → trừ <strong>{vm.impact.lunchToDeduct}</strong> suất ăn.</>
+            ) : (
+              '.'
+            )}
           </p>
         ) : (
-          <p>Không có học sinh vắng không phép mới.</p>
+          <p>Không có học sinh vắng có phép mới cần trừ suất ăn.</p>
         )}
       </ConfirmDialog>
 
@@ -505,7 +767,7 @@ export default function AttendancePage() {
         open={Boolean(correctingEntry)}
         onClose={() => setCorrectingEntry(null)}
         title="Điều Chỉnh Điểm Danh Ngày Quá Khứ"
-        subtitle={correctingEntry ? `${correctingEntry.fullName} (${correctingEntry.studentCode}) • Ngày ${formatViDate(date)}` : ''}
+        subtitle={correctingEntry ? `${correctingEntry.fullName} (${correctingEntry.studentCode}) • Ngày ${formatDashDate(date)}` : ''}
         badgeText="Ghi nhận Audit Log"
         badgeColor="amber"
         icon={<PencilLine size={20} color="var(--color-fg)" />}
@@ -594,7 +856,7 @@ export default function AttendancePage() {
       >
         <p>
           Gửi thông báo vắng mặt không phép của <strong>{noticeEntry?.fullName}</strong> ({session === 'Morning' ? 'buổi sáng' : 'buổi chiều'}{' '}
-          {formatViDate(date)}) tới phụ huynh? Mỗi buổi vắng chỉ gửi được một lần.
+          {formatDashDate(date)}) tới phụ huynh? Mỗi buổi vắng chỉ gửi được một lần.
         </p>
       </ConfirmDialog>
     </main>

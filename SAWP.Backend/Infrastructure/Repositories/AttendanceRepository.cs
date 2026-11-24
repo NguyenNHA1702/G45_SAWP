@@ -96,10 +96,26 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         DateTime to, 
         CancellationToken ct = default)
     {
-        var calendarMap = (await _context.SchoolCalendarDays
+        var classSchoolYearId = await _context.Classes
             .AsNoTracking()
-            .Where(d => d.Date >= from.Date && d.Date <= to.Date)
-            .ToListAsync(ct))
+            .Where(c => c.Id == classId)
+            .Select(c => (int?)c.SchoolYearId)
+            .FirstOrDefaultAsync(ct);
+
+        var calendarQuery = _context.SchoolCalendarDays
+            .AsNoTracking()
+            .Where(d => d.Date >= from.Date && d.Date <= to.Date);
+
+        if (classSchoolYearId.HasValue)
+        {
+            calendarQuery = calendarQuery.Where(d => d.SchoolYearId == classSchoolYearId.Value);
+        }
+        else
+        {
+            calendarQuery = calendarQuery.Where(d => d.SchoolYear.IsActive);
+        }
+
+        var calendarMap = (await calendarQuery.ToListAsync(ct))
             .GroupBy(d => d.Date.Date)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
 
