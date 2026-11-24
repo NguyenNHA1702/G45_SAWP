@@ -130,12 +130,12 @@ const NAV_ITEMS: NavItem[] = [
       },
     ],
   },
-  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, ServiceStaff, SchoolBoard) ---
+  // --- Giáo viên & Nhân viên: Điểm danh & Lớp học (Teacher, OfficeStaff, SchoolBoard — ATT-8: không gồm ServiceStaff) ---
   {
     id: 'teacher-group',
     label: 'Điểm danh & Lớp học',
     icon: CalendarCheck2,
-    roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard'],
+    roles: ['Teacher', 'OfficeStaff', 'SchoolBoard'],
     children: [
       {
         id: 'teacher-roster',
@@ -155,7 +155,7 @@ const NAV_ITEMS: NavItem[] = [
         id: 'teacher-attendance',
         label: 'Điểm danh & Tình trạng chuyên cần',
         path: '/teacher/attendance',
-        roles: ['Teacher', 'OfficeStaff', 'ServiceStaff', 'SchoolBoard'],
+        roles: ['Teacher', 'OfficeStaff', 'SchoolBoard'],
         icon: CalendarCheck2,
       },
       {

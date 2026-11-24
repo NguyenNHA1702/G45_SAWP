@@ -106,6 +106,14 @@ export default function ParentLunchPage() {
 
   const handleConfirmEditDiet = async () => {
     if (!studentId || !editTargetDay) return;
+    if (editMealType === 3 && !editRemarks.trim()) {
+      toast.error('Khi chọn chế độ ăn đặc biệt, vui lòng nhập mô tả dị ứng / kiêng khem cụ thể để nhà bếp chuẩn bị.');
+      return;
+    }
+    if (editRemarks.trim().length > 250) {
+      toast.error('Ghi chú suất ăn không được vượt quá 250 ký tự.');
+      return;
+    }
     try {
       setSubmittingEdit(true);
       const res = await lunchApi.updateRegistrationMealType({
@@ -118,8 +126,8 @@ export default function ParentLunchPage() {
       setEditTargetDay(null);
       await fetchSchedule();
     } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { message?: string } } })?.response?.data;
-      toast.error(apiErr?.message || 'Không thể cập nhật chế độ ăn.');
+      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      toast.error(apiErr?.errors?.[0] || apiErr?.message || 'Không thể cập nhật chế độ ăn.');
     } finally {
       setSubmittingEdit(false);
     }
@@ -220,6 +228,14 @@ export default function ParentLunchPage() {
       toast.error(SYSTEM_MESSAGES.MSG01.content);
       return;
     }
+    if (mealType === 3 && !studentRemarks.trim()) {
+      toast.error('Khi chọn chế độ ăn đặc biệt, vui lòng nhập mô tả dị ứng / kiêng khem cụ thể để nhà bếp chuẩn bị.');
+      return;
+    }
+    if (studentRemarks.trim().length > 250) {
+      toast.error('Ghi chú suất ăn không được vượt quá 250 ký tự.');
+      return;
+    }
 
     try {
       setSubmittingRegister(true);
@@ -273,6 +289,13 @@ export default function ParentLunchPage() {
 
   const [y, m] = month.split('-').map(Number);
   const firstDayOffset = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Thứ 2 = 0 ... CN = 6
+
+  const todayCutoffLabel = useMemo(() => {
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayDay = schedule?.days.find((d) => toDateKey(d.date) === todayKey);
+    return todayDay?.cutoffTime ? todayDay.cutoffTime.replace(':', 'h') : LUNCH_CUTOFF_LABEL;
+  }, [schedule]);
 
   const registeredOrCancelledDays = useMemo(() => {
     if (!schedule) return [];
@@ -470,12 +493,12 @@ export default function ParentLunchPage() {
                   padding: '3px 10px',
                 }}
               >
-                Mốc chốt: {LUNCH_CUTOFF_LABEL} mỗi ngày
+                Mốc chốt: {todayCutoffLabel} (theo cấu hình từng ngày)
               </span>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              • Đăng ký mới (UC-29) hoặc hủy trực tiếp (UC-30) cần thực hiện trước <strong>{LUNCH_CUTOFF_LABEL}</strong> của ngày phục vụ.<br />
-              • <strong>Tích hợp Đơn xin nghỉ (WFL 1.2.3)</strong>: Đơn nghỉ có bữa trưa được GVCN duyệt trước {LUNCH_CUTOFF_LABEL} (không tích &ldquo;Vẫn giữ suất ăn&rdquo;) sẽ tự động hủy suất ăn ngày đó.
+              • Đăng ký mới (UC-29) hoặc hủy trực tiếp (UC-30) cần thực hiện trước <strong>giờ chốt của ngày phục vụ</strong> (mặc định {LUNCH_CUTOFF_LABEL}, có thể thay đổi theo từng ngày).<br />
+              • <strong>Tích hợp Đơn xin nghỉ (WFL 1.2.3)</strong>: Đơn nghỉ có bữa trưa được duyệt trước giờ chốt ngày áp dụng (không tích &ldquo;Vẫn giữ suất ăn&rdquo;) sẽ tự động hủy suất ăn ngày đó.
             </p>
           </div>
         </div>
@@ -1383,14 +1406,19 @@ export default function ParentLunchPage() {
           </div>
 
           <div className="field" style={{ marginBottom: 20 }}>
-            <label className="label" htmlFor="register-remarks" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
-              GHI CHÚ CHO BỘ PHẬN BÁN TRÚ (NẾU CÓ)
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="label" htmlFor="register-remarks" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+                {mealType === 3 ? 'MÔ TẢ DỊ ỨNG / KIÊNG KHEM (BẮT BUỘC) *' : 'GHI CHÚ CHO BỘ PHẬN BÁN TRÚ (NẾU CÓ)'}
+              </label>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{studentRemarks.length}/250</span>
+            </div>
             <input
               id="register-remarks"
               type="text"
               className="input"
-              placeholder="VD: Bé dị ứng tôm/đậu phộng, nhờ cô lưu ý..."
+              maxLength={250}
+              required={mealType === 3}
+              placeholder={mealType === 3 ? 'Bắt buộc mô tả: VD bé dị ứng tôm/sữa bò, kiêng đồ cay...' : 'VD: Bé dị ứng tôm/đậu phộng, nhờ cô lưu ý...'}
               value={studentRemarks}
               onChange={(e) => setStudentRemarks(e.target.value)}
               style={{
@@ -1464,12 +1492,13 @@ export default function ParentLunchPage() {
 
             <div className="field" style={{ marginBottom: 20 }}>
               <label className="label" htmlFor="cancel-lunch-reason" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
-                LÝ DO HỦY SUẤT ĂN (TÙY CHỌN)
+                LÝ DO HỦY SUẤT ĂN (TÙY CHỌN, TỐI ĐA 300 KÝ TỰ)
               </label>
               <input
                 id="cancel-lunch-reason"
                 type="text"
                 className="input"
+                maxLength={300}
                 placeholder="VD: Gia đình đón bé về ăn trưa tại nhà..."
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
@@ -1564,14 +1593,19 @@ export default function ParentLunchPage() {
             </div>
 
             <div className="field" style={{ marginBottom: 20 }}>
-              <label className="label" htmlFor="edit-meal-remarks" style={{ fontWeight: 800 }}>
-                GHI CHÚ DỊ ỨNG / DẶN DÒ NHÀ BẾP
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="label" htmlFor="edit-meal-remarks" style={{ fontWeight: 800 }}>
+                  {editMealType === 3 ? 'MÔ TẢ DỊ ỨNG / KIÊNG KHEM (BẮT BUỘC) *' : 'GHI CHÚ DỊ ỨNG / DẶN DÒ NHÀ BẾP'}
+                </label>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{editRemarks.length}/250</span>
+              </div>
               <input
                 id="edit-meal-remarks"
                 type="text"
                 className="input"
-                placeholder="VD: Bé dị ứng hải sản, xin đổi món trứng..."
+                maxLength={250}
+                required={editMealType === 3}
+                placeholder={editMealType === 3 ? 'Bắt buộc mô tả: VD bé dị ứng hải sản, xin đổi món trứng...' : 'VD: Bé dị ứng hải sản, xin đổi món trứng...'}
                 value={editRemarks}
                 onChange={(e) => setEditRemarks(e.target.value)}
                 style={{

@@ -54,13 +54,14 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     // Workflow 2 additions
     public async Task<IReadOnlyList<Student>> GetActiveRosterAsync(int classId, DateTime date, CancellationToken ct = default)
     {
-        var targetDate = date.Date;
-        var nextDay = targetDate.AddDays(1);
+        var dayStart = date.Date;
+        var nextDay = dayStart.AddDays(1);
+
         return await _context.ClassAssignments.AsNoTracking()
-            .Where(ca => ca.ClassId == classId 
+            .Where(ca => ca.ClassId == classId
                       && ca.IsActive
-                      && ca.StartDate < nextDay 
-                      && (ca.EndDate == null || ca.EndDate >= targetDate)
+                      && ca.StartDate < nextDay
+                      && (ca.EndDate == null || ca.EndDate >= dayStart)
                       && ca.Student.Status == "Active")
             .Select(ca => ca.Student)
             .Distinct()

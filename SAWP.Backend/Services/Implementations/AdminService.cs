@@ -413,12 +413,17 @@ public class AdminService : IAdminService
     {
         if (request.Date == default || request.Date.Year < 2000 || request.Date.Year > 2100)
         {
-            return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày cấu hình lịch không hợp lệ." });
+            return ApiResponse<SchoolCalendarDayDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Ngày cấu hình lịch học không hợp lệ." });
         }
 
-        if (request.Note != null && request.Note.Trim().Length > 500)
+        var trimmedNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        if (trimmedNote != null && trimmedNote.Length > 250)
         {
-            return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú không được vượt quá 500 ký tự." });
+            return ApiResponse<SchoolCalendarDayDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Ghi chú không được vượt quá 250 ký tự." });
         }
 
         var date = request.Date.Date;
@@ -426,11 +431,12 @@ public class AdminService : IAdminService
         if (request.SchoolYearId.HasValue && request.SchoolYearId.Value > 0)
         {
             targetYear = await _unitOfWork.Repository<SchoolYear>()
-                .Query()
-                .FirstOrDefaultAsync(y => y.Id == request.SchoolYearId.Value, ct);
+                .GetByIdAsync(request.SchoolYearId.Value, ct);
             if (targetYear == null)
             {
-                return ApiResponse<SchoolCalendarDayDto>.Fail(SystemMessages.MSG14);
+                return ApiResponse<SchoolCalendarDayDto>.Fail(
+                    SystemMessages.MSG43,
+                    new List<string> { "Không tìm thấy năm học được chọn." });
             }
         }
         else
@@ -450,7 +456,7 @@ public class AdminService : IAdminService
         {
             return ApiResponse<SchoolCalendarDayDto>.Fail(
                 SystemMessages.MSG01,
-                new List<string> { $"Ngày {date:dd/MM/yyyy} không nằm trong khoảng thời gian năm học {targetYear.YearName} ({targetYear.StartDate:dd/MM/yyyy} - {targetYear.EndDate:dd/MM/yyyy})." });
+                new List<string> { $"Ngày {date:dd-MM-yyyy} nằm ngoài phạm vi năm học {targetYear.YearName} ({targetYear.StartDate:dd-MM-yyyy} – {targetYear.EndDate:dd-MM-yyyy})." });
         }
 
         var yearId = targetYear.Id;
@@ -468,7 +474,7 @@ public class AdminService : IAdminService
                 SchoolYearId = yearId,
                 Date = date,
                 IsSchoolDay = request.IsSchoolDay,
-                Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim()
+                Note = trimmedNote
             };
             await _unitOfWork.Repository<SchoolCalendarDay>().AddAsync(existing, ct);
         }
@@ -476,7 +482,7 @@ public class AdminService : IAdminService
         {
             oldValues = new { existing.IsSchoolDay, existing.Note };
             existing.IsSchoolDay = request.IsSchoolDay;
-            existing.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+            existing.Note = trimmedNote;
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -540,7 +546,7 @@ public class AdminService : IAdminService
         {
             Id = existing.Id,
             SchoolYearId = existing.SchoolYearId,
-            SchoolYearName = existing.SchoolYear?.YearName,
+            SchoolYearName = existing.SchoolYear?.YearName ?? targetYear.YearName,
             Date = existing.Date,
             IsSchoolDay = existing.IsSchoolDay,
             Note = existing.Note
@@ -573,15 +579,35 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<LunchCutoffDayDto>> UpsertLunchCutoffAsync(int adminUserId, UpdateLunchCutoffDto request, CancellationToken ct = default)
     {
-        if (!TimeSpan.TryParse(request.CutoffTime, out var cutoff))
+        if (request.Date == default)
         {
-            return ApiResponse<LunchCutoffDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Định dạng giờ chốt phải là HH:mm (ví dụ 08:15)." });
+            return ApiResponse<LunchCutoffDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày cấu hình bán trú là bắt buộc." });
+        }
+
+        var minCutoff = new TimeSpan(6, 0, 0);
+        var maxCutoff = new TimeSpan(11, 0, 0);
+        if (!TimeSpan.TryParse(request.CutoffTime, out var cutoff) || cutoff < minCutoff || cutoff > maxCutoff)
+        {
+            return ApiResponse<LunchCutoffDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Giờ chốt suất ăn phải có định dạng HH:mm trong khoảng 06:00 đến 11:00 (trước giờ ăn trưa)." });
+        }
+
+        var trimmedRemarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
+        if (trimmedRemarks != null && trimmedRemarks.Length > 250)
+        {
+            return ApiResponse<LunchCutoffDayDto>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú không được vượt quá 250 ký tự." });
         }
 
         var date = request.Date.Date;
         var existing = await _unitOfWork.Repository<LunchServiceDay>()
             .Query()
             .FirstOrDefaultAsync(d => d.Date.Date == date, ct);
+
+        if (existing != null && existing.IsLocked)
+        {
+            return ApiResponse<LunchCutoffDayDto>.Fail(
+                SystemMessages.MSG19,
+                new List<string> { $"Ngày {date:dd-MM-yyyy} đã chốt sổ bán trú. Vui lòng mở khóa trước khi thay đổi cấu hình." });
+        }
 
         object? oldValues = null;
         if (existing == null)
@@ -591,7 +617,7 @@ public class AdminService : IAdminService
                 Date = date,
                 IsServing = request.IsServing,
                 CutoffTime = cutoff,
-                Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim()
+                Remarks = trimmedRemarks
             };
             await _unitOfWork.Repository<LunchServiceDay>().AddAsync(existing, ct);
         }
@@ -600,7 +626,61 @@ public class AdminService : IAdminService
             oldValues = new { existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks };
             existing.IsServing = request.IsServing;
             existing.CutoffTime = cutoff;
-            existing.Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
+            existing.Remarks = trimmedRemarks;
+        }
+
+        // D-D: Khi đóng ngày phục vụ (IsServing = false), tự động hủy suất đã đăng ký của ngày đó
+        var autoCancelledCount = 0;
+        if (!request.IsServing)
+        {
+            var regRepo = _unitOfWork.Repository<LunchRegistration>();
+            if (regRepo != null)
+            {
+                var activeRegs = await regRepo.Query()
+                    .Include(r => r.Student)
+                    .Where(r => r.Date == date && r.IsActive)
+                    .ToListAsync(ct);
+
+                if (activeRegs.Count > 0)
+                {
+                    var utcNow = DateTime.UtcNow;
+                    foreach (var reg in activeRegs)
+                    {
+                        var reasonText = !string.IsNullOrWhiteSpace(trimmedRemarks)
+                            ? $"Nhà trường đóng phục vụ bán trú ngày {date:dd-MM-yyyy}: {trimmedRemarks}"
+                            : $"Nhà trường đóng phục vụ bán trú ngày {date:dd-MM-yyyy}";
+                        reg.IsActive = false;
+                        reg.IsWaitlisted = false;
+                        reg.CancellationSource = LunchCancellationSource.Staff;
+                        reg.CancelledAt = utcNow;
+                        reg.CancelledByUserId = adminUserId;
+                        reg.CancellationReason = reasonText.Length > 300 ? reasonText[..300] : reasonText;
+                    }
+                    autoCancelledCount = activeRegs.Count;
+
+                    var notifRepo = _unitOfWork.Repository<Notification>();
+                    if (notifRepo != null && _unitOfWork.Students != null)
+                    {
+                        var guardianMap = await _unitOfWork.Students.GetGuardianUserIdsAsync(activeRegs.Select(r => r.StudentId).Distinct(), ct);
+                        foreach (var reg in activeRegs)
+                        {
+                            if (!guardianMap.TryGetValue(reg.StudentId, out var gIds)) continue;
+                            foreach (var gId in gIds.Distinct())
+                            {
+                                await notifRepo.AddAsync(new Notification
+                                {
+                                    UserId = gId,
+                                    Title = "Thông báo hủy suất ăn do đóng ngày phục vụ",
+                                    Content = $"Suất ăn bán trú ngày {date:dd-MM-yyyy} của học sinh {reg.Student?.FullName ?? $"#{reg.StudentId}"} đã được tự động hủy do nhà trường không phục vụ bán trú ngày này.",
+                                    LinkUrl = $"/parent/lunch?studentId={reg.StudentId}&month={date:yyyy-MM}",
+                                    CreatedAt = utcNow,
+                                    IsRead = false
+                                }, ct);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(ct);
@@ -611,7 +691,7 @@ public class AdminService : IAdminService
             nameof(LunchServiceDay),
             existing.Id.ToString(),
             oldValues,
-            new { Date = date.ToString("yyyy-MM-dd"), existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks },
+            new { Date = date.ToString("yyyy-MM-dd"), existing.IsServing, CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"), existing.Remarks, AutoCancelledRegistrations = autoCancelledCount },
             null, // TODO: pass the client IP address; it is not recorded yet.
             ct);
         await _unitOfWork.SaveChangesAsync(ct);

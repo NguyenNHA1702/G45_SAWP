@@ -51,6 +51,7 @@ export interface LeaveRequestItem {
   isEscalated: boolean;
   canEdit?: boolean;
   canWithdraw?: boolean;
+  isWithdrawn?: boolean;
   status: RequestStatus;
   statusName: string;
   submissionDate: string;

@@ -24,8 +24,23 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ISchoolCalendarService _calendarService;
 
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+    private const int MinReasonLength = 5;
+    private const int MaxReasonLength = 500;
     private const string AttachmentUrlPrefix = "/api/LeaveRequests/attachment-file?path=";
     private static readonly string[] AllowedAttachmentExtensions = { ".jpg", ".jpeg", ".png", ".pdf" };
+    private static readonly string[] AttachmentRequirementKeywords =
+    {
+        "giấy khám", "giay kham", "đính kèm", "dinh kem", "minh chứng", "minh chung",
+        "đơn thuốc", "don thuoc", "xác nhận", "xac nhan", "hồ sơ", "ho so",
+        "tệp", "file", "hình ảnh", "hinh anh", "chụp ảnh", "chup anh", "gửi ảnh", "gui anh",
+        "bác sĩ", "bac si", "bệnh viện", "benh vien"
+    };
+
+    private static bool RequiresAttachmentByNotes(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return false;
+        return AttachmentRequirementKeywords.Any(k => notes.Contains(k, StringComparison.OrdinalIgnoreCase));
+    }
 
     public LeaveRequestService(
         IUnitOfWork unitOfWork,
@@ -222,6 +237,12 @@ public class LeaveRequestService : ILeaveRequestService
             return (false, "Vui lòng nhập lý do xin nghỉ học.", SystemMessages.MSG01, new List<DateTime>());
         }
 
+        var trimmedReasonLen = reason.Trim().Length;
+        if (trimmedReasonLen < MinReasonLength || trimmedReasonLen > MaxReasonLength)
+        {
+            return (false, $"Lý do xin nghỉ học phải từ {MinReasonLength} đến {MaxReasonLength} ký tự.", SystemMessages.MSG01, new List<DateTime>());
+        }
+
         if (!IsValidAttachmentUrls(attachmentUrl))
         {
             return (false, "Đường dẫn tệp đính kèm không hợp lệ. Vui lòng tải tệp lên qua hệ thống (chỉ hỗ trợ PDF, JPG, PNG).", SystemMessages.MSG41, new List<DateTime>());
@@ -410,6 +431,38 @@ public class LeaveRequestService : ILeaveRequestService
                 : ApiResponse<LeaveRequestItemDto>.Fail(validation.ErrorMessage!);
         }
 
+        var normalizedAttachment = string.IsNullOrWhiteSpace(request.DoctorNoteAttachmentUrl)
+            ? null
+            : request.DoctorNoteAttachmentUrl.Trim();
+        var trimmedNewReason = request.Reason.Trim();
+
+        // L-D: Khi đơn ở trạng thái NeedMoreInfo, kiểm tra bắt buộc đính kèm nếu yêu cầu bổ sung giấy khám/minh chứng và phải có thay đổi thực sự
+        if (req.Status == RequestStatus.NeedMoreInfo)
+        {
+            var amendmentPrompt = !string.IsNullOrWhiteSpace(req.AmendmentNotes) ? req.AmendmentNotes : req.ReviewerNotes;
+            if (RequiresAttachmentByNotes(amendmentPrompt) && string.IsNullOrWhiteSpace(normalizedAttachment))
+            {
+                return ApiResponse<LeaveRequestItemDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Đơn được yêu cầu bổ sung giấy khám / tệp minh chứng. Vui lòng đính kèm tệp trước khi gửi lại." });
+            }
+
+            var hasAnyChange =
+                req.LeaveRequest.StartDate.Date != request.StartDate.Date
+                || req.LeaveRequest.EndDate.Date != request.EndDate.Date
+                || req.LeaveRequest.Session != request.Session
+                || req.LeaveRequest.KeepLunchService != request.KeepLunchService
+                || !string.Equals(req.LeaveRequest.Reason.Trim(), trimmedNewReason, StringComparison.Ordinal)
+                || !string.Equals(req.LeaveRequest.DoctorNoteAttachmentUrl ?? string.Empty, normalizedAttachment ?? string.Empty, StringComparison.Ordinal);
+
+            if (!hasAnyChange)
+            {
+                return ApiResponse<LeaveRequestItemDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Vui lòng bổ sung hoặc chỉnh sửa thông tin theo yêu cầu trước khi gửi lại đơn." });
+            }
+        }
+
         var oldValues = new
         {
             req.Status,
@@ -424,8 +477,8 @@ public class LeaveRequestService : ILeaveRequestService
         req.LeaveRequest.EndDate = request.EndDate.Date;
         req.LeaveRequest.Session = request.Session;
         req.LeaveRequest.KeepLunchService = request.KeepLunchService;
-        req.LeaveRequest.Reason = request.Reason.Trim();
-        req.LeaveRequest.DoctorNoteAttachmentUrl = string.IsNullOrWhiteSpace(request.DoctorNoteAttachmentUrl) ? null : request.DoctorNoteAttachmentUrl.Trim();
+        req.LeaveRequest.Reason = trimmedNewReason;
+        req.LeaveRequest.DoctorNoteAttachmentUrl = normalizedAttachment;
         req.Status = RequestStatus.Submitted;
         req.RequiresAmendment = false;
 
@@ -702,23 +755,28 @@ public class LeaveRequestService : ILeaveRequestService
         var schoolDays = await GetSchoolDaysInRangeAsync(req.LeaveRequest.StartDate, req.LeaveRequest.EndDate, cancellationToken);
         var durationSchoolDays = schoolDays.Count;
         var syncResult = new SyncLeaveResultDto { RequestId = req.Id };
+        var isEscalatedDecision = req.Status == RequestStatus.UnderReview || durationSchoolDays > threshold;
+        // L-A: Xác định đúng vai trò người thao tác (BGH/Admin vs GVCN) để gắn nhãn, lịch sử và thông báo chính xác
+        var isBoardActor = (reviewerRoles != null && (reviewerRoles.Contains(UserRoles.SchoolBoard) || reviewerRoles.Contains(UserRoles.Admin)))
+                           || isEscalatedDecision;
 
         // NHÁNH 1: Yêu cầu phụ huynh bổ sung thông tin (A10)
         if (review.IsRequestMoreInfo)
         {
-            if (string.IsNullOrWhiteSpace(review.ReviewerNotes))
+            var cleanNotes = review.ReviewerNotes?.Trim() ?? string.Empty;
+            if (cleanNotes.Length < MinReasonLength || cleanNotes.Length > MaxReasonLength)
             {
-                return ApiResponse<SyncLeaveResultDto>.Fail("Khi yêu cầu bổ sung thông tin, bắt buộc phải nhập nội dung cần bổ sung.");
+                return ApiResponse<SyncLeaveResultDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Nội dung yêu cầu bổ sung bắt buộc từ {MinReasonLength} đến {MaxReasonLength} ký tự." });
             }
 
-            var isBoardLevel = req.Status == RequestStatus.UnderReview || durationSchoolDays > threshold;
-            var cleanNotes = review.ReviewerNotes.Trim();
             req.Status = RequestStatus.NeedMoreInfo;
             req.RequiresAmendment = true;
             req.AmendmentNotes = cleanNotes;
             req.ReviewerUserId = reviewerUserId;
             req.ProcessedDate = DateTime.UtcNow;
-            req.ReviewerNotes = isBoardLevel
+            req.ReviewerNotes = isBoardActor
                 ? $"[BGH yêu cầu bổ sung]: {cleanNotes}"
                 : $"[GVCN yêu cầu bổ sung]: {cleanNotes}";
 
@@ -728,7 +786,7 @@ public class LeaveRequestService : ILeaveRequestService
                 nameof(AdministrativeRequest),
                 req.Id.ToString(),
                 null,
-                new { req.Status, ReviewLevel = isBoardLevel ? "SchoolBoard" : "Teacher", Notes = cleanNotes },
+                new { req.Status, ReviewLevel = isBoardActor ? "SchoolBoard" : "Teacher", Notes = cleanNotes },
                 null,
                 cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -819,7 +877,6 @@ public class LeaveRequestService : ILeaveRequestService
         }
 
         // NHÁNH 3: QUYẾT ĐỊNH Phê duyệt hoặc Từ chối (GVCN <= ngưỡng ngày học; BGH > ngưỡng ngày học)
-        var isEscalatedDecision = req.Status == RequestStatus.UnderReview || durationSchoolDays > threshold;
         if (isEscalatedDecision && reviewerRoles != null && !reviewerRoles.Contains(UserRoles.SchoolBoard) && !reviewerRoles.Contains(UserRoles.Admin))
         {
             return ApiResponse<SyncLeaveResultDto>.Fail($"Chỉ Ban Giám Hiệu mới có quyền phê duyệt hoặc từ chối đơn xin nghỉ trên {threshold} ngày học.");
@@ -831,13 +888,15 @@ public class LeaveRequestService : ILeaveRequestService
         // 3A. Từ chối
         if (!review.IsApproved)
         {
-            if (string.IsNullOrWhiteSpace(review.ReviewerNotes))
+            var cleanRejectNote = review.ReviewerNotes?.Trim() ?? string.Empty;
+            if (cleanRejectNote.Length < MinReasonLength || cleanRejectNote.Length > MaxReasonLength)
             {
-                return ApiResponse<SyncLeaveResultDto>.Fail("Khi từ chối đơn xin nghỉ, bắt buộc phải nhập lý do.");
+                return ApiResponse<SyncLeaveResultDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Khi từ chối đơn xin nghỉ, bắt buộc phải nhập lý do (từ {MinReasonLength} đến {MaxReasonLength} ký tự)." });
             }
 
-            var cleanRejectNote = review.ReviewerNotes.Trim();
-            req.ReviewerNotes = isEscalatedDecision
+            req.ReviewerNotes = isBoardActor
                 ? $"[BGH từ chối]: {cleanRejectNote}"
                 : $"[GVCN từ chối]: {cleanRejectNote}";
             req.Status = RequestStatus.Rejected;
@@ -849,15 +908,15 @@ public class LeaveRequestService : ILeaveRequestService
                 nameof(AdministrativeRequest),
                 req.Id.ToString(),
                 null,
-                new { req.Status, ReviewLevel = isEscalatedDecision ? "SchoolBoard" : "Teacher", Notes = cleanRejectNote },
+                new { req.Status, ReviewLevel = isBoardActor ? "SchoolBoard" : "Teacher", Notes = cleanRejectNote },
                 null,
                 cancellationToken);
 
-            var rejectTitle = isEscalatedDecision
-                ? "Thông báo từ chối đơn chuyển cấp"
+            var rejectTitle = isBoardActor
+                ? "Thông báo Ban Giám Hiệu từ chối đơn"
                 : "Thông báo từ chối đơn thông thường";
 
-            var rejectContent = isEscalatedDecision
+            var rejectContent = isBoardActor
                 ? $"{SystemMessages.MSG23.Content} Đơn xin nghỉ {durationSchoolDays} ngày học của con bạn ({req.Student?.FullName}) đã bị Ban Giám Hiệu từ chối. Lý do: {cleanRejectNote}"
                 : $"{SystemMessages.MSG23.Content} Đơn xin nghỉ học của con bạn ({req.Student?.FullName}) đã bị GVCN từ chối. Lý do: {cleanRejectNote}";
 
@@ -878,10 +937,10 @@ public class LeaveRequestService : ILeaveRequestService
 
         // 3B. Phê duyệt
         var cleanApproveNote = string.IsNullOrWhiteSpace(review.ReviewerNotes)
-            ? "Đồng ý cho học sinh nghỉ học."
+            ? (isBoardActor ? "Ban Giám Hiệu đồng ý cho học sinh nghỉ học." : "GVCN đồng ý cho học sinh nghỉ học.")
             : review.ReviewerNotes.Trim();
 
-        req.ReviewerNotes = isEscalatedDecision
+        req.ReviewerNotes = isBoardActor
             ? $"[BGH phê duyệt]: {cleanApproveNote}"
             : $"[GVCN phê duyệt]: {cleanApproveNote}";
         req.Status = RequestStatus.Approved;
@@ -997,7 +1056,7 @@ public class LeaveRequestService : ILeaveRequestService
             nameof(AdministrativeRequest),
             req.Id.ToString(),
             null,
-            new { req.Status, ReviewLevel = isEscalatedDecision ? "SchoolBoard" : "Teacher", Notes = cleanApproveNote, SchoolDaysCount = durationSchoolDays },
+            new { req.Status, ReviewLevel = isBoardActor ? "SchoolBoard" : "Teacher", Notes = cleanApproveNote, SchoolDaysCount = durationSchoolDays },
             null,
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -1006,19 +1065,25 @@ public class LeaveRequestService : ILeaveRequestService
         var referenceMealDate = (cancelledDates.FirstOrDefault() != default ? cancelledDates.First() : (schoolDays.FirstOrDefault() != default ? schoolDays.First() : req.LeaveRequest.StartDate.Date));
         var effectiveCutoffLabel = GetEffectiveCutoff(referenceMealDate, serviceDayMap).ToString(@"hh\:mm");
 
+        // L-B: Phân biệt rõ lý do không hủy suất (nghỉ buổi chiều / ngày chưa qua giờ chốt chưa đăng ký bán trú / đã qua giờ chốt)
+        var allDaysBeforeCutoff = schoolDays.Count > 0 && schoolDays.All(d => !IsCutoffPassed(d, serviceDayMap));
         var mealNote = cancelledDates.Any()
             ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd-MM-yyyy")))}) đã được tự động ghi nhận hủy trước giờ chốt ({effectiveCutoffLabel})."
             : (req.LeaveRequest.KeepLunchService
                 ? "Suất ăn bán trú được giữ nguyên theo yêu cầu trên đơn."
-                : (skippedMealDates.Any()
-                    ? "Học sinh đã được giáo viên điểm danh đi học nên suất ăn không bị tự động hủy."
-                    : $"Suất ăn không bị hủy (sau giờ chốt {effectiveCutoffLabel} hoặc học sinh không đăng ký bán trú)."));
+                : (req.LeaveRequest.Session == LeaveSession.Afternoon
+                    ? "Nghỉ buổi chiều nên suất ăn trưa giữ nguyên."
+                    : (skippedMealDates.Any()
+                        ? "Học sinh đã được giáo viên điểm danh đi học nên suất ăn không bị tự động hủy."
+                        : (allDaysBeforeCutoff
+                            ? "Học sinh chưa đăng ký suất ăn bán trú trong các ngày nghỉ nên không cần hủy suất."
+                            : $"Suất ăn không bị hủy (đã qua giờ chốt {effectiveCutoffLabel} hoặc học sinh không đăng ký bán trú)."))));
 
-        var approveTitle = isEscalatedDecision
-            ? "Thông báo phê duyệt đơn chuyển cấp"
+        var approveTitle = isBoardActor
+            ? "Thông báo Ban Giám Hiệu phê duyệt đơn"
             : "Thông báo phê duyệt đơn thông thường";
 
-        var approveContent = isEscalatedDecision
+        var approveContent = isBoardActor
             ? $"{SystemMessages.MSG22.Content} Ban Giám Hiệu đã phê duyệt đơn xin nghỉ {durationSchoolDays} ngày học của con bạn ({req.Student?.FullName}). {mealNote}"
             : $"{SystemMessages.MSG22.Content} Giáo viên đã phê duyệt đơn xin nghỉ học của con bạn ({req.Student?.FullName}). {mealNote}";
 
@@ -1297,6 +1362,8 @@ public class LeaveRequestService : ILeaveRequestService
             var canWithdraw = req.Status == RequestStatus.Approved && schoolDays.Any(d => !IsWithdrawCutoffPassed(d, lr.Session, serviceDayMap));
 
             var history = BuildStatusHistory(req, auditLogsByEntity, actorNames);
+            var isWithdrawn = req.Status == RequestStatus.Cancelled
+                && history.Any(h => h.Action == AuditActions.LeaveRequestWithdraw);
 
             list.Add(new LeaveRequestItemDto
             {
@@ -1321,6 +1388,7 @@ public class LeaveRequestService : ILeaveRequestService
                 IsEscalated = isEscalated,
                 CanEdit = canEdit,
                 CanWithdraw = canWithdraw,
+                IsWithdrawn = isWithdrawn,
                 Status = req.Status,
                 SubmissionDate = req.SubmissionDate,
                 ReviewerUserId = req.ReviewerUserId,
@@ -1405,7 +1473,9 @@ public class LeaveRequestService : ILeaveRequestService
         AuditActions.LeaveRequestSubmit => "Phụ huynh gửi đơn",
         AuditActions.LeaveRequestResubmit => "Phụ huynh cập nhật & gửi lại đơn",
         AuditActions.LeaveRequestForward => "GVCN chuyển Ban Giám Hiệu",
-        AuditActions.LeaveRequestRequestMoreInfo => "Yêu cầu bổ sung thông tin",
+        AuditActions.LeaveRequestRequestMoreInfo => newValuesJson != null && newValuesJson.Contains("SchoolBoard", StringComparison.OrdinalIgnoreCase)
+            ? "Ban Giám Hiệu yêu cầu bổ sung"
+            : "GVCN yêu cầu bổ sung",
         AuditActions.LeaveRequestApprove => newValuesJson != null && newValuesJson.Contains("SchoolBoard", StringComparison.OrdinalIgnoreCase)
             ? "Ban Giám Hiệu phê duyệt"
             : "GVCN phê duyệt",

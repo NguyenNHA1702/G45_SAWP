@@ -113,10 +113,12 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
         {
             calendarQuery = calendarQuery.Where(d => d.SchoolYearId == classSchoolYearId.Value);
         }
+        else
+        {
+            calendarQuery = calendarQuery.Where(d => d.SchoolYear.IsActive);
+        }
 
-        var calendarOverrides = await calendarQuery.ToListAsync(ct);
-
-        var calendarMap = calendarOverrides
+        var calendarMap = (await calendarQuery.ToListAsync(ct))
             .GroupBy(d => d.Date.Date)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
 

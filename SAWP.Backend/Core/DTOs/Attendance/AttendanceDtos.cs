@@ -32,6 +32,7 @@ public class TeacherClassOptionDto
     public string ClassName { get; set; } = string.Empty;
     public int Grade { get; set; }
     public string? SchoolYearName { get; set; }
+    public int StudentCount { get; set; }
     public string AccessReason { get; set; } = string.Empty;       // "Homeroom" | "FirstPeriod" | "SchoolAdmin"
     public bool IsSubmitted { get; set; }                          // đã điểm danh ngày đó chưa
 }
