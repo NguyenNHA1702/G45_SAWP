@@ -23,6 +23,7 @@ import {
   Settings,
   UserCog,
   ShieldAlert,
+  UserPlus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clearAuthSession, getAuthUser } from '../services/apiClient';
@@ -112,6 +113,13 @@ const NAV_ITEMS: NavItem[] = [
         path: '/classes',
         roles: ['OfficeStaff', 'SchoolBoard'],
         icon: GraduationCap,
+      },
+      {
+        id: 'office-account-requests',
+        label: 'Yêu cầu cấp tài khoản',
+        path: '/office/account-requests',
+        roles: ['OfficeStaff'],
+        icon: UserPlus,
       },
     ],
   },
@@ -248,6 +256,13 @@ const NAV_ITEMS: NavItem[] = [
         path: '/admin/users',
         roles: ['Admin'],
         icon: UserCog,
+      },
+      {
+        id: 'admin-account-requests',
+        label: 'Duyệt yêu cầu cấp tài khoản',
+        path: '/admin/account-requests',
+        roles: ['Admin'],
+        icon: UserPlus,
       },
       {
         id: 'admin-config',

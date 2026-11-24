@@ -1,7 +1,7 @@
 namespace Core.Constants;
 
 /// <summary>
-/// Standard System Messages defined in SRS (MSG01 to MSG59).
+/// Standard System Messages defined in SRS (MSG01 to MSG61).
 /// </summary>
 public static class SystemMessages
 {
@@ -241,6 +241,14 @@ public static class SystemMessages
     public static readonly SystemMessage MSG59 = new("MSG59", "Toast (Error)", "Activation or recovery email could not be sent", "Không thể gửi email lúc này. Vui lòng thử lại sau.");
     public static readonly SystemMessage MSG59_EmailUnavailable = MSG59;
 
+    /// <summary>[Toast (Success)] Account request submitted: Đã gửi yêu cầu tạo tài khoản đến quản trị viên.</summary>
+    public static readonly SystemMessage MSG60 = new("MSG60", "Toast (Success)", "Account request submitted", "Đã gửi yêu cầu tạo tài khoản đến quản trị viên.");
+    public static readonly SystemMessage MSG60_AccountRequestSubmitted = MSG60;
+
+    /// <summary>[Toast (Success)] Account request reviewed: Đã xử lý yêu cầu tạo tài khoản.</summary>
+    public static readonly SystemMessage MSG61 = new("MSG61", "Toast (Success)", "Account request reviewed", "Đã xử lý yêu cầu tạo tài khoản.");
+    public static readonly SystemMessage MSG61_AccountRequestReviewed = MSG61;
+
     /// <summary>Map of all system messages by code</summary>
     public static readonly IReadOnlyDictionary<string, SystemMessage> All = new Dictionary<string, SystemMessage>(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -303,6 +311,8 @@ public static class SystemMessages
         { "MSG57", MSG57 },
         { "MSG58", MSG58 },
         { "MSG59", MSG59 },
+        { "MSG60", MSG60 },
+        { "MSG61", MSG61 },
     };
 
     /// <summary>Lookup a message by code (e.g. MSG01)</summary>

@@ -44,6 +44,7 @@ builder.Services.AddSingleton<ISchoolClock, SchoolClock>();
 // 3. Business Logic Services (Services -> Services Interfaces)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAccountLinkService, AccountLinkService>();
+builder.Services.AddScoped<IAccountRequestService, AccountRequestService>();
 builder.Services.AddScoped<ISessionValidator, SessionValidator>();
 builder.Services.AddSingleton<IBackgroundWorkQueue, BackgroundWorkQueue>();
 builder.Services.AddHostedService<BackgroundWorkService>();
