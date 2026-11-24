@@ -17,6 +17,8 @@ import { administrativeRequestApi } from '../../services/implementations/adminis
 import { StaffReviewTransferModal } from '../../components/requests/StaffReviewTransferModal';
 import { StaffReviewDocumentModal } from '../../components/requests/StaffReviewDocumentModal';
 import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
+import { openProtectedFile } from '../../utils/fileViewer';
+import { formatDDMMYYYY, formatDDMMYYYYHHMM } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 export default function AdminRequestsManagementPage() {
@@ -94,8 +96,17 @@ export default function AdminRequestsManagementPage() {
 
   // Tải văn bản phát hành
   const handleDownloadDoc = async (req: AdministrativeRequestSummary) => {
+    const issuedUrl = req.documentRequest?.issuedDocumentUrl;
+    if (!issuedUrl) {
+      toast.error('Đơn này chưa có tệp văn bản đính kèm.');
+      return;
+    }
+    if (!issuedUrl.includes('/download-document')) {
+      await openProtectedFile(issuedUrl, true);
+      return;
+    }
     try {
-      const fileName = `Giay_Xac_Nhan_${req.studentCode || 'HS'}_${req.requestNumber}.txt`;
+      const fileName = `Giay_Xac_Nhan_${req.studentCode || 'HS'}_${req.requestNumber}.doc`;
       await administrativeRequestApi.downloadIssuedDocument(req.id, fileName);
       toast.success('Đã tải văn bản chính thức thành công!');
     } catch {
@@ -140,6 +151,8 @@ export default function AdminRequestsManagementPage() {
         matchStatus = r.requiresAmendment;
       } else if (statusFilter === 'PENDING_EXECUTION') {
         matchStatus = r.requestType === 'ClassTransfer' && !!r.schoolBoardApprovedAt && !r.classTransfer?.isExecuted;
+      } else if (statusFilter === 'ReturnedToStaff') {
+        matchStatus = r.status === 'ReturnedToStaff' || r.status === 'NeedMoreInfo';
       } else if (statusFilter !== 'ALL') {
         matchStatus = r.status === statusFilter && !r.requiresAmendment;
       }
@@ -331,6 +344,7 @@ export default function AdminRequestsManagementPage() {
             <option value="ALL">Tất cả loại đơn</option>
             <option value="ClassTransfer">Đơn xin chuyển lớp</option>
             <option value="Document">Đơn xin cấp giấy tờ</option>
+            <option value="Other">Loại đơn khác</option>
           </select>
         </div>
 
@@ -344,6 +358,7 @@ export default function AdminRequestsManagementPage() {
           >
             <option value="ALL">Tất cả trạng thái</option>
             <option value="Submitted">Chờ thẩm định</option>
+            <option value="ReturnedToStaff">BGH yêu cầu trình lại</option>
             <option value="AMENDMENT">Yêu cầu bổ sung hồ sơ</option>
             <option value="UnderReview">Đang trình BGH duyệt</option>
             <option value="PENDING_EXECUTION">BGH đã duyệt (Chờ thực thi)</option>
@@ -390,6 +405,7 @@ export default function AdminRequestsManagementPage() {
               ) : (
                 filteredRequests.map((req) => {
                   const isTransfer = req.requestType === 'ClassTransfer';
+                  const isOther = req.requestType === 'Other';
                   const isPendingExecution =
                     isTransfer && !!req.schoolBoardApprovedAt && !req.classTransfer?.isExecuted;
 
@@ -402,12 +418,12 @@ export default function AdminRequestsManagementPage() {
                       }}
                     >
                       {/* Cột 1: Mã đơn & Ngày */}
-                      <td style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                      <td style={{ padding: '14px 16px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                         <div style={{ fontWeight: 800, fontSize: 14, color: '#1E293B' }}>
                           {req.requestNumber}
                         </div>
                         <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
-                          {new Date(req.submissionDate).toLocaleDateString('vi-VN')}
+                          {formatDDMMYYYYHHMM(req.submissionDate)}
                         </div>
                       </td>
 
@@ -433,12 +449,13 @@ export default function AdminRequestsManagementPage() {
                               borderRadius: 6,
                               fontSize: 11,
                               fontWeight: 800,
-                              backgroundColor: isTransfer ? '#D1FAE5' : '#FCE7F3',
-                              color: isTransfer ? '#065F46' : '#9D174D',
+                              backgroundColor: isTransfer ? '#D1FAE5' : isOther ? '#FEF3C7' : '#FCE7F3',
+                              color: isTransfer ? '#065F46' : isOther ? '#92400E' : '#9D174D',
                               border: '1px solid #1E293B',
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            {isTransfer ? 'Chuyển Lớp' : 'Cấp Giấy Tờ'}
+                            {isTransfer ? 'Chuyển Lớp' : isOther ? 'Loại Đơn Khác' : 'Cấp Giấy Tờ'}
                           </span>
                         </div>
 
@@ -448,7 +465,7 @@ export default function AdminRequestsManagementPage() {
                             <strong style={{ color: '#047857' }}>{req.classTransfer.toClassName}</strong>
                             {req.classTransfer.effectiveDate && (
                               <div style={{ fontSize: 12, color: '#B45309', marginTop: 2, fontWeight: 700 }}>
-                                📅 Hiệu lực: {new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN')}
+                                📅 Hiệu lực: {formatDDMMYYYY(req.classTransfer.effectiveDate)}
                               </div>
                             )}
                             <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
@@ -468,7 +485,7 @@ export default function AdminRequestsManagementPage() {
                       </td>
 
                       {/* Cột 4: Trạng thái */}
-                      <td style={{ padding: '14px 16px', verticalAlign: 'top' }}>
+                      <td style={{ padding: '14px 16px', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                         {req.requiresAmendment ? (
                           <span
                             style={{
@@ -482,9 +499,10 @@ export default function AdminRequestsManagementPage() {
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 4,
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            <AlertCircle size={13} color="#D97706" /> CẦN PHỤ HUYNH BỔ SUNG
+                            <AlertCircle size={13} color="#D97706" /> Cần PH bổ sung
                           </span>
                         ) : isPendingExecution ? (
                           <span
@@ -499,9 +517,28 @@ export default function AdminRequestsManagementPage() {
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 4,
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            <UserCheck size={13} /> BGH ĐÃ DUYỆT (CHỜ THỰC THI)
+                            <UserCheck size={13} /> BGH đã duyệt (Chờ thực thi)
+                          </span>
+                        ) : req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? (
+                          <span
+                            style={{
+                              backgroundColor: '#FFF7ED',
+                              color: '#9A3412',
+                              border: '1.5px solid #EA580C',
+                              borderRadius: 16,
+                              padding: '3px 10px',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <AlertCircle size={13} color="#EA580C" /> BGH yêu cầu trình lại
                           </span>
                         ) : req.status === 'Submitted' ? (
                           <span
@@ -609,8 +646,8 @@ export default function AdminRequestsManagementPage() {
                       </td>
 
                       {/* Cột 5: Hành động */}
-                      <td style={{ padding: '14px 16px', verticalAlign: 'top', textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
+                      <td style={{ padding: '14px 16px', verticalAlign: 'top', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'nowrap' }}>
                           <button
                             type="button"
                             onClick={() => {
@@ -618,19 +655,22 @@ export default function AdminRequestsManagementPage() {
                               setHistoryModalOpen(true);
                             }}
                             style={{
-                              fontSize: 11,
-                              padding: '5px 8px',
-                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              padding: '6px 10px',
+                              borderRadius: 8,
                               border: '1px solid #CBD5E1',
                               backgroundColor: '#FFFFFF',
+                              color: '#334155',
                               cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 4,
+                              whiteSpace: 'nowrap',
                             }}
                             title="Xem toàn bộ lịch sử tiến trình xử lý đơn này"
                           >
-                            <History size={12} /> Lịch sử
+                            <History size={13} /> Lịch sử
                           </button>
 
                           {/* Nếu là đơn chuyển lớp đã được BGH duyệt -> Nút ÁP DỤNG CHUYỂN LỚP */}
@@ -642,21 +682,24 @@ export default function AdminRequestsManagementPage() {
                               disabled={executingId === req.id}
                               style={{
                                 fontSize: 12,
-                                padding: '6px 12px',
+                                fontWeight: 700,
+                                padding: '6px 11px',
+                                borderRadius: 8,
                                 backgroundColor: req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999) ? '#D97706' : '#16A34A',
-                                borderColor: '#1E293B',
-                                boxShadow: '2px 2px 0 #1E293B',
+                                borderColor: '#15803D',
+                                boxShadow: 'none',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 5,
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              <UserCheck size={14} />
+                              <UserCheck size={13} />
                               {executingId === req.id
                                 ? 'Đang thực thi...'
                                 : req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999)
-                                ? `Chờ hiệu lực (${new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN')})`
-                                : 'Áp dụng chuyển lớp ngay'}
+                                ? `Chờ hiệu lực (${formatDDMMYYYY(req.classTransfer.effectiveDate)})`
+                                : 'Áp dụng chuyển lớp'}
                             </button>
                           ) : req.requiresAmendment ? (
                             <button
@@ -673,18 +716,21 @@ export default function AdminRequestsManagementPage() {
                               }}
                               style={{
                                 fontSize: 12,
-                                padding: '6px 12px',
+                                fontWeight: 700,
+                                padding: '6px 11px',
+                                borderRadius: 8,
                                 borderColor: '#F59E0B',
                                 backgroundColor: '#FFFBEB',
                                 color: '#B45309',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 5,
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              <AlertCircle size={14} color="#D97706" /> Chờ bổ sung
+                              <AlertCircle size={13} color="#D97706" /> Chờ bổ sung
                             </button>
-                          ) : req.status === 'Submitted' ? (
+                          ) : req.status === 'Submitted' || req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? (
                             <button
                               type="button"
                               className="btn btn--primary"
@@ -699,29 +745,37 @@ export default function AdminRequestsManagementPage() {
                               }}
                               style={{
                                 fontSize: 12,
-                                padding: '6px 12px',
-                                borderColor: '#1E293B',
+                                fontWeight: 700,
+                                padding: '6px 11px',
+                                borderRadius: 8,
+                                backgroundColor: req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? '#EA580C' : undefined,
+                                borderColor: req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? '#C2410C' : '#1E293B',
+                                boxShadow: 'none',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 5,
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              <FileCheck size={14} /> Thẩm định hồ sơ
+                              <FileCheck size={13} /> {req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? 'Sửa & Trình lại' : 'Thẩm định hồ sơ'}
                             </button>
-                          ) : (req.status === 'Approved' || req.status === 'Completed') && !isTransfer ? (
+                          ) : (req.status === 'Approved' || req.status === 'Completed') && !isTransfer && !!req.documentRequest?.issuedDocumentUrl ? (
                             <button
                               type="button"
                               className="btn btn--outline"
                               onClick={() => handleDownloadDoc(req)}
                               style={{
                                 fontSize: 12,
-                                padding: '6px 12px',
+                                fontWeight: 700,
+                                padding: '6px 11px',
+                                borderRadius: 8,
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 5,
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              <Download size={14} /> Tải văn bản
+                              <Download size={13} /> Tải văn bản
                             </button>
                           ) : req.status === 'UnderReview' ? (
                             <button
@@ -736,12 +790,12 @@ export default function AdminRequestsManagementPage() {
                                   setDocModalOpen(true);
                                 }
                               }}
-                              style={{ fontSize: 12, padding: '5px 10px', color: '#6B21A8' }}
+                              style={{ fontSize: 12, fontWeight: 600, padding: '6px 11px', borderRadius: 8, color: '#6B21A8', whiteSpace: 'nowrap' }}
                             >
                               Xem đề xuất
                             </button>
                           ) : (
-                            <span style={{ fontSize: 12, color: '#94A3B8' }}>Đã đóng hồ sơ</span>
+                            <span style={{ fontSize: 12, color: '#94A3B8', whiteSpace: 'nowrap' }}>Đã đóng hồ sơ</span>
                           )}
                         </div>
                       </td>

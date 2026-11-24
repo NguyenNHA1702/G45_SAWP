@@ -18,10 +18,12 @@ namespace API.Controllers;
 public class RequestsController : ControllerBase
 {
     private readonly IRequestWorkflowEngine _workflowEngine;
+    private readonly ILeaveRequestService _leaveRequestService;
 
-    public RequestsController(IRequestWorkflowEngine workflowEngine)
+    public RequestsController(IRequestWorkflowEngine workflowEngine, ILeaveRequestService leaveRequestService)
     {
         _workflowEngine = workflowEngine;
+        _leaveRequestService = leaveRequestService;
     }
 
     #region Parent Endpoints
@@ -56,6 +58,23 @@ public class RequestsController : ControllerBase
         if (!userId.HasValue) return Unauthorized();
 
         var result = await _workflowEngine.SubmitDocumentRequestAsync(userId.Value, request, cancellationToken);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Phụ huynh nộp loại đơn khác / kiến nghị
+    /// </summary>
+    [HttpPost("other")]
+    [Authorize(Roles = "Parent,Admin")]
+    public async Task<IActionResult> SubmitOtherRequest(
+        [FromBody] OtherRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _workflowEngine.SubmitOtherRequestAsync(userId.Value, request, cancellationToken);
         if (!result.Success) return BadRequest(result);
         return Ok(result);
     }
@@ -156,7 +175,7 @@ public class RequestsController : ControllerBase
     /// Tải lên tệp/ảnh minh chứng đính kèm (chỉ chấp nhận ảnh PNG/JPG hoặc PDF tối đa 10MB - BR-50)
     /// </summary>
     [HttpPost("upload-attachment")]
-    [Authorize(Roles = "Parent,OfficeStaff,Admin")]
+    [Authorize(Roles = "Parent,OfficeStaff,SchoolBoard,Admin")]
     public async Task<IActionResult> UploadAttachment(
         IFormFile file,
         [FromServices] IFileStorageService fileStorageService,
@@ -215,7 +234,7 @@ public class RequestsController : ControllerBase
         using var stream = file.OpenReadStream();
         var relativePath = await fileStorageService.SaveFileAsync(stream, file.FileName, "request_attachments", cancellationToken);
         var normalizedPath = relativePath.Replace('\\', '/');
-        var fileUrl = $"/api/LeaveRequests/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
+        var fileUrl = $"/api/requests/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
 
         return Ok(ApiResponse<AttachmentUploadResultDto>.Ok(new AttachmentUploadResultDto
         {
@@ -224,6 +243,28 @@ public class RequestsController : ControllerBase
             FileSize = file.Length,
             SavedPath = normalizedPath
         }, "Tải lên tệp đính kèm thành công."));
+    }
+
+    /// <summary>
+    /// Tải / Xem tệp đính kèm của đơn hành chính (bắt buộc đăng nhập & kiểm tra quyền)
+    /// </summary>
+    [HttpGet("attachment-file")]
+    public async Task<IActionResult> GetAttachmentFile([FromQuery] string path, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(path)) return BadRequest();
+
+        var roles = User.GetRoles();
+        var attachment = await _leaveRequestService.GetAttachmentAsync(path, userId.Value, roles, cancellationToken);
+        if (attachment == null)
+        {
+            return NotFound("Không tìm thấy tệp đính kèm hoặc bạn không có quyền xem.");
+        }
+
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{Uri.EscapeDataString(attachment.FileName)}\"";
+        return File(attachment.Content, attachment.ContentType);
     }
 
     /// <summary>
@@ -276,7 +317,7 @@ public class RequestsController : ControllerBase
         // HTML encode all user-supplied variables to prevent script injection (BUG9)
         var studentNameEncoded = System.Net.WebUtility.HtmlEncode(result.Data.StudentName ?? "");
         var studentCodeEncoded = System.Net.WebUtility.HtmlEncode(result.Data.StudentCode ?? "");
-        var classNameEncoded = System.Net.WebUtility.HtmlEncode(result.Data.CurrentClassName ?? "Học sinh chính khóa");
+        var classNameEncoded = System.Net.WebUtility.HtmlEncode(result.Data.CurrentClassName ?? "Chưa xếp lớp");
         var purposeEncoded = System.Net.WebUtility.HtmlEncode(doc.Purpose ?? "");
         var docDraftEncoded = System.Net.WebUtility.HtmlEncode(doc.DocumentContentDraft ?? "Học sinh hiện đang theo học văn hóa chính khóa đầy đủ tại trường, chấp hành tốt nội quy và tham gia các hoạt động giáo dục toàn diện của nhà trường.").Replace("\n", "<br />");
         var reqNumberEncoded = System.Net.WebUtility.HtmlEncode(result.Data.RequestNumber ?? "");

@@ -140,6 +140,20 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     }
 
     const phone = formData.parentPhone?.trim();
+    const email = formData.parentEmail?.trim();
+    const cccd = formData.parentIdentityCard?.trim();
+    const parentName = formData.parentFullName?.trim();
+
+    if ((phone || email || cccd) && !parentName) {
+      toast.error('Vui lòng nhập Họ tên phụ huynh khi cung cấp thông tin liên hệ (SĐT / Email / CCCD)!');
+      return;
+    }
+
+    if (parentName && (parentName.includes('<') || parentName.includes('>'))) {
+      toast.error('Họ tên phụ huynh không được chứa ký tự đặc biệt hoặc thẻ HTML!');
+      return;
+    }
+
     if (phone) {
       if (!/^0\d{9}$/.test(phone)) {
         toast.error('Số điện thoại liên hệ phải gồm đúng 10 chữ số (bắt đầu bằng số 0, ví dụ: 0912345678)!');
@@ -147,13 +161,11 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
       }
     }
 
-    const email = formData.parentEmail?.trim();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       toast.error('Email phụ huynh không đúng định dạng (ví dụ: phuhuynh@gmail.com)!');
       return;
     }
 
-    const cccd = formData.parentIdentityCard?.trim();
     if (cccd && !/^\d{9}(\d{3})?$/.test(cccd)) {
       toast.error('Số CCCD/CMND phụ huynh phải gồm 9 hoặc 12 chữ số!');
       return;
@@ -267,7 +279,6 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
               >
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
-                <option value="Khác">Khác</option>
               </select>
             </div>
 

@@ -4,10 +4,13 @@ import {
   CheckCircle,
   GraduationCap,
   MapPin,
+  Pencil,
   Phone,
+  Save,
   ShieldCheck,
   User,
   Users,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
@@ -36,7 +39,20 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
   const [loadedStudent, setLoadedStudent] = useState<StudentProfileDto | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // SC-04: Inline edit state
+  const [isEditing, setIsEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    dateOfBirth: '',
+    gender: 'Nam',
+    residentialArea: '',
+    isSpecialNeeds: false,
+    specialNeedsNotes: '',
+  });
+
   useEffect(() => {
+    setIsEditing(false);
     // A list row may not carry the guardians, so the full profile is always loaded when the modal opens
     const id = studentId ?? student?.id;
     if (student) {
@@ -84,6 +100,72 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
       </GeometricModal>
     );
   }
+
+  const startEdit = () => {
+    setEditForm({
+      fullName: activeStudent.fullName || '',
+      dateOfBirth: activeStudent.dateOfBirth ? activeStudent.dateOfBirth.slice(0, 10) : '',
+      gender: activeStudent.gender === 'Nữ' || activeStudent.gender === 'Female' ? 'Nữ' : 'Nam',
+      residentialArea: activeStudent.residentialArea || activeStudent.address || '',
+      isSpecialNeeds: !!activeStudent.isSpecialNeeds,
+      specialNeedsNotes: activeStudent.specialNeedsNotes || '',
+    });
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanedName = editForm.fullName.trim().replace(/\s+/g, ' ');
+    if (cleanedName.length < 2 || cleanedName.length > 100) {
+      toast.error('Họ và tên học sinh phải có độ dài từ 2 đến 100 ký tự.');
+      return;
+    }
+    if (/[<>0-9]/.test(cleanedName)) {
+      toast.error('Họ và tên học sinh không được chứa chữ số hoặc thẻ HTML.');
+      return;
+    }
+    if (!editForm.dateOfBirth) {
+      toast.error('Vui lòng chọn ngày sinh của học sinh.');
+      return;
+    }
+    const birthDate = new Date(editForm.dateOfBirth);
+    const today = new Date();
+    if (isNaN(birthDate.getTime()) || birthDate >= today) {
+      toast.error('Ngày sinh không hợp lệ (không thể là ngày trong tương lai).');
+      return;
+    }
+    const age = today.getFullYear() - birthDate.getFullYear();
+    if (age < 5 || age > 15) {
+      toast.error(`Độ tuổi học sinh không hợp lệ (${age} tuổi). Độ tuổi tiểu học hợp lệ từ 5 đến 15 tuổi.`);
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const res = await studentApi.updateStudent(activeStudent.id, {
+        fullName: cleanedName,
+        dateOfBirth: editForm.dateOfBirth,
+        gender: editForm.gender,
+        residentialArea: editForm.residentialArea.trim() || undefined,
+        isSpecialNeeds: editForm.isSpecialNeeds,
+        specialNeedsNotes: editForm.isSpecialNeeds ? editForm.specialNeedsNotes.trim() || undefined : undefined,
+        status: activeStudent.status,
+      });
+
+      if (res.success && res.data) {
+        toast.success('Đã cập nhật hồ sơ học sinh thành công!');
+        setLoadedStudent(res.data);
+        setIsEditing(false);
+        onUpdated?.(res.data);
+      } else {
+        toast.error(res.errors?.[0] || res.message || 'Không thể cập nhật hồ sơ học sinh.');
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.errors?.[0] || err?.response?.data?.message || 'Lỗi khi cập nhật hồ sơ học sinh.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const handleActivate = async () => {
     setActivating(true);
@@ -146,15 +228,18 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             {activeStudent.fullName.charAt(0)}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0 }}>{activeStudent.fullName}</h3>
-              <span
-                className={`badge ${
-                  activeStudent.status === 'Active' ? 'badge--mint' : 'badge--amber'
-                }`}
-              >
-                {activeStudent.status}
-              </span>
+              {canManageGuardians && !isEditing && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={startEdit}
+                  style={{ marginLeft: 'auto', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                >
+                  <Pencil size={14} /> Chỉnh sửa
+                </button>
+              )}
             </div>
             <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
               Mã định danh: <strong>{activeStudent.studentCode}</strong> • Giới tính: {activeStudent.gender}
@@ -162,7 +247,92 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Details Grid */}
+        {/* SC-04: Inline Edit Form or Read-only Details Grid */}
+        {isEditing ? (
+          <form onSubmit={handleSaveEdit} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, background: '#FFFDF5' }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--color-accent)', textTransform: 'uppercase' }}>
+              Chỉnh sửa thông tin học sinh
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="field" style={{ gridColumn: 'span 2' }}>
+                <label className="label">Họ và tên (*)</label>
+                <input
+                  type="text"
+                  className="input"
+                  required
+                  value={editForm.fullName}
+                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Ngày sinh (*)</label>
+                <input
+                  type="date"
+                  className="input"
+                  required
+                  min={`${new Date().getFullYear() - 15}-01-01`}
+                  max={`${new Date().getFullYear() - 5}-12-31`}
+                  value={editForm.dateOfBirth}
+                  onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Giới tính (*)</label>
+                <select
+                  className="select"
+                  value={editForm.gender}
+                  onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                >
+                  <option value="Nam">Nam</option>
+                  <option value="Nữ">Nữ</option>
+                </select>
+              </div>
+
+              <div className="field" style={{ gridColumn: 'span 2' }}>
+                <label className="label">Địa chỉ thường trú</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Số nhà, đường, phường/xã, quận/huyện..."
+                  value={editForm.residentialArea}
+                  onChange={(e) => setEditForm({ ...editForm, residentialArea: e.target.value })}
+                />
+              </div>
+
+              <div className="field" style={{ gridColumn: 'span 2' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.isSpecialNeeds}
+                    onChange={(e) => setEditForm({ ...editForm, isSpecialNeeds: e.target.checked })}
+                  />
+                  Học sinh cần hỗ trợ đặc biệt
+                </label>
+                {editForm.isSpecialNeeds && (
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ marginTop: 6 }}
+                    placeholder="Ghi chú hỗ trợ đặc biệt..."
+                    value={editForm.specialNeedsNotes}
+                    onChange={(e) => setEditForm({ ...editForm, specialNeedsNotes: e.target.value })}
+                  />
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <button type="button" className="btn btn--secondary btn--sm" onClick={() => setIsEditing(false)} disabled={savingEdit}>
+                <X size={14} /> Hủy
+              </button>
+              <button type="submit" className="btn btn--primary btn--sm" disabled={savingEdit}>
+                <Save size={14} /> {savingEdit ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </form>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div className="card" style={{ padding: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)', textTransform: 'uppercase', fontWeight: 700 }}>
@@ -214,6 +384,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
             </div>
           </div>
         </div>
+        )}
 
         <StudentGuardiansSection
           student={activeStudent}

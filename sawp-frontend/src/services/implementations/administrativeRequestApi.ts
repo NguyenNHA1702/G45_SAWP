@@ -5,6 +5,7 @@ import type {
   BoardDecisionRequest,
   ClassTransferRequest,
   DocumentIssuanceRequest,
+  OtherRequestPayload,
   RequestHistoryItem,
   RequestStatistics,
   ResubmitRequest,
@@ -24,6 +25,11 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
 
   async submitDocument(req: DocumentIssuanceRequest): Promise<ApiResponse<string>> {
     const res = await apiClient.post<ApiResponse<string>>('/requests/document', req);
+    return res.data;
+  }
+
+  async submitOther(req: OtherRequestPayload): Promise<ApiResponse<string>> {
+    const res = await apiClient.post<ApiResponse<string>>('/requests/other', req);
     return res.data;
   }
 

@@ -332,7 +332,7 @@ public class LeaveRequestService : ILeaveRequestService
                 : ApiResponse<LeaveRequestItemDto>.Fail(validation.ErrorMessage!);
         }
 
-        var requestNumber = $"LR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpper()}";
+        var requestNumber = $"LR-{CurrentNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpper()}";
         var adminRequest = new AdministrativeRequest
         {
             RequestNumber = requestNumber,
@@ -520,6 +520,7 @@ public class LeaveRequestService : ILeaveRequestService
     {
         var requests = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
+            .AsNoTracking()
             .Include(ar => ar.Student)
             .Include(ar => ar.RequesterUser)
             .Include(ar => ar.ReviewerUser)
@@ -575,6 +576,7 @@ public class LeaveRequestService : ILeaveRequestService
 
         var reqQuery = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
+            .AsNoTracking()
             .Include(ar => ar.Student)
             .Include(ar => ar.RequesterUser)
             .Include(ar => ar.ReviewerUser)
@@ -1306,6 +1308,7 @@ public class LeaveRequestService : ILeaveRequestService
         if (classRepo != null && studentIds.Count > 0)
         {
             var assignments = await classRepo.Query()
+                .AsNoTracking()
                 .Include(ca => ca.Class)
                 .Where(ca => studentIds.Contains(ca.StudentId) && ca.IsActive)
                 .ToListAsync(cancellationToken);
@@ -1330,6 +1333,7 @@ public class LeaveRequestService : ILeaveRequestService
         if (auditRepo != null)
         {
             var logs = await auditRepo.Query()
+                .AsNoTracking()
                 .Where(al => al.EntityName == nameof(AdministrativeRequest) && al.EntityId != null && requestIdStrings.Contains(al.EntityId))
                 .OrderBy(al => al.Timestamp)
                 .ToListAsync(cancellationToken);
@@ -1390,10 +1394,10 @@ public class LeaveRequestService : ILeaveRequestService
                 CanWithdraw = canWithdraw,
                 IsWithdrawn = isWithdrawn,
                 Status = req.Status,
-                SubmissionDate = req.SubmissionDate,
+                SubmissionDate = DateTime.SpecifyKind(req.SubmissionDate, DateTimeKind.Utc),
                 ReviewerUserId = req.ReviewerUserId,
                 ReviewerName = req.ReviewerUser?.FullName,
-                ProcessedDate = req.ProcessedDate,
+                ProcessedDate = req.ProcessedDate.HasValue ? DateTime.SpecifyKind(req.ProcessedDate.Value, DateTimeKind.Utc) : null,
                 ReviewerNotes = req.ReviewerNotes,
                 StatusHistory = history
             });
@@ -1419,7 +1423,7 @@ public class LeaveRequestService : ILeaveRequestService
                     ActionLabel = GetActionLabel(log.Action, log.NewValues),
                     ActorName = actorName,
                     Notes = notes,
-                    Timestamp = log.Timestamp
+                    Timestamp = DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Utc)
                 };
             }).ToList();
         }
@@ -1433,7 +1437,7 @@ public class LeaveRequestService : ILeaveRequestService
                 ActionLabel = "Phụ huynh gửi đơn",
                 ActorName = req.RequesterUser?.FullName,
                 Notes = req.LeaveRequest?.Reason,
-                Timestamp = req.SubmissionDate
+                Timestamp = DateTime.SpecifyKind(req.SubmissionDate, DateTimeKind.Utc)
             }
         };
 
@@ -1461,7 +1465,7 @@ public class LeaveRequestService : ILeaveRequestService
                 },
                 ActorName = req.ReviewerUser?.FullName,
                 Notes = req.ReviewerNotes,
-                Timestamp = req.ProcessedDate.Value
+                Timestamp = DateTime.SpecifyKind(req.ProcessedDate.Value, DateTimeKind.Utc)
             });
         }
 
@@ -1560,7 +1564,9 @@ public class LeaveRequestService : ILeaveRequestService
         }
 
         var normalizedPath = decoded.Replace('\\', '/').TrimStart('/');
-        if (!normalizedPath.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase))
+        var isLeaveAttachment = normalizedPath.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase);
+        var isAdminReqAttachment = normalizedPath.StartsWith("request_attachments/", StringComparison.OrdinalIgnoreCase);
+        if (!isLeaveAttachment && !isAdminReqAttachment)
         {
             return null;
         }
@@ -1582,20 +1588,52 @@ public class LeaveRequestService : ILeaveRequestService
             var reqRepo = _unitOfWork.Repository<AdministrativeRequest>();
             if (reqRepo != null)
             {
-                var matchingReq = await reqRepo.Query()
-                    .Include(ar => ar.LeaveRequest)
-                    .FirstOrDefaultAsync(ar => ar.RequestType == RequestTypes.Leave
-                        && ar.LeaveRequest != null
-                        && ar.LeaveRequest.DoctorNoteAttachmentUrl != null
-                        && (ar.LeaveRequest.DoctorNoteAttachmentUrl.Contains(escapedPath)
-                            || ar.LeaveRequest.DoctorNoteAttachmentUrl.Contains(normalizedPath)), cancellationToken);
-
-                if (matchingReq != null)
+                if (isLeaveAttachment)
                 {
-                    var canAccess = await CanAccessLeaveRequestAsync(matchingReq, requestingUserId.Value, requestingRoles, cancellationToken);
-                    if (!canAccess)
+                    var matchingReq = await reqRepo.Query()
+                        .AsNoTracking()
+                        .Include(ar => ar.LeaveRequest)
+                        .FirstOrDefaultAsync(ar => ar.RequestType == RequestTypes.Leave
+                            && ar.LeaveRequest != null
+                            && ar.LeaveRequest.DoctorNoteAttachmentUrl != null
+                            && (ar.LeaveRequest.DoctorNoteAttachmentUrl.Contains(escapedPath)
+                                || ar.LeaveRequest.DoctorNoteAttachmentUrl.Contains(normalizedPath)), cancellationToken);
+
+                    if (matchingReq != null)
                     {
-                        return null;
+                        var canAccess = await CanAccessLeaveRequestAsync(matchingReq, requestingUserId.Value, requestingRoles, cancellationToken);
+                        if (!canAccess)
+                        {
+                            return null;
+                        }
+                    }
+                }
+                else
+                {
+                    var isPrivileged = requestingRoles != null && requestingRoles.Any(r =>
+                        r == UserRoles.OfficeStaff || r == UserRoles.SchoolBoard || r == UserRoles.Admin || r == UserRoles.Teacher);
+                    if (!isPrivileged)
+                    {
+                        var matchingAdminReq = await reqRepo.Query()
+                            .AsNoTracking()
+                            .Include(ar => ar.DocumentRequestDetail)
+                            .FirstOrDefaultAsync(ar =>
+                                (ar.AttachmentUrl != null && (ar.AttachmentUrl.Contains(escapedPath) || ar.AttachmentUrl.Contains(normalizedPath)))
+                                || (ar.DocumentRequestDetail != null && ar.DocumentRequestDetail.IssuedDocumentUrl != null
+                                    && (ar.DocumentRequestDetail.IssuedDocumentUrl.Contains(escapedPath) || ar.DocumentRequestDetail.IssuedDocumentUrl.Contains(normalizedPath))),
+                                cancellationToken);
+
+                        if (matchingAdminReq != null && matchingAdminReq.RequesterUserId != requestingUserId.Value)
+                        {
+                            var isGuardian = matchingAdminReq.StudentId.HasValue
+                                && _unitOfWork.Repository<StudentGuardian>() != null
+                                && await _unitOfWork.Repository<StudentGuardian>().Query()
+                                    .AnyAsync(sg => sg.StudentId == matchingAdminReq.StudentId.Value && sg.Guardian.UserId == requestingUserId.Value, cancellationToken);
+                            if (!isGuardian)
+                            {
+                                return null;
+                            }
+                        }
                     }
                 }
             }

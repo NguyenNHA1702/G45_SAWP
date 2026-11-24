@@ -4,6 +4,7 @@ import type {
   BoardDecisionRequest,
   ClassTransferRequest,
   DocumentIssuanceRequest,
+  OtherRequestPayload,
   RequestHistoryItem,
   RequestStatistics,
   ResubmitRequest,
@@ -17,6 +18,7 @@ export interface IAdministrativeRequestApi {
   // Parent
   submitClassTransfer(req: ClassTransferRequest): Promise<ApiResponse<string>>;
   submitDocument(req: DocumentIssuanceRequest): Promise<ApiResponse<string>>;
+  submitOther(req: OtherRequestPayload): Promise<ApiResponse<string>>;
   getMyRequests(studentId?: number): Promise<ApiResponse<AdministrativeRequestSummary[]>>;
   getRequestDetail(id: number): Promise<ApiResponse<AdministrativeRequestSummary>>;
   resubmitRequest(id: number, req: ResubmitRequest): Promise<ApiResponse<boolean>>;

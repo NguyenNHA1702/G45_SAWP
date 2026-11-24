@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -12,12 +13,44 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditService _auditService;
+    private readonly ISchoolClock? _schoolClock;
 
-    public RequestWorkflowEngine(IUnitOfWork unitOfWork, IAuditService auditService)
+    private static readonly TimeZoneInfo VietnamTimeZone = ResolveVietnamTimeZone();
+
+    public RequestWorkflowEngine(IUnitOfWork unitOfWork, IAuditService auditService, ISchoolClock? schoolClock = null)
     {
         _unitOfWork = unitOfWork;
         _auditService = auditService;
+        _schoolClock = schoolClock;
     }
+
+    private static TimeZoneInfo ResolveVietnamTimeZone()
+    {
+        foreach (var id in new[] { "SE Asia Standard Time", "Asia/Ho_Chi_Minh" })
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+        }
+        return TimeZoneInfo.CreateCustomTimeZone("SchoolTZ", TimeSpan.FromHours(7), "SchoolTZ", "SchoolTZ");
+    }
+
+    private DateTime SchoolNow => _schoolClock?.Now ?? TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, VietnamTimeZone);
+    private DateTime SchoolToday => SchoolNow.Date;
+
+    private DateTime ToSchoolDate(DateTime dt) =>
+        _schoolClock != null
+            ? _schoolClock.ToSchoolTime(dt).Date
+            : TimeZoneInfo.ConvertTimeFromUtc(AsUtc(dt), VietnamTimeZone).Date;
+
+    private static DateTime AsUtc(DateTime dt) =>
+        dt.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt.ToUniversalTime();
+
+    private static DateTime? AsUtc(DateTime? dt) => dt.HasValue ? AsUtc(dt.Value) : null;
 
     #region Parent Operations
 
@@ -29,6 +62,17 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (request.StudentId <= 0 || request.TargetClassId <= 0 || string.IsNullOrWhiteSpace(request.TransferReason))
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, lớp muốn chuyển và nhập lý do." });
+        }
+
+        var cleanTransferReason = System.Text.RegularExpressions.Regex.Replace(request.TransferReason.Trim(), @"\s+", " ");
+        if (cleanTransferReason.Length < 5 || cleanTransferReason.Length > 1000)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Lý do xin chuyển lớp phải có độ dài từ 5 đến 1000 ký tự." });
+        }
+
+        if (request.EffectiveDate.HasValue && request.EffectiveDate.Value.Date < SchoolToday)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Ngày mong muốn chuyển lớp không được là ngày trong quá khứ." });
         }
 
         // Validate Guardian relationship
@@ -103,44 +147,71 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             });
         }
 
-        var reqNumber = $"REQ-CT-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+        var schoolNow = SchoolNow;
+        var reqNumber = $"REQ-CT-{schoolNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
-        var adminRequest = new AdministrativeRequest
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
         {
-            RequestNumber = reqNumber,
-            RequesterUserId = requesterUserId,
-            StudentId = request.StudentId,
-            RequestType = RequestTypes.ClassTransfer,
-            Status = RequestStatus.Submitted,
-            AttachmentUrl = request.AttachmentUrl,
-            SubmissionDate = DateTime.UtcNow
-        };
+            var adminRequest = new AdministrativeRequest
+            {
+                RequestNumber = reqNumber,
+                RequesterUserId = requesterUserId,
+                StudentId = request.StudentId,
+                RequestType = RequestTypes.ClassTransfer,
+                Status = RequestStatus.Submitted,
+                AttachmentUrl = request.AttachmentUrl?.Trim(),
+                SubmissionDate = DateTime.UtcNow
+            };
 
-        await _unitOfWork.Repository<AdministrativeRequest>().AddAsync(adminRequest, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.Repository<AdministrativeRequest>().AddAsync(adminRequest, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var transferDetail = new ClassTransferDetail
+            var transferDetail = new ClassTransferDetail
+            {
+                AdministrativeRequestId = adminRequest.Id,
+                FromClassId = currentAssignment.ClassId,
+                ToClassId = request.TargetClassId,
+                TransferReason = cleanTransferReason,
+                EffectiveDate = request.EffectiveDate?.Date ?? schoolNow.Date,
+                TargetClassCapacitySnapshot = targetEnrolled
+            };
+
+            await _unitOfWork.Repository<ClassTransferDetail>().AddAsync(transferDetail, cancellationToken);
+
+            await _auditService.LogActionAsync(
+                requesterUserId,
+                AuditActions.AdministrativeRequestSubmit,
+                nameof(AdministrativeRequest),
+                adminRequest.Id.ToString(),
+                null,
+                new
+                {
+                    RequestNumber = reqNumber,
+                    RequestType = RequestTypes.ClassTransfer,
+                    ToClass = targetClass.ClassName,
+                    Notes = $"Phụ huynh đã gửi đơn xin chuyển lớp tới {targetClass.ClassName}"
+                },
+                null,
+                cancellationToken);
+
+            // Notify Office Staff
+            await NotifyStaffMembersAsync(
+                "Yêu cầu chuyển lớp mới",
+                $"Phụ huynh học sinh {student.FullName} vừa nộp đơn xin chuyển từ lớp {currentAssignment.Class?.ClassName ?? "hiện tại"} sang {targetClass.ClassName}.",
+                "/office/requests",
+                cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+            return ApiResponse<string>.Ok(reqNumber, SystemMessages.MSG30);
+        }
+        catch
         {
-            AdministrativeRequestId = adminRequest.Id,
-            FromClassId = currentAssignment.ClassId,
-            ToClassId = request.TargetClassId,
-            TransferReason = request.TransferReason.Trim(),
-            EffectiveDate = request.EffectiveDate ?? DateTime.UtcNow,
-            TargetClassCapacitySnapshot = targetEnrolled
-        };
-
-        await _unitOfWork.Repository<ClassTransferDetail>().AddAsync(transferDetail, cancellationToken);
-
-        // Notify Office Staff
-        await NotifyStaffMembersAsync(
-            "Yêu cầu chuyển lớp mới",
-            $"Phụ huynh học sinh {student.FullName} vừa nộp đơn xin chuyển từ lớp {currentAssignment.Class.ClassName} sang {targetClass.ClassName}.",
-            "/office/requests",
-            cancellationToken);
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return ApiResponse<string>.Ok(reqNumber, SystemMessages.MSG30);
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            return ApiResponse<string>.Fail(SystemMessages.MSG50, new List<string> { "Không thể gửi đơn xin chuyển lớp lúc này. Vui lòng kiểm tra lại thông tin và thử lại." });
+        }
     }
 
     public async Task<ApiResponse<string>> SubmitDocumentRequestAsync(
@@ -153,6 +224,12 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, loại giấy tờ và mục đích xin cấp." });
         }
 
+        var cleanPurpose = System.Text.RegularExpressions.Regex.Replace(request.Purpose.Trim(), @"\s+", " ");
+        if (cleanPurpose.Length < 5 || cleanPurpose.Length > 1000)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Mục đích xin cấp giấy tờ phải có độ dài từ 5 đến 1000 ký tự." });
+        }
+
         if (request.NumberOfCopies < 0 || request.NumberOfCopies > 10)
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Số lượng bản sao phải từ 1 đến 10 bản (không chấp nhận số âm hoặc vượt quá 10 bản)." });
@@ -162,9 +239,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         // Sanitize DocumentType
         var cleanDocType = System.Text.RegularExpressions.Regex.Replace(request.DocumentType, "<.*?>", string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(cleanDocType))
+        if (string.IsNullOrWhiteSpace(cleanDocType) || cleanDocType.Length > 150)
         {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Loại giấy tờ không hợp lệ." });
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Loại giấy tờ không hợp lệ (tối đa 150 ký tự)." });
         }
 
         var guardian = await _unitOfWork.Repository<Guardian>()
@@ -189,7 +266,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             .Include(r => r.DocumentRequestDetail)
             .AnyAsync(r => r.StudentId == request.StudentId
                         && r.RequestType == RequestTypes.Document
-                        && (r.Status == RequestStatus.Submitted || r.Status == RequestStatus.UnderReview)
+                        && (r.Status == RequestStatus.Submitted || r.Status == RequestStatus.UnderReview || r.Status == RequestStatus.NeedMoreInfo || r.Status == RequestStatus.ReturnedToStaff)
                         && r.DocumentRequestDetail != null
                         && r.DocumentRequestDetail.DocumentType.ToLower() == cleanDocType.ToLower(),
                         cancellationToken);
@@ -201,43 +278,172 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             });
         }
 
-        var reqNumber = $"REQ-DOC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+        var reqNumber = $"REQ-DOC-{SchoolNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
-        var adminRequest = new AdministrativeRequest
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
         {
-            RequestNumber = reqNumber,
-            RequesterUserId = requesterUserId,
-            StudentId = request.StudentId,
-            RequestType = RequestTypes.Document,
-            Status = RequestStatus.Submitted,
-            AttachmentUrl = request.AttachmentUrl,
-            SubmissionDate = DateTime.UtcNow
-        };
+            var adminRequest = new AdministrativeRequest
+            {
+                RequestNumber = reqNumber,
+                RequesterUserId = requesterUserId,
+                StudentId = request.StudentId,
+                RequestType = RequestTypes.Document,
+                Status = RequestStatus.Submitted,
+                AttachmentUrl = request.AttachmentUrl?.Trim(),
+                SubmissionDate = DateTime.UtcNow
+            };
 
-        await _unitOfWork.Repository<AdministrativeRequest>().AddAsync(adminRequest, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.Repository<AdministrativeRequest>().AddAsync(adminRequest, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var docDetail = new DocumentRequestDetail
+            var docDetail = new DocumentRequestDetail
+            {
+                AdministrativeRequestId = adminRequest.Id,
+                DocumentType = cleanDocType,
+                NumberOfCopies = copies,
+                Purpose = cleanPurpose,
+                IsPaperCopyRequested = request.IsPaperCopyRequested
+            };
+
+            await _unitOfWork.Repository<DocumentRequestDetail>().AddAsync(docDetail, cancellationToken);
+
+            await _auditService.LogActionAsync(
+                requesterUserId,
+                AuditActions.AdministrativeRequestSubmit,
+                nameof(AdministrativeRequest),
+                adminRequest.Id.ToString(),
+                null,
+                new
+                {
+                    RequestNumber = reqNumber,
+                    RequestType = RequestTypes.Document,
+                    Detail = cleanDocType,
+                    Notes = $"Phụ huynh đã gửi đơn xin cấp {cleanDocType}"
+                },
+                null,
+                cancellationToken);
+
+            // Notify Office Staff
+            await NotifyStaffMembersAsync(
+                "Yêu cầu cấp giấy tờ / chứng nhận mới",
+                $"Phụ huynh học sinh {student.FullName} vừa nộp đơn xin cấp {docDetail.DocumentType} ({docDetail.NumberOfCopies} bản).",
+                "/office/requests",
+                cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+            return ApiResponse<string>.Ok(reqNumber, SystemMessages.MSG30);
+        }
+        catch
         {
-            AdministrativeRequestId = adminRequest.Id,
-            DocumentType = cleanDocType,
-            NumberOfCopies = copies,
-            Purpose = request.Purpose.Trim(),
-            IsPaperCopyRequested = request.IsPaperCopyRequested
-        };
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            return ApiResponse<string>.Fail(SystemMessages.MSG50, new List<string> { "Không thể gửi đơn xin cấp giấy tờ lúc này. Vui lòng kiểm tra lại thông tin và thử lại." });
+        }
+    }
 
-        await _unitOfWork.Repository<DocumentRequestDetail>().AddAsync(docDetail, cancellationToken);
+    public async Task<ApiResponse<string>> SubmitOtherRequestAsync(
+        int requesterUserId,
+        OtherRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.StudentId <= 0 || string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, nhập tiêu đề và nội dung đơn." });
+        }
 
-        // Notify Office Staff
-        await NotifyStaffMembersAsync(
-            "Yêu cầu cấp giấy tờ / chứng nhận mới",
-            $"Phụ huynh học sinh {student.FullName} vừa nộp đơn xin cấp {docDetail.DocumentType} ({docDetail.NumberOfCopies} bản).",
-            "/office/requests",
-            cancellationToken);
+        var cleanTitle = System.Text.RegularExpressions.Regex.Replace(request.Title, "<.*?>", string.Empty);
+        cleanTitle = System.Text.RegularExpressions.Regex.Replace(cleanTitle.Trim(), @"\s+", " ");
+        if (cleanTitle.Length < 5 || cleanTitle.Length > 150)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề loại đơn khác phải có độ dài từ 5 đến 150 ký tự." });
+        }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var cleanContent = System.Text.RegularExpressions.Regex.Replace(request.Content.Trim(), @"\s+", " ");
+        if (cleanContent.Length < 5 || cleanContent.Length > 1000)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chi tiết đơn phải có độ dài từ 5 đến 1000 ký tự." });
+        }
 
-        return ApiResponse<string>.Ok(reqNumber, SystemMessages.MSG30);
+        var guardian = await _unitOfWork.Repository<Guardian>()
+            .Query()
+            .Include(g => g.StudentGuardians)
+            .FirstOrDefaultAsync(g => g.UserId == requesterUserId, cancellationToken);
+
+        if (guardian == null || !guardian.StudentGuardians.Any(sg => sg.StudentId == request.StudentId))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG10, new List<string> { "Bạn không có quyền gửi đơn cho học sinh này." });
+        }
+
+        var student = await _unitOfWork.Students.GetByIdAsync(request.StudentId, cancellationToken);
+        if (student == null)
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG11);
+        }
+
+        var reqNumber = $"REQ-OTH-{SchoolNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var adminRequest = new AdministrativeRequest
+            {
+                RequestNumber = reqNumber,
+                RequesterUserId = requesterUserId,
+                StudentId = request.StudentId,
+                RequestType = RequestTypes.Other,
+                Status = RequestStatus.Submitted,
+                AttachmentUrl = request.AttachmentUrl?.Trim(),
+                SubmissionDate = DateTime.UtcNow
+            };
+
+            await _unitOfWork.Repository<AdministrativeRequest>().AddAsync(adminRequest, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var detail = new DocumentRequestDetail
+            {
+                AdministrativeRequestId = adminRequest.Id,
+                DocumentType = cleanTitle,
+                NumberOfCopies = 1,
+                Purpose = cleanContent,
+                IsPaperCopyRequested = false
+            };
+
+            await _unitOfWork.Repository<DocumentRequestDetail>().AddAsync(detail, cancellationToken);
+
+            await _auditService.LogActionAsync(
+                requesterUserId,
+                AuditActions.AdministrativeRequestSubmit,
+                nameof(AdministrativeRequest),
+                adminRequest.Id.ToString(),
+                null,
+                new
+                {
+                    RequestNumber = reqNumber,
+                    RequestType = RequestTypes.Other,
+                    Detail = cleanTitle,
+                    Notes = $"Phụ huynh đã gửi đơn khác: {cleanTitle}"
+                },
+                null,
+                cancellationToken);
+
+            await NotifyStaffMembersAsync(
+                "Yêu cầu / Kiến nghị khác mới",
+                $"Phụ huynh học sinh {student.FullName} vừa nộp đơn mới: {cleanTitle}.",
+                "/office/requests",
+                cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+            return ApiResponse<string>.Ok(reqNumber, SystemMessages.MSG30);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            return ApiResponse<string>.Fail(SystemMessages.MSG50, new List<string> { "Không thể gửi đơn lúc này. Vui lòng kiểm tra lại thông tin và thử lại." });
+        }
     }
 
     public async Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetMyRequestsAsync(
@@ -247,21 +453,18 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
     {
         var query = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
-            .Include(r => r.RequesterUser)
-            .Include(r => r.Student)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.FromClass)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.ToClass).ThenInclude(c => c!.ClassAssignments)
-            .Include(r => r.DocumentRequestDetail)
-            .Where(r => r.RequesterUserId == parentUserId && (r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document));
+            .AsNoTracking()
+            .Where(r => r.RequesterUserId == parentUserId
+                && (r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other));
 
         if (studentId.HasValue)
         {
             query = query.Where(r => r.StudentId == studentId.Value);
         }
 
-        var list = await query.OrderByDescending(r => r.SubmissionDate).ToListAsync(cancellationToken);
-
-        var dtos = list.Select(MapToSummaryDto).ToList();
+        var dtos = await ProjectToSummaryDto(query.OrderByDescending(r => r.SubmissionDate), includeDraftContent: false)
+            .ToListAsync(cancellationToken);
+        NormalizeSummaryDates(dtos);
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
     }
 
@@ -270,60 +473,89 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         int currentUserId,
         CancellationToken cancellationToken = default)
     {
-        var req = await _unitOfWork.Repository<AdministrativeRequest>()
+        var reqMeta = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
-            .Include(r => r.RequesterUser)
-            .Include(r => r.Student)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.FromClass)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.ToClass).ThenInclude(c => c!.ClassAssignments)
-            .Include(r => r.DocumentRequestDetail)
-            .FirstOrDefaultAsync(r => r.Id == requestId, cancellationToken);
+            .AsNoTracking()
+            .Where(r => r.Id == requestId)
+            .Select(r => new { r.Id, r.RequesterUserId, r.StudentId })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (req == null)
+        if (reqMeta == null)
         {
             return ApiResponse<AdministrativeRequestSummaryDto>.Fail("Không tìm thấy yêu cầu.");
         }
 
-        // Authorization check: Admin, OfficeStaff, SchoolBoard or Student's Guardian / Requester or Homeroom Teacher (BUG8)
+        var hasAccess = await CanAccessRequestAsync(reqMeta.RequesterUserId, reqMeta.StudentId, currentUserId, cancellationToken);
+        if (!hasAccess)
+        {
+            return ApiResponse<AdministrativeRequestSummaryDto>.Fail(SystemMessages.MSG10);
+        }
+
+        var dto = await ProjectToSummaryDto(
+                _unitOfWork.Repository<AdministrativeRequest>().Query().AsNoTracking().Where(r => r.Id == requestId),
+                includeDraftContent: true)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (dto == null)
+        {
+            return ApiResponse<AdministrativeRequestSummaryDto>.Fail("Không tìm thấy yêu cầu.");
+        }
+
+        NormalizeSummaryDates(dto);
+        return ApiResponse<AdministrativeRequestSummaryDto>.Ok(dto);
+    }
+
+    private async Task<bool> CanAccessRequestAsync(
+        int requesterUserId,
+        int? studentId,
+        int currentUserId,
+        CancellationToken cancellationToken)
+    {
         var userRoles = await _unitOfWork.Repository<UserRole>()
             .Query()
+            .AsNoTracking()
             .Include(ur => ur.Role)
             .Where(ur => ur.UserId == currentUserId)
             .Select(ur => ur.Role.Name)
             .ToListAsync(cancellationToken);
 
-        bool isStaffOrAdmin = userRoles.Any(r => r == UserRoles.OfficeStaff.ToString() || r == UserRoles.SchoolBoard.ToString() || r == UserRoles.Admin.ToString());
+        bool isStaffOrAdmin = userRoles.Any(r =>
+            r == UserRoles.OfficeStaff.ToString() ||
+            r == UserRoles.SchoolBoard.ToString() ||
+            r == UserRoles.Admin.ToString());
+        if (isStaffOrAdmin) return true;
 
-        if (!isStaffOrAdmin)
+        if (requesterUserId == currentUserId || (requesterUserId == 0 && userRoles.Count == 0))
+            return true;
+
+        if (studentId.HasValue)
         {
-            bool isRequester = req.RequesterUserId == currentUserId || (req.RequesterUserId == 0 && userRoles.Count == 0);
-            bool isGuardian = req.StudentId.HasValue && await _unitOfWork.Repository<StudentGuardian>()
+            var isGuardian = await _unitOfWork.Repository<StudentGuardian>()
                 .Query()
+                .AsNoTracking()
                 .Include(sg => sg.Guardian)
-                .AnyAsync(sg => sg.StudentId == req.StudentId.Value && sg.Guardian.UserId == currentUserId, cancellationToken);
+                .AnyAsync(sg => sg.StudentId == studentId.Value && sg.Guardian != null && sg.Guardian.UserId == currentUserId, cancellationToken);
+            if (isGuardian) return true;
 
-            bool isHomeroomTeacher = false;
-            if (userRoles.Contains("Teacher") && req.StudentId.HasValue)
+            if (userRoles.Contains("Teacher"))
             {
                 var teacherStaff = await _unitOfWork.Repository<StaffProfile>()
                     .Query()
+                    .AsNoTracking()
                     .FirstOrDefaultAsync(sp => sp.UserId == currentUserId, cancellationToken);
                 if (teacherStaff != null)
                 {
-                    isHomeroomTeacher = await _unitOfWork.Repository<ClassAssignment>()
+                    var isHomeroomTeacher = await _unitOfWork.Repository<ClassAssignment>()
                         .Query()
+                        .AsNoTracking()
                         .Include(ca => ca.Class)
-                        .AnyAsync(ca => ca.StudentId == req.StudentId.Value && ca.IsActive && ca.Class.HomeroomTeacherId == teacherStaff.Id, cancellationToken);
+                        .AnyAsync(ca => ca.StudentId == studentId.Value && ca.IsActive && ca.Class.HomeroomTeacherId == teacherStaff.Id, cancellationToken);
+                    if (isHomeroomTeacher) return true;
                 }
-            }
-
-            if (!isRequester && !isGuardian && !isHomeroomTeacher)
-            {
-                return ApiResponse<AdministrativeRequestSummaryDto>.Fail(SystemMessages.MSG10);
             }
         }
 
-        return ApiResponse<AdministrativeRequestSummaryDto>.Ok(MapToSummaryDto(req));
+        return false;
     }
 
     public async Task<ApiResponse<bool>> ResubmitRequestAsync(
@@ -384,6 +616,21 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         req.RequiresAmendment = false;
         req.AmendmentNotes = null; // Clear old amendment notes per BUG 9
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
+
+        await _auditService.LogActionAsync(
+            requesterUserId,
+            AuditActions.AdministrativeRequestResubmit,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            null,
+            new
+            {
+                Notes = !string.IsNullOrWhiteSpace(request.AdditionalNotes)
+                    ? request.AdditionalNotes.Trim()
+                    : "Phụ huynh đã cập nhật thông tin và nộp lại hồ sơ theo yêu cầu bổ sung."
+            },
+            null,
+            cancellationToken);
 
         // Notify Office Staff
         await NotifyStaffMembersAsync(
@@ -470,12 +717,8 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
     {
         var query = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
-            .Include(r => r.RequesterUser)
-            .Include(r => r.Student)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.FromClass)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.ToClass).ThenInclude(c => c!.ClassAssignments)
-            .Include(r => r.DocumentRequestDetail)
-            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document);
+            .AsNoTracking()
+            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other);
 
         if (!string.IsNullOrWhiteSpace(requestType))
         {
@@ -487,8 +730,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             query = query.Where(r => r.Status == st);
         }
 
-        var list = await query.OrderByDescending(r => r.SubmissionDate).ToListAsync(cancellationToken);
-        var dtos = list.Select(MapToSummaryDto).ToList();
+        var dtos = await ProjectToSummaryDto(query.OrderByDescending(r => r.SubmissionDate), includeDraftContent: false)
+            .ToListAsync(cancellationToken);
+        NormalizeSummaryDates(dtos);
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
     }
 
@@ -498,9 +742,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         StaffAmendmentDto request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.AmendmentNotes))
+        if (string.IsNullOrWhiteSpace(request.AmendmentNotes) || request.AmendmentNotes.Trim().Length < 5)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập nội dung yêu cầu bổ sung." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập nội dung yêu cầu bổ sung (tối thiểu 5 ký tự)." });
         }
 
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
@@ -513,9 +757,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail("Không tìm thấy yêu cầu.");
         }
 
-        if (req.Status != RequestStatus.Submitted)
+        if (req.Status != RequestStatus.Submitted && req.Status != RequestStatus.NeedMoreInfo && req.Status != RequestStatus.ReturnedToStaff)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể yêu cầu bổ sung hồ sơ khi đơn đang ở trạng thái 'Chờ thẩm định'." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể yêu cầu bổ sung hồ sơ khi đơn đang ở trạng thái 'Chờ thẩm định' hoặc 'BGH yêu cầu chỉnh sửa'." });
         }
 
         if (req.RequiresAmendment)
@@ -528,6 +772,16 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         req.ReviewerUserId = staffUserId;
 
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
+
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AdministrativeRequestAmendment,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            null,
+            new { Notes = request.AmendmentNotes.Trim() },
+            null,
+            cancellationToken);
 
         // Send Notification to Parent / Guardians
         await NotifyGuardiansOfStudentAsync(
@@ -588,17 +842,47 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail(SystemMessages.MSG15, new List<string> { $"Lớp {req.ClassTransferDetail.ToClass.ClassName} đã đủ sĩ số ({currentCount}/{req.ClassTransferDetail.ToClass.Capacity})." });
         }
 
+        if (string.IsNullOrWhiteSpace(request.StaffRecommendation) || request.StaffRecommendation.Trim().Length < 5)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập ý kiến thẩm định chuyển lớp (tối thiểu 5 ký tự)." });
+        }
+
+        var effectiveDate = request.EffectiveDate ?? req.ClassTransferDetail.EffectiveDate;
+        if (!effectiveDate.HasValue)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn ngày có hiệu lực chuyển lớp (không được để trống)." });
+        }
+        if (effectiveDate.Value.Date < SchoolToday)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ngày có hiệu lực chuyển lớp không được là ngày trong quá khứ." });
+        }
+
+        bool isResubmission = req.Status == RequestStatus.ReturnedToStaff || req.Status == RequestStatus.NeedMoreInfo;
+
         req.ClassTransferDetail.StaffRecommendation = request.StaffRecommendation.Trim();
         req.ClassTransferDetail.TargetClassCapacitySnapshot = currentCount;
-        if (request.EffectiveDate.HasValue)
-        {
-            req.ClassTransferDetail.EffectiveDate = request.EffectiveDate.Value;
-        }
+        req.ClassTransferDetail.EffectiveDate = effectiveDate.Value.Date;
         req.Status = RequestStatus.UnderReview;
         req.ReviewerUserId = staffUserId;
         req.RequiresAmendment = false;
+        req.SchoolBoardNotes = null;
 
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
+
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AdministrativeRequestEndorse,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            null,
+            new
+            {
+                Notes = request.StaffRecommendation.Trim(),
+                IsResubmission = isResubmission,
+                EffectiveDate = effectiveDate.Value.Date
+            },
+            null,
+            cancellationToken);
 
         // Notify SchoolBoard
         await NotifyBoardMembersAsync(
@@ -645,21 +929,62 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn này đã được hoàn tất xử lý, không thể gửi lại đề xuất." });
         }
 
+        if (string.IsNullOrWhiteSpace(request.StaffEndorsement) || request.StaffEndorsement.Trim().Length < 5)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập ghi chú / ý kiến thẩm định của Giáo vụ (tối thiểu 5 ký tự)." });
+        }
+
+        var existingUploadedUrl = !string.IsNullOrWhiteSpace(req.DocumentRequestDetail.IssuedDocumentUrl)
+            && !req.DocumentRequestDetail.IssuedDocumentUrl.Contains("/download-document")
+            ? req.DocumentRequestDetail.IssuedDocumentUrl
+            : null;
+        var effectiveFileUrl = !string.IsNullOrWhiteSpace(request.DocumentFileUrl)
+            ? request.DocumentFileUrl.Trim()
+            : existingUploadedUrl;
+
+        if (req.RequestType == RequestTypes.Document && string.IsNullOrWhiteSpace(effectiveFileUrl))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng tải lên tệp văn bản (PDF hoặc Ảnh) để Ban Giám Hiệu xem xét và ký số." });
+        }
+
         req.DocumentRequestDetail.StaffEndorsement = request.StaffEndorsement.Trim();
-        req.DocumentRequestDetail.DocumentContentDraft = string.IsNullOrWhiteSpace(request.DocumentContentDraft)
-            ? $"DỰ THẢO VĂN BẢN XÁC NHẬN:\nTrường Tiểu học SAWP xác nhận học sinh {req.Student?.FullName} (Mã: {req.Student?.StudentCode}) đang theo học hợp lệ tại trường.\nMục đích cấp: {req.DocumentRequestDetail.Purpose}."
-            : request.DocumentContentDraft.Trim();
+        if (!string.IsNullOrWhiteSpace(effectiveFileUrl))
+        {
+            req.DocumentRequestDetail.IssuedDocumentUrl = effectiveFileUrl;
+        }
+        if (!string.IsNullOrWhiteSpace(request.DocumentContentDraft))
+        {
+            req.DocumentRequestDetail.DocumentContentDraft = request.DocumentContentDraft.Trim();
+        }
+
+        bool isResubmission = req.Status == RequestStatus.ReturnedToStaff || req.Status == RequestStatus.NeedMoreInfo;
 
         req.Status = RequestStatus.UnderReview;
         req.ReviewerUserId = staffUserId;
         req.RequiresAmendment = false;
+        req.SchoolBoardNotes = null;
 
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
 
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AdministrativeRequestEndorse,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            null,
+            new
+            {
+                Notes = request.StaffEndorsement.Trim(),
+                IsResubmission = isResubmission,
+                FileAttached = !string.IsNullOrWhiteSpace(effectiveFileUrl)
+            },
+            null,
+            cancellationToken);
+
         // Notify SchoolBoard
         await NotifyBoardMembersAsync(
-            "Hồ sơ xin cấp giấy tờ chờ phê duyệt",
-            $"Giáo vụ đã chuẩn bị dự thảo {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} (Đơn {req.RequestNumber}).",
+            req.RequestType == RequestTypes.Other ? "Đơn kiến nghị / yêu cầu khác chờ phê duyệt" : "Hồ sơ xin cấp giấy tờ chờ phê duyệt",
+            $"Giáo vụ đã thẩm định và trình hồ sơ '{req.DocumentRequestDetail.DocumentType}' cho học sinh {req.Student?.FullName} (Đơn {req.RequestNumber}).",
             "/board/requests",
             cancellationToken);
 
@@ -673,9 +998,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         StaffRejectDto request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Reason))
+        if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối đơn." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối đơn (tối thiểu 5 ký tự)." });
         }
 
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
@@ -688,9 +1013,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail("Không tìm thấy đơn.");
         }
 
-        if (req.Status != RequestStatus.Submitted)
+        if (req.Status != RequestStatus.Submitted && req.Status != RequestStatus.NeedMoreInfo && req.Status != RequestStatus.ReturnedToStaff)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể từ chối đơn khi đang ở trạng thái 'Chờ thẩm định'." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể từ chối đơn khi đang ở trạng thái 'Chờ thẩm định' hoặc 'BGH yêu cầu chỉnh sửa'." });
         }
 
         req.Status = RequestStatus.Rejected;
@@ -746,58 +1071,111 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn đang yêu cầu phụ huynh bổ sung hồ sơ." });
         }
 
-        if (req.Status != RequestStatus.Submitted)
+        if (req.Status != RequestStatus.Submitted && req.Status != RequestStatus.NeedMoreInfo && req.Status != RequestStatus.ReturnedToStaff)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể phát hành trực tiếp các đơn đang ở trạng thái 'Chờ thẩm định'." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể phát hành trực tiếp các đơn đang ở trạng thái 'Chờ thẩm định' hoặc 'BGH yêu cầu chỉnh sửa'." });
         }
 
         // Sensitive document types that strictly require School Board approval (Financial/Disciplinary/SchoolTransfer)
-        var sensitiveTypesRequiringBoard = new[]
+        if (req.RequestType == RequestTypes.Document)
         {
-            "Đơn xin chuyển trường",
-            "phúc khảo",
-            "miễn, giảm",
-            "miễn giảm",
-            "hỗ trợ chi phí"
-        };
+            var sensitiveTypesRequiringBoard = new[]
+            {
+                "Đơn xin chuyển trường",
+                "phúc khảo",
+                "miễn, giảm",
+                "miễn giảm",
+                "hỗ trợ chi phí"
+            };
 
-        if (sensitiveTypesRequiringBoard.Any(t => req.DocumentRequestDetail.DocumentType.Contains(t, StringComparison.OrdinalIgnoreCase)))
-        {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> {
-                $"Văn bản loại '{req.DocumentRequestDetail.DocumentType}' thuộc thẩm quyền quyết định của Ban Giám Hiệu (chính sách tài chính / chuyên môn khảo thí / chuyển trường). Giáo vụ vui lòng chọn tab 'Trình Ban Giám Hiệu xem xét'."
-            });
+            if (sensitiveTypesRequiringBoard.Any(t => req.DocumentRequestDetail.DocumentType.Contains(t, StringComparison.OrdinalIgnoreCase)))
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> {
+                    $"Văn bản loại '{req.DocumentRequestDetail.DocumentType}' thuộc thẩm quyền quyết định của Ban Giám Hiệu (chính sách tài chính / chuyên môn khảo thí / chuyển trường). Giáo vụ vui lòng chọn tab 'Trình Ban Giám Hiệu xem xét'."
+                });
+            }
         }
 
+        var schoolNow = SchoolNow;
         var certNum = string.IsNullOrWhiteSpace(request.CertificateNumber)
-            ? $"SAWP-{DateTime.UtcNow:yyyy}-" + Guid.NewGuid().ToString("N")[..6].ToUpper()
+            ? $"SAWP-{schoolNow:yyyy}-" + Guid.NewGuid().ToString("N")[..6].ToUpper()
             : request.CertificateNumber.Trim();
 
-        var issueDate = request.IssuedDate ?? DateTime.UtcNow;
+        var issueDate = request.IssuedDate ?? schoolNow;
+        if (issueDate.Date > schoolNow.Date)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ngày cấp / phản hồi văn bản không được là ngày trong tương lai." });
+        }
+        if (req.SubmissionDate != default && issueDate.Date < ToSchoolDate(req.SubmissionDate))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ngày cấp / phản hồi văn bản không thể trước ngày phụ huynh nộp đơn." });
+        }
+
+        if (req.RequestType == RequestTypes.Document && string.IsNullOrWhiteSpace(request.DocumentFileUrl))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng tải lên tệp văn bản đã xác nhận/đóng dấu (PDF hoặc Ảnh) để phát hành cho Phụ huynh." });
+        }
+
+        if (req.RequestType == RequestTypes.Other
+            && string.IsNullOrWhiteSpace(request.DocumentFileUrl)
+            && (string.IsNullOrWhiteSpace(request.StaffNotes) || request.StaffNotes.Trim().Length < 5))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập ghi chú phản hồi (tối thiểu 5 ký tự) hoặc đính kèm tệp kết quả." });
+        }
 
         req.DocumentRequestDetail.CertificateNumber = certNum;
-        req.DocumentRequestDetail.IssuedDate = issueDate;
+        req.DocumentRequestDetail.IssuedDate = DateTime.UtcNow;
         req.DocumentRequestDetail.IsPaperCopyRequested = request.IsPaperCopy;
         if (!string.IsNullOrWhiteSpace(request.DocumentContent))
         {
             req.DocumentRequestDetail.DocumentContentDraft = request.DocumentContent.Trim();
         }
-        req.DocumentRequestDetail.DigitalSignatureInfo = $"Phát hành trực tiếp bởi Văn phòng Giáo vụ ngày {issueDate:dd/MM/yyyy HH:mm}";
-        req.DocumentRequestDetail.IssuedDocumentUrl = $"/api/requests/{req.Id}/download-document";
+        if (!string.IsNullOrWhiteSpace(request.StaffNotes))
+        {
+            req.DocumentRequestDetail.StaffEndorsement = request.StaffNotes.Trim();
+            req.ReviewerNotes = request.StaffNotes.Trim();
+        }
+        req.DocumentRequestDetail.DigitalSignatureInfo = req.RequestType == RequestTypes.Other
+            ? $"Đã giải quyết bởi Văn phòng Giáo vụ ngày {issueDate:dd/MM/yyyy} {schoolNow:HH:mm}"
+            : $"Phát hành trực tiếp bởi Văn phòng Giáo vụ ngày {issueDate:dd/MM/yyyy} {schoolNow:HH:mm}";
+        req.DocumentRequestDetail.IssuedDocumentUrl = !string.IsNullOrWhiteSpace(request.DocumentFileUrl)
+            ? request.DocumentFileUrl.Trim()
+            : null;
 
         req.Status = RequestStatus.Completed;
-        req.ProcessedDate = issueDate;
+        req.ProcessedDate = DateTime.UtcNow;
         req.ReviewerUserId = staffUserId;
+        req.SchoolBoardNotes = null;
 
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
 
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AdministrativeRequestDirectIssue,
+            nameof(AdministrativeRequest),
+            req.Id.ToString(),
+            null,
+            new
+            {
+                CertificateNumber = certNum,
+                Notes = !string.IsNullOrWhiteSpace(request.StaffNotes)
+                    ? request.StaffNotes.Trim()
+                    : $"Đã phát hành trực tiếp văn bản số {certNum}"
+            },
+            null,
+            cancellationToken);
+
         // Notify parent
+        var isOther = req.RequestType == RequestTypes.Other;
         await NotifyGuardiansOfStudentAsync(
             req.StudentId,
             req.RequesterUserId,
-            "Giấy xác nhận đã được phát hành",
-            $"Văn bản {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} đã được Giáo vụ xử lý và phát hành chính thức (Số: {certNum}).",
+            isOther ? "Đơn đề xuất / kiến nghị đã được giải quyết" : "Giấy xác nhận đã được phát hành",
+            isOther
+                ? $"Đơn \"{req.DocumentRequestDetail.DocumentType}\" cho học sinh {req.Student?.FullName} đã được Giáo vụ xử lý và giải quyết (Mã: {certNum})."
+                : $"Văn bản {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} đã được Giáo vụ xử lý và phát hành chính thức (Số: {certNum}).",
             "DOCUMENT_ISSUED",
-            req.DocumentRequestDetail.IssuedDocumentUrl,
+            req.DocumentRequestDetail.IssuedDocumentUrl ?? "/parent/requests",
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -856,7 +1234,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             });
         }
 
-        var effectiveDate = (req.ClassTransferDetail.EffectiveDate ?? DateTime.UtcNow).Date;
+        var effectiveDate = (req.ClassTransferDetail.EffectiveDate ?? SchoolToday).Date;
 
         // 1. Deactivate ALL active assignments for this student to prevent duplicate active records (BUG2)
         var activeAssignments = await _unitOfWork.Repository<ClassAssignment>()
@@ -925,12 +1303,8 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
     {
         var query = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
-            .Include(r => r.RequesterUser)
-            .Include(r => r.Student)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.FromClass)
-            .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.ToClass).ThenInclude(c => c!.ClassAssignments)
-            .Include(r => r.DocumentRequestDetail)
-            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document);
+            .AsNoTracking()
+            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other);
 
         if (!string.IsNullOrWhiteSpace(requestType) && !requestType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
         {
@@ -958,17 +1332,17 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         }
         else
         {
-            query = query.Where(r => r.Status == RequestStatus.UnderReview 
-                                  || r.SchoolBoardApprovedAt != null 
-                                  || r.Status == RequestStatus.Approved 
+            query = query.Where(r => r.Status == RequestStatus.UnderReview
+                                  || r.SchoolBoardApprovedAt != null
+                                  || r.Status == RequestStatus.Approved
+                                  || r.Status == RequestStatus.ReturnedToStaff
+                                  || (r.Status == RequestStatus.NeedMoreInfo && !string.IsNullOrEmpty(r.SchoolBoardNotes))
                                   || (r.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(r.SchoolBoardNotes)));
         }
 
-        var list = await query
-            .OrderByDescending(r => r.SchoolBoardApprovedAt ?? r.ProcessedDate ?? r.SubmissionDate)
-            .ToListAsync(cancellationToken);
-
-        var dtos = list.Select(MapToSummaryDto).ToList();
+        var ordered = query.OrderByDescending(r => r.SchoolBoardApprovedAt ?? r.ProcessedDate ?? r.SubmissionDate);
+        var dtos = await ProjectToSummaryDto(ordered, includeDraftContent: false).ToListAsync(cancellationToken);
+        NormalizeSummaryDates(dtos);
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
     }
 
@@ -996,8 +1370,48 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Yêu cầu chưa được Giáo vụ thẩm định hoặc đã được xử lý trước đó." });
         }
 
+        // NEW FLOW: School Board returns the request to Office Staff for revision / correction
+        if (request.ReturnToStaff)
+        {
+            if (string.IsNullOrWhiteSpace(request.DecisionNotes) || request.DecisionNotes.Trim().Length < 5)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập nội dung yêu cầu Giáo vụ chỉnh sửa / gửi lại (tối thiểu 5 ký tự)." });
+            }
+
+            req.Status = RequestStatus.ReturnedToStaff;
+            req.SchoolBoardNotes = request.DecisionNotes.Trim();
+            req.ReviewerUserId = boardUserId;
+
+            await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
+
+            await _auditService.LogActionAsync(
+                boardUserId,
+                AuditActions.AdministrativeRequestBoardReturn,
+                nameof(AdministrativeRequest),
+                req.Id.ToString(),
+                new { OldStatus = RequestStatus.UnderReview },
+                new { NewStatus = RequestStatus.ReturnedToStaff, Notes = request.DecisionNotes.Trim() },
+                null,
+                cancellationToken);
+
+            await NotifyStaffMembersAsync(
+                "BGH yêu cầu chỉnh sửa & trình lại hồ sơ",
+                $"Ban Giám Hiệu trả lại đơn {req.RequestNumber} (học sinh {req.Student?.FullName}) cho Giáo vụ rà soát: {request.DecisionNotes.Trim()}",
+                "/office/requests",
+                cancellationToken);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return ApiResponse<bool>.Ok(true, "Đã gửi yêu cầu chỉnh sửa và trả hồ sơ về cho bộ phận Giáo vụ.");
+        }
+
         if (request.IsApproved)
         {
+            if (req.RequestType == RequestTypes.ClassTransfer && request.EffectiveDate.HasValue && request.EffectiveDate.Value.Date < SchoolToday)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ngày có hiệu lực chuyển lớp không được là ngày trong quá khứ." });
+            }
+
+            var schoolNow = SchoolNow;
             req.SchoolBoardApprovedAt = DateTime.UtcNow;
             req.SchoolBoardNotes = request.DecisionNotes?.Trim();
             req.ReviewerUserId = boardUserId;
@@ -1006,7 +1420,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             {
                 if (request.EffectiveDate.HasValue && req.ClassTransferDetail != null)
                 {
-                    req.ClassTransferDetail.EffectiveDate = request.EffectiveDate.Value;
+                    req.ClassTransferDetail.EffectiveDate = request.EffectiveDate.Value.Date;
                 }
 
                 // BGH approves -> Route back to Office Staff to execute transfer
@@ -1029,39 +1443,88 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                     "/office/requests",
                     cancellationToken);
             }
-            else if (req.RequestType == RequestTypes.Document && req.DocumentRequestDetail != null)
+            else if ((req.RequestType == RequestTypes.Document || req.RequestType == RequestTypes.Other) && req.DocumentRequestDetail != null)
             {
-                // BGH approves -> Digitally sign and issue document
-                var certNum = $"SAWP-{DateTime.UtcNow:yyyy}-" + Guid.NewGuid().ToString("N")[..6].ToUpper();
+                if (req.RequestType == RequestTypes.Document && string.IsNullOrWhiteSpace(request.SignedDocumentUrl))
+                {
+                    return ApiResponse<bool>.Fail(
+                        SystemMessages.MSG01,
+                        new List<string> { "Vui lòng tải lên tệp văn bản đã gắn chữ ký số / đóng dấu (PDF hoặc Ảnh) trước khi phê duyệt phát hành." });
+                }
+
+                // BGH approves -> attach digitally signed file (required for Document, optional for Other) and issue/complete
+                var certNum = string.IsNullOrWhiteSpace(req.DocumentRequestDetail.CertificateNumber)
+                    ? $"SAWP-{schoolNow:yyyy}-" + Guid.NewGuid().ToString("N")[..6].ToUpper()
+                    : req.DocumentRequestDetail.CertificateNumber;
                 req.DocumentRequestDetail.CertificateNumber = certNum;
-                req.DocumentRequestDetail.DigitalSignatureInfo = $"Ký số xác thực bởi Ban Giám Hiệu ngày {DateTime.UtcNow:dd/MM/yyyy HH:mm}";
+                req.DocumentRequestDetail.DigitalSignatureInfo = req.RequestType == RequestTypes.Other
+                    ? $"Đã phê duyệt bởi Ban Giám Hiệu ngày {schoolNow:dd/MM/yyyy HH:mm}"
+                    : $"Đã ký số và phát hành bởi Ban Giám Hiệu ngày {schoolNow:dd/MM/yyyy HH:mm}";
                 req.DocumentRequestDetail.IssuedDate = DateTime.UtcNow;
-                req.DocumentRequestDetail.IssuedDocumentUrl = $"/api/requests/{req.Id}/download-document";
+                if (!string.IsNullOrWhiteSpace(request.SignedDocumentUrl))
+                {
+                    req.DocumentRequestDetail.IssuedDocumentUrl = request.SignedDocumentUrl.Trim();
+                }
+                else if (req.RequestType == RequestTypes.Other
+                    && req.DocumentRequestDetail.IssuedDocumentUrl != null
+                    && req.DocumentRequestDetail.IssuedDocumentUrl.Contains("/download-document"))
+                {
+                    req.DocumentRequestDetail.IssuedDocumentUrl = null;
+                }
 
                 req.Status = RequestStatus.Approved;
                 req.ProcessedDate = DateTime.UtcNow;
 
-                // Send notification to Parent with download link (MSG36)
+                var isOther = req.RequestType == RequestTypes.Other;
                 await NotifyGuardiansOfStudentAsync(
                     req.StudentId,
                     req.RequesterUserId,
-                    "Tài liệu / Giấy xác nhận đã được phát hành",
-                    $"Văn bản {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} đã được Ban Giám Hiệu ký duyệt và phát hành chính thức.",
-                    "DOCUMENT_ISSUED",
-                    req.DocumentRequestDetail.IssuedDocumentUrl,
+                    isOther ? "Đơn yêu cầu đã được Ban Giám Hiệu phê duyệt" : "Tài liệu / Giấy xác nhận đã được phát hành",
+                    isOther
+                        ? $"Đơn '{req.DocumentRequestDetail.DocumentType}' cho học sinh {req.Student?.FullName} đã được Ban Giám Hiệu phê duyệt."
+                        : $"Văn bản {req.DocumentRequestDetail.DocumentType} cho học sinh {req.Student?.FullName} đã được Ban Giám Hiệu ký duyệt và phát hành chính thức.",
+                    isOther ? "REQUEST_APPROVED" : "DOCUMENT_ISSUED",
+                    "/parent/requests",
                     cancellationToken);
+
+                if (isOther)
+                {
+                    await NotifyStaffMembersAsync(
+                        "BGH đã phê duyệt đơn khác",
+                        $"Ban Giám Hiệu đã phê duyệt đơn '{req.DocumentRequestDetail.DocumentType}' ({req.RequestNumber}) của học sinh {req.Student?.FullName}.",
+                        "/office/requests",
+                        cancellationToken);
+                }
             }
 
             await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
+
+            await _auditService.LogActionAsync(
+                boardUserId,
+                AuditActions.AdministrativeRequestApprove,
+                nameof(AdministrativeRequest),
+                req.Id.ToString(),
+                new { OldStatus = RequestStatus.UnderReview },
+                new
+                {
+                    NewStatus = RequestStatus.Approved,
+                    Notes = string.IsNullOrWhiteSpace(req.SchoolBoardNotes)
+                        ? "Ban Giám Hiệu đồng ý phê duyệt yêu cầu."
+                        : req.SchoolBoardNotes,
+                    CertificateNumber = req.DocumentRequestDetail?.CertificateNumber
+                },
+                null,
+                cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return ApiResponse<bool>.Ok(true, SystemMessages.MSG31);
         }
         else
         {
-            // Rejection requires decision notes
-            if (string.IsNullOrWhiteSpace(request.DecisionNotes))
+            // Rejection requires decision notes (>= 5 chars)
+            if (string.IsNullOrWhiteSpace(request.DecisionNotes) || request.DecisionNotes.Trim().Length < 5)
             {
-                return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối yêu cầu." });
+                return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối yêu cầu (tối thiểu 5 ký tự)." });
             }
 
             req.Status = RequestStatus.Rejected;
@@ -1104,6 +1567,8 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
     {
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
+            .AsNoTracking()
+            .AsSplitQuery()
             .Include(r => r.RequesterUser)
             .Include(r => r.ReviewerUser)
             .Include(r => r.ClassTransferDetail).ThenInclude(ct => ct!.ToClass)
@@ -1116,32 +1581,56 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         }
 
         // Permission check
-        var detailCheck = await GetRequestDetailAsync(requestId, currentUserId, cancellationToken);
-        if (!detailCheck.Success)
+        var hasAccess = await CanAccessRequestAsync(req.RequesterUserId, req.StudentId, currentUserId, cancellationToken);
+        if (!hasAccess)
         {
             return ApiResponse<IReadOnlyList<RequestHistoryItemDto>>.Fail(SystemMessages.MSG10);
+        }
+
+        var auditRepo = _unitOfWork.Repository<AuditLog>();
+        var auditLogs = auditRepo != null
+            ? await auditRepo.Query()
+                .AsNoTracking()
+                .Include(al => al.User)
+                .Where(al => al.EntityName == nameof(AdministrativeRequest) && al.EntityId == requestId.ToString())
+                .OrderBy(al => al.Timestamp)
+                .ThenBy(al => al.Id)
+                .ToListAsync(cancellationToken)
+            : new List<AuditLog>();
+
+        if (auditLogs.Count > 0)
+        {
+            var auditHistory = new List<RequestHistoryItemDto>();
+
+            if (!auditLogs.Any(l => l.Action == AuditActions.AdministrativeRequestSubmit))
+            {
+                auditHistory.Add(BuildSubmitHistoryItem(req));
+            }
+
+            foreach (var log in auditLogs)
+            {
+                var mapped = MapAuditLogToHistoryItem(log, req);
+                if (mapped != null)
+                {
+                    auditHistory.Add(mapped);
+                }
+            }
+
+            return ApiResponse<IReadOnlyList<RequestHistoryItemDto>>.Ok(
+                auditHistory.OrderBy(h => h.Timestamp).ToList());
         }
 
         var history = new List<RequestHistoryItemDto>();
 
         // 1. Submitted
-        history.Add(new RequestHistoryItemDto
-        {
-            Timestamp = req.SubmissionDate,
-            Action = "Nộp yêu cầu",
-            Description = req.RequestType == RequestTypes.ClassTransfer
-                ? $"Phụ huynh đã gửi đơn xin chuyển lớp tới {req.ClassTransferDetail?.ToClass?.ClassName ?? "lớp mới"}"
-                : $"Phụ huynh đã gửi đơn xin cấp {req.DocumentRequestDetail?.DocumentType ?? "văn bản"}",
-            PerformedBy = req.RequesterUser?.FullName ?? "Phụ huynh",
-            Status = RequestStatus.Submitted
-        });
+        history.Add(BuildSubmitHistoryItem(req));
 
         // 2. Amendment / Resubmission
         if (req.RequiresAmendment || !string.IsNullOrWhiteSpace(req.AmendmentNotes))
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.SubmissionDate.AddMinutes(5),
+                Timestamp = AsUtc(req.SubmissionDate.AddMinutes(5)),
                 Action = "Yêu cầu bổ sung hồ sơ",
                 Description = req.AmendmentNotes ?? "Giáo vụ yêu cầu bổ sung thông tin.",
                 PerformedBy = req.ReviewerUser?.FullName ?? "Giáo vụ",
@@ -1155,11 +1644,24 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             var endorseDesc = req.ClassTransferDetail?.StaffRecommendation ?? req.DocumentRequestDetail?.StaffEndorsement;
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.SubmissionDate.AddMinutes(15),
+                Timestamp = AsUtc(req.SubmissionDate.AddMinutes(15)),
                 Action = "Giáo vụ thẩm định & chuyển tiếp",
                 Description = string.IsNullOrWhiteSpace(endorseDesc) ? "Hồ sơ hợp lệ, đã chuyển Ban Giám Hiệu xem xét." : endorseDesc,
                 PerformedBy = req.ReviewerUser?.FullName ?? "Giáo vụ",
                 Status = RequestStatus.UnderReview
+            });
+        }
+
+        // 3b. School Board returned to Staff for revision
+        if ((req.Status == RequestStatus.ReturnedToStaff || req.Status == RequestStatus.NeedMoreInfo) && !string.IsNullOrWhiteSpace(req.SchoolBoardNotes))
+        {
+            history.Add(new RequestHistoryItemDto
+            {
+                Timestamp = AsUtc(req.SubmissionDate.AddMinutes(25)),
+                Action = "Ban Giám Hiệu yêu cầu Giáo vụ trình lại",
+                Description = req.SchoolBoardNotes,
+                PerformedBy = "Ban Giám Hiệu",
+                Status = RequestStatus.ReturnedToStaff
             });
         }
 
@@ -1168,7 +1670,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.SchoolBoardApprovedAt.Value,
+                Timestamp = AsUtc(req.SchoolBoardApprovedAt.Value),
                 Action = "Ban Giám Hiệu phê duyệt",
                 Description = req.SchoolBoardNotes ?? "Ban Giám Hiệu đồng ý phê duyệt yêu cầu.",
                 PerformedBy = "Ban Giám Hiệu",
@@ -1179,7 +1681,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.ProcessedDate ?? req.SubmissionDate.AddHours(1),
+                Timestamp = AsUtc(req.ProcessedDate ?? req.SubmissionDate.AddHours(1)),
                 Action = "Ban Giám Hiệu từ chối",
                 Description = req.SchoolBoardNotes,
                 PerformedBy = "Ban Giám Hiệu",
@@ -1192,7 +1694,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.ProcessedDate ?? req.SubmissionDate.AddMinutes(30),
+                Timestamp = AsUtc(req.ProcessedDate ?? req.SubmissionDate.AddMinutes(30)),
                 Action = "Giáo vụ từ chối tiếp nhận",
                 Description = req.ReviewerNotes ?? "Hồ sơ không hợp lệ.",
                 PerformedBy = req.ReviewerUser?.FullName ?? "Giáo vụ",
@@ -1205,7 +1707,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.ProcessedDate ?? req.SubmissionDate.AddMinutes(10),
+                Timestamp = AsUtc(req.ProcessedDate ?? req.SubmissionDate.AddMinutes(10)),
                 Action = "Hủy yêu cầu",
                 Description = req.ReviewerNotes ?? "Phụ huynh đã chủ động hủy yêu cầu này.",
                 PerformedBy = req.RequesterUser?.FullName ?? "Phụ huynh",
@@ -1218,7 +1720,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.ClassTransferDetail.ExecutedAt ?? DateTime.UtcNow,
+                Timestamp = AsUtc(req.ClassTransferDetail.ExecutedAt ?? DateTime.UtcNow),
                 Action = "Thực thi chuyển lớp",
                 Description = $"Đã cập nhật danh sách lớp cho học sinh sang {req.ClassTransferDetail.ToClass?.ClassName}.",
                 PerformedBy = "Giáo vụ",
@@ -1229,7 +1731,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             history.Add(new RequestHistoryItemDto
             {
-                Timestamp = req.DocumentRequestDetail.IssuedDate.Value,
+                Timestamp = AsUtc(req.DocumentRequestDetail.IssuedDate.Value),
                 Action = "Phát hành văn bản",
                 Description = $"Đã phát hành văn bản chính thức số {req.DocumentRequestDetail.CertificateNumber ?? "SAWP"}.",
                 PerformedBy = "Văn phòng Nhà trường",
@@ -1240,10 +1742,146 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         return ApiResponse<IReadOnlyList<RequestHistoryItemDto>>.Ok(history.OrderBy(h => h.Timestamp).ToList());
     }
 
+    private static RequestHistoryItemDto BuildSubmitHistoryItem(AdministrativeRequest req) => new()
+    {
+        Timestamp = AsUtc(req.SubmissionDate),
+        Action = "Nộp yêu cầu",
+        Description = req.RequestType == RequestTypes.ClassTransfer
+            ? $"Phụ huynh đã gửi đơn xin chuyển lớp tới {req.ClassTransferDetail?.ToClass?.ClassName ?? "lớp mới"}"
+            : req.RequestType == RequestTypes.Other
+                ? $"Phụ huynh đã gửi đơn khác: {req.DocumentRequestDetail?.DocumentType ?? "Kiến nghị / Yêu cầu khác"}"
+                : $"Phụ huynh đã gửi đơn xin cấp {req.DocumentRequestDetail?.DocumentType ?? "văn bản"}",
+        PerformedBy = req.RequesterUser?.FullName ?? "Phụ huynh",
+        Status = RequestStatus.Submitted
+    };
+
+    private static RequestHistoryItemDto? MapAuditLogToHistoryItem(AuditLog log, AdministrativeRequest req)
+    {
+        string? notes = null;
+        string? reason = null;
+        string? certNum = null;
+        string? toClass = null;
+        bool isResubmission = false;
+        bool isStaffReject = false;
+
+        if (!string.IsNullOrWhiteSpace(log.NewValues))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(log.NewValues);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("Notes", out var p) && p.ValueKind == JsonValueKind.String) notes = p.GetString();
+                if (root.TryGetProperty("Reason", out var r) && r.ValueKind == JsonValueKind.String) reason = r.GetString();
+                if (root.TryGetProperty("CertificateNumber", out var c) && c.ValueKind == JsonValueKind.String) certNum = c.GetString();
+                if (root.TryGetProperty("ToClass", out var tc) && tc.ValueKind == JsonValueKind.String) toClass = tc.GetString();
+                if (root.TryGetProperty("IsResubmission", out var ir) && (ir.ValueKind == JsonValueKind.True || ir.ValueKind == JsonValueKind.False)) isResubmission = ir.GetBoolean();
+                if (root.TryGetProperty("StaffReject", out var sr) && (sr.ValueKind == JsonValueKind.True || sr.ValueKind == JsonValueKind.False)) isStaffReject = sr.GetBoolean();
+            }
+            catch
+            {
+                // Ignore malformed JSON in legacy audit entries
+            }
+        }
+
+        var actor = log.User?.FullName;
+        var ts = AsUtc(log.Timestamp);
+
+        return log.Action switch
+        {
+            AuditActions.AdministrativeRequestSubmit => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Nộp yêu cầu",
+                Description = notes ?? BuildSubmitHistoryItem(req).Description,
+                PerformedBy = actor ?? req.RequesterUser?.FullName ?? "Phụ huynh",
+                Status = RequestStatus.Submitted
+            },
+            AuditActions.AdministrativeRequestAmendment => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Giáo vụ yêu cầu bổ sung hồ sơ",
+                Description = notes ?? "Giáo vụ yêu cầu phụ huynh bổ sung thông tin.",
+                PerformedBy = actor ?? "Giáo vụ",
+                Status = RequestStatus.NeedMoreInfo
+            },
+            AuditActions.AdministrativeRequestResubmit => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Phụ huynh cập nhật & nộp lại hồ sơ",
+                Description = notes ?? "Phụ huynh đã bổ sung và gửi lại hồ sơ.",
+                PerformedBy = actor ?? req.RequesterUser?.FullName ?? "Phụ huynh",
+                Status = RequestStatus.Submitted
+            },
+            AuditActions.AdministrativeRequestEndorse => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = isResubmission ? "Giáo vụ chỉnh sửa & trình lại BGH" : "Giáo vụ thẩm định & chuyển tiếp",
+                Description = notes ?? "Hồ sơ hợp lệ, đã chuyển Ban Giám Hiệu xem xét.",
+                PerformedBy = actor ?? "Giáo vụ",
+                Status = RequestStatus.UnderReview
+            },
+            AuditActions.AdministrativeRequestBoardReturn or "BoardReturnToStaff" => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Ban Giám Hiệu yêu cầu Giáo vụ trình lại",
+                Description = notes ?? "Ban Giám Hiệu yêu cầu Giáo vụ rà soát và trình lại hồ sơ.",
+                PerformedBy = actor ?? "Ban Giám Hiệu",
+                Status = RequestStatus.ReturnedToStaff
+            },
+            AuditActions.AdministrativeRequestApprove => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Ban Giám Hiệu phê duyệt",
+                Description = string.IsNullOrWhiteSpace(certNum)
+                    ? (notes ?? "Ban Giám Hiệu đồng ý phê duyệt yêu cầu.")
+                    : $"{notes ?? "Ban Giám Hiệu đồng ý phê duyệt."} (Số hiệu: {certNum})",
+                PerformedBy = actor ?? "Ban Giám Hiệu",
+                Status = RequestStatus.Approved
+            },
+            AuditActions.AdministrativeRequestDirectIssue => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = req.RequestType == RequestTypes.Other ? "Giáo vụ xử lý trực tiếp" : "Giáo vụ phát hành trực tiếp",
+                Description = string.IsNullOrWhiteSpace(certNum)
+                    ? (notes ?? "Giáo vụ đã xử lý và hoàn tất yêu cầu.")
+                    : $"{notes ?? "Đã phát hành văn bản"} (Số: {certNum})",
+                PerformedBy = actor ?? "Giáo vụ",
+                Status = RequestStatus.Completed
+            },
+            AuditActions.ClassTransferRequestExecute => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Thực thi chuyển lớp",
+                Description = $"Đã cập nhật danh sách lớp cho học sinh sang {toClass ?? req.ClassTransferDetail?.ToClass?.ClassName ?? "lớp mới"}.",
+                PerformedBy = actor ?? "Giáo vụ",
+                Status = RequestStatus.Completed
+            },
+            AuditActions.AdministrativeRequestReject => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = isStaffReject ? "Giáo vụ từ chối tiếp nhận" : "Ban Giám Hiệu từ chối",
+                Description = reason ?? notes ?? "Yêu cầu không được chấp thuận.",
+                PerformedBy = actor ?? (isStaffReject ? "Giáo vụ" : "Ban Giám Hiệu"),
+                Status = RequestStatus.Rejected
+            },
+            AuditActions.AdministrativeRequestCancel or "CancelRequest" => new RequestHistoryItemDto
+            {
+                Timestamp = ts,
+                Action = "Hủy yêu cầu",
+                Description = notes ?? "Phụ huynh đã chủ động hủy yêu cầu này.",
+                PerformedBy = actor ?? req.RequesterUser?.FullName ?? "Phụ huynh",
+                Status = RequestStatus.Cancelled
+            },
+            _ => null
+        };
+    }
+
     public async Task<ApiResponse<RequestStatisticsDto>> GetRequestStatisticsAsync(CancellationToken cancellationToken = default)
     {
         var requests = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
+            .AsNoTracking()
+            .Select(r => new { r.Status, r.RequestType, r.RequiresAmendment })
             .ToListAsync(cancellationToken);
 
         var stats = new RequestStatisticsDto
@@ -1289,9 +1927,11 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
-    private static AdministrativeRequestSummaryDto MapToSummaryDto(AdministrativeRequest r)
+    private static IQueryable<AdministrativeRequestSummaryDto> ProjectToSummaryDto(
+        IQueryable<AdministrativeRequest> query,
+        bool includeDraftContent)
     {
-        var dto = new AdministrativeRequestSummaryDto
+        return query.Select(r => new AdministrativeRequestSummaryDto
         {
             Id = r.Id,
             RequestNumber = r.RequestNumber,
@@ -1300,57 +1940,77 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             SubmissionDate = r.SubmissionDate,
             ProcessedDate = r.ProcessedDate,
             RequesterUserId = r.RequesterUserId,
-            RequesterName = r.RequesterUser?.FullName ?? "Phụ huynh",
+            RequesterName = r.RequesterUser != null ? r.RequesterUser.FullName : "Phụ huynh",
             StudentId = r.StudentId,
-            StudentCode = r.Student?.StudentCode,
-            StudentName = r.Student?.FullName,
+            StudentCode = r.Student != null ? r.Student.StudentCode : null,
+            StudentName = r.Student != null ? r.Student.FullName : null,
+            CurrentClassName = r.ClassTransferDetail != null && r.ClassTransferDetail.FromClass != null
+                ? r.ClassTransferDetail.FromClass.ClassName
+                : (r.Student != null
+                    ? r.Student.ClassAssignments
+                        .Where(ca => ca.IsActive && ca.Class != null)
+                        .Select(ca => ca.Class.ClassName)
+                        .FirstOrDefault()
+                    : null),
             RequiresAmendment = r.RequiresAmendment,
             AttachmentUrl = r.AttachmentUrl,
             AmendmentNotes = r.AmendmentNotes,
             ReviewerNotes = r.ReviewerNotes,
             SchoolBoardNotes = r.SchoolBoardNotes,
-            SchoolBoardApprovedAt = r.SchoolBoardApprovedAt
-        };
-
-        if (r.ClassTransferDetail != null)
-        {
-            dto.ClassTransfer = new ClassTransferSummaryDto
+            SchoolBoardApprovedAt = r.SchoolBoardApprovedAt,
+            ClassTransfer = r.ClassTransferDetail == null ? null : new ClassTransferSummaryDto
             {
                 FromClassId = r.ClassTransferDetail.FromClassId,
-                FromClassName = r.ClassTransferDetail.FromClass?.ClassName ?? string.Empty,
+                FromClassName = r.ClassTransferDetail.FromClass != null ? r.ClassTransferDetail.FromClass.ClassName : string.Empty,
                 ToClassId = r.ClassTransferDetail.ToClassId,
-                ToClassName = r.ClassTransferDetail.ToClass?.ClassName ?? string.Empty,
+                ToClassName = r.ClassTransferDetail.ToClass != null ? r.ClassTransferDetail.ToClass.ClassName : string.Empty,
                 TransferReason = r.ClassTransferDetail.TransferReason,
                 StaffRecommendation = r.ClassTransferDetail.StaffRecommendation,
-                TargetClassCapacity = (r.ClassTransferDetail.ToClass?.ClassAssignments != null && r.ClassTransferDetail.ToClass.ClassAssignments.Any())
+                TargetClassCapacity = r.ClassTransferDetail.ToClass != null && r.ClassTransferDetail.ToClass.ClassAssignments.Any(ca => ca.IsActive)
                     ? r.ClassTransferDetail.ToClass.ClassAssignments.Count(ca => ca.IsActive)
-                    : r.ClassTransferDetail.TargetClassCapacitySnapshot ?? 0,
-                TargetClassMaxCapacity = r.ClassTransferDetail.ToClass?.Capacity,
+                    : (r.ClassTransferDetail.TargetClassCapacitySnapshot ?? 0),
+                TargetClassMaxCapacity = r.ClassTransferDetail.ToClass != null ? r.ClassTransferDetail.ToClass.Capacity : null,
                 IsExecuted = r.ClassTransferDetail.IsExecuted,
                 ExecutedAt = r.ClassTransferDetail.ExecutedAt,
                 EffectiveDate = r.ClassTransferDetail.EffectiveDate
-            };
-            dto.CurrentClassName = r.ClassTransferDetail.FromClass?.ClassName;
-        }
-
-        if (r.DocumentRequestDetail != null)
-        {
-            dto.DocumentRequest = new DocumentRequestSummaryDto
+            },
+            DocumentRequest = r.DocumentRequestDetail == null ? null : new DocumentRequestSummaryDto
             {
                 DocumentType = r.DocumentRequestDetail.DocumentType,
                 NumberOfCopies = r.DocumentRequestDetail.NumberOfCopies,
                 Purpose = r.DocumentRequestDetail.Purpose,
                 StaffEndorsement = r.DocumentRequestDetail.StaffEndorsement,
-                DocumentContentDraft = r.DocumentRequestDetail.DocumentContentDraft,
+                DocumentContentDraft = includeDraftContent ? r.DocumentRequestDetail.DocumentContentDraft : null,
                 IssuedDate = r.DocumentRequestDetail.IssuedDate,
                 IssuedDocumentUrl = r.DocumentRequestDetail.IssuedDocumentUrl,
                 CertificateNumber = r.DocumentRequestDetail.CertificateNumber,
                 DigitalSignatureInfo = r.DocumentRequestDetail.DigitalSignatureInfo,
                 IsPaperCopyRequested = r.DocumentRequestDetail.IsPaperCopyRequested
-            };
-        }
+            }
+        });
+    }
 
-        return dto;
+    private static void NormalizeSummaryDates(IEnumerable<AdministrativeRequestSummaryDto> dtos)
+    {
+        foreach (var dto in dtos)
+        {
+            NormalizeSummaryDates(dto);
+        }
+    }
+
+    private static void NormalizeSummaryDates(AdministrativeRequestSummaryDto dto)
+    {
+        dto.SubmissionDate = AsUtc(dto.SubmissionDate);
+        dto.ProcessedDate = AsUtc(dto.ProcessedDate);
+        dto.SchoolBoardApprovedAt = AsUtc(dto.SchoolBoardApprovedAt);
+        if (dto.ClassTransfer != null)
+        {
+            dto.ClassTransfer.ExecutedAt = AsUtc(dto.ClassTransfer.ExecutedAt);
+        }
+        if (dto.DocumentRequest != null)
+        {
+            dto.DocumentRequest.IssuedDate = AsUtc(dto.DocumentRequest.IssuedDate);
+        }
     }
 
     private async Task NotifyStaffMembersAsync(string title, string content, string linkUrl, CancellationToken ct)

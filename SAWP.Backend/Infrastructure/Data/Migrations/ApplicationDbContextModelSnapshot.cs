@@ -192,11 +192,13 @@ namespace Infrastructure.Data.Migrations
                     b.HasIndex("RequestNumber")
                         .IsUnique();
 
-                    b.HasIndex("RequesterUserId");
-
                     b.HasIndex("ReviewerUserId");
 
                     b.HasIndex("StudentId");
+
+                    b.HasIndex("RequestType", "Status", "SubmissionDate");
+
+                    b.HasIndex("RequesterUserId", "RequestType", "SubmissionDate");
 
                     b.ToTable("AdministrativeRequests");
                 });
@@ -312,6 +314,8 @@ namespace Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("EntityName", "EntityId", "Timestamp");
 
                     b.ToTable("AuditLogs");
                 });

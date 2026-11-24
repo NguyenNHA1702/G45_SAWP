@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -905,9 +906,34 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG15, new List<string> { "Một hoặc nhiều học sinh đã được phân vào lớp khác trong năm học này." });
         }
 
+        // SC-03: Check student age vs target class grade compatibility
+        var distinctStudentIds = request.StudentIds.Distinct().ToList();
+        var studentRepo = _unitOfWork.Repository<Student>();
+        if (studentRepo != null)
+        {
+            var studentsToAssign = await studentRepo.FindAsync(s => distinctStudentIds.Contains(s.Id), cancellationToken);
+            if (studentsToAssign != null)
+            {
+                var syStartYear = targetClass.SchoolYear?.StartDate.Year;
+                foreach (var st in studentsToAssign)
+                {
+                    if (st.DateOfBirth != default)
+                    {
+                        var gradeAgeError = StudentValidationHelper.ValidateAgeForGrade(st.DateOfBirth, targetClass.Grade, syStartYear, st.IsSpecialNeeds);
+                        if (gradeAgeError != null)
+                        {
+                            return ApiResponse<bool>.Fail(
+                                SystemMessages.MSG01,
+                                new List<string> { $"Học sinh {st.FullName} ({st.StudentCode}): {gradeAgeError}" });
+                        }
+                    }
+                }
+            }
+        }
+
         var academicYearName = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString();
 
-        foreach (var studentId in request.StudentIds.Distinct())
+        foreach (var studentId in distinctStudentIds)
         {
             var assignment = new ClassAssignment
             {

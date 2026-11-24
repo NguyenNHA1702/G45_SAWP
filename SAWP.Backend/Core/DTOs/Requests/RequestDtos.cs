@@ -22,6 +22,14 @@ public class DocumentIssuanceRequestDto
     public bool IsPaperCopyRequested { get; set; }
 }
 
+public class OtherRequestDto
+{
+    public int StudentId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string? AttachmentUrl { get; set; }
+}
+
 public class ResubmitRequestDto
 {
     public string? TransferReason { get; set; }
@@ -46,6 +54,8 @@ public class StaffDirectIssueDocumentDto
     public string? CertificateNumber { get; set; }
     public DateTime? IssuedDate { get; set; }
     public string? DocumentContent { get; set; }
+    public string? DocumentFileUrl { get; set; }
+    public string? StaffNotes { get; set; }
     public bool IsPaperCopy { get; set; }
 }
 
@@ -59,6 +69,7 @@ public class StaffEndorseDocumentDto
 {
     public string StaffEndorsement { get; set; } = string.Empty;
     public string? DocumentContentDraft { get; set; }
+    public string? DocumentFileUrl { get; set; }
     public string? CertificateNumber { get; set; }
     public DateTime? IssuedDate { get; set; }
     public bool IsPaperCopyRequested { get; set; }
@@ -67,7 +78,9 @@ public class StaffEndorseDocumentDto
 public class BoardDecisionDto
 {
     public bool IsApproved { get; set; }
+    public bool ReturnToStaff { get; set; }
     public string? DecisionNotes { get; set; }
+    public string? SignedDocumentUrl { get; set; }
     public DateTime? EffectiveDate { get; set; }
 }
 
