@@ -23,6 +23,7 @@ import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { formatViDateTime } from '../../utils/date';
 import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { PaginationBar } from '../../components/common/PaginationBar';
 import { useParentChild } from '../../contexts/ParentChildContext';
 
@@ -60,6 +61,13 @@ export default function LeaveRequestPage() {
   const [withdrawingItem, setWithdrawingItem] = useState<LeaveRequestItem | null>(null);
   const [withdrawReason, setWithdrawReason] = useState('');
   const [withdrawing, setWithdrawing] = useState(false);
+
+  // Modal xác nhận hủy đơn (LV-05)
+  const [cancellingItem, setCancellingItem] = useState<LeaveRequestItem | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  // LV-01: Ngày kết thúc năm học đang hoạt động để giới hạn chọn ngày trên UI khớp Backend
+  const [activeSchoolYearEndDate, setActiveSchoolYearEndDate] = useState<string | null>(null);
 
   // Form states
   const children = contextChildren;
@@ -129,6 +137,24 @@ export default function LeaveRequestPage() {
   useEffect(() => {
     fetchRequests();
   }, [pageIndex, pageSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<{ success: boolean; data?: { endDate?: string } }>('/classes/school-years/active')
+      .then((res) => {
+        const rawEnd = res.data?.data?.endDate;
+        if (!cancelled && res.data?.success && typeof rawEnd === 'string' && rawEnd.length >= 10) {
+          setActiveSchoolYearEndDate(rawEnd.slice(0, 10));
+        }
+      })
+      .catch(() => {
+        // Fallback sang giới hạn 180 ngày nếu không tải được năm học active
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files ? Array.from(e.target.files) : [];
@@ -259,8 +285,11 @@ export default function LeaveRequestPage() {
     dt.setDate(dt.getDate() + days);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
   };
-  const maxStartDateStr = addDaysIso(todayStr, 365);
-  const maxEndDateStr = startDate ? addDaysIso(startDate, 29) : maxStartDateStr;
+  const hasActiveYearEnd = Boolean(activeSchoolYearEndDate && activeSchoolYearEndDate >= todayStr);
+  const maxStartDateStr = hasActiveYearEnd ? activeSchoolYearEndDate! : addDaysIso(todayStr, 180);
+  const rawMaxEndDateStr = startDate ? addDaysIso(startDate, 29) : maxStartDateStr;
+  const maxEndDateStr =
+    hasActiveYearEnd && rawMaxEndDateStr > maxStartDateStr ? maxStartDateStr : rawMaxEndDateStr;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,6 +316,17 @@ export default function LeaveRequestPage() {
     }
     if (startDate < todayStr) {
       toast.error('Không thể xin nghỉ học cho ngày trong quá khứ.');
+      return;
+    }
+    if (hasActiveYearEnd) {
+      if (startDate > maxStartDateStr || endDate > maxStartDateStr) {
+        toast.error(
+          `Thời gian xin nghỉ không được vượt quá ngày kết thúc năm học hiện tại (${formatDateDDMMYYYY(activeSchoolYearEndDate!)}).`
+        );
+        return;
+      }
+    } else if (startDate > maxStartDateStr) {
+      toast.error('Không thể đặt ngày bắt đầu xin nghỉ quá 180 ngày kể từ hôm nay.');
       return;
     }
     // Kiểm tra theo lịch trường (cho phép ngày học bù T7/CN, chặn ngày nghỉ lễ giữa tuần)
@@ -420,19 +460,23 @@ export default function LeaveRequestPage() {
     }
   };
 
-  const handleCancel = async (id: number) => {
-    if (!window.confirm('Bạn có chắc chắn muốn hủy đơn xin nghỉ này?')) return;
+  const handleConfirmCancel = async () => {
+    if (!cancellingItem) return;
     try {
-      const res = await leaveRequestApi.cancel(id);
+      setCancelling(true);
+      const res = await leaveRequestApi.cancel(cancellingItem.id);
       if (res.success) {
         toast.success('Đã hủy đơn thành công.');
         fetchRequests();
       } else {
-        toast.error(res.message);
+        toast.error(res.message || 'Không thể hủy đơn.');
       }
     } catch (err: unknown) {
       const apiErr = asApiError(err);
       toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể hủy đơn.');
+    } finally {
+      setCancelling(false);
+      setCancellingItem(null);
     }
   };
 
@@ -777,7 +821,7 @@ export default function LeaveRequestPage() {
                           type="button"
                           className="btn btn--secondary btn--sm"
                           style={{ color: '#e11d48', borderColor: '#fda4af' }}
-                          onClick={() => handleCancel(r.id)}
+                          onClick={() => setCancellingItem(r)}
                         >
                           <X size={14} /> Hủy đơn này
                         </button>
@@ -999,6 +1043,9 @@ export default function LeaveRequestPage() {
                     />
                     <span>[Ngoại lệ] Nghỉ sáng, trưa vào ăn bán trú để học chiều</span>
                   </label>
+                  <p style={{ margin: '4px 0 0 24px', fontSize: '11px', color: 'var(--color-muted-fg)' }}>
+                    Chỉ áp dụng khi học sinh đã đăng ký suất ăn bán trú trong các ngày xin nghỉ.
+                  </p>
                 </div>
               )}
             </div>
@@ -1286,6 +1333,33 @@ export default function LeaveRequestPage() {
           </div>
         </div>
       </GeometricModal>
+
+      {/* CANCEL LEAVE REQUEST CONFIRM DIALOG (LV-05) */}
+      <ConfirmDialog
+        open={!!cancellingItem}
+        title="Xác nhận hủy đơn xin nghỉ học"
+        confirmText={cancelling ? 'Đang hủy...' : 'Xác nhận hủy đơn'}
+        cancelText="Giữ lại đơn"
+        busy={cancelling}
+        onConfirm={handleConfirmCancel}
+        onCancel={() => {
+          if (!cancelling) setCancellingItem(null);
+        }}
+      >
+        {cancellingItem && (
+          <p style={{ margin: 0, lineHeight: 1.6 }}>
+            Bạn có chắc chắn muốn hủy đơn <strong>{cancellingItem.requestNumber}</strong> của học sinh{' '}
+            <strong>{cancellingItem.studentName}</strong> (ngày{' '}
+            <strong>
+              {formatDateDDMMYYYY(cancellingItem.startDate)}
+              {cancellingItem.startDate.slice(0, 10) !== cancellingItem.endDate.slice(0, 10)
+                ? ` → ${formatDateDDMMYYYY(cancellingItem.endDate)}`
+                : ''}
+            </strong>
+            )? Thao tác này không thể hoàn tác.
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }
