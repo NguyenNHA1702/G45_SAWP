@@ -1,5 +1,5 @@
 import { apiClient } from '../apiClient';
-import type { ApiResponse } from '../../types/common.types';
+import type { ApiResponse, PaginatedResult } from '../../types/common.types';
 import type {
   AssignStudentsDto,
   AssignTeacherDto,
@@ -104,6 +104,19 @@ export const classApi = {
   // Student Placement
   async getEligibleStudents(classId: number): Promise<ApiResponse<RosterStudentItemDto[]>> {
     const res = await apiClient.get<ApiResponse<RosterStudentItemDto[]>>(`/classes/${classId}/eligible-students`);
+    return res.data;
+  },
+
+  async getEligibleStudentsPaged(
+    classId: number,
+    search?: string,
+    pageIndex = 1,
+    pageSize = 25,
+  ): Promise<ApiResponse<PaginatedResult<RosterStudentItemDto>>> {
+    const res = await apiClient.get<ApiResponse<PaginatedResult<RosterStudentItemDto>>>(
+      `/classes/${classId}/eligible-students/paged`,
+      { params: { ...(search ? { search } : {}), pageIndex, pageSize } },
+    );
     return res.data;
   },
 

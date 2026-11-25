@@ -6,6 +6,7 @@ import type {
   ClassTransferRequest,
   DocumentIssuanceRequest,
   OtherRequestPayload,
+  PagedAdministrativeRequests,
   RequestHistoryItem,
   RequestStatistics,
   ResubmitRequest,
@@ -36,6 +37,25 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
   async getMyRequests(studentId?: number): Promise<ApiResponse<AdministrativeRequestSummary[]>> {
     const res = await apiClient.get<ApiResponse<AdministrativeRequestSummary[]>>('/requests/my-requests', {
       params: studentId ? { studentId } : {},
+    });
+    return res.data;
+  }
+
+  async getMyRequestsPaged(params?: {
+    studentId?: number;
+    requestType?: string;
+    status?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }): Promise<ApiResponse<PagedAdministrativeRequests>> {
+    const res = await apiClient.get<ApiResponse<PagedAdministrativeRequests>>('/requests/my-requests/paged', {
+      params: {
+        ...(params?.studentId ? { studentId: params.studentId } : {}),
+        ...(params?.requestType && params.requestType !== 'ALL' ? { requestType: params.requestType } : {}),
+        ...(params?.status && params.status !== 'ALL' ? { status: params.status } : {}),
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 15,
+      },
     });
     return res.data;
   }
@@ -94,6 +114,25 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
     return res.data;
   }
 
+  async getOfficeRequestsPaged(params?: {
+    requestType?: string;
+    status?: string;
+    search?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }): Promise<ApiResponse<PagedAdministrativeRequests>> {
+    const res = await apiClient.get<ApiResponse<PagedAdministrativeRequests>>('/requests/office/paged', {
+      params: {
+        ...(params?.requestType && params.requestType !== 'ALL' ? { requestType: params.requestType } : {}),
+        ...(params?.status && params.status !== 'ALL' ? { status: params.status } : {}),
+        ...(params?.search ? { search: params.search } : {}),
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 15,
+      },
+    });
+    return res.data;
+  }
+
   async requestAmendment(id: number, req: StaffAmendmentRequest): Promise<ApiResponse<boolean>> {
     const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/request-amendment`, req);
     return res.data;
@@ -130,6 +169,25 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
     if (requestType && requestType !== 'ALL') params.requestType = requestType;
     if (status && status !== 'ALL') params.status = status;
     const res = await apiClient.get<ApiResponse<AdministrativeRequestSummary[]>>('/requests/board', { params });
+    return res.data;
+  }
+
+  async getBoardRequestsPaged(params?: {
+    requestType?: string;
+    status?: string;
+    search?: string;
+    pageIndex?: number;
+    pageSize?: number;
+  }): Promise<ApiResponse<PagedAdministrativeRequests>> {
+    const res = await apiClient.get<ApiResponse<PagedAdministrativeRequests>>('/requests/board/paged', {
+      params: {
+        ...(params?.requestType && params.requestType !== 'ALL' ? { requestType: params.requestType } : {}),
+        ...(params?.status && params.status !== 'ALL' ? { status: params.status } : {}),
+        ...(params?.search ? { search: params.search } : {}),
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 15,
+      },
+    });
     return res.data;
   }
 

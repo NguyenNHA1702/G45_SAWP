@@ -293,7 +293,7 @@ public class StudentImporterTests : TestBase
 
     private static ImportStudentRowDto Row(string code, string guardian, string? email = null, string idCard = "", string phone = "") => new()
     {
-        RowNumber = 2, StudentCode = code, FullName = "Hoc Sinh " + code, DateOfBirth = "2019-01-01", Gender = "Nam",
+        RowNumber = 2, StudentCode = code, FullName = "Hoc Sinh Moi", DateOfBirth = "2019-01-01", Gender = "Nam",
         GuardianName = guardian, GuardianEmail = email, GuardianIdentityCard = idCard, GuardianPhone = phone, Relationship = "Mẹ"
     };
 

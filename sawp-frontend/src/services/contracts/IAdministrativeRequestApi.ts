@@ -5,6 +5,7 @@ import type {
   ClassTransferRequest,
   DocumentIssuanceRequest,
   OtherRequestPayload,
+  PagedAdministrativeRequests,
   RequestHistoryItem,
   RequestStatistics,
   ResubmitRequest,
@@ -20,6 +21,7 @@ export interface IAdministrativeRequestApi {
   submitDocument(req: DocumentIssuanceRequest): Promise<ApiResponse<string>>;
   submitOther(req: OtherRequestPayload): Promise<ApiResponse<string>>;
   getMyRequests(studentId?: number): Promise<ApiResponse<AdministrativeRequestSummary[]>>;
+  getMyRequestsPaged(params?: { studentId?: number; requestType?: string; status?: string; pageIndex?: number; pageSize?: number }): Promise<ApiResponse<PagedAdministrativeRequests>>;
   getRequestDetail(id: number): Promise<ApiResponse<AdministrativeRequestSummary>>;
   resubmitRequest(id: number, req: ResubmitRequest): Promise<ApiResponse<boolean>>;
   cancelRequest(id: number): Promise<ApiResponse<boolean>>;
@@ -28,6 +30,7 @@ export interface IAdministrativeRequestApi {
 
   // Office Staff
   getOfficeRequests(requestType?: string, status?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>>;
+  getOfficeRequestsPaged(params?: { requestType?: string; status?: string; search?: string; pageIndex?: number; pageSize?: number }): Promise<ApiResponse<PagedAdministrativeRequests>>;
   requestAmendment(id: number, req: StaffAmendmentRequest): Promise<ApiResponse<boolean>>;
   endorseTransfer(id: number, req: StaffEndorseTransferRequest): Promise<ApiResponse<boolean>>;
   endorseDocument(id: number, req: StaffEndorseDocumentRequest): Promise<ApiResponse<boolean>>;
@@ -37,6 +40,7 @@ export interface IAdministrativeRequestApi {
 
   // School Board
   getBoardRequests(requestType?: string, status?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>>;
+  getBoardRequestsPaged(params?: { requestType?: string; status?: string; search?: string; pageIndex?: number; pageSize?: number }): Promise<ApiResponse<PagedAdministrativeRequests>>;
   processBoardDecision(id: number, req: BoardDecisionRequest): Promise<ApiResponse<boolean>>;
 
   // History & Statistics

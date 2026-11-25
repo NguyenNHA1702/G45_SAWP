@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, Check, UserPlus, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
+import { PaginationBar } from '../common/PaginationBar';
 import { classApi } from '../../services/implementations/classApi';
 import { formatDDMMYYYY } from '../../utils/date';
 import type { ClassSummaryDto, RosterStudentItemDto } from '../../types/class.types';
@@ -20,33 +21,51 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
   onAssigned,
 }) => {
   const [eligibleStudents, setEligibleStudents] = useState<RosterStudentItemDto[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
+  const pageSize = 25;
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search);
+      setPageIndex(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (open && targetClass) {
-      loadEligible();
       setSelectedIds([]);
       setSearch('');
+      setDebouncedSearch('');
+      setPageIndex(1);
     }
   }, [open, targetClass]);
 
-  const loadEligible = async () => {
-    if (!targetClass) return;
+  const loadEligible = useCallback(async () => {
+    if (!open || !targetClass) return;
     setLoading(true);
     try {
-      const res = await classApi.getEligibleStudents(targetClass.id);
+      const res = await classApi.getEligibleStudentsPaged(targetClass.id, debouncedSearch, pageIndex, pageSize);
       if (res.success && res.data) {
-        setEligibleStudents(res.data);
+        setEligibleStudents(res.data.items);
+        setTotalCount(res.data.totalCount);
       }
     } catch {
       toast.error('Lỗi khi tải danh sách học sinh chưa phân lớp.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [open, targetClass, debouncedSearch, pageIndex]);
+
+  useEffect(() => {
+    void loadEligible();
+  }, [loadEligible]);
 
   const handleToggle = (id: number) => {
     setSelectedIds((prev) =>
@@ -54,11 +73,13 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
     );
   };
 
-  const handleSelectAll = () => {
-    if (selectedIds.length === filteredStudents.length) {
-      setSelectedIds([]);
+  const handleSelectAllOnPage = () => {
+    const pageIds = eligibleStudents.map((s) => s.studentId);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+    if (allPageSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
     } else {
-      setSelectedIds(filteredStudents.map((s) => s.studentId));
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
     }
   };
 
@@ -93,12 +114,8 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
 
   if (!targetClass) return null;
 
-  const filteredStudents = eligibleStudents.filter(
-    (s) =>
-      s.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      s.studentCode.toLowerCase().includes(search.toLowerCase())
-  );
-
+  const allPageSelected =
+    eligibleStudents.length > 0 && eligibleStudents.every((s) => selectedIds.includes(s.studentId));
   const currentEnrolled = targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0;
   const availableSpots = targetClass.availableCapacity ?? (targetClass.capacity - currentEnrolled);
 
@@ -150,12 +167,12 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
           <button
             type="button"
             className="btn btn--secondary btn--sm"
-            onClick={handleSelectAll}
-            disabled={filteredStudents.length === 0}
+            onClick={handleSelectAllOnPage}
+            disabled={eligibleStudents.length === 0}
           >
-            {selectedIds.length === filteredStudents.length && filteredStudents.length > 0
-              ? 'Bỏ chọn tất cả'
-              : `Chọn tất cả (${filteredStudents.length})`}
+            {allPageSelected
+              ? 'Bỏ chọn trang này'
+              : `Chọn trang này (${eligibleStudents.length})`}
           </button>
           <span className="badge badge--violet">
             Đã chọn: <strong>{selectedIds.length}</strong>
@@ -165,7 +182,7 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
         {/* Student list */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}>Đang tải danh sách học sinh chưa phân lớp...</div>
-        ) : filteredStudents.length === 0 ? (
+        ) : eligibleStudents.length === 0 ? (
           <div className="card empty-state" style={{ padding: 24, textAlign: 'center' }}>
             <Users size={36} color="var(--color-muted-fg)" style={{ margin: '0 auto 8px' }} />
             <p style={{ margin: 0, color: 'var(--color-muted-fg)' }}>
@@ -173,48 +190,57 @@ export const AssignStudentsModal: React.FC<AssignStudentsModalProps> = ({
             </p>
           </div>
         ) : (
-          <div className="data-table-wrapper" style={{ maxHeight: 320 }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>Chọn</th>
-                  <th>Mã HS</th>
-                  <th>Họ và tên</th>
-                  <th>Ngày sinh</th>
-                  <th>Giới tính</th>
-                  <th>Phụ huynh</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStudents.map((s) => {
-                  const isChecked = selectedIds.includes(s.studentId);
-                  return (
-                    <tr
-                      key={s.studentId}
-                      onClick={() => handleToggle(s.studentId)}
-                      style={{
-                        cursor: 'pointer',
-                        backgroundColor: isChecked ? 'var(--color-accent-soft)' : undefined,
-                      }}
-                    >
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggle(s.studentId)}
-                        />
-                      </td>
-                      <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
-                      <td>{s.fullName}</td>
-                      <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
-                      <td>{s.gender}</td>
-                      <td>{s.primaryGuardianName || '-'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="data-table-wrapper" style={{ maxHeight: 320 }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}>Chọn</th>
+                    <th>Mã HS</th>
+                    <th>Họ và tên</th>
+                    <th>Ngày sinh</th>
+                    <th>Giới tính</th>
+                    <th>Phụ huynh</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eligibleStudents.map((s) => {
+                    const isChecked = selectedIds.includes(s.studentId);
+                    return (
+                      <tr
+                        key={s.studentId}
+                        onClick={() => handleToggle(s.studentId)}
+                        style={{
+                          cursor: 'pointer',
+                          backgroundColor: isChecked ? 'var(--color-accent-soft)' : undefined,
+                        }}
+                      >
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggle(s.studentId)}
+                          />
+                        </td>
+                        <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
+                        <td>{s.fullName}</td>
+                        <td>{formatDDMMYYYY(s.dateOfBirth)}</td>
+                        <td>{s.gender}</td>
+                        <td>{s.primaryGuardianName || '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar
+              pageIndex={pageIndex}
+              pageSize={pageSize}
+              totalCount={totalCount}
+              onPageChange={setPageIndex}
+              itemLabel="học sinh chưa phân lớp"
+            />
+          </>
         )}
 
         {/* Action Buttons */}

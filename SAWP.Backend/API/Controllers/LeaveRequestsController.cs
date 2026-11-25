@@ -56,6 +56,27 @@ public class LeaveRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Phụ huynh xem danh sách đơn xin nghỉ của con (phân trang)
+    /// </summary>
+    [HttpGet("my/paged")]
+    public async Task<IActionResult> GetMyLeaveRequestsPaged(
+        [FromQuery] int? studentId,
+        [FromQuery] string? status,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<PagedLeaveRequestsDto>.Fail("Vui lòng đăng nhập lại."));
+        }
+
+        var result = await _leaveRequestService.GetMyLeaveRequestsPagedAsync(userId.Value, studentId, status, pageIndex, pageSize, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// GVCN xem danh sách đơn xin nghỉ học của lớp
     /// </summary>
     [HttpGet("class")]
@@ -72,6 +93,29 @@ public class LeaveRequestsController : ControllerBase
         }
 
         var result = await _leaveRequestService.GetClassLeaveRequestsAsync(userId.Value, classId, status, date, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// GVCN / BGH xem danh sách đơn xin nghỉ học của lớp (phân trang + thống kê)
+    /// </summary>
+    [HttpGet("class/paged")]
+    public async Task<IActionResult> GetClassLeaveRequestsPaged(
+        [FromQuery] int? classId,
+        [FromQuery] string? status,
+        [FromQuery] DateTime? date,
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(ApiResponse<PagedLeaveRequestsDto>.Fail("Vui lòng đăng nhập lại."));
+        }
+
+        var result = await _leaveRequestService.GetClassLeaveRequestsPagedAsync(userId.Value, classId, status, date, search, pageIndex, pageSize, cancellationToken);
         return Ok(result);
     }
 

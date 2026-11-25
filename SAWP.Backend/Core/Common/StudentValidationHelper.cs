@@ -18,7 +18,10 @@ public static class StudentValidationHelper
     private static readonly Regex StudentCodeRegex = new(@"^[A-Z0-9_-]{3,30}$", RegexOptions.Compiled);
     private static readonly Regex PhoneRegex = new(@"^0\d{9}$", RegexOptions.Compiled);
     private static readonly Regex IdentityCardRegex = new(@"^\d{9}(\d{3})?$", RegexOptions.Compiled);
-    private static readonly Regex ForbiddenNameCharsRegex = new(@"[<>@#$%^&*+=\[\]{}|\\/~`]", RegexOptions.Compiled);
+    private static readonly Regex ValidPersonNameRegex = new(@"^[\p{L}\s'\-.]+$", RegexOptions.Compiled);
+    private static readonly Regex ContainsLetterRegex = new(@"\p{L}", RegexOptions.Compiled);
+    private static readonly Regex HtmlTagRegex = new(@"<[^>]*>", RegexOptions.Compiled);
+    private static readonly Regex SectionSuffixRegex = new(@"^[A-Za-z]$", RegexOptions.Compiled);
 
     private static readonly HashSet<string> ValidRelationships = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -56,11 +59,35 @@ public static class StudentValidationHelper
         if (cleaned.Length < 1 || cleaned.Length > 100)
             return $"Độ dài {fieldLabel} phải từ 1 đến 100 ký tự.";
 
-        if (cleaned.Contains('<') || cleaned.Contains('>') || ForbiddenNameCharsRegex.IsMatch(cleaned))
-            return $"Trường {fieldLabel} không được chứa thẻ HTML hoặc ký tự đặc biệt.";
+        if (cleaned.Contains('<') || cleaned.Contains('>'))
+            return $"Trường {fieldLabel} không được chứa thẻ HTML.";
+
+        if (!ValidPersonNameRegex.IsMatch(cleaned) || !ContainsLetterRegex.IsMatch(cleaned))
+            return $"Trường {fieldLabel} chỉ được chứa chữ cái, khoảng trắng và dấu (' - .), không được chứa chữ số hoặc ký tự đặc biệt.";
 
         return null;
     }
+
+    public static string? ValidateClassNameForGrade(string? className, int grade)
+    {
+        if (string.IsNullOrWhiteSpace(className))
+            return "Vui lòng nhập tên lớp học.";
+
+        var trimmed = className.Trim();
+        if (trimmed.Contains('<') || trimmed.Contains('>') || HtmlTagRegex.IsMatch(trimmed))
+            return "Tên lớp học không được chứa thẻ HTML hoặc ký tự đặc biệt.";
+
+        if (!Regex.IsMatch(trimmed, $"^{grade}[A-Za-z]$"))
+            return $"Tên lớp '{trimmed}' không hợp lệ với Khối {grade}. Quy tắc đặt tên: Khối ({grade}) + 1 chữ cái phân lớp (ví dụ: {grade}A, {grade}B).";
+
+        return null;
+    }
+
+    public static bool IsValidSectionSuffix(string? suffix)
+        => !string.IsNullOrWhiteSpace(suffix) && SectionSuffixRegex.IsMatch(suffix.Trim());
+
+    public static bool ContainsHtmlTags(string? input)
+        => !string.IsNullOrWhiteSpace(input) && (input.Contains('<') || input.Contains('>') || HtmlTagRegex.IsMatch(input));
 
     public static bool TryNormalizeGender(string? raw, out string normalized)
     {

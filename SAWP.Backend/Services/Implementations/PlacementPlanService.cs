@@ -95,6 +95,8 @@ public class PlacementPlanService : IPlacementPlanService
         var targetClassIds = targetClasses.Select(c => c.Id).ToList();
 
         var query = _context.Students
+            .AsNoTracking()
+            .AsSplitQuery()
             .Include(s => s.ClassAssignments)
                 .ThenInclude(ca => ca.Class)
             .Where(s => s.Status == "Active" &&
@@ -129,6 +131,8 @@ public class PlacementPlanService : IPlacementPlanService
         if (!students.Any())
         {
             students = await _context.Students
+                .AsNoTracking()
+                .AsSplitQuery()
                 .Include(s => s.ClassAssignments)
                 .Where(s => s.Status == "Active")
                 .Take(targetClasses.Count * request.TargetCapacity)
@@ -197,46 +201,74 @@ public class PlacementPlanService : IPlacementPlanService
 
     public async Task<ApiResponse<PlacementPlanDetailDto>> GetPlanByIdAsync(int planId, CancellationToken cancellationToken = default)
     {
-        var plan = await _context.PlacementPlans
-            .Include(p => p.SchoolYear)
-            .Include(p => p.CreatedByUser)
-            .Include(p => p.ReviewedByUser)
-            .Include(p => p.Items)
-                .ThenInclude(i => i.Student)
-            .Include(p => p.Items)
-                .ThenInclude(i => i.Class)
-            .FirstOrDefaultAsync(p => p.Id == planId, cancellationToken);
+        var planMeta = await _context.PlacementPlans
+            .AsNoTracking()
+            .Where(p => p.Id == planId)
+            .Select(p => new
+            {
+                p.Id,
+                p.SchoolYearId,
+                SchoolYearName = p.SchoolYear != null ? p.SchoolYear.YearName : string.Empty,
+                p.Grade,
+                p.PlanName,
+                p.Version,
+                p.Status,
+                p.TargetClassCount,
+                p.TargetCapacity,
+                p.CreatedByUserId,
+                CreatedByName = p.CreatedByUser != null ? p.CreatedByUser.FullName : string.Empty,
+                p.CreatedAt,
+                p.SubmittedAt,
+                p.ReviewedByUserId,
+                ReviewedByName = p.ReviewedByUser != null ? p.ReviewedByUser.FullName : null,
+                p.ReviewedAt,
+                p.ReviewNotes
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (plan == null)
+        if (planMeta == null)
         {
             return ApiResponse<PlacementPlanDetailDto>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy phương án xếp lớp." });
         }
 
         var classesInGrade = await _context.Classes
-            .Where(c => c.SchoolYearId == plan.SchoolYearId && c.Grade == plan.Grade)
+            .AsNoTracking()
+            .Where(c => c.SchoolYearId == planMeta.SchoolYearId && c.Grade == planMeta.Grade)
             .OrderBy(c => c.ClassName)
+            .Select(c => new { c.Id, c.ClassName, c.Grade, c.Capacity })
+            .ToListAsync(cancellationToken);
+
+        var planItems = await _context.PlacementPlanItems
+            .AsNoTracking()
+            .Where(i => i.PlacementPlanId == planId)
+            .Select(i => new
+            {
+                i.ClassId,
+                Item = new PlacementStudentItemDto
+                {
+                    StudentId = i.Student.Id,
+                    StudentCode = i.Student.StudentCode,
+                    FullName = i.Student.FullName,
+                    Gender = i.Student.Gender,
+                    DateOfBirth = i.Student.DateOfBirth,
+                    ResidentialArea = i.Student.ResidentialArea,
+                    IsSpecialNeeds = i.Student.IsSpecialNeeds,
+                    SpecialNeedsNotes = i.Student.SpecialNeedsNotes,
+                    IsManualOverride = i.IsManualOverride,
+                    Notes = i.Notes
+                }
+            })
             .ToListAsync(cancellationToken);
 
         // Group items by class
         var classPreviewList = new List<PlacementPlanClassPreviewDto>();
-        var itemsByClass = plan.Items.GroupBy(i => i.ClassId).ToDictionary(g => g.Key, g => g.ToList());
+        var itemsByClass = planItems.GroupBy(i => i.ClassId).ToDictionary(g => g.Key, g => g.Select(x => x.Item).ToList());
 
         foreach (var cls in classesInGrade)
         {
-            var items = itemsByClass.ContainsKey(cls.Id) ? itemsByClass[cls.Id] : new List<PlacementPlanItem>();
-            var studentList = items.Select(i => new PlacementStudentItemDto
-            {
-                StudentId = i.Student.Id,
-                StudentCode = i.Student.StudentCode,
-                FullName = i.Student.FullName,
-                Gender = i.Student.Gender,
-                DateOfBirth = i.Student.DateOfBirth,
-                ResidentialArea = i.Student.ResidentialArea,
-                IsSpecialNeeds = i.Student.IsSpecialNeeds,
-                SpecialNeedsNotes = i.Student.SpecialNeedsNotes,
-                IsManualOverride = i.IsManualOverride,
-                Notes = i.Notes
-            }).OrderBy(s => s.FullName).ToList();
+            var studentList = itemsByClass.TryGetValue(cls.Id, out var list)
+                ? list.OrderBy(s => s.FullName).ToList()
+                : new List<PlacementStudentItemDto>();
 
             var maleCount = studentList.Count(s => s.Gender.Equals("Nam", StringComparison.OrdinalIgnoreCase));
             var femaleCount = studentList.Count(s => s.Gender.Equals("Nữ", StringComparison.OrdinalIgnoreCase));
@@ -262,28 +294,28 @@ public class PlacementPlanService : IPlacementPlanService
         }
 
         // Validate criteria and evaluate warnings
-        var criteriaWarnings = EvaluateCriteriaWarnings(classPreviewList, plan.TargetCapacity);
+        var criteriaWarnings = EvaluateCriteriaWarnings(classPreviewList, planMeta.TargetCapacity);
 
         var detailDto = new PlacementPlanDetailDto
         {
-            Id = plan.Id,
-            SchoolYearId = plan.SchoolYearId,
-            SchoolYearName = plan.SchoolYear?.YearName ?? string.Empty,
-            Grade = plan.Grade,
-            PlanName = plan.PlanName,
-            Version = plan.Version,
-            Status = plan.Status,
-            TargetClassCount = plan.TargetClassCount,
-            TargetCapacity = plan.TargetCapacity,
-            TotalStudents = plan.Items.Count,
-            CreatedByUserId = plan.CreatedByUserId,
-            CreatedByName = plan.CreatedByUser?.FullName ?? string.Empty,
-            CreatedAt = plan.CreatedAt,
-            SubmittedAt = plan.SubmittedAt,
-            ReviewedByUserId = plan.ReviewedByUserId,
-            ReviewedByName = plan.ReviewedByUser?.FullName,
-            ReviewedAt = plan.ReviewedAt,
-            ReviewNotes = plan.ReviewNotes,
+            Id = planMeta.Id,
+            SchoolYearId = planMeta.SchoolYearId,
+            SchoolYearName = planMeta.SchoolYearName,
+            Grade = planMeta.Grade,
+            PlanName = planMeta.PlanName,
+            Version = planMeta.Version,
+            Status = planMeta.Status,
+            TargetClassCount = planMeta.TargetClassCount,
+            TargetCapacity = planMeta.TargetCapacity,
+            TotalStudents = planItems.Count,
+            CreatedByUserId = planMeta.CreatedByUserId,
+            CreatedByName = planMeta.CreatedByName,
+            CreatedAt = planMeta.CreatedAt,
+            SubmittedAt = planMeta.SubmittedAt,
+            ReviewedByUserId = planMeta.ReviewedByUserId,
+            ReviewedByName = planMeta.ReviewedByName,
+            ReviewedAt = planMeta.ReviewedAt,
+            ReviewNotes = planMeta.ReviewNotes,
             HasWarnings = criteriaWarnings.Any(w => w.Severity == "Warning" || w.Severity == "Violation"),
             ViolationCount = criteriaWarnings.Count(w => w.Severity == "Violation"),
             Classes = classPreviewList,
@@ -298,13 +330,41 @@ public class PlacementPlanService : IPlacementPlanService
         int? grade = null,
         CancellationToken cancellationToken = default)
     {
-        var query = _context.PlacementPlans
-            .Include(p => p.SchoolYear)
-            .Include(p => p.CreatedByUser)
-            .Include(p => p.ReviewedByUser)
-            .Include(p => p.Items)
-                .ThenInclude(i => i.Student)
-            .AsQueryable();
+        var items = await BuildPlanHistorySummariesAsync(schoolYearId, grade, null, null, cancellationToken);
+        return ApiResponse<List<PlacementPlanSummaryDto>>.Ok(items);
+    }
+
+    public async Task<ApiResponse<PaginatedResult<PlacementPlanSummaryDto>>> GetPlanHistoryPagedAsync(
+        int? schoolYearId = null,
+        int? grade = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageIndex < 1) pageIndex = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var query = _context.PlacementPlans.AsNoTracking();
+        if (schoolYearId.HasValue)
+            query = query.Where(p => p.SchoolYearId == schoolYearId.Value);
+        if (grade.HasValue)
+            query = query.Where(p => p.Grade == grade.Value);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await BuildPlanHistorySummariesAsync(schoolYearId, grade, pageIndex, pageSize, cancellationToken);
+
+        return ApiResponse<PaginatedResult<PlacementPlanSummaryDto>>.Ok(
+            new PaginatedResult<PlacementPlanSummaryDto>(items, totalCount, pageIndex, pageSize));
+    }
+
+    private async Task<List<PlacementPlanSummaryDto>> BuildPlanHistorySummariesAsync(
+        int? schoolYearId,
+        int? grade,
+        int? pageIndex,
+        int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        var query = _context.PlacementPlans.AsNoTracking();
 
         if (schoolYearId.HasValue)
         {
@@ -316,43 +376,91 @@ public class PlacementPlanService : IPlacementPlanService
             query = query.Where(p => p.Grade == grade.Value);
         }
 
-        var plans = await query
-            .OrderByDescending(p => p.CreatedAt)
+        var ordered = query.OrderByDescending(p => p.CreatedAt);
+        var sliced = (pageIndex.HasValue && pageSize.HasValue)
+            ? ordered.Skip((pageIndex.Value - 1) * pageSize.Value).Take(pageSize.Value)
+            : ordered;
+
+        var plans = await sliced
+            .Select(p => new
+            {
+                p.Id,
+                p.SchoolYearId,
+                SchoolYearName = p.SchoolYear != null ? p.SchoolYear.YearName : string.Empty,
+                p.Grade,
+                p.PlanName,
+                p.Version,
+                p.Status,
+                p.TargetClassCount,
+                p.TargetCapacity,
+                p.CreatedByUserId,
+                CreatedByName = p.CreatedByUser != null ? p.CreatedByUser.FullName : string.Empty,
+                p.CreatedAt,
+                p.SubmittedAt,
+                p.ReviewedByUserId,
+                ReviewedByName = p.ReviewedByUser != null ? p.ReviewedByUser.FullName : null,
+                p.ReviewedAt,
+                p.ReviewNotes
+            })
             .ToListAsync(cancellationToken);
 
-        var result = plans.Select(p =>
+        if (plans.Count == 0)
         {
-            // Simple check for warnings
-            var itemsByClass = p.Items.GroupBy(i => i.ClassId).ToList();
-            var hasSpecialNeedsViolation = itemsByClass.Any(g => g.Count(i => i.Student.IsSpecialNeeds) > 2);
-            var hasDuplicateName = itemsByClass.Any(g => g.GroupBy(i => i.Student.FullName.Trim().ToLower()).Any(ng => ng.Count() > 1));
+            return new List<PlacementPlanSummaryDto>();
+        }
+
+        var planIds = plans.Select(p => p.Id).ToList();
+
+        // Scalar projection avoids hydrating thousands of full Student entities
+        var planItemStats = await _context.PlacementPlanItems
+            .AsNoTracking()
+            .Where(i => planIds.Contains(i.PlacementPlanId))
+            .Select(i => new
+            {
+                i.PlacementPlanId,
+                i.ClassId,
+                i.Student.IsSpecialNeeds,
+                StudentFullName = i.Student.FullName
+            })
+            .ToListAsync(cancellationToken);
+
+        var itemsByPlan = planItemStats
+            .GroupBy(i => i.PlacementPlanId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return plans.Select(p =>
+        {
+            itemsByPlan.TryGetValue(p.Id, out var planItems);
+            var totalStudents = planItems?.Count ?? 0;
+            var itemsByClass = planItems?.GroupBy(i => i.ClassId).ToList();
+            var hasSpecialNeedsViolation = itemsByClass != null && itemsByClass.Any(g => g.Count(i => i.IsSpecialNeeds) > 2);
+            var hasDuplicateName = itemsByClass != null && itemsByClass.Any(g =>
+                g.GroupBy(i => i.StudentFullName.Trim().ToLower()).Any(ng => ng.Count() > 1));
 
             return new PlacementPlanSummaryDto
             {
                 Id = p.Id,
                 SchoolYearId = p.SchoolYearId,
-                SchoolYearName = p.SchoolYear?.YearName ?? string.Empty,
+                SchoolYearName = p.SchoolYearName,
                 Grade = p.Grade,
                 PlanName = p.PlanName,
                 Version = p.Version,
                 Status = p.Status,
                 TargetClassCount = p.TargetClassCount,
                 TargetCapacity = p.TargetCapacity,
-                TotalStudents = p.Items.Count,
+                TotalStudents = totalStudents,
                 CreatedByUserId = p.CreatedByUserId,
-                CreatedByName = p.CreatedByUser?.FullName ?? string.Empty,
+                CreatedByName = p.CreatedByName,
                 CreatedAt = p.CreatedAt,
                 SubmittedAt = p.SubmittedAt,
                 ReviewedByUserId = p.ReviewedByUserId,
-                ReviewedByName = p.ReviewedByUser?.FullName,
+                ReviewedByName = p.ReviewedByName,
                 ReviewedAt = p.ReviewedAt,
                 ReviewNotes = p.ReviewNotes,
                 HasWarnings = hasSpecialNeedsViolation || hasDuplicateName,
                 ViolationCount = (hasSpecialNeedsViolation ? 1 : 0) + (hasDuplicateName ? 1 : 0)
             };
         }).ToList();
-
-        return ApiResponse<List<PlacementPlanSummaryDto>>.Ok(result);
     }
 
     public async Task<ApiResponse<PlacementPlanDetailDto>> MoveStudentAsync(

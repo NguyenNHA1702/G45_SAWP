@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { CheckCheck, Check, X } from 'lucide-react';
 import { accountRequestApi } from '../../services/implementations/accountRequestApi';
+import { PaginationBar } from '../../components/common/PaginationBar';
 import { asApiError } from '../../utils/apiError';
 import { formatViDateTime } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
@@ -29,14 +30,20 @@ export default function AccountRequestReviewPage() {
   const [params] = useSearchParams();
   const [status, setStatus] = useState<string>('');
   const [requests, setRequests] = useState<AccountRequestDto[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
   const [detail, setDetail] = useState<AccountRequestDto | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (s?: string) => {
+  const load = useCallback(async (s?: string, page = 1) => {
     try {
-      setRequests((await accountRequestApi.review(s || undefined)).data ?? []);
+      const res = await accountRequestApi.reviewPaged(s || undefined, undefined, page, 15);
+      if (res.data) {
+        setRequests(res.data.items);
+        setTotalCount(res.data.totalCount);
+      }
     } catch (err) {
       showError(err);
     }
@@ -104,7 +111,11 @@ export default function AccountRequestReviewPage() {
       {!detail && (
         <section className="card" aria-label="Danh sách yêu cầu">
           <div style={{ marginBottom: 12 }}>
-            <select className="select" aria-label="Lọc theo trạng thái" value={status} onChange={(e) => { setStatus(e.target.value); void load(e.target.value); }}>
+            <select className="select" aria-label="Lọc theo trạng thái" value={status} onChange={(e) => {
+              setStatus(e.target.value);
+              setPageIndex(1);
+              void load(e.target.value, 1);
+            }}>
               <option value="">Tất cả trạng thái</option>
               {(Object.keys(REQUEST_STATUS) as AccountRequestStatus[]).filter((s) => s !== 'Draft').map((s) => (
                 <option key={s} value={s}>{REQUEST_STATUS[s].label}</option>
@@ -130,6 +141,16 @@ export default function AccountRequestReviewPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar
+            pageIndex={pageIndex}
+            pageSize={15}
+            totalCount={totalCount}
+            onPageChange={(p) => {
+              setPageIndex(p);
+              void load(status, p);
+            }}
+            itemLabel="yêu cầu"
+          />
         </section>
       )}
 

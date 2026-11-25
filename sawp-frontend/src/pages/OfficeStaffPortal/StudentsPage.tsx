@@ -32,7 +32,7 @@ export default function StudentsPage() {
   const [classes, setClasses] = useState<ClassSummaryDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [pageIndex, setPageIndex] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
   const [keyword, setKeyword] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -54,7 +54,7 @@ export default function StudentsPage() {
 
   useEffect(() => {
     loadStudents();
-  }, [pageIndex, selectedClassId]);
+  }, [pageIndex, pageSize, selectedClassId]);
 
   const loadClasses = async () => {
     try {
@@ -364,14 +364,32 @@ export default function StudentsPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 12,
               padding: '12px 18px',
               borderTop: 'var(--border)',
               background: 'var(--color-muted)',
               fontSize: 'var(--fs-sm)',
             }}
           >
-            <div>
-              Hiển thị <strong>{students.length}</strong> / <strong>{totalCount}</strong> học sinh
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span>
+                Hiển thị <strong>{students.length}</strong> / <strong>{totalCount.toLocaleString('vi-VN')}</strong> học sinh
+              </span>
+              <select
+                className="select"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPageIndex(1);
+                }}
+                style={{ width: 'auto', padding: '4px 8px', fontSize: 13 }}
+                aria-label="Số học sinh mỗi trang"
+              >
+                <option value={10}>10 / trang</option>
+                <option value={20}>20 / trang</option>
+                <option value={50}>50 / trang</option>
+              </select>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
@@ -383,12 +401,12 @@ export default function StudentsPage() {
                 ← Trang trước
               </button>
               <span className="badge badge--violet" style={{ alignSelf: 'center' }}>
-                Trang {pageIndex}
+                Trang {pageIndex} / {Math.max(1, Math.ceil(totalCount / pageSize))}
               </span>
               <button
                 type="button"
                 className="btn btn--secondary btn--sm"
-                disabled={students.length < pageSize}
+                disabled={pageIndex >= Math.ceil(totalCount / pageSize)}
                 onClick={() => setPageIndex((p) => p + 1)}
               >
                 Trang sau →
@@ -405,6 +423,7 @@ export default function StudentsPage() {
         classes={classes}
         onCreated={() => {
           loadStudents();
+          loadClasses();
         }}
         onDuplicateDetected={(pending, existing) => {
           setPendingStudent(pending);
@@ -420,6 +439,7 @@ export default function StudentsPage() {
         existingStudent={existingStudent}
         onResolved={() => {
           loadStudents();
+          loadClasses();
         }}
       />
 
@@ -438,6 +458,7 @@ export default function StudentsPage() {
         student={selectedStudent}
         onUpdated={() => {
           loadStudents();
+          loadClasses();
         }}
       />
     </div>

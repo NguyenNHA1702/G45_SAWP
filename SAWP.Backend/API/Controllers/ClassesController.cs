@@ -191,6 +191,20 @@ public class ClassesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("{id}/eligible-students/paged")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<PaginatedResult<RosterStudentItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEligibleStudentsPaged(
+        int id,
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _classService.GetEligibleStudentsForAssignmentPagedAsync(id, search, pageIndex, pageSize, cancellationToken);
+        return result.Success ? Ok(result) : NotFound(result);
+    }
+
     [HttpPost("{id}/assign-students")]
     [Authorize(Roles = "OfficeStaff,Admin")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]

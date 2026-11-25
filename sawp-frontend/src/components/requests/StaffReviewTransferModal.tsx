@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
 import { AttachmentViewer } from '../common/AttachmentViewer';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
-import { formatDDMMYYYY, getNextMondayIso, todayIso as getTodayIso } from '../../utils/date';
+import { formatDDMMYYYY, getNextMondayIso, todayIso as getTodayIso, toLocalDateIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 
 interface StaffReviewTransferModalProps {
@@ -33,9 +33,11 @@ export function StaffReviewTransferModal({
         request.classTransfer.staffRecommendation ||
         `Đã rà soát học bạ và sĩ số lớp ${request.classTransfer.toClassName}. Đề xuất Ban Giám Hiệu xem xét phê duyệt điều chuyển lớp cho học sinh.`
       );
+      const parentEff = toLocalDateIso(request.classTransfer.effectiveDate);
+      const isAlreadyReviewed = !!request.classTransfer.staffRecommendation;
       setProposedEffectiveDate(
-        request.classTransfer.effectiveDate
-          ? request.classTransfer.effectiveDate.slice(0, 10)
+        parentEff && (isAlreadyReviewed || parentEff >= getTodayIso())
+          ? parentEff
           : getNextMondayIso()
       );
       setAmendmentNotes(request.amendmentNotes || '');

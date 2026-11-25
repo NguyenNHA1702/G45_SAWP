@@ -79,6 +79,26 @@ export interface SyncLeaveResult {
   attendanceWarnings?: string[];
 }
 
+export interface LeaveRequestStats {
+  totalCount: number;
+  submittedCount: number;
+  needMoreInfoCount: number;
+  underReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  cancelledCount: number;
+  escalatedCount: number;
+}
+
+export interface PagedLeaveRequests {
+  items: LeaveRequestItem[];
+  totalCount: number;
+  pageIndex: number;
+  pageSize: number;
+  totalPages: number;
+  stats: LeaveRequestStats;
+}
+
 export const leaveRequestApi = {
   submit: async (payload: CreateLeaveRequestPayload) => {
     const res = await apiClient.post<{ success: boolean; data: LeaveRequestItem; message: string }>('/leaverequests', payload);
@@ -95,8 +115,34 @@ export const leaveRequestApi = {
     return res.data;
   },
 
+  getMyRequestsPaged: async (params?: { studentId?: number; status?: string; pageIndex?: number; pageSize?: number }) => {
+    const res = await apiClient.get<{ success: boolean; data: PagedLeaveRequests }>('/leaverequests/my/paged', {
+      params: {
+        ...(params?.studentId ? { studentId: params.studentId } : {}),
+        ...(params?.status && params.status !== 'ALL' ? { status: params.status } : {}),
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 15,
+      },
+    });
+    return res.data;
+  },
+
   getClassRequests: async (params?: { classId?: number; status?: string; date?: string }) => {
     const res = await apiClient.get<{ success: boolean; data: LeaveRequestItem[] }>('/leaverequests/class', { params });
+    return res.data;
+  },
+
+  getClassRequestsPaged: async (params?: { classId?: number; status?: string; date?: string; search?: string; pageIndex?: number; pageSize?: number }) => {
+    const res = await apiClient.get<{ success: boolean; data: PagedLeaveRequests }>('/leaverequests/class/paged', {
+      params: {
+        ...(params?.classId ? { classId: params.classId } : {}),
+        ...(params?.status && params.status !== 'ALL' ? { status: params.status } : {}),
+        ...(params?.date ? { date: params.date } : {}),
+        ...(params?.search ? { search: params.search } : {}),
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 15,
+      },
+    });
     return res.data;
   },
 

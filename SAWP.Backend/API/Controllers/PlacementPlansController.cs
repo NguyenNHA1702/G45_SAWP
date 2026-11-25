@@ -66,6 +66,23 @@ public class PlacementPlansController : ControllerBase
     }
 
     /// <summary>
+    /// Lịch sử các phương án xếp lớp có phân trang theo năm học và khối
+    /// </summary>
+    [HttpGet("history/paged")]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<PaginatedResult<PlacementPlanSummaryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPlanHistoryPaged(
+        [FromQuery] int? schoolYearId,
+        [FromQuery] int? grade,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _placementPlanService.GetPlanHistoryPagedAsync(schoolYearId, grade, pageIndex, pageSize, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Giáo vụ đổi chỗ / di chuyển học sinh thủ công trong phương án nháp
     /// </summary>
     [HttpPost("{id}/move-student")]

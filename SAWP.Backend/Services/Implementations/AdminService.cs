@@ -35,8 +35,6 @@ public class AdminService : IAdminService
 
         var query = _unitOfWork.Repository<User>()
             .Query()
-            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-            .Include(u => u.StaffProfile)
             .AsNoTracking()
             .AsQueryable();
 
@@ -63,12 +61,48 @@ public class AdminService : IAdminService
                 (u.PhoneNumber != null && u.PhoneNumber.Contains(q)));
         }
 
-        query = query.OrderByDescending(u => u.CreatedAt).ThenBy(u => u.Id);
-
         var total = await query.CountAsync(ct);
-        var users = await query.Skip((page - 1) * size).Take(size).ToListAsync(ct);
+        if (total == 0 || (page - 1) * size >= total)
+        {
+            return ApiResponse<PaginatedResult<AdminUserDto>>.Ok(
+                new PaginatedResult<AdminUserDto>(new List<AdminUserDto>(), total, page, size));
+        }
 
-        var items = users.Select(MapToUserDto).ToList();
+        // Two-step projection avoids sorting NVARCHAR(MAX) PasswordHash (eliminates 52MB memory grants)
+        var pageIds = await query
+            .OrderByDescending(u => u.CreatedAt)
+            .ThenBy(u => u.Id)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .Select(u => u.Id)
+            .ToListAsync(ct);
+
+        var rows = await _unitOfWork.Repository<User>()
+            .Query()
+            .AsNoTracking()
+            .Where(u => pageIds.Contains(u.Id))
+            .Select(u => new AdminUserDto
+            {
+                Id = u.Id,
+                Username = u.Username,
+                Email = u.Email,
+                FullName = u.FullName,
+                PhoneNumber = u.PhoneNumber,
+                IsActive = u.Status == AccountStatus.Active,
+                Status = u.Status.ToString(),
+                CreatedAt = u.CreatedAt,
+                Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
+                StaffCode = u.StaffProfile != null ? u.StaffProfile.StaffCode : null,
+                Position = u.StaffProfile != null ? u.StaffProfile.Position : null,
+                Department = u.StaffProfile != null ? u.StaffProfile.Department : null
+            })
+            .ToListAsync(ct);
+
+        var orderMap = pageIds
+            .Select((id, idx) => new { id, idx })
+            .ToDictionary(x => x.id, x => x.idx);
+
+        var items = rows.OrderBy(r => orderMap[r.Id]).ToList();
         return ApiResponse<PaginatedResult<AdminUserDto>>.Ok(new PaginatedResult<AdminUserDto>(items, total, page, size));
     }
 

@@ -12,12 +12,19 @@ import {
   ShieldAlert,
   UserCog,
 } from 'lucide-react';
-import { USER_KEY } from '../../services/apiClient';
+import { getAuthUser } from '../../services/apiClient';
 
 export default function DashboardPage() {
-  const userJson = localStorage.getItem(USER_KEY);
+  const userJson = getAuthUser();
   const currentUser = userJson ? JSON.parse(userJson) : null;
   const roles: string[] = currentUser?.roles ?? [];
+  const defaultGreetingName = roles.includes('Parent')
+    ? 'Quý phụ huynh'
+    : roles.includes('Admin')
+      ? 'Quản trị viên'
+      : roles.includes('OfficeStaff') || roles.includes('ServiceStaff')
+        ? 'Cán bộ nhân viên'
+        : 'Thầy/Cô';
 
   return (
     <div className="container pop-in">
@@ -30,7 +37,7 @@ export default function DashboardPage() {
           <Sparkles size={14} /> Tổng quan nền tảng
         </span>
         <h1>
-          Chào mừng, <span className="squiggle">{currentUser?.fullName ?? 'Thầy/Cô'}</span>!
+          Chào mừng, <span className="squiggle">{currentUser?.fullName || defaultGreetingName}</span>!
         </h1>
         <p style={{ color: 'var(--color-muted-fg)' }}>
           Hệ thống Quản lý Hành chính & Dịch vụ Bán trú SAWP. Chọn nhanh chức năng dưới đây để bắt đầu.

@@ -44,6 +44,21 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
       return;
     }
 
+    if (trimmedName.includes('<') || trimmedName.includes('>')) {
+      toast.error('Tên lớp học không được chứa thẻ HTML hoặc ký tự đặc biệt!');
+      return;
+    }
+
+    if (!new RegExp(`^${grade}[A-Z]$`).test(trimmedName)) {
+      toast.error(`Tên lớp '${trimmedName}' không khớp với Khối ${grade}. Quy tắc đặt tên: Khối (${grade}) + 1 chữ cái phân lớp (VD: ${grade}A, ${grade}B).`);
+      return;
+    }
+
+    if (roomNumber.includes('<') || roomNumber.includes('>')) {
+      toast.error('Tên phòng học không được chứa thẻ HTML hoặc ký tự "<", ">"!');
+      return;
+    }
+
     if (isNaN(capacity) || capacity < 25 || capacity > 40) {
       toast.error('Sĩ số mỗi lớp phải từ 25 đến 40 học sinh (Quy chuẩn thông thường: 30 - 35 em/lớp).');
       return;
@@ -131,7 +146,7 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
             required
           />
           <small style={{ color: 'var(--color-muted-fg)' }}>
-            Quy tắc đặt tên: Khối + Ký tự phân lớp (VD: 4D, 5E).
+            Quy tắc đặt tên: Khối ({grade}) + 1 chữ cái phân lớp (VD: {grade}A, {grade}B).
           </small>
         </div>
 

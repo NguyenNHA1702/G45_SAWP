@@ -26,6 +26,7 @@ public interface IClassService
 
     // Student Placement / Class Assignment
     Task<ApiResponse<List<RosterStudentItemDto>>> GetEligibleStudentsForAssignmentAsync(int classId, CancellationToken cancellationToken = default);
+    Task<ApiResponse<PaginatedResult<RosterStudentItemDto>>> GetEligibleStudentsForAssignmentPagedAsync(int classId, string? search = null, int pageIndex = 1, int pageSize = 25, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> AssignStudentsToClassAsync(int classId, AssignStudentsDto request, int? actorUserId = null, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> RemoveStudentFromClassAsync(int classId, int studentId, int? actorUserId = null, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> RemoveStudentsBatchFromClassAsync(int classId, List<int> studentIds, int? actorUserId = null, CancellationToken cancellationToken = default);

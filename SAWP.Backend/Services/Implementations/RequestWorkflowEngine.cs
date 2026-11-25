@@ -52,6 +52,9 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
     private static DateTime? AsUtc(DateTime? dt) => dt.HasValue ? AsUtc(dt.Value) : null;
 
+    private static bool ContainsHtmlSyntax(string? input)
+        => !string.IsNullOrWhiteSpace(input) && (input.Contains('<') || input.Contains('>'));
+
     #region Parent Operations
 
     public async Task<ApiResponse<string>> SubmitClassTransferRequestAsync(
@@ -65,6 +68,10 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         }
 
         var cleanTransferReason = System.Text.RegularExpressions.Regex.Replace(request.TransferReason.Trim(), @"\s+", " ");
+        if (ContainsHtmlSyntax(cleanTransferReason))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Lý do xin chuyển lớp không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
         if (cleanTransferReason.Length < 5 || cleanTransferReason.Length > 1000)
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Lý do xin chuyển lớp phải có độ dài từ 5 đến 1000 ký tự." });
@@ -173,7 +180,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                 FromClassId = currentAssignment.ClassId,
                 ToClassId = request.TargetClassId,
                 TransferReason = cleanTransferReason,
-                EffectiveDate = request.EffectiveDate?.Date ?? schoolNow.Date,
+                EffectiveDate = request.EffectiveDate?.Date,
                 TargetClassCapacitySnapshot = targetEnrolled
             };
 
@@ -225,6 +232,10 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         }
 
         var cleanPurpose = System.Text.RegularExpressions.Regex.Replace(request.Purpose.Trim(), @"\s+", " ");
+        if (ContainsHtmlSyntax(cleanPurpose))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Mục đích xin cấp giấy tờ không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
         if (cleanPurpose.Length < 5 || cleanPurpose.Length > 1000)
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Mục đích xin cấp giấy tờ phải có độ dài từ 5 đến 1000 ký tự." });
@@ -237,8 +248,11 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         var copies = request.NumberOfCopies == 0 ? 1 : request.NumberOfCopies;
 
-        // Sanitize DocumentType
-        var cleanDocType = System.Text.RegularExpressions.Regex.Replace(request.DocumentType, "<.*?>", string.Empty).Trim();
+        if (ContainsHtmlSyntax(request.DocumentType))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Loại giấy tờ không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
+        var cleanDocType = System.Text.RegularExpressions.Regex.Replace(request.DocumentType.Trim(), @"\s+", " ");
         if (string.IsNullOrWhiteSpace(cleanDocType) || cleanDocType.Length > 150)
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Loại giấy tờ không hợp lệ (tối đa 150 ký tự)." });
@@ -353,14 +367,21 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, nhập tiêu đề và nội dung đơn." });
         }
 
-        var cleanTitle = System.Text.RegularExpressions.Regex.Replace(request.Title, "<.*?>", string.Empty);
-        cleanTitle = System.Text.RegularExpressions.Regex.Replace(cleanTitle.Trim(), @"\s+", " ");
+        if (ContainsHtmlSyntax(request.Title))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề loại đơn khác không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
+        var cleanTitle = System.Text.RegularExpressions.Regex.Replace(request.Title.Trim(), @"\s+", " ");
         if (cleanTitle.Length < 5 || cleanTitle.Length > 150)
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề loại đơn khác phải có độ dài từ 5 đến 150 ký tự." });
         }
 
         var cleanContent = System.Text.RegularExpressions.Regex.Replace(request.Content.Trim(), @"\s+", " ");
+        if (ContainsHtmlSyntax(cleanContent))
+        {
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chi tiết đơn không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
         if (cleanContent.Length < 5 || cleanContent.Length > 1000)
         {
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chi tiết đơn phải có độ dài từ 5 đến 1000 ký tự." });
@@ -466,6 +487,72 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             .ToListAsync(cancellationToken);
         NormalizeSummaryDates(dtos);
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
+    }
+
+    public async Task<ApiResponse<PagedAdministrativeRequestsDto>> GetMyRequestsPagedAsync(
+        int parentUserId,
+        int? studentId = null,
+        string? requestType = null,
+        string? status = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var baseQuery = _unitOfWork.Repository<AdministrativeRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.RequesterUserId == parentUserId
+                && (r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other));
+
+        if (studentId.HasValue)
+        {
+            baseQuery = baseQuery.Where(r => r.StudentId == studentId.Value);
+        }
+
+        // Pending flags for selected child across all pages
+        var pendingStatuses = new[] { RequestStatus.Submitted, RequestStatus.NeedMoreInfo, RequestStatus.UnderReview, RequestStatus.ReturnedToStaff };
+        var pendingTransfer = await baseQuery
+            .Where(r => r.RequestType == RequestTypes.ClassTransfer && pendingStatuses.Contains(r.Status))
+            .Select(r => r.RequestNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var pendingDocTypes = await baseQuery
+            .Where(r => r.RequestType == RequestTypes.Document && pendingStatuses.Contains(r.Status) && r.DocumentRequestDetail != null)
+            .Select(r => r.DocumentRequestDetail!.DocumentType)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var filtered = baseQuery;
+        if (!string.IsNullOrWhiteSpace(requestType) && !requestType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            filtered = filtered.Where(r => r.RequestType == requestType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase) && Enum.TryParse<RequestStatus>(status, true, out var st))
+        {
+            filtered = filtered.Where(r => r.Status == st);
+        }
+
+        var (items, totalCount) = await FetchPagedSummariesAsync(
+            filtered,
+            filtered.OrderByDescending(r => r.SubmissionDate).ThenByDescending(r => r.Id),
+            pageIndex,
+            pageSize,
+            cancellationToken);
+
+        return ApiResponse<PagedAdministrativeRequestsDto>.Ok(new PagedAdministrativeRequestsDto
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            HasPendingTransfer = pendingTransfer != null,
+            PendingTransferRequestNumber = pendingTransfer,
+            PendingDocumentTypes = pendingDocTypes
+        });
     }
 
     public async Task<ApiResponse<AdministrativeRequestSummaryDto>> GetRequestDetailAsync(
@@ -584,6 +671,11 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (!req.RequiresAmendment)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn này hiện không ở trạng thái yêu cầu bổ sung." });
+        }
+
+        if (ContainsHtmlSyntax(request.TransferReason) || ContainsHtmlSyntax(request.Purpose) || ContainsHtmlSyntax(request.AdditionalNotes))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chỉnh sửa / bổ sung không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
         if (req.ClassTransferDetail != null && !string.IsNullOrWhiteSpace(request.TransferReason))
@@ -736,6 +828,100 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
     }
 
+    public async Task<ApiResponse<PagedAdministrativeRequestsDto>> GetOfficeStaffRequestsPagedAsync(
+        string? requestType = null,
+        string? status = null,
+        string? search = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var baseQuery = _unitOfWork.Repository<AdministrativeRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other);
+
+        var statusCounts = await baseQuery
+            .GroupBy(r => r.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var pendingExecCount = await baseQuery.CountAsync(
+            r => r.Status == RequestStatus.Approved
+                && r.RequestType == RequestTypes.ClassTransfer
+                && r.ClassTransferDetail != null
+                && !r.ClassTransferDetail.IsExecuted,
+            cancellationToken);
+
+        var stats = new AdministrativeRequestStatsDto
+        {
+            TotalCount = statusCounts.Sum(x => x.Count),
+            SubmittedCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.Submitted)?.Count ?? 0,
+            NeedMoreInfoCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.NeedMoreInfo)?.Count ?? 0,
+            ReturnedToStaffCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.ReturnedToStaff)?.Count ?? 0,
+            UnderReviewCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.UnderReview)?.Count ?? 0,
+            ApprovedCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.Approved)?.Count ?? 0,
+            CompletedCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.Completed)?.Count ?? 0,
+            RejectedCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.Rejected)?.Count ?? 0,
+            CancelledCount = statusCounts.FirstOrDefault(x => x.Status == RequestStatus.Cancelled)?.Count ?? 0,
+            PendingExecutionCount = pendingExecCount
+        };
+
+        var query = baseQuery;
+        if (!string.IsNullOrWhiteSpace(requestType) && !requestType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.Where(r => r.RequestType == requestType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (status.Equals("AMENDMENT", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.RequiresAmendment);
+            }
+            else if (status.Equals("PENDING_EXECUTION", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.RequestType == RequestTypes.ClassTransfer && r.SchoolBoardApprovedAt != null && r.ClassTransferDetail != null && !r.ClassTransferDetail.IsExecuted);
+            }
+            else if (status.Equals("ReturnedToStaff", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.Status == RequestStatus.ReturnedToStaff || r.Status == RequestStatus.NeedMoreInfo);
+            }
+            else if (Enum.TryParse<RequestStatus>(status, true, out var st))
+            {
+                query = query.Where(r => r.Status == st && !r.RequiresAmendment);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(r =>
+                r.RequestNumber.ToLower().Contains(term) ||
+                (r.Student != null && (r.Student.FullName.ToLower().Contains(term) || r.Student.StudentCode.ToLower().Contains(term))) ||
+                (r.RequesterUser != null && r.RequesterUser.FullName.ToLower().Contains(term)));
+        }
+
+        var (items, totalCount) = await FetchPagedSummariesAsync(
+            query,
+            query.OrderByDescending(r => r.SubmissionDate).ThenByDescending(r => r.Id),
+            pageIndex,
+            pageSize,
+            cancellationToken);
+
+        return ApiResponse<PagedAdministrativeRequestsDto>.Ok(new PagedAdministrativeRequestsDto
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            Stats = stats
+        });
+    }
+
     public async Task<ApiResponse<bool>> RequestAmendmentAsync(
         int requestId,
         int staffUserId,
@@ -745,6 +931,10 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (string.IsNullOrWhiteSpace(request.AmendmentNotes) || request.AmendmentNotes.Trim().Length < 5)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập nội dung yêu cầu bổ sung (tối thiểu 5 ký tự)." });
+        }
+        if (ContainsHtmlSyntax(request.AmendmentNotes))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung yêu cầu bổ sung không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
@@ -846,6 +1036,10 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập ý kiến thẩm định chuyển lớp (tối thiểu 5 ký tự)." });
         }
+        if (ContainsHtmlSyntax(request.StaffRecommendation))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ý kiến thẩm định không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
 
         var effectiveDate = request.EffectiveDate ?? req.ClassTransferDetail.EffectiveDate;
         if (!effectiveDate.HasValue)
@@ -933,6 +1127,10 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập ghi chú / ý kiến thẩm định của Giáo vụ (tối thiểu 5 ký tự)." });
         }
+        if (ContainsHtmlSyntax(request.StaffEndorsement))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ý kiến thẩm định không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
 
         var existingUploadedUrl = !string.IsNullOrWhiteSpace(req.DocumentRequestDetail.IssuedDocumentUrl)
             && !req.DocumentRequestDetail.IssuedDocumentUrl.Contains("/download-document")
@@ -1001,6 +1199,10 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối đơn (tối thiểu 5 ký tự)." });
+        }
+        if (ContainsHtmlSyntax(request.Reason))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Lý do từ chối không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
@@ -1346,6 +1548,116 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         return ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>.Ok(dtos);
     }
 
+    public async Task<ApiResponse<PagedAdministrativeRequestsDto>> GetSchoolBoardRequestsPagedAsync(
+        string? requestType = null,
+        string? status = null,
+        string? search = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var boardBase = _unitOfWork.Repository<AdministrativeRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => (r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other)
+                     && (r.Status == RequestStatus.UnderReview
+                         || r.SchoolBoardApprovedAt != null
+                         || r.Status == RequestStatus.Approved
+                         || r.Status == RequestStatus.ReturnedToStaff
+                         || (r.Status == RequestStatus.NeedMoreInfo && !string.IsNullOrEmpty(r.SchoolBoardNotes))
+                         || (r.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(r.SchoolBoardNotes))));
+
+        var boardGroups = await boardBase
+            .GroupBy(r => new
+            {
+                r.Status,
+                HasApprovedAt = r.SchoolBoardApprovedAt != null,
+                HasBoardNotes = r.SchoolBoardNotes != null && r.SchoolBoardNotes != ""
+            })
+            .Select(g => new { g.Key.Status, g.Key.HasApprovedAt, g.Key.HasBoardNotes, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var stats = new AdministrativeRequestStatsDto
+        {
+            TotalCount = boardGroups.Sum(x => x.Count),
+            UnderReviewCount = boardGroups.Where(x => x.Status == RequestStatus.UnderReview).Sum(x => x.Count),
+            ReturnedToStaffCount = boardGroups.Where(x => x.Status == RequestStatus.ReturnedToStaff || (x.Status == RequestStatus.NeedMoreInfo && x.HasBoardNotes)).Sum(x => x.Count),
+            ApprovedCount = boardGroups.Where(x => x.HasApprovedAt || x.Status == RequestStatus.Approved).Sum(x => x.Count),
+            RejectedCount = boardGroups.Where(x => x.Status == RequestStatus.Rejected).Sum(x => x.Count)
+        };
+
+        var query = _unitOfWork.Repository<AdministrativeRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.RequestType == RequestTypes.ClassTransfer || r.RequestType == RequestTypes.Document || r.RequestType == RequestTypes.Other);
+
+        if (!string.IsNullOrWhiteSpace(requestType) && !requestType.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.Where(r => r.RequestType == requestType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (status.Equals("UnderReview", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.Status == RequestStatus.UnderReview);
+            }
+            else if (status.Equals("ReturnedToStaff", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.Status == RequestStatus.ReturnedToStaff || (r.Status == RequestStatus.NeedMoreInfo && !string.IsNullOrEmpty(r.SchoolBoardNotes)));
+            }
+            else if (status.Equals("Approved", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.SchoolBoardApprovedAt != null || r.Status == RequestStatus.Approved);
+            }
+            else if (status.Equals("Rejected", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(r => r.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(r.SchoolBoardNotes));
+            }
+            else if (Enum.TryParse<RequestStatus>(status, true, out var parsedStatus))
+            {
+                query = query.Where(r => r.Status == parsedStatus);
+            }
+        }
+        else
+        {
+            query = query.Where(r => r.Status == RequestStatus.UnderReview
+                                  || r.SchoolBoardApprovedAt != null
+                                  || r.Status == RequestStatus.Approved
+                                  || r.Status == RequestStatus.ReturnedToStaff
+                                  || (r.Status == RequestStatus.NeedMoreInfo && !string.IsNullOrEmpty(r.SchoolBoardNotes))
+                                  || (r.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(r.SchoolBoardNotes)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(r =>
+                r.RequestNumber.ToLower().Contains(term) ||
+                (r.Student != null && (r.Student.FullName.ToLower().Contains(term) || r.Student.StudentCode.ToLower().Contains(term))) ||
+                (r.RequesterUser != null && r.RequesterUser.FullName.ToLower().Contains(term)));
+        }
+
+        var (items, totalCount) = await FetchPagedSummariesAsync(
+            query,
+            query.OrderByDescending(r => r.SchoolBoardApprovedAt ?? r.ProcessedDate ?? r.SubmissionDate).ThenByDescending(r => r.Id),
+            pageIndex,
+            pageSize,
+            cancellationToken);
+
+        return ApiResponse<PagedAdministrativeRequestsDto>.Ok(new PagedAdministrativeRequestsDto
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            Stats = stats
+        });
+    }
+
     public async Task<ApiResponse<bool>> ProcessBoardDecisionAsync(
         int requestId,
         int boardUserId,
@@ -1368,6 +1680,11 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         if (req.Status != RequestStatus.UnderReview)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Yêu cầu chưa được Giáo vụ thẩm định hoặc đã được xử lý trước đó." });
+        }
+
+        if (ContainsHtmlSyntax(request.DecisionNotes))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú / Lý do quyết định không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
         // NEW FLOW: School Board returns the request to Office Staff for revision / correction
@@ -1925,6 +2242,143 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         await _unitOfWork.Repository<AdministrativeRequest>().UpdateAsync(req, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
+    }
+
+    private async Task<(List<AdministrativeRequestSummaryDto> Items, int TotalCount)> FetchPagedSummariesAsync(
+        IQueryable<AdministrativeRequest> filteredQuery,
+        IQueryable<AdministrativeRequest> orderedQuery,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var totalCount = await filteredQuery.CountAsync(cancellationToken);
+        if (totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount)
+        {
+            return (new List<AdministrativeRequestSummaryDto>(), totalCount);
+        }
+
+        var pageIds = await orderedQuery
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        if (pageIds.Count == 0)
+        {
+            return (new List<AdministrativeRequestSummaryDto>(), totalCount);
+        }
+
+        // Scalar projection avoids N+1 correlated ClassAssignments subqueries
+        var rows = await _unitOfWork.Repository<AdministrativeRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => pageIds.Contains(r.Id))
+            .Select(r => new AdministrativeRequestSummaryDto
+            {
+                Id = r.Id,
+                RequestNumber = r.RequestNumber,
+                RequestType = r.RequestType,
+                Status = r.Status,
+                SubmissionDate = r.SubmissionDate,
+                ProcessedDate = r.ProcessedDate,
+                RequesterUserId = r.RequesterUserId,
+                RequesterName = r.RequesterUser != null ? r.RequesterUser.FullName : "Phụ huynh",
+                StudentId = r.StudentId,
+                StudentCode = r.Student != null ? r.Student.StudentCode : null,
+                StudentName = r.Student != null ? r.Student.FullName : null,
+                CurrentClassName = r.ClassTransferDetail != null && r.ClassTransferDetail.FromClass != null
+                    ? r.ClassTransferDetail.FromClass.ClassName
+                    : null,
+                RequiresAmendment = r.RequiresAmendment,
+                AttachmentUrl = r.AttachmentUrl,
+                AmendmentNotes = r.AmendmentNotes,
+                ReviewerNotes = r.ReviewerNotes,
+                SchoolBoardNotes = r.SchoolBoardNotes,
+                SchoolBoardApprovedAt = r.SchoolBoardApprovedAt,
+                ClassTransfer = r.ClassTransferDetail == null ? null : new ClassTransferSummaryDto
+                {
+                    FromClassId = r.ClassTransferDetail.FromClassId,
+                    FromClassName = r.ClassTransferDetail.FromClass != null ? r.ClassTransferDetail.FromClass.ClassName : string.Empty,
+                    ToClassId = r.ClassTransferDetail.ToClassId,
+                    ToClassName = r.ClassTransferDetail.ToClass != null ? r.ClassTransferDetail.ToClass.ClassName : string.Empty,
+                    TransferReason = r.ClassTransferDetail.TransferReason,
+                    StaffRecommendation = r.ClassTransferDetail.StaffRecommendation,
+                    TargetClassCapacity = r.ClassTransferDetail.TargetClassCapacitySnapshot ?? 0,
+                    TargetClassMaxCapacity = r.ClassTransferDetail.ToClass != null ? r.ClassTransferDetail.ToClass.Capacity : null,
+                    IsExecuted = r.ClassTransferDetail.IsExecuted,
+                    ExecutedAt = r.ClassTransferDetail.ExecutedAt,
+                    EffectiveDate = r.ClassTransferDetail.EffectiveDate
+                },
+                DocumentRequest = r.DocumentRequestDetail == null ? null : new DocumentRequestSummaryDto
+                {
+                    DocumentType = r.DocumentRequestDetail.DocumentType,
+                    NumberOfCopies = r.DocumentRequestDetail.NumberOfCopies,
+                    Purpose = r.DocumentRequestDetail.Purpose,
+                    StaffEndorsement = r.DocumentRequestDetail.StaffEndorsement,
+                    DocumentContentDraft = null,
+                    IssuedDate = r.DocumentRequestDetail.IssuedDate,
+                    IssuedDocumentUrl = r.DocumentRequestDetail.IssuedDocumentUrl,
+                    CertificateNumber = r.DocumentRequestDetail.CertificateNumber,
+                    DigitalSignatureInfo = r.DocumentRequestDetail.DigitalSignatureInfo,
+                    IsPaperCopyRequested = r.DocumentRequestDetail.IsPaperCopyRequested
+                }
+            })
+            .ToListAsync(cancellationToken);
+
+        var missingClassStudentIds = rows
+            .Where(r => r.CurrentClassName == null && r.StudentId.HasValue)
+            .Select(r => r.StudentId!.Value)
+            .Distinct()
+            .ToList();
+
+        Dictionary<int, string> studentClassMap = new();
+        if (missingClassStudentIds.Count > 0)
+        {
+            studentClassMap = (await _unitOfWork.Repository<ClassAssignment>()
+                .Query()
+                .AsNoTracking()
+                .Where(ca => ca.IsActive && missingClassStudentIds.Contains(ca.StudentId))
+                .Select(ca => new { ca.StudentId, ClassName = ca.Class.ClassName })
+                .ToListAsync(cancellationToken))
+                .GroupBy(x => x.StudentId)
+                .ToDictionary(g => g.Key, g => g.First().ClassName);
+        }
+
+        var toClassIds = rows
+            .Where(r => r.ClassTransfer != null && r.ClassTransfer.ToClassId > 0)
+            .Select(r => r.ClassTransfer!.ToClassId)
+            .Distinct()
+            .ToList();
+
+        Dictionary<int, int> activeClassCounts = new();
+        if (toClassIds.Count > 0)
+        {
+            activeClassCounts = (await _unitOfWork.Repository<ClassAssignment>()
+                .Query()
+                .AsNoTracking()
+                .Where(ca => ca.IsActive && toClassIds.Contains(ca.ClassId))
+                .GroupBy(ca => ca.ClassId)
+                .Select(g => new { ClassId = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken))
+                .ToDictionary(x => x.ClassId, x => x.Count);
+        }
+
+        foreach (var item in rows)
+        {
+            if (item.CurrentClassName == null && item.StudentId.HasValue && studentClassMap.TryGetValue(item.StudentId.Value, out var clsName))
+            {
+                item.CurrentClassName = clsName;
+            }
+            if (item.ClassTransfer != null && activeClassCounts.TryGetValue(item.ClassTransfer.ToClassId, out var count) && count > 0)
+            {
+                item.ClassTransfer.TargetClassCapacity = count;
+            }
+        }
+
+        var orderMap = pageIds.Select((id, idx) => new { id, idx }).ToDictionary(x => x.id, x => x.idx);
+        var ordered = rows.OrderBy(r => orderMap[r.Id]).ToList();
+        NormalizeSummaryDates(ordered);
+        return (ordered, totalCount);
     }
 
     private static IQueryable<AdministrativeRequestSummaryDto> ProjectToSummaryDto(

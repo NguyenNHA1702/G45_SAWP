@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -16,14 +16,20 @@ import toast from 'react-hot-toast';
 import { administrativeRequestApi } from '../../services/implementations/administrativeRequestApi';
 import { BoardDecisionModal } from '../../components/requests/BoardDecisionModal';
 import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
+import { PaginationBar } from '../../components/common/PaginationBar';
 import { formatDDMMYYYYHHMM } from '../../utils/date';
 import { openProtectedFile } from '../../utils/fileViewer';
-import type { AdministrativeRequestSummary } from '../../types/request.types';
+import type { AdministrativeRequestStats, AdministrativeRequestSummary } from '../../types/request.types';
 
 export default function AdministrativeApprovalPage() {
   const [requests, setRequests] = useState<AdministrativeRequestSummary[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [serverStats, setServerStats] = useState<AdministrativeRequestStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('UnderReview');
 
@@ -32,38 +38,48 @@ export default function AdministrativeApprovalPage() {
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [selectedHistoryReq, setSelectedHistoryReq] = useState<{ id: number; requestNumber: string } | null>(null);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setPageIndex(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
-      // Fetch all board-relevant requests so statistics and quick tab switching stay accurate
-      const res = await administrativeRequestApi.getBoardRequests(undefined, 'ALL');
-      if (res.success && Array.isArray(res.data)) {
-        setRequests(res.data);
+      const res = await administrativeRequestApi.getBoardRequestsPaged({
+        requestType: typeFilter,
+        status: statusFilter,
+        search: debouncedSearch || undefined,
+        pageIndex,
+        pageSize,
+      });
+      if (res.success && res.data) {
+        setRequests(res.data.items);
+        setTotalCount(res.data.totalCount);
+        setServerStats(res.data.stats);
       }
     } catch {
       toast.error('Không thể tải danh sách đề xuất trình Ban Giám Hiệu.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [typeFilter, statusFilter, debouncedSearch, pageIndex, pageSize]);
 
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
 
-  // Thống kê nhanh
-  const stats = useMemo(() => {
-    const total = requests.length;
-    const pending = requests.filter((r) => r.status === 'UnderReview').length;
-    const returnedToStaff = requests.filter((r) => r.status === 'ReturnedToStaff' || r.status === 'NeedMoreInfo').length;
-    const approved = requests.filter(
-      (r) => r.schoolBoardApprovedAt != null || r.status === 'Approved'
-    ).length;
-    const rejected = requests.filter((r) => r.status === 'Rejected').length;
-    const transferCount = requests.filter((r) => r.requestType === 'ClassTransfer').length;
-    const documentCount = requests.filter((r) => r.requestType === 'Document').length;
-    return { total, pending, returnedToStaff, approved, rejected, transferCount, documentCount };
-  }, [requests]);
+  // Thống kê nhanh (server-aggregated across all pages)
+  const stats = {
+    total: serverStats?.totalCount ?? totalCount,
+    pending: serverStats?.underReviewCount ?? 0,
+    returnedToStaff: serverStats?.returnedToStaffCount ?? 0,
+    approved: serverStats?.approvedCount ?? 0,
+    rejected: serverStats?.rejectedCount ?? 0,
+  };
 
   // Tải văn bản phát hành (nếu có)
   const handleDownloadDoc = async (req: AdministrativeRequestSummary) => {
@@ -85,33 +101,7 @@ export default function AdministrativeApprovalPage() {
     }
   };
 
-  // Lọc danh sách theo search, typeFilter, statusFilter
-  const filteredRequests = useMemo(() => {
-    return requests.filter((r) => {
-      const search = searchTerm.toLowerCase().trim();
-      const matchSearch =
-        !search ||
-        r.requestNumber.toLowerCase().includes(search) ||
-        (r.studentName && r.studentName.toLowerCase().includes(search)) ||
-        (r.studentCode && r.studentCode.toLowerCase().includes(search)) ||
-        (r.requesterName && r.requesterName.toLowerCase().includes(search));
-
-      const matchType = typeFilter === 'ALL' || r.requestType === typeFilter;
-
-      let matchStatus = true;
-      if (statusFilter === 'UnderReview') {
-        matchStatus = r.status === 'UnderReview';
-      } else if (statusFilter === 'ReturnedToStaff') {
-        matchStatus = r.status === 'ReturnedToStaff' || r.status === 'NeedMoreInfo';
-      } else if (statusFilter === 'Approved') {
-        matchStatus = r.schoolBoardApprovedAt != null || r.status === 'Approved';
-      } else if (statusFilter === 'Rejected') {
-        matchStatus = r.status === 'Rejected';
-      }
-
-      return matchSearch && matchType && matchStatus;
-    });
-  }, [requests, searchTerm, typeFilter, statusFilter]);
+  const filteredRequests = requests;
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 20px 48px' }}>
@@ -643,7 +633,7 @@ export default function AdministrativeApprovalPage() {
 
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#64748B' }}>
-                      {isTransfer ? 'LỘ TRÌNH CHUYỂN:' : 'VĂN BẢN ĐỀ NGHỊ:'}
+                      {isTransfer ? 'LỘ TRÌNH CHUYỂN:' : req.requestType === 'Other' ? 'NỘI DUNG ĐƠN / KIẾN NGHỊ:' : 'VĂN BẢN ĐỀ NGHỊ:'}
                     </div>
 
                     {isTransfer && transfer && (
@@ -676,10 +666,11 @@ export default function AdministrativeApprovalPage() {
                     {!isTransfer && doc && (
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: '#831843', marginTop: 4 }}>
-                          {doc.documentType} ({doc.numberOfCopies} bản)
+                          {doc.documentType}
+                          {req.requestType !== 'Other' && ` (${doc.numberOfCopies} bản)`}
                         </div>
                         <div style={{ fontSize: 13, color: '#334155', marginTop: 2 }}>
-                          Mục đích: {doc.purpose}
+                          {req.requestType === 'Other' ? 'Nội dung:' : 'Mục đích:'} {doc.purpose}
                         </div>
                       </div>
                     )}
@@ -735,6 +726,18 @@ export default function AdministrativeApprovalPage() {
           })}
         </div>
       )}
+
+      <PaginationBar
+        pageIndex={pageIndex}
+        pageSize={pageSize}
+        totalCount={totalCount}
+        onPageChange={setPageIndex}
+        onPageSizeChange={(s) => {
+          setPageSize(s);
+          setPageIndex(1);
+        }}
+        itemLabel="đề xuất"
+      />
 
       {/* Modal xét duyệt & quyết định */}
       <BoardDecisionModal

@@ -196,6 +196,8 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasIndex("StudentId");
 
+                    b.HasIndex("RequestType", "SubmissionDate");
+
                     b.HasIndex("RequestType", "Status", "SubmissionDate");
 
                     b.HasIndex("RequesterUserId", "RequestType", "SubmissionDate");
@@ -442,9 +444,13 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasIndex("ClassId");
 
+                    b.HasIndex("IsActive", "ClassId");
+
                     b.HasIndex("StudentId", "ClassId")
                         .IsUnique()
                         .HasFilter("[IsActive] = 1");
+
+                    b.HasIndex("StudentId", "IsActive");
 
                     b.ToTable("ClassAssignments");
                 });
@@ -706,6 +712,8 @@ namespace Infrastructure.Data.Migrations
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasFilter("[UserId] IS NOT NULL");
+
+                    b.HasIndex("UserId", "FullName");
 
                     b.ToTable("Guardians");
                 });
@@ -979,7 +987,7 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasIndex("ReviewedByUserId");
 
-                    b.HasIndex("SchoolYearId");
+                    b.HasIndex("SchoolYearId", "Grade", "CreatedAt");
 
                     b.ToTable("PlacementPlans");
                 });
@@ -1170,7 +1178,7 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SchoolYearId");
+                    b.HasIndex("SchoolYearId", "Date");
 
                     b.ToTable("SchoolCalendarDays");
                 });
@@ -1198,6 +1206,8 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IsActive", "StartDate");
 
                     b.ToTable("SchoolYears");
                 });
@@ -1298,8 +1308,12 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("StudentCode")
                         .IsUnique();
+
+                    b.HasIndex("Status", "FullName");
 
                     b.ToTable("Students");
                 });
@@ -1461,6 +1475,8 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasIndex("Username")
                         .IsUnique();
+
+                    b.HasIndex("CreatedAt", "Id");
 
                     b.ToTable("Users");
                 });

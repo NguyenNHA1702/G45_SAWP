@@ -16,9 +16,19 @@ public interface ILeaveRequestService
     Task<ApiResponse<List<LeaveRequestItemDto>>> GetMyLeaveRequestsAsync(int parentUserId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Phụ huynh xem danh sách đơn xin nghỉ của các con (phân trang)
+    /// </summary>
+    Task<ApiResponse<PagedLeaveRequestsDto>> GetMyLeaveRequestsPagedAsync(int parentUserId, int? studentId = null, string? status = null, int pageIndex = 1, int pageSize = 20, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// GVCN xem danh sách đơn xin nghỉ của lớp mình phụ trách
     /// </summary>
     Task<ApiResponse<List<LeaveRequestItemDto>>> GetClassLeaveRequestsAsync(int teacherUserId, int? classId = null, string? status = null, DateTime? date = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// GVCN / BGH xem danh sách đơn xin nghỉ (phân trang + thống kê)
+    /// </summary>
+    Task<ApiResponse<PagedLeaveRequestsDto>> GetClassLeaveRequestsPagedAsync(int teacherUserId, int? classId = null, string? status = null, DateTime? date = null, string? search = null, int pageIndex = 1, int pageSize = 20, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Xem chi tiết một đơn xin nghỉ

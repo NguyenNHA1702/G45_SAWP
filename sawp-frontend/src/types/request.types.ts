@@ -143,3 +143,28 @@ export interface AdministrativeRequestSummary {
   classTransfer?: ClassTransferSummary;
   documentRequest?: DocumentRequestSummary;
 }
+
+export interface AdministrativeRequestStats {
+  totalCount: number;
+  submittedCount: number;
+  needMoreInfoCount: number;
+  returnedToStaffCount: number;
+  underReviewCount: number;
+  approvedCount: number;
+  completedCount: number;
+  rejectedCount: number;
+  cancelledCount: number;
+  pendingExecutionCount: number;
+}
+
+export interface PagedAdministrativeRequests {
+  items: AdministrativeRequestSummary[];
+  totalCount: number;
+  pageIndex: number;
+  pageSize: number;
+  totalPages: number;
+  stats: AdministrativeRequestStats;
+  hasPendingTransfer?: boolean;
+  pendingTransferRequestNumber?: string;
+  pendingDocumentTypes?: string[];
+}

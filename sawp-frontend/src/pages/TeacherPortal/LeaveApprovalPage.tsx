@@ -24,9 +24,13 @@ import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { formatViDateTime } from '../../utils/date';
 import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { PaginationBar } from '../../components/common/PaginationBar';
 
 export default function LeaveApprovalPage() {
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [loading, setLoading] = useState(true);
 
   // L-A: Đọc phiên người dùng qua getAuthUser() (sessionStorage, fallback localStorage)
@@ -57,11 +61,14 @@ export default function LeaveApprovalPage() {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const res = await leaveRequestApi.getClassRequests({
+      const res = await leaveRequestApi.getClassRequestsPaged({
         status: statusFilter === 'All' ? undefined : statusFilter,
+        pageIndex,
+        pageSize,
       });
-      if (res.success) {
-        setRequests(res.data);
+      if (res.success && res.data) {
+        setRequests(res.data.items);
+        setTotalCount(res.data.totalCount);
       }
     } catch (err: unknown) {
       const apiErr = asApiError(err);
@@ -73,7 +80,7 @@ export default function LeaveApprovalPage() {
 
   useEffect(() => {
     fetchRequests();
-  }, [statusFilter]);
+  }, [statusFilter, pageIndex, pageSize]);
 
   // Duyệt đơn thông thường (<= 3 ngày học) — hiển thị đúng vai trò GVCN hoặc BGH (L-A)
   const handleApprove = async (item: LeaveRequestItem) => {
@@ -288,7 +295,10 @@ export default function LeaveApprovalPage() {
               key={tab.key}
               type="button"
               className={isActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
-              onClick={() => setStatusFilter(tab.key)}
+              onClick={() => {
+                setStatusFilter(tab.key);
+                setPageIndex(1);
+              }}
             >
               {tab.label}
             </button>
@@ -703,6 +713,18 @@ export default function LeaveApprovalPage() {
           })}
         </div>
       )}
+
+      <PaginationBar
+        pageIndex={pageIndex}
+        pageSize={pageSize}
+        totalCount={totalCount}
+        onPageChange={setPageIndex}
+        onPageSizeChange={(s) => {
+          setPageSize(s);
+          setPageIndex(1);
+        }}
+        itemLabel="đơn xin nghỉ"
+      />
 
       {/* REJECT MODAL (GeometricModal) */}
       <GeometricModal

@@ -42,7 +42,7 @@ public class AccountRequestService : IAccountRequestService
     public async Task<ApiResponse<List<GuardianWithoutAccountDto>>> GetGuardiansWithoutAccountAsync(string? search, CancellationToken ct = default)
     {
         var q = search?.Trim().ToLower() ?? string.Empty;
-        var query = GuardianQuery().Where(g => g.UserId == null);
+        var query = GuardianQuery().AsNoTracking().AsSplitQuery().Where(g => g.UserId == null);
         if (q.Length > 0)
         {
             query = query.Where(g => g.FullName.ToLower().Contains(q)
@@ -68,6 +68,67 @@ public class AccountRequestService : IAccountRequestService
             };
         }).ToList();
         return ApiResponse<List<GuardianWithoutAccountDto>>.Ok(items);
+    }
+
+    public async Task<ApiResponse<PaginatedResult<GuardianWithoutAccountDto>>> GetGuardiansWithoutAccountPagedAsync(
+        string? search,
+        int pageIndex = 1,
+        int pageSize = 25,
+        CancellationToken ct = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var q = search?.Trim().ToLower() ?? string.Empty;
+        var baseQuery = _unitOfWork.Repository<Guardian>().Query().AsNoTracking().Where(g => g.UserId == null);
+        if (q.Length > 0)
+        {
+            baseQuery = baseQuery.Where(g => g.FullName.ToLower().Contains(q)
+                                             || (g.Email != null && g.Email.ToLower().Contains(q))
+                                             || g.StudentGuardians.Any(sg => sg.Student.StudentCode.ToLower().Contains(q) || sg.Student.FullName.ToLower().Contains(q)));
+        }
+
+        var totalCount = await baseQuery.CountAsync(ct);
+        if (totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount)
+        {
+            return ApiResponse<PaginatedResult<GuardianWithoutAccountDto>>.Ok(
+                new PaginatedResult<GuardianWithoutAccountDto>(new List<GuardianWithoutAccountDto>(), totalCount, pageIndex, pageSize));
+        }
+
+        var pageIds = await baseQuery
+            .OrderBy(g => g.FullName)
+            .ThenBy(g => g.Id)
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+
+        var guardians = await GuardianQuery()
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Where(g => pageIds.Contains(g.Id))
+            .ToListAsync(ct);
+
+        guardians = OrderLike(guardians, pageIds);
+        var checks = await CheckAsync(guardians, null, ct);
+        var items = guardians.Select(g =>
+        {
+            var check = checks[g.Id];
+            return new GuardianWithoutAccountDto
+            {
+                GuardianId = g.Id,
+                FullName = g.FullName,
+                Email = g.Email,
+                PhoneNumber = g.PhoneNumber,
+                Students = StudentLabels(g),
+                CheckResult = check.Result.ToString(),
+                CheckMessage = check.Message,
+                CanRequest = check.Result == AccountRequestCheckResult.Passed
+            };
+        }).ToList();
+
+        return ApiResponse<PaginatedResult<GuardianWithoutAccountDto>>.Ok(
+            new PaginatedResult<GuardianWithoutAccountDto>(items, totalCount, pageIndex, pageSize));
     }
 
     public async Task<ApiResponse<List<AccountRequestRowCheckDto>>> CheckRowsAsync(List<int> guardianIds, CancellationToken ct = default)
@@ -97,9 +158,37 @@ public class AccountRequestService : IAccountRequestService
 
     public async Task<ApiResponse<List<AccountRequestDto>>> GetMyRequestsAsync(int userId, CancellationToken ct = default)
     {
-        var requests = await RequestQuery().Where(r => r.RequestedByUserId == userId)
-            .OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
-        return ApiResponse<List<AccountRequestDto>>.Ok(requests.Select(r => ToDto(r, null)).ToList());
+        var query = _unitOfWork.Repository<AccountRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.RequestedByUserId == userId)
+            .OrderByDescending(r => r.CreatedAt);
+
+        var items = await ProjectAccountRequestSummariesAsync(query, null, null, ct);
+        return ApiResponse<List<AccountRequestDto>>.Ok(items);
+    }
+
+    public async Task<ApiResponse<PaginatedResult<AccountRequestDto>>> GetMyRequestsPagedAsync(
+        int userId,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var baseQuery = _unitOfWork.Repository<AccountRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.RequestedByUserId == userId);
+
+        var totalCount = await baseQuery.CountAsync(ct);
+        var items = totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount
+            ? new List<AccountRequestDto>()
+            : await ProjectAccountRequestSummariesAsync(baseQuery.OrderByDescending(r => r.CreatedAt), pageIndex, pageSize, ct);
+
+        return ApiResponse<PaginatedResult<AccountRequestDto>>.Ok(
+            new PaginatedResult<AccountRequestDto>(items, totalCount, pageIndex, pageSize));
     }
 
     public async Task<ApiResponse<AccountRequestDto>> GetRequestAsync(int userId, bool isAdministrator, int requestId, CancellationToken ct = default)
@@ -368,13 +457,55 @@ public class AccountRequestService : IAccountRequestService
 
     public async Task<ApiResponse<List<AccountRequestDto>>> GetRequestsForReviewAsync(string? status, CancellationToken ct = default)
     {
-        var query = RequestQuery().Where(r => r.Status != AccountRequestStatus.Draft);
+        var query = _unitOfWork.Repository<AccountRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.Status != AccountRequestStatus.Draft);
+
         if (Enum.TryParse<AccountRequestStatus>(status, true, out var filter))
         {
             query = query.Where(r => r.Status == filter);
         }
-        var requests = await query.OrderByDescending(r => r.SubmittedAt).ToListAsync(ct);
-        return ApiResponse<List<AccountRequestDto>>.Ok(requests.Select(r => ToDto(r, null)).ToList());
+
+        var items = await ProjectAccountRequestSummariesAsync(query.OrderByDescending(r => r.SubmittedAt), null, null, ct);
+        return ApiResponse<List<AccountRequestDto>>.Ok(items);
+    }
+
+    public async Task<ApiResponse<PaginatedResult<AccountRequestDto>>> GetRequestsForReviewPagedAsync(
+        string? status,
+        string? search = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _unitOfWork.Repository<AccountRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(r => r.Status != AccountRequestStatus.Draft);
+
+        if (Enum.TryParse<AccountRequestStatus>(status, true, out var filter))
+        {
+            query = query.Where(r => r.Status == filter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(r =>
+                r.Title.ToLower().Contains(term) ||
+                (r.RequestedByUser != null && r.RequestedByUser.FullName.ToLower().Contains(term)));
+        }
+
+        var totalCount = await query.CountAsync(ct);
+        var items = totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount
+            ? new List<AccountRequestDto>()
+            : await ProjectAccountRequestSummariesAsync(query.OrderByDescending(r => r.SubmittedAt), pageIndex, pageSize, ct);
+
+        return ApiResponse<PaginatedResult<AccountRequestDto>>.Ok(
+            new PaginatedResult<AccountRequestDto>(items, totalCount, pageIndex, pageSize));
     }
 
     public async Task<ApiResponse<AccountRequestDecisionResultDto>> DecideAsync(int adminUserId, int requestId, AccountRequestDecisionDto decision, CancellationToken ct = default)
@@ -650,6 +781,68 @@ public class AccountRequestService : IAccountRequestService
     #endregion
 
     #region Queries and mapping
+
+    private static async Task<List<AccountRequestDto>> ProjectAccountRequestSummariesAsync(
+        IQueryable<AccountRequest> orderedQuery,
+        int? pageIndex,
+        int? pageSize,
+        CancellationToken ct)
+    {
+        var sliced = (pageIndex.HasValue && pageSize.HasValue)
+            ? orderedQuery.Skip((pageIndex.Value - 1) * pageSize.Value).Take(pageSize.Value)
+            : orderedQuery;
+
+        var rows = await sliced
+            .Select(r => new
+            {
+                r.Id,
+                r.Title,
+                Reason = r.Reason.ToString(),
+                r.Note,
+                Source = r.Source.ToString(),
+                r.SourceReference,
+                Status = r.Status.ToString(),
+                r.RequestedByUserId,
+                RequestedByName = r.RequestedByUser != null ? r.RequestedByUser.FullName : string.Empty,
+                r.FollowsUpRequestId,
+                r.CreatedAt,
+                r.SubmittedAt,
+                r.CompletedAt,
+                TotalRows = r.Items.Count(),
+                WaitingRows = r.Items.Count(i => i.Status == AccountRequestItemStatus.Waiting),
+                CreatedRows = r.Items.Count(i => i.Status == AccountRequestItemStatus.AccountCreated
+                                              || i.Status == AccountRequestItemStatus.Active
+                                              || i.Status == AccountRequestItemStatus.EmailFailed),
+                RejectedRows = r.Items.Count(i => i.Status == AccountRequestItemStatus.Rejected),
+                FailedRows = r.Items.Count(i => i.Status == AccountRequestItemStatus.Failed),
+                ClosedRows = r.Items.Count(i => i.Status == AccountRequestItemStatus.Closed)
+            })
+            .ToListAsync(ct);
+
+        return rows.Select(r => new AccountRequestDto
+        {
+            Id = r.Id,
+            Title = r.Title,
+            Reason = r.Reason,
+            Note = r.Note,
+            Source = r.Source,
+            SourceReference = r.SourceReference,
+            Status = r.Status,
+            RequestedByUserId = r.RequestedByUserId,
+            RequestedByName = r.RequestedByName,
+            FollowsUpRequestId = r.FollowsUpRequestId,
+            CreatedAt = r.CreatedAt,
+            SubmittedAt = r.SubmittedAt,
+            CompletedAt = r.CompletedAt,
+            TotalRows = r.TotalRows,
+            WaitingRows = r.WaitingRows,
+            CreatedRows = r.CreatedRows,
+            RejectedRows = r.RejectedRows,
+            FailedRows = r.FailedRows,
+            ClosedRows = r.ClosedRows,
+            Items = null
+        }).ToList();
+    }
 
     private IQueryable<Guardian> GuardianQuery() => _unitOfWork.Repository<Guardian>().Query()
         .Include(g => g.StudentGuardians).ThenInclude(sg => sg.Student).ThenInclude(s => s.ClassAssignments).ThenInclude(ca => ca.Class);

@@ -35,6 +35,12 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
       return;
     }
 
+    const invalidSection = sectionNames.find((s) => !/^[A-Z]$/.test(s));
+    if (invalidSection) {
+      toast.error(`Ký tự phân lớp '${invalidSection}' không hợp lệ. Mỗi phân lớp chỉ gồm đúng 1 chữ cái (VD: A, B, C).`);
+      return;
+    }
+
     if (isNaN(capacity) || capacity < 25 || capacity > 40) {
       toast.error('Sĩ số mỗi lớp phải từ 25 đến 40 học sinh (Quy chuẩn thông thường: 30 - 35 em/lớp).');
       return;

@@ -1,3 +1,5 @@
+using Core.Common;
+using Core.DTOs;
 using Core.Enums;
 using Core.Entities;
 using Core.Interfaces;
@@ -15,6 +17,7 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     public async Task<Student?> GetStudentWithProfileAsync(int studentId, CancellationToken cancellationToken = default)
     {
         return await _context.Students
+            .AsSplitQuery()
             .Include(s => s.StudentGuardians)
                 .ThenInclude(sg => sg.Guardian)
                     .ThenInclude(g => g.User)
@@ -32,6 +35,7 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     public async Task<IReadOnlyList<Student>> GetStudentsByClassIdAsync(int classId, CancellationToken cancellationToken = default)
     {
         return await _context.ClassAssignments
+            .AsNoTracking()
             .Where(ca => ca.ClassId == classId && ca.IsActive)
             .Include(ca => ca.Student)
             .Select(ca => ca.Student)
@@ -41,6 +45,7 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     public async Task<Student?> GetByStudentCodeAsync(string studentCode, CancellationToken cancellationToken = default)
     {
         return await _context.Students
+            .AsSplitQuery()
             .Include(s => s.StudentGuardians)
                 .ThenInclude(sg => sg.Guardian)
                     .ThenInclude(g => g.User)
@@ -103,6 +108,8 @@ public class StudentRepository : Repository<Student>, IStudentRepository
     public async Task<IReadOnlyList<Student>> GetLinkedStudentsByParentUserIdAsync(int parentUserId, CancellationToken cancellationToken = default)
     {
         return await _context.StudentGuardians
+            .AsNoTracking()
+            .AsSplitQuery()
             .Where(sg => sg.Guardian.UserId == parentUserId)
             .Include(sg => sg.Student)
                 .ThenInclude(s => s.ClassAssignments.Where(ca => ca.IsActive))
@@ -111,6 +118,158 @@ public class StudentRepository : Repository<Student>, IStudentRepository
                             .ThenInclude(t => t!.User)
             .Select(sg => sg.Student)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<StudentProfileLookupResult?> GetStudentProfileDtoAsync(int studentId, CancellationToken cancellationToken = default)
+    {
+        var row = await _context.Students
+            .AsNoTracking()
+            .Where(s => s.Id == studentId)
+            .Select(s => new
+            {
+                s.Id,
+                s.StudentCode,
+                s.FullName,
+                s.DateOfBirth,
+                s.Gender,
+                s.EnrollmentDate,
+                s.Status,
+                s.AvatarUrl,
+                s.ResidentialArea,
+                s.IsSpecialNeeds,
+                s.SpecialNeedsNotes,
+                s.CreatedAt,
+                ActiveClass = s.ClassAssignments
+                    .Where(ca => ca.IsActive)
+                    .Select(ca => new
+                    {
+                        ca.Class.Id,
+                        ca.Class.ClassName,
+                        ca.Class.Grade,
+                        ca.Class.RoomNumber,
+                        HomeroomTeacherUserId = ca.Class.HomeroomTeacher != null ? (int?)ca.Class.HomeroomTeacher.UserId : null,
+                        HomeroomTeacherName = ca.Class.HomeroomTeacher != null && ca.Class.HomeroomTeacher.User != null
+                            ? ca.Class.HomeroomTeacher.User.FullName
+                            : null
+                    })
+                    .ToList(),
+                Guardians = s.StudentGuardians
+                    .Select(sg => new
+                    {
+                        sg.GuardianId,
+                        sg.Guardian.UserId,
+                        sg.Guardian.FullName,
+                        sg.Guardian.PhoneNumber,
+                        sg.Guardian.Email,
+                        sg.Guardian.IdentityCardNumber,
+                        sg.Guardian.Occupation,
+                        sg.Guardian.Address,
+                        Relationship = (int)sg.Relationship,
+                        RelationshipName = sg.Relationship.ToString(),
+                        sg.IsPrimaryContact
+                    })
+                    .ToList()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (row == null)
+        {
+            return null;
+        }
+
+        var activeClass = row.ActiveClass.FirstOrDefault();
+        var primaryGuardian = row.Guardians.FirstOrDefault(g => g.IsPrimaryContact) ?? row.Guardians.FirstOrDefault();
+
+        return new StudentProfileLookupResult
+        {
+            GuardianUserIds = row.Guardians.Where(g => g.UserId.HasValue).Select(g => g.UserId!.Value).Distinct().ToList(),
+            HomeroomTeacherUserIds = row.ActiveClass.Where(c => c.HomeroomTeacherUserId.HasValue).Select(c => c.HomeroomTeacherUserId!.Value).Distinct().ToList(),
+            Profile = new StudentProfileDto
+            {
+                Id = row.Id,
+                StudentCode = row.StudentCode,
+                FullName = row.FullName,
+                DateOfBirth = row.DateOfBirth,
+                Gender = row.Gender,
+                EnrollmentDate = row.EnrollmentDate,
+                Status = row.Status,
+                AvatarUrl = row.AvatarUrl,
+                Address = row.ResidentialArea ?? primaryGuardian?.Address,
+                ResidentialArea = row.ResidentialArea,
+                IsSpecialNeeds = row.IsSpecialNeeds,
+                SpecialNeedsNotes = row.SpecialNeedsNotes,
+                CurrentClassId = activeClass?.Id,
+                CurrentClassName = activeClass?.ClassName,
+                CurrentGrade = activeClass?.Grade,
+                CurrentRoomNumber = activeClass?.RoomNumber,
+                HomeroomTeacherName = activeClass?.HomeroomTeacherName,
+                PrimaryGuardianName = primaryGuardian?.FullName,
+                PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
+                GuardiansCount = row.Guardians.Count,
+                CreatedAt = row.CreatedAt,
+                Guardians = row.Guardians.Select(g => new StudentGuardianItemDto
+                {
+                    GuardianId = g.GuardianId,
+                    UserId = g.UserId,
+                    FullName = g.FullName,
+                    PhoneNumber = g.PhoneNumber,
+                    Email = g.Email,
+                    IdentityCardNumber = g.IdentityCardNumber,
+                    Occupation = g.Occupation,
+                    Address = g.Address,
+                    Relationship = g.Relationship,
+                    RelationshipName = g.RelationshipName,
+                    IsPrimaryContact = g.IsPrimaryContact
+                }).ToList()
+            }
+        };
+    }
+
+    public async Task<List<LinkedChildSummaryDto>?> GetLinkedChildDtosAsync(int parentUserId, CancellationToken cancellationToken = default)
+    {
+        var rows = await _context.StudentGuardians
+            .AsNoTracking()
+            .Where(sg => sg.Guardian.UserId == parentUserId)
+            .Select(sg => new
+            {
+                sg.Student.Id,
+                sg.Student.StudentCode,
+                sg.Student.FullName,
+                sg.Student.DateOfBirth,
+                sg.Student.Gender,
+                sg.Student.AvatarUrl,
+                sg.Student.Status,
+                sg.Relationship,
+                sg.IsPrimaryContact,
+                ActiveClass = sg.Student.ClassAssignments
+                    .Where(ca => ca.IsActive)
+                    .Select(ca => new
+                    {
+                        ca.ClassId,
+                        ca.Class.ClassName,
+                        ca.Class.Grade,
+                        ca.Class.IsPlacementPublished
+                    })
+                    .FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(r => new LinkedChildSummaryDto
+        {
+            StudentId = r.Id,
+            StudentCode = r.StudentCode,
+            FullName = r.FullName,
+            DateOfBirth = r.DateOfBirth,
+            Gender = r.Gender,
+            AvatarUrl = r.AvatarUrl,
+            Status = r.Status,
+            CurrentClassId = r.ActiveClass?.ClassId,
+            CurrentClassName = r.ActiveClass?.ClassName,
+            Grade = r.ActiveClass?.Grade,
+            IsPlacementPublished = r.ActiveClass?.IsPlacementPublished ?? false,
+            RelationshipName = r.Relationship.ToVietnamese(),
+            IsPrimaryContact = r.IsPrimaryContact
+        }).ToList();
     }
 }
 
