@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { adminApi } from '../../services/implementations/adminApi';
-import type { AdminUserDto, RoleOptionDto } from '../../types/admin.types';
+import { UserRole, type AdminUserDto, type RoleOptionDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 
 /** Account state (BR-63): Pending Activation is neither active nor locked. */
@@ -42,7 +42,8 @@ export default function UsersManagementPage() {
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newRoles, setNewRoles] = useState<string[]>(['Teacher']);
+  // pub:UC-53 step 3: one initial role per new account
+  const [newRole, setNewRole] = useState<string>(UserRole.Teacher);
 
   // Edit roles modal
   const [editingRolesUser, setEditingRolesUser] = useState<AdminUserDto | null>(null);
@@ -100,7 +101,7 @@ export default function UsersManagementPage() {
         fullName: newFullName,
         email: newEmail,
         phoneNumber: newPhone || undefined,
-        roles: newRoles,
+        roles: [newRole],
       });
       if (res.success) {
         toast.success(getSystemMessage('MSG38')?.content || res.message);
@@ -111,7 +112,7 @@ export default function UsersManagementPage() {
         setNewFullName('');
         setNewEmail('');
         setNewPhone('');
-        setNewRoles(['Teacher']);
+        setNewRole(UserRole.Teacher);
         loadData();
       } else {
         showApiError(res.code, res.message, res.errors);
@@ -414,9 +415,11 @@ export default function UsersManagementPage() {
                 {roles.filter((r) => r.name !== 'Parent').map((r) => (
                   <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', cursor: 'pointer' }}>
                     <input
-                      type="checkbox"
-                      checked={newRoles.includes(r.name)}
-                      onChange={() => toggleRoleInList(newRoles, r.name, setNewRoles)}
+                      type="radio"
+                      name="newRole"
+                      value={r.name}
+                      checked={newRole === r.name}
+                      onChange={() => setNewRole(r.name)}
                     />
                     {r.name}
                   </label>
@@ -446,6 +449,12 @@ export default function UsersManagementPage() {
                     type="checkbox"
                     checked={selectedRoles.includes(r.name)}
                     onChange={() => toggleRoleInList(selectedRoles, r.name, setSelectedRoles)}
+                    // OVR-04 / BR-68: Parent is never combined with another role
+                    disabled={
+                      !selectedRoles.includes(r.name) &&
+                      selectedRoles.length > 0 &&
+                      (r.name === UserRole.Parent || selectedRoles.includes(UserRole.Parent))
+                    }
                   />
                   <strong>{r.name}</strong>
                   {r.description && <span style={{ fontSize: 12, color: 'var(--color-muted-fg)' }}>— {r.description}</span>}

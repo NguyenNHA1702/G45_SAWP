@@ -80,6 +80,20 @@ public class AdminServiceTests : TestBase
         _linksMock.VerifyNoOtherCalls();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task UTCID03b_CreateUser_NotExactlyOneRole_RefusedWithMSG01(int roleCount)
+    {
+        var request = NewTeacher();
+        request.Roles = new List<string> { nameof(UserRoles.Teacher), nameof(UserRoles.Admin) }.Take(roleCount).ToList();
+
+        var result = await _service.CreateUserAsync(1, request);
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        _users.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task UTCID04_ResetPassword_ActiveTeacher_SetsTemporaryPasswordAndEndsSessions()
     {

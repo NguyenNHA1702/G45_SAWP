@@ -100,9 +100,13 @@ public class AdminService : IAdminService
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập đầy đủ Tên đăng nhập, Email và Họ tên." });
         }
 
-        if (request.Roles == null || request.Roles.Count == 0)
+        // pub:UC-53 step 3: the Administrator selects one initial role
+        var requestedRoleNames = (request.Roles ?? new List<string>())
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim().ToLower()).Distinct().ToList();
+        if (requestedRoleNames.Count != 1)
         {
-            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn ít nhất một vai trò." });
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn đúng một vai trò." });
         }
 
         var exists = await _unitOfWork.Repository<User>()
@@ -114,7 +118,6 @@ public class AdminService : IAdminService
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên đăng nhập hoặc Email đã tồn tại trong hệ thống." });
         }
 
-        var requestedRoleNames = request.Roles.Select(r => r.Trim().ToLower()).Distinct().ToList();
         var dbRoles = await _unitOfWork.Repository<Role>()
             .Query()
             .Where(r => requestedRoleNames.Contains(r.Name.ToLower()))
@@ -219,6 +222,12 @@ public class AdminService : IAdminService
         if (dbRoles.Count == 0)
         {
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vai trò không hợp lệ." });
+        }
+
+        // OVR-04 / BR-68: a staff account is never a Parent account, so Parent is never combined with another role
+        if (dbRoles.Count > 1 && dbRoles.Any(r => r.Name.Equals(UserRoles.Parent.ToString(), StringComparison.OrdinalIgnoreCase)))
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Không thể kết hợp vai trò Phụ huynh với vai trò khác." });
         }
 
         if (user.Id == adminUserId && !dbRoles.Any(r => r.Name.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
