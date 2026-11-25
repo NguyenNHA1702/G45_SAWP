@@ -909,7 +909,12 @@ export default function MealHeadcountPage() {
                   <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
                     {board.serviceRemarks ? (
                       <>
-                        <strong style={{ color: 'var(--color-fg)' }}>Thực đơn trưa hôm nay:</strong> {board.serviceRemarks}
+                        <strong style={{ color: 'var(--color-fg)' }}>
+                          {(board.date?.slice(0, 10) || selectedDate) === todayStr
+                            ? 'Thực đơn trưa hôm nay:'
+                            : `Thực đơn trưa ngày ${formatDateDDMMYYYY(board.date?.slice(0, 10) || selectedDate)}:`}
+                        </strong>{' '}
+                        {board.serviceRemarks}
                       </>
                     ) : (
                       `Đơn xin nghỉ học có bữa trưa được GVCN duyệt trước ${effectiveCutoffLabel} sẽ tự động giảm trừ suất ăn.`

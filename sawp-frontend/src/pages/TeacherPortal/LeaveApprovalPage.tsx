@@ -24,6 +24,7 @@ import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { formatViDateTime } from '../../utils/date';
 import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { PaginationBar } from '../../components/common/PaginationBar';
 
 export default function LeaveApprovalPage() {
@@ -56,6 +57,9 @@ export default function LeaveApprovalPage() {
   const [forwardingItem, setForwardingItem] = useState<LeaveRequestItem | null>(null);
   const [forwardNotes, setForwardNotes] = useState('');
 
+  // Modal Confirm Approve state (đồng bộ ConfirmDialog thay window.confirm)
+  const [approvingTarget, setApprovingTarget] = useState<{ item: LeaveRequestItem; isBgh: boolean } | null>(null);
+
   const [processing, setProcessing] = useState(false);
 
   const fetchRequests = async () => {
@@ -82,22 +86,25 @@ export default function LeaveApprovalPage() {
     fetchRequests();
   }, [statusFilter, pageIndex, pageSize]);
 
-  // Duyệt đơn thông thường (<= 3 ngày học) — hiển thị đúng vai trò GVCN hoặc BGH (L-A)
-  const handleApprove = async (item: LeaveRequestItem) => {
-    const actorTitle = isBoardOrAdmin ? 'Ban Giám Hiệu' : 'GVCN';
-    if (!window.confirm(`${actorTitle} xác nhận PHÊ DUYỆT đơn xin nghỉ cho học sinh ${item.studentName}?`)) return;
+  // Xác nhận phê duyệt đơn (GVCN <= 3 ngày học, hoặc BGH cho đơn chuyển cấp / lớp chưa có GVCN)
+  const handleConfirmApprove = async () => {
+    if (!approvingTarget) return;
+    const { item, isBgh } = approvingTarget;
+    const actorTitle = isBgh || isBoardOrAdmin ? 'Ban Giám Hiệu' : 'GVCN';
 
     try {
       setProcessing(true);
       const res = await leaveRequestApi.review(item.id, {
         isApproved: true,
-        reviewerNotes: isBoardOrAdmin
-          ? 'Ban Giám Hiệu đồng ý cho học sinh nghỉ học.'
-          : 'GVCN đồng ý cho học sinh nghỉ học.',
+        reviewerNotes: isBgh
+          ? 'Ban Giám Hiệu đồng ý phê duyệt đơn xin nghỉ học.'
+          : isBoardOrAdmin
+            ? 'Ban Giám Hiệu đồng ý cho học sinh nghỉ học.'
+            : 'GVCN đồng ý cho học sinh nghỉ học.',
       });
 
       if (res.success) {
-        toast.success(`${actorTitle} đã duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
+        toast.success(`${actorTitle} đã phê duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
         if (res.data.attendanceWarnings && res.data.attendanceWarnings.length > 0) {
           toast(res.data.attendanceWarnings.join(' '), { icon: '⚠️', duration: 7000 });
         }
@@ -110,34 +117,7 @@ export default function LeaveApprovalPage() {
       toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setProcessing(false);
-    }
-  };
-
-  // Ban Giám Hiệu duyệt đơn chuyển cấp (> 3 ngày học) hoặc đơn từ lớp chưa có GVCN
-  const handleBghApprove = async (item: LeaveRequestItem) => {
-    if (!window.confirm(`Ban Giám Hiệu xác nhận PHÊ DUYỆT đơn xin nghỉ ${item.totalDays} ngày học cho học sinh ${item.studentName}?`)) return;
-
-    try {
-      setProcessing(true);
-      const res = await leaveRequestApi.review(item.id, {
-        isApproved: true,
-        reviewerNotes: 'Ban Giám Hiệu đồng ý phê duyệt đơn xin nghỉ học.',
-      });
-
-      if (res.success) {
-        toast.success(`Ban Giám Hiệu đã phê duyệt đơn thành công! ${res.data.mealSyncMessage}`, { duration: 5000 });
-        if (res.data.attendanceWarnings && res.data.attendanceWarnings.length > 0) {
-          toast(res.data.attendanceWarnings.join(' '), { icon: '⚠️', duration: 7000 });
-        }
-        fetchRequests();
-      } else {
-        toast.error(res.message);
-      }
-    } catch (err: unknown) {
-      const apiErr = asApiError(err);
-      toast.error(apiErr.errors?.[0] || apiErr.message);
-    } finally {
-      setProcessing(false);
+      setApprovingTarget(null);
     }
   };
 
@@ -616,7 +596,7 @@ export default function LeaveApprovalPage() {
                       disabled={processing}
                       className="btn btn--primary btn--sm"
                       style={{ background: 'var(--color-quaternary)', color: 'var(--color-fg)' }}
-                      onClick={() => handleApprove(r)}
+                      onClick={() => setApprovingTarget({ item: r, isBgh: false })}
                     >
                       <Check size={15} /> Phê duyệt đơn
                     </button>
@@ -696,7 +676,7 @@ export default function LeaveApprovalPage() {
                           disabled={processing}
                           className="btn btn--primary btn--sm"
                           style={{ background: 'var(--color-quaternary)', color: 'var(--color-fg)' }}
-                          onClick={() => handleBghApprove(r)}
+                          onClick={() => setApprovingTarget({ item: r, isBgh: true })}
                         >
                           <Check size={15} /> BGH Phê duyệt
                         </button>
@@ -888,6 +868,34 @@ export default function LeaveApprovalPage() {
           </div>
         </div>
       </GeometricModal>
+
+      {/* APPROVE CONFIRM DIALOG */}
+      <ConfirmDialog
+        open={!!approvingTarget}
+        title={approvingTarget?.isBgh || isBoardOrAdmin ? 'Ban Giám Hiệu xác nhận phê duyệt' : 'GVCN xác nhận phê duyệt'}
+        confirmText={processing ? 'Đang xử lý...' : 'Xác nhận phê duyệt'}
+        cancelText="Hủy bỏ"
+        busy={processing}
+        onConfirm={handleConfirmApprove}
+        onCancel={() => {
+          if (!processing) setApprovingTarget(null);
+        }}
+      >
+        {approvingTarget && (
+          <p style={{ margin: 0, lineHeight: 1.6 }}>
+            {approvingTarget.isBgh || isBoardOrAdmin ? 'Ban Giám Hiệu' : 'GVCN'} xác nhận <strong>PHÊ DUYỆT</strong> đơn{' '}
+            <strong>{approvingTarget.item.requestNumber}</strong> xin nghỉ{' '}
+            <strong>{approvingTarget.item.totalDays} ngày học</strong> (
+            <strong>
+              {formatDateDDMMYYYY(approvingTarget.item.startDate)}
+              {approvingTarget.item.startDate.slice(0, 10) !== approvingTarget.item.endDate.slice(0, 10)
+                ? ` → ${formatDateDDMMYYYY(approvingTarget.item.endDate)}`
+                : ''}
+            </strong>
+            ) cho học sinh <strong>{approvingTarget.item.studentName}</strong>?
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }
