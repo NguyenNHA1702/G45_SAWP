@@ -96,6 +96,26 @@ public class RequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Phụ huynh xem danh sách các đơn đã gửi của con (phân trang)
+    /// </summary>
+    [HttpGet("my-requests/paged")]
+    [Authorize(Roles = "Parent,Admin")]
+    public async Task<IActionResult> GetMyRequestsPaged(
+        [FromQuery] int? studentId,
+        [FromQuery] string? requestType,
+        [FromQuery] string? status,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _workflowEngine.GetMyRequestsPagedAsync(userId.Value, studentId, requestType, status, pageIndex, pageSize, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Phụ huynh nộp lại đơn sau khi bổ sung thông tin theo yêu cầu của Giáo vụ
     /// </summary>
     [HttpPut("{id:int}/resubmit")]
@@ -513,6 +533,23 @@ public class RequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Giáo vụ lấy danh sách đơn hành chính (phân trang + thống kê)
+    /// </summary>
+    [HttpGet("office/paged")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> GetOfficeRequestsPaged(
+        [FromQuery] string? requestType,
+        [FromQuery] string? status,
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _workflowEngine.GetOfficeStaffRequestsPagedAsync(requestType, status, search, pageIndex, pageSize, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Giáo vụ yêu cầu phụ huynh bổ sung/sửa đổi hồ sơ
     /// </summary>
     [HttpPost("{id:int}/request-amendment")]
@@ -634,6 +671,23 @@ public class RequestsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _workflowEngine.GetSchoolBoardRequestsAsync(requestType, status, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Ban Giám Hiệu lấy danh sách các đề xuất (phân trang + thống kê)
+    /// </summary>
+    [HttpGet("board/paged")]
+    [Authorize(Roles = "SchoolBoard,Admin")]
+    public async Task<IActionResult> GetBoardRequestsPaged(
+        [FromQuery] string? requestType,
+        [FromQuery] string? status,
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _workflowEngine.GetSchoolBoardRequestsPagedAsync(requestType, status, search, pageIndex, pageSize, cancellationToken);
         return Ok(result);
     }
 

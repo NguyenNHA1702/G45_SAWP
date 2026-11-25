@@ -167,3 +167,54 @@ public class RequestStatisticsDto
     public int DocumentCount { get; set; }
     public int RequiringAmendmentCount { get; set; }
 }
+
+public class AdministrativeRequestStatsDto
+{
+    public int TotalCount { get; set; }
+    public int SubmittedCount { get; set; }
+    public int NeedMoreInfoCount { get; set; }
+    public int ReturnedToStaffCount { get; set; }
+    public int UnderReviewCount { get; set; }
+    public int ApprovedCount { get; set; }
+    public int CompletedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int CancelledCount { get; set; }
+    public int PendingExecutionCount { get; set; }
+}
+
+public class PagedAdministrativeRequestsDto
+{
+    public List<AdministrativeRequestSummaryDto> Items { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int PageIndex { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages => PageSize > 0 ? (int)Math.Ceiling((double)TotalCount / PageSize) : 0;
+    public AdministrativeRequestStatsDto Stats { get; set; } = new();
+
+    // Parent convenience flags across all pages for active student
+    public bool HasPendingTransfer { get; set; }
+    public string? PendingTransferRequestNumber { get; set; }
+    public List<string> PendingDocumentTypes { get; set; } = new();
+}
+
+public class LeaveRequestStatsDto
+{
+    public int TotalCount { get; set; }
+    public int SubmittedCount { get; set; }
+    public int NeedMoreInfoCount { get; set; }
+    public int UnderReviewCount { get; set; }
+    public int ApprovedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public int CancelledCount { get; set; }
+    public int EscalatedCount { get; set; }
+}
+
+public class PagedLeaveRequestsDto
+{
+    public List<LeaveRequestItemDto> Items { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int PageIndex { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages => PageSize > 0 ? (int)Math.Ceiling((double)TotalCount / PageSize) : 0;
+    public LeaveRequestStatsDto Stats { get; set; } = new();
+}

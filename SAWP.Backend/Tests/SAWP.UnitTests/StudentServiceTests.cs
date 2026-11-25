@@ -601,10 +601,12 @@ public class StudentServiceTests : TestBase
         // Act
         var result = await _service.CreateStudentAsync(request, 10);
 
-        // Assert
+        // Assert (SC-10: Reject creating student into a full class instead of silently leaving unassigned)
         result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG15.Code);
         assignmentRepoMock.Verify(r => r.AddAsync(It.IsAny<ClassAssignment>(), It.IsAny<CancellationToken>()), Times.Never);
+        StudentRepoMock.Verify(r => r.AddAsync(It.IsAny<Student>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -1212,6 +1214,101 @@ public class StudentServiceTests : TestBase
 
         result.Code.Should().Be(SystemMessages.MSG01.Code);
         links.Single(l => l.GuardianId == 5).IsPrimaryContact.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SC07_CreateStudent_NameWithDigits_FailsWithMSG01()
+    {
+        var result = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "TEST-N25-G1",
+            FullName = "Nguyen 123",
+            DateOfBirth = new DateTime(2019, 5, 1),
+            Gender = "Nam"
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task SC07_CreateStudent_GuardianNameWithDigits_FailsWithMSG01()
+    {
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("TEST-N25-G2", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "TEST-N25-G2",
+            FullName = "Nguyen Van An",
+            DateOfBirth = new DateTime(2019, 5, 1),
+            Gender = "Nam",
+            InitialGuardian = new GuardianInputDto { FullName = "Nguyen 123", PhoneNumber = "0912345678", Relationship = 1 }
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task SC09_UpdateStudent_AgeMismatchWithCurrentClass_FailsWithMSG01()
+    {
+        var grade1Class = new Class { Id = 1, ClassName = "1A", Grade = 1, SchoolYear = new SchoolYear { StartDate = new DateTime(2026, 9, 1) } };
+        var student = new Student
+        {
+            Id = 10,
+            StudentCode = "HS010",
+            FullName = "Em A",
+            DateOfBirth = new DateTime(2020, 5, 1),
+            Gender = "Nam",
+            Status = "Active",
+            ClassAssignments = new List<ClassAssignment> { new() { Id = 1, ClassId = 1, Class = grade1Class, IsActive = true } }
+        };
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(student);
+
+        // Attempt to change DOB so student is 14 years old while in Grade 1 (without passing CurrentClassId)
+        var result = await _service.UpdateStudentAsync(10, new UpdateStudentDto
+        {
+            FullName = "Em A",
+            DateOfBirth = new DateTime(2012, 5, 1),
+            Gender = "Nam",
+            Status = "Active"
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task SC10_CreateStudent_FullInitialClass_FailsWithMSG15()
+    {
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_FULL_TEST", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var fullClass = new Class
+        {
+            Id = 1,
+            ClassName = "1A",
+            Grade = 1,
+            Capacity = 2,
+            SchoolYear = new SchoolYear { StartDate = new DateTime(2026, 9, 1), YearName = "2026-2027" },
+            ClassAssignments = new List<ClassAssignment> { new() { IsActive = true }, new() { IsActive = true } }
+        };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fullClass);
+
+        var result = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_FULL_TEST",
+            FullName = "Nguyen Van An",
+            DateOfBirth = new DateTime(2020, 5, 1),
+            Gender = "Nam",
+            InitialClassId = 1
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG15.Code);
     }
 
     #endregion

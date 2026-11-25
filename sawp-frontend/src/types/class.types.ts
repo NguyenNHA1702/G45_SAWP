@@ -64,7 +64,9 @@ export interface TeacherOptionDto {
   staffProfileId?: number;
   staffId?: number;
   fullName: string;
-  email: string;
+  staffCode?: string;
+  department?: string;
+  email?: string;
   phone?: string;
   currentHomeroomClassName?: string;
   currentAssignedClass?: string;

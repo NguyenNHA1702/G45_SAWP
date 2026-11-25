@@ -18,6 +18,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.FullName).HasMaxLength(150).IsRequired();
         builder.Property(u => u.PhoneNumber).HasMaxLength(20);
         builder.Property(u => u.Status).HasDefaultValue(AccountStatus.Active);
+        builder.HasIndex(u => new { u.CreatedAt, u.Id });
     }
 }
 
@@ -78,6 +79,7 @@ public class GuardianConfiguration : IEntityTypeConfiguration<Guardian>
         builder.Property(g => g.Occupation).HasMaxLength(100);
         builder.Property(g => g.Address).HasMaxLength(250);
         builder.HasIndex(g => g.Email);
+        builder.HasIndex(g => new { g.UserId, g.FullName });
 
         // A guardian record may exist without an account (BR-64); deleting an account keeps the record.
         builder.HasOne(g => g.User)
@@ -170,6 +172,8 @@ public class StudentConfiguration : IEntityTypeConfiguration<Student>
         builder.Property(s => s.Status).HasMaxLength(50);
         builder.Property(s => s.ResidentialArea).HasMaxLength(200);
         builder.Property(s => s.SpecialNeedsNotes).HasMaxLength(250);
+        builder.HasIndex(s => s.CreatedAt);
+        builder.HasIndex(s => new { s.Status, s.FullName });
     }
 }
 
@@ -197,6 +201,7 @@ public class SchoolYearConfiguration : IEntityTypeConfiguration<SchoolYear>
     {
         builder.HasKey(sy => sy.Id);
         builder.Property(sy => sy.YearName).HasMaxLength(50).IsRequired();
+        builder.HasIndex(sy => new { sy.IsActive, sy.StartDate });
     }
 }
 
@@ -206,6 +211,7 @@ public class SchoolCalendarDayConfiguration : IEntityTypeConfiguration<SchoolCal
     {
         builder.HasKey(sc => sc.Id);
         builder.Property(sc => sc.Note).HasMaxLength(250);
+        builder.HasIndex(sc => new { sc.SchoolYearId, sc.Date });
 
         builder.HasOne(sc => sc.SchoolYear)
                .WithMany(sy => sy.CalendarDays)
@@ -256,6 +262,8 @@ public class ClassAssignmentConfiguration : IEntityTypeConfiguration<ClassAssign
         builder.HasIndex(ca => new { ca.StudentId, ca.ClassId })
                .IsUnique()
                .HasFilter("[IsActive] = 1");
+        builder.HasIndex(ca => new { ca.IsActive, ca.ClassId });
+        builder.HasIndex(ca => new { ca.StudentId, ca.IsActive });
     }
 }
 
@@ -425,6 +433,7 @@ public class AdministrativeRequestConfiguration : IEntityTypeConfiguration<Admin
         builder.Property(ar => ar.RequestNumber).HasMaxLength(50).IsRequired();
         builder.HasIndex(ar => ar.RequestNumber).IsUnique();
         builder.HasIndex(ar => new { ar.RequestType, ar.Status, ar.SubmissionDate });
+        builder.HasIndex(ar => new { ar.RequestType, ar.SubmissionDate });
         builder.HasIndex(ar => new { ar.RequesterUserId, ar.RequestType, ar.SubmissionDate });
         builder.Property(ar => ar.RequestType).HasMaxLength(100).IsRequired();
         builder.Property(ar => ar.ReviewerNotes).HasMaxLength(1000);
@@ -542,6 +551,7 @@ public class PlacementPlanConfiguration : IEntityTypeConfiguration<PlacementPlan
         builder.Property(p => p.PlanName).HasMaxLength(150).IsRequired();
         builder.Property(p => p.Status).HasMaxLength(50).IsRequired();
         builder.Property(p => p.ReviewNotes).HasMaxLength(1000);
+        builder.HasIndex(p => new { p.SchoolYearId, p.Grade, p.CreatedAt });
 
         builder.HasOne(p => p.SchoolYear)
                .WithMany()

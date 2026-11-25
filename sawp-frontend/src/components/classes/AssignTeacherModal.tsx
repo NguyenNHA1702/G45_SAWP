@@ -126,9 +126,11 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
               <option value="">-- Chọn giáo viên --</option>
               {teachers.map((t) => {
                 const assignedClass = t.currentHomeroomClassName || t.currentAssignedClass;
+                const secondaryLabel = t.staffCode || t.email;
                 return (
                   <option key={t.userId} value={t.userId}>
-                    {t.fullName} ({t.email})
+                    {t.fullName}
+                    {secondaryLabel ? ` (${secondaryLabel})` : ''}
                     {assignedClass
                       ? ` - Đang CN lớp: ${assignedClass}`
                       : ' - Chưa chủ nhiệm lớp nào'}
@@ -158,8 +160,16 @@ export const AssignTeacherModal: React.FC<AssignTeacherModalProps> = ({
                 {teachers.find((t) => t.userId === selectedUserId)?.fullName}
               </div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                {teachers.find((t) => t.userId === selectedUserId)?.email} • SĐT:{' '}
-                {teachers.find((t) => t.userId === selectedUserId)?.phone || 'Chưa cập nhật'}
+                {(() => {
+                  const selected = teachers.find((t) => t.userId === selectedUserId);
+                  if (!selected) return null;
+                  const parts = [];
+                  if (selected.staffCode) parts.push(`Mã GV: ${selected.staffCode}`);
+                  if (selected.department) parts.push(selected.department);
+                  if (selected.email) parts.push(selected.email);
+                  if (selected.phone) parts.push(`SĐT: ${selected.phone}`);
+                  return parts.length > 0 ? parts.join(' • ') : 'Giáo viên cơ hữu';
+                })()}
               </div>
             </div>
           </div>

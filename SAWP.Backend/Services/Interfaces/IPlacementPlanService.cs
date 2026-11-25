@@ -18,6 +18,13 @@ public interface IPlacementPlanService
         int? grade = null,
         CancellationToken cancellationToken = default);
 
+    Task<ApiResponse<PaginatedResult<PlacementPlanSummaryDto>>> GetPlanHistoryPagedAsync(
+        int? schoolYearId = null,
+        int? grade = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default);
+
     Task<ApiResponse<PlacementPlanDetailDto>> MoveStudentAsync(
         int planId,
         MoveStudentInPlanDto request,

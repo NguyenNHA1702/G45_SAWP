@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { FilePlus2, RefreshCw, Search, Send, Trash2, UserCheck } from 'lucide-react';
 import { accountRequestApi } from '../../services/implementations/accountRequestApi';
+import { PaginationBar } from '../../components/common/PaginationBar';
 import { asApiError } from '../../utils/apiError';
 import { formatViDateTime, formatViDate, todayIso } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
@@ -52,24 +53,36 @@ export default function AccountRequestsPage() {
   const [tab, setTab] = useState<Tab>('guardians');
   const [search, setSearch] = useState('');
   const [guardians, setGuardians] = useState<GuardianWithoutAccountDto[]>([]);
+  const [guardiansTotal, setGuardiansTotal] = useState(0);
+  const [guardiansPage, setGuardiansPage] = useState(1);
   const [selected, setSelected] = useState<number[]>([]);
   const [form, setForm] = useState<FormState>(newForm());
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState<AccountRequestDto[]>([]);
+  const [mineTotal, setMineTotal] = useState(0);
+  const [minePage, setMinePage] = useState(1);
   const [detail, setDetail] = useState<AccountRequestDto | null>(null);
   const [rowSel, setRowSel] = useState<number[]>([]);
 
-  const loadGuardians = useCallback(async (q?: string) => {
+  const loadGuardians = useCallback(async (q?: string, page = 1) => {
     try {
-      setGuardians((await accountRequestApi.guardiansWithoutAccount(q)).data ?? []);
+      const res = await accountRequestApi.guardiansWithoutAccountPaged(q, page, 25);
+      if (res.data) {
+        setGuardians(res.data.items);
+        setGuardiansTotal(res.data.totalCount);
+      }
     } catch (err) {
       showError(err);
     }
   }, []);
 
-  const loadMine = useCallback(async () => {
+  const loadMine = useCallback(async (page = 1) => {
     try {
-      setMine((await accountRequestApi.mine()).data ?? []);
+      const res = await accountRequestApi.minePaged(page, 15);
+      if (res.data) {
+        setMine(res.data.items);
+        setMineTotal(res.data.totalCount);
+      }
     } catch (err) {
       showError(err);
     }
@@ -238,8 +251,16 @@ export default function AccountRequestsPage() {
         <section className="card" aria-label="Phụ huynh chưa có tài khoản">
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input className="input" placeholder="Tìm theo tên, email, mã hoặc tên học sinh" value={search}
-              onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void loadGuardians(search)} />
-            <button className="btn btn--secondary btn--sm" onClick={() => loadGuardians(search)}><Search size={15} /> Tìm</button>
+              onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setGuardiansPage(1);
+                  void loadGuardians(search, 1);
+                }
+              }} />
+            <button className="btn btn--secondary btn--sm" onClick={() => {
+              setGuardiansPage(1);
+              void loadGuardians(search, 1);
+            }}><Search size={15} /> Tìm</button>
             <button id="btn-new-request" className="btn btn--primary btn--sm" disabled={selected.length === 0}
               onClick={() => startForm(selected)}>
               Tạo yêu cầu ({selected.length})
@@ -265,6 +286,16 @@ export default function AccountRequestsPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar
+            pageIndex={guardiansPage}
+            pageSize={25}
+            totalCount={guardiansTotal}
+            onPageChange={(p) => {
+              setGuardiansPage(p);
+              void loadGuardians(search, p);
+            }}
+            itemLabel="phụ huynh"
+          />
         </section>
       )}
 
@@ -343,6 +374,16 @@ export default function AccountRequestsPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar
+            pageIndex={minePage}
+            pageSize={15}
+            totalCount={mineTotal}
+            onPageChange={(p) => {
+              setMinePage(p);
+              void loadMine(p);
+            }}
+            itemLabel="yêu cầu"
+          />
         </section>
       )}
 

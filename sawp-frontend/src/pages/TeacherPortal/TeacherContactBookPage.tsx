@@ -201,10 +201,10 @@ export default function TeacherContactBookPage() {
         setPostAttachments([]);
         loadPosts(homeroom.classId);
       } else {
-        toast.error(res.message || 'Lỗi khi đăng bài');
+        toast.error(res.errors?.[0] || res.message || 'Không thể đăng bài viết.');
       }
-    } catch {
-      toast.error('Lỗi khi đăng bài');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.errors?.[0] || err?.response?.data?.message || 'Không thể đăng bài viết lên bảng tin.');
     } finally {
       setSubmittingPost(false);
     }
@@ -304,10 +304,10 @@ export default function TeacherContactBookPage() {
         setSelectedStudent(null);
         loadRoster(homeroom.classId, weekNumber);
       } else {
-        toast.error(res.message || 'Lỗi khi lưu nhận xét');
+        toast.error(res.errors?.[0] || res.message || 'Không thể lưu nhận xét học sinh.');
       }
-    } catch {
-      toast.error('Lỗi khi lưu nhận xét');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.errors?.[0] || err?.response?.data?.message || 'Không thể lưu nhận xét học sinh.');
     } finally {
       setSubmittingEval(false);
     }

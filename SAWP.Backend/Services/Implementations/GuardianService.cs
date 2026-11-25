@@ -19,6 +19,12 @@ public class GuardianService : IGuardianService
 
     public async Task<ApiResponse<List<LinkedChildSummaryDto>>> GetMyLinkedChildrenAsync(int parentUserId, CancellationToken cancellationToken = default)
     {
+        var fastChildren = await _unitOfWork.Students.GetLinkedChildDtosAsync(parentUserId, cancellationToken);
+        if (fastChildren != null)
+        {
+            return ApiResponse<List<LinkedChildSummaryDto>>.Ok(fastChildren);
+        }
+
         var linkedStudents = await _unitOfWork.Students.GetLinkedStudentsByParentUserIdAsync(parentUserId, cancellationToken);
 
         var guardian = (await _unitOfWork.Repository<Guardian>().FindAsync(g => g.UserId == parentUserId, cancellationToken)).FirstOrDefault();
@@ -112,15 +118,39 @@ public class GuardianService : IGuardianService
             }
         }
 
-        // Attendance Mini Summary
-        var attendanceRecords = await _unitOfWork.Repository<AttendanceRecord>()
-            .FindAsync(ar => ar.StudentId == studentId, cancellationToken);
+        // Attendance Mini Summary (aggregate in SQL when Query() is backed by EF)
+        int presentCount = 0, excusedCount = 0, unexcusedCount = 0, lateCount = 0;
+        var attendanceQuery = _unitOfWork.Repository<AttendanceRecord>().Query();
+        if (attendanceQuery != null)
+        {
+            var grouped = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AsNoTracking(attendanceQuery)
+                    .Where(ar => ar.StudentId == studentId)
+                    .GroupBy(ar => ar.Status)
+                    .Select(g => new { Status = g.Key, Count = g.Count() }),
+                cancellationToken);
+            foreach (var g in grouped)
+            {
+                switch (g.Status)
+                {
+                    case AttendanceStatus.Present: presentCount = g.Count; break;
+                    case AttendanceStatus.ExcusedAbsence: excusedCount = g.Count; break;
+                    case AttendanceStatus.UnexcusedAbsence: unexcusedCount = g.Count; break;
+                    case AttendanceStatus.Late: lateCount = g.Count; break;
+                }
+            }
+        }
+        else
+        {
+            var attendanceRecords = await _unitOfWork.Repository<AttendanceRecord>()
+                .FindAsync(ar => ar.StudentId == studentId, cancellationToken);
+            presentCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.Present);
+            excusedCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.ExcusedAbsence);
+            unexcusedCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.UnexcusedAbsence);
+            lateCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.Late);
+        }
 
-        int presentCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.Present);
-        int excusedCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.ExcusedAbsence);
-        int unexcusedCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.UnexcusedAbsence);
-        int lateCount = attendanceRecords.Count(a => a.Status == AttendanceStatus.Late);
-        int totalDays = attendanceRecords.Count;
+        int totalDays = presentCount + excusedCount + unexcusedCount + lateCount;
         double rate = totalDays > 0 ? Math.Round((double)(presentCount + lateCount) / totalDays * 100, 1) : 100.0;
 
         var attendanceSummary = new AttendanceMiniSummaryDto

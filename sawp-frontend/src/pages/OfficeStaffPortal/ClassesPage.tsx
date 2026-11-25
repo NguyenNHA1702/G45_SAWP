@@ -27,6 +27,7 @@ import { ClassDetailModal } from '../../components/classes/ClassDetailModal';
 import { GeneratePlacementModal } from '../../components/placement/GeneratePlacementModal';
 import { DraftPlacementPreview } from '../../components/placement/DraftPlacementPreview';
 import { PlacementPlanHistoryList } from '../../components/placement/PlacementPlanHistoryList';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { getAuthUser } from '../../services/apiClient';
 import type { ClassSummaryDto, SchoolYearDto } from '../../types/class.types';
 import type {
@@ -58,6 +59,10 @@ export default function ClassesPage() {
   const [studentsModalOpen, setStudentsModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<ClassSummaryDto | null>(null);
+  const [confirmDeleteClass, setConfirmDeleteClass] = useState<ClassSummaryDto | null>(null);
+  const [deletingClass, setDeletingClass] = useState(false);
+  const [confirmDeleteYear, setConfirmDeleteYear] = useState(false);
+  const [deletingYear, setDeletingYear] = useState(false);
 
   // Placement Plan states (WF-Placement)
   const [placementPlans, setPlacementPlans] = useState<PlacementPlanSummaryDto[]>([]);
@@ -90,6 +95,10 @@ export default function ClassesPage() {
   useEffect(() => {
     if (selectedYearId === undefined && schoolYears.length === 0) return;
     loadClasses();
+  }, [selectedYearId, selectedGrade]);
+
+  useEffect(() => {
+    if (selectedYearId === undefined && schoolYears.length === 0) return;
     if (activeTab === 'placement') {
       loadPlacementPlans();
     }
@@ -217,7 +226,7 @@ export default function ClassesPage() {
     }
   };
 
-  const handleDeleteClass = async (c: ClassSummaryDto) => {
+  const handleDeleteClass = (c: ClassSummaryDto) => {
     const enrolled = c.enrolledCount ?? c.enrolledStudentsCount ?? 0;
     if (enrolled > 0) {
       toast.error(`Không thể xóa lớp học vì lớp đang có ${enrolled} học sinh. Chỉ có thể xóa lớp học khi sĩ số bằng 0.`);
@@ -229,14 +238,17 @@ export default function ClassesPage() {
       return;
     }
 
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa Lớp ${c.className}? Hành động này sẽ xóa lớp khỏi danh sách năm học.`)) {
-      return;
-    }
+    setConfirmDeleteClass(c);
+  };
 
+  const executeDeleteClass = async () => {
+    if (!confirmDeleteClass) return;
+    setDeletingClass(true);
     try {
-      const res = await classApi.deleteClass(c.id);
+      const res = await classApi.deleteClass(confirmDeleteClass.id);
       if (res.success) {
-        toast.success(`Đã xóa lớp ${c.className} thành công!`);
+        toast.success(`Đã xóa lớp ${confirmDeleteClass.className} thành công!`);
+        setConfirmDeleteClass(null);
         loadClasses();
       } else {
         const errorMsg = res.errors?.[0] || res.message || 'Xóa lớp học thất bại.';
@@ -245,10 +257,12 @@ export default function ClassesPage() {
     } catch (err: any) {
       const msg = err.response?.data?.errors?.[0] || err.response?.data?.message || 'Có lỗi xảy ra khi xóa lớp học.';
       toast.error(msg);
+    } finally {
+      setDeletingClass(false);
     }
   };
 
-  const handleDeleteSchoolYear = async () => {
+  const handleDeleteSchoolYear = () => {
     if (!selectedYearId || !activeSchoolYear) return;
     if (activeSchoolYear.isActive) {
       toast.error('Không thể xóa năm học đang hoạt động (Active).');
@@ -262,19 +276,25 @@ export default function ClassesPage() {
       toast.error(`Không thể xóa năm học vì đang có ${totalEnrolled} học sinh phân công vào các lớp.`);
       return;
     }
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa năm học "${activeSchoolYear.yearName}" và toàn bộ lớp học nháp bên trong? Thao tác này không thể hoàn tác.`)) {
-      return;
-    }
+    setConfirmDeleteYear(true);
+  };
+
+  const executeDeleteSchoolYear = async () => {
+    if (!selectedYearId || !activeSchoolYear) return;
+    setDeletingYear(true);
     try {
       const res = await classApi.deleteSchoolYear(selectedYearId);
       if (res.success) {
         toast.success(`Đã xóa năm học "${activeSchoolYear.yearName}" thành công!`);
+        setConfirmDeleteYear(false);
         await loadSchoolYears();
       } else {
         toast.error(res.errors?.[0] || res.message || 'Không thể xóa năm học.');
       }
     } catch (err: any) {
       toast.error(err.response?.data?.errors?.[0] || err.response?.data?.message || 'Lỗi khi xóa năm học.');
+    } finally {
+      setDeletingYear(false);
     }
   };
 
@@ -913,6 +933,34 @@ export default function ClassesPage() {
           loadPlacementPlans();
         }}
       />
+
+      <ConfirmDialog
+        open={!!confirmDeleteClass}
+        title={`Xác nhận xóa Lớp ${confirmDeleteClass?.className ?? ''}`}
+        confirmText={deletingClass ? 'Đang xóa...' : 'Xác nhận xóa'}
+        cancelText="Hủy"
+        busy={deletingClass}
+        onConfirm={executeDeleteClass}
+        onCancel={() => !deletingClass && setConfirmDeleteClass(null)}
+      >
+        <p style={{ margin: 0 }}>
+          Bạn có chắc chắn muốn xóa <strong>Lớp {confirmDeleteClass?.className}</strong> (Khối {confirmDeleteClass?.grade}) khỏi danh sách năm học? Thao tác này không thể hoàn tác.
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmDeleteYear}
+        title={`Xác nhận xóa năm học "${activeSchoolYear?.yearName ?? ''}"`}
+        confirmText={deletingYear ? 'Đang xóa...' : 'Xác nhận xóa'}
+        cancelText="Hủy"
+        busy={deletingYear}
+        onConfirm={executeDeleteSchoolYear}
+        onCancel={() => !deletingYear && setConfirmDeleteYear(false)}
+      >
+        <p style={{ margin: 0 }}>
+          Bạn có chắc chắn muốn xóa năm học <strong>{activeSchoolYear?.yearName}</strong> và toàn bộ lớp học nháp bên trong? Thao tác này không thể hoàn tác.
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

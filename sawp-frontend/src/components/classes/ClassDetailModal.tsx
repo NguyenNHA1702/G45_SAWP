@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { classApi } from '../../services/implementations/classApi';
 import { formatDDMMYYYY } from '../../utils/date';
 import type { ClassRosterDto, ClassSummaryDto } from '../../types/class.types';
@@ -36,6 +37,8 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
   const [publishing, setPublishing] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [removingBatch, setRemovingBatch] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deletingClass, setDeletingClass] = useState(false);
 
   useEffect(() => {
     if (open && targetClass) {
@@ -143,7 +146,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
     }
   };
 
-  const handleDeleteClass = async () => {
+  const handleDeleteClass = () => {
     if (!targetClass) return;
     const enrolled = roster?.students?.length ?? targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0;
     if (enrolled > 0) {
@@ -156,22 +159,27 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
       return;
     }
 
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa Lớp ${targetClass.className}? Hành động này sẽ xóa lớp khỏi danh sách năm học.`)) {
-      return;
-    }
+    setConfirmDeleteOpen(true);
+  };
 
+  const executeDeleteClass = async () => {
+    if (!targetClass) return;
+    setDeletingClass(true);
     try {
       const res = await classApi.deleteClass(targetClass.id);
       if (res.success) {
         toast.success(`Đã xóa lớp ${targetClass.className} thành công!`);
+        setConfirmDeleteOpen(false);
         onRosterUpdated();
         onClose();
       } else {
-        toast.error(res.message || 'Xóa lớp học thất bại.');
+        toast.error(res.errors?.[0] || res.message || 'Xóa lớp học thất bại.');
       }
     } catch (err: any) {
       const msg = err.response?.data?.errors?.[0] || err.response?.data?.message || 'Có lỗi xảy ra khi xóa lớp học.';
       toast.error(msg);
+    } finally {
+      setDeletingClass(false);
     }
   };
 
@@ -391,6 +399,20 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title={`Xác nhận xóa Lớp ${targetClass.className}`}
+        confirmText={deletingClass ? 'Đang xóa...' : 'Xác nhận xóa'}
+        cancelText="Hủy"
+        busy={deletingClass}
+        onConfirm={executeDeleteClass}
+        onCancel={() => !deletingClass && setConfirmDeleteOpen(false)}
+      >
+        <p style={{ margin: 0 }}>
+          Bạn có chắc chắn muốn xóa <strong>Lớp {targetClass.className}</strong> khỏi danh sách năm học? Thao tác này không thể hoàn tác.
+        </p>
+      </ConfirmDialog>
     </GeometricModal>
   );
 };

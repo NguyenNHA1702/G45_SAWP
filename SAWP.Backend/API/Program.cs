@@ -12,6 +12,7 @@ using Infrastructure.ExternalServices;
 using Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -25,9 +26,18 @@ var builder = WebApplication.CreateBuilder(args);
 // appsettings.Local.example.json to appsettings.Local.json. See "Local Configuration" in README.md.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
-// 1. Database Context
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// 1. Database Context (Pooled for lower per-request allocation & faster query dispatch)
+builder.Services.AddDbContextPool<ApplicationDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")),
+    poolSize: 128);
+
+// Response Compression (Brotli + Gzip) to minimize large JSON payloads over HTTP
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
 
 // 2. Data Access & Repositories (Infrastructure -> Core Interfaces)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -276,6 +286,7 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+app.UseResponseCompression();
 app.UseCors("AllowAll");
 
 // Auto apply pending migrations and seed reference data.

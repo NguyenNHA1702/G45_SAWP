@@ -1,6 +1,6 @@
 import { apiClient } from '../apiClient';
 import { unwrap } from '../../utils/apiError';
-import type { ApiResponse } from '../../types/common.types';
+import type { ApiResponse, PaginatedResult } from '../../types/common.types';
 import type {
   AccountRequestDecisionDto,
   AccountRequestDecisionResultDto,
@@ -17,6 +17,11 @@ export const accountRequestApi = {
   guardiansWithoutAccount: (search?: string): Promise<ApiResponse<GuardianWithoutAccountDto[]>> =>
     unwrap(apiClient.get('/account-requests/guardians-without-account', { params: { search } })),
 
+  guardiansWithoutAccountPaged: (search?: string, pageIndex = 1, pageSize = 25): Promise<ApiResponse<PaginatedResult<GuardianWithoutAccountDto>>> =>
+    unwrap(apiClient.get('/account-requests/guardians-without-account/paged', {
+      params: { ...(search ? { search } : {}), pageIndex, pageSize },
+    })),
+
   checkRows: (guardianIds: number[]): Promise<ApiResponse<AccountRequestRowCheckDto[]>> =>
     unwrap(apiClient.post('/account-requests/check', { guardianIds })),
 
@@ -27,6 +32,9 @@ export const accountRequestApi = {
     unwrap(apiClient.put(`/account-requests/${id}`, payload)),
 
   mine: (): Promise<ApiResponse<AccountRequestDto[]>> => unwrap(apiClient.get('/account-requests/mine')),
+
+  minePaged: (pageIndex = 1, pageSize = 15): Promise<ApiResponse<PaginatedResult<AccountRequestDto>>> =>
+    unwrap(apiClient.get('/account-requests/mine/paged', { params: { pageIndex, pageSize } })),
 
   get: (id: number): Promise<ApiResponse<AccountRequestDto>> => unwrap(apiClient.get(`/account-requests/${id}`)),
 
@@ -41,6 +49,16 @@ export const accountRequestApi = {
 
   review: (status?: string): Promise<ApiResponse<AccountRequestDto[]>> =>
     unwrap(apiClient.get('/account-requests/review', { params: { status } })),
+
+  reviewPaged: (status?: string, search?: string, pageIndex = 1, pageSize = 15): Promise<ApiResponse<PaginatedResult<AccountRequestDto>>> =>
+    unwrap(apiClient.get('/account-requests/review/paged', {
+      params: {
+        ...(status ? { status } : {}),
+        ...(search ? { search } : {}),
+        pageIndex,
+        pageSize,
+      },
+    })),
 
   decide: (id: number, decision: AccountRequestDecisionDto): Promise<ApiResponse<AccountRequestDecisionResultDto>> =>
     unwrap(apiClient.post(`/account-requests/${id}/decisions`, decision)),

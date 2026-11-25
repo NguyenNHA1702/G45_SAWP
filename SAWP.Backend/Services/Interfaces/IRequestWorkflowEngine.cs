@@ -9,12 +9,14 @@ public interface IRequestWorkflowEngine
     Task<ApiResponse<string>> SubmitDocumentRequestAsync(int requesterUserId, DocumentIssuanceRequestDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<string>> SubmitOtherRequestAsync(int requesterUserId, OtherRequestDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetMyRequestsAsync(int parentUserId, int? studentId = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<PagedAdministrativeRequestsDto>> GetMyRequestsPagedAsync(int parentUserId, int? studentId = null, string? requestType = null, string? status = null, int pageIndex = 1, int pageSize = 20, CancellationToken cancellationToken = default);
     Task<ApiResponse<AdministrativeRequestSummaryDto>> GetRequestDetailAsync(int requestId, int currentUserId, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> ResubmitRequestAsync(int requestId, int requesterUserId, ResubmitRequestDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> CancelRequestAsync(int requestId, int requesterUserId, CancellationToken cancellationToken = default);
 
     // Office Staff operations
     Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetOfficeStaffRequestsAsync(string? requestType = null, string? status = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<PagedAdministrativeRequestsDto>> GetOfficeStaffRequestsPagedAsync(string? requestType = null, string? status = null, string? search = null, int pageIndex = 1, int pageSize = 20, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> RequestAmendmentAsync(int requestId, int staffUserId, StaffAmendmentDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> EndorseTransferAsync(int requestId, int staffUserId, StaffEndorseTransferDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> EndorseDocumentAsync(int requestId, int staffUserId, StaffEndorseDocumentDto request, CancellationToken cancellationToken = default);
@@ -24,6 +26,7 @@ public interface IRequestWorkflowEngine
 
     // School Board operations
     Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetSchoolBoardRequestsAsync(string? requestType = null, string? status = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<PagedAdministrativeRequestsDto>> GetSchoolBoardRequestsPagedAsync(string? requestType = null, string? status = null, string? search = null, int pageIndex = 1, int pageSize = 20, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> ProcessBoardDecisionAsync(int requestId, int boardUserId, BoardDecisionDto request, CancellationToken cancellationToken = default);
 
     // History and Reporting

@@ -120,8 +120,12 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({
       toast.error('Họ và tên học sinh phải có độ dài từ 2 đến 100 ký tự.');
       return;
     }
-    if (/[<>0-9]/.test(cleanedName)) {
-      toast.error('Họ và tên học sinh không được chứa chữ số hoặc thẻ HTML.');
+    if (/[<>]/.test(cleanedName)) {
+      toast.error('Họ và tên học sinh không được chứa thẻ HTML.');
+      return;
+    }
+    if (!/^[\p{L}\s'\-.]+$/u.test(cleanedName) || !/\p{L}/u.test(cleanedName)) {
+      toast.error("Họ và tên học sinh chỉ được chứa chữ cái, khoảng trắng và dấu (' - .), không được chứa chữ số hoặc ký tự đặc biệt.");
       return;
     }
     if (!editForm.dateOfBirth) {

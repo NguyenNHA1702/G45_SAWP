@@ -27,6 +27,16 @@ public class AccountRequestsController : BaseApiController
     public async Task<IActionResult> GuardiansWithoutAccount([FromQuery] string? search, CancellationToken ct)
         => ToActionResult(await _service.GetGuardiansWithoutAccountAsync(search, ct));
 
+    /// <summary>Paged guardian records without an account, with the result of the checks.</summary>
+    [HttpGet("guardians-without-account/paged")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> GuardiansWithoutAccountPaged(
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken ct = default)
+        => ToActionResult(await _service.GetGuardiansWithoutAccountPagedAsync(search, pageIndex, pageSize, ct));
+
     /// <summary>Checks the rows of a request being prepared (UC-67 step 4, E1).</summary>
     [HttpPost("check")]
     [Authorize(Roles = "OfficeStaff")]
@@ -50,6 +60,15 @@ public class AccountRequestsController : BaseApiController
     [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> Mine(CancellationToken ct)
         => ToActionResult(await _service.GetMyRequestsAsync(User.GetRequiredUserId(), ct));
+
+    /// <summary>My Account Requests (paged).</summary>
+    [HttpGet("mine/paged")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> MinePaged(
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+        => ToActionResult(await _service.GetMyRequestsPagedAsync(User.GetRequiredUserId(), pageIndex, pageSize, ct));
 
     /// <summary>Puts rejected or failed rows into a new request linked to this one (A2).</summary>
     [HttpPost("{id:int}/resubmit")]
@@ -82,6 +101,16 @@ public class AccountRequestsController : BaseApiController
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Review([FromQuery] string? status, CancellationToken ct)
         => ToActionResult(await _service.GetRequestsForReviewAsync(status, ct));
+
+    [HttpGet("review/paged")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ReviewPaged(
+        [FromQuery] string? status,
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+        => ToActionResult(await _service.GetRequestsForReviewPagedAsync(status, search, pageIndex, pageSize, ct));
 
     /// <summary>Approves or rejects rows; each approved row gets its own Pending Activation account (BR-67). MSG61 / MSG59.</summary>
     [HttpPost("{id:int}/decisions")]

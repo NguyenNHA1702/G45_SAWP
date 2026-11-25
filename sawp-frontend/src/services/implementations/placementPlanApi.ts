@@ -1,5 +1,5 @@
 import { apiClient } from '../apiClient';
-import type { ApiResponse } from '../../types/common.types';
+import type { ApiResponse, PaginatedResult } from '../../types/common.types';
 import type {
   GeneratePlacementPlanRequestDto,
   MoveStudentInPlanDto,
@@ -35,6 +35,21 @@ export const placementPlanApi = {
       '/placement-plans/history',
       {
         params: { schoolYearId, grade },
+      }
+    );
+    return res.data;
+  },
+
+  async getPlanHistoryPaged(
+    schoolYearId?: number,
+    grade?: number,
+    pageIndex = 1,
+    pageSize = 20
+  ): Promise<ApiResponse<PaginatedResult<PlacementPlanSummaryDto>>> {
+    const res = await apiClient.get<ApiResponse<PaginatedResult<PlacementPlanSummaryDto>>>(
+      '/placement-plans/history/paged',
+      {
+        params: { schoolYearId, grade, pageIndex, pageSize },
       }
     );
     return res.data;

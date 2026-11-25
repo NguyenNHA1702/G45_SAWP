@@ -22,6 +22,7 @@ import { ResubmitModal } from '../../components/requests/ResubmitModal';
 import { RequestHistoryModal } from '../../components/requests/RequestHistoryModal';
 import { DirectFileUploader } from '../../components/common/DirectFileUploader';
 import { AttachmentViewer } from '../../components/common/AttachmentViewer';
+import { PaginationBar } from '../../components/common/PaginationBar';
 import { formatDDMMYYYY, formatDDMMYYYYHHMM, todayIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
@@ -31,6 +32,11 @@ export default function AdministrativeRequestsPage() {
 
   const [activeTab, setActiveTab] = useState<'list' | 'transfer' | 'document' | 'other'>('list');
   const [requests, setRequests] = useState<AdministrativeRequestSummary[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [serverHasPendingTransfer, setServerHasPendingTransfer] = useState(false);
+  const [serverPendingDocTypes, setServerPendingDocTypes] = useState<string[]>([]);
   const [classes, setClasses] = useState<ClassSummaryDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -62,21 +68,28 @@ export default function AdministrativeRequestsPage() {
   const [selectedRequestForResubmit, setSelectedRequestForResubmit] = useState<AdministrativeRequestSummary | null>(null);
   const [resubmitOpen, setResubmitOpen] = useState(false);
 
-  // Lấy danh sách đơn của con
+  // Lấy danh sách đơn của con (phân trang)
   const fetchMyRequests = useCallback(async () => {
     if (!activeChild?.studentId) return;
     try {
       setLoading(true);
-      const res = await administrativeRequestApi.getMyRequests(activeChild.studentId);
-      if (res.success && Array.isArray(res.data)) {
-        setRequests(res.data);
+      const res = await administrativeRequestApi.getMyRequestsPaged({
+        studentId: activeChild.studentId,
+        pageIndex,
+        pageSize,
+      });
+      if (res.success && res.data) {
+        setRequests(res.data.items);
+        setTotalCount(res.data.totalCount);
+        setServerHasPendingTransfer(Boolean(res.data.hasPendingTransfer));
+        setServerPendingDocTypes(res.data.pendingDocumentTypes ?? []);
       }
     } catch {
       toast.error('Không thể tải danh sách đơn hành chính.');
     } finally {
       setLoading(false);
     }
-  }, [activeChild?.studentId]);
+  }, [activeChild?.studentId, pageIndex, pageSize]);
 
   // Lấy danh sách lớp để chọn khi xin chuyển lớp
   const fetchClasses = useCallback(async () => {
@@ -113,6 +126,10 @@ export default function AdministrativeRequestsPage() {
     }
     if (!transferReason.trim() || transferReason.trim().replace(/\s+/g, ' ').length < 5) {
       toast.error('Vui lòng nhập lý do chuyển lớp (tối thiểu 5 ký tự).');
+      return;
+    }
+    if (/[<>]/.test(transferReason)) {
+      toast.error("Lý do xin chuyển lớp không được chứa thẻ HTML hoặc ký tự '<', '>'.");
       return;
     }
 
@@ -168,6 +185,10 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng nhập mục đích xin cấp giấy tờ (tối thiểu 5 ký tự).');
       return;
     }
+    if (/[<>]/.test(documentType) || /[<>]/.test(documentPurpose)) {
+      toast.error("Thông tin đơn không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+      return;
+    }
     if (numberOfCopies < 1 || numberOfCopies > 10) {
       toast.error('Số lượng bản sao phải từ 1 đến 10 bản.');
       return;
@@ -215,11 +236,19 @@ export default function AdministrativeRequestsPage() {
       return;
     }
     const cleanTitle = otherTitle.trim().replace(/\s+/g, ' ');
+    if (/[<>]/.test(cleanTitle)) {
+      toast.error("Tiêu đề loại đơn khác không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+      return;
+    }
     if (cleanTitle.length < 5 || cleanTitle.length > 150) {
       toast.error('Vui lòng nhập tiêu đề loại đơn khác (từ 5 đến 150 ký tự).');
       return;
     }
     const cleanContent = otherContent.trim().replace(/\s+/g, ' ');
+    if (/[<>]/.test(cleanContent)) {
+      toast.error("Nội dung chi tiết đơn không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+      return;
+    }
     if (cleanContent.length < 5 || cleanContent.length > 1000) {
       toast.error('Vui lòng nhập nội dung chi tiết đơn (từ 5 đến 1000 ký tự).');
       return;
@@ -299,29 +328,30 @@ export default function AdministrativeRequestsPage() {
   };
 
   // Kiểm tra học sinh có đang có đơn chuyển lớp đang xử lý không (BUG7 / UC-36 E1)
-  const pendingTransferRequest = useMemo(() => {
-    return requests.find(
+  const hasPendingTransfer = useMemo(() => {
+    if (serverHasPendingTransfer) return true;
+    return requests.some(
       (r) =>
         r.requestType === 'ClassTransfer' &&
         (activeChild?.studentId ? r.studentId === activeChild.studentId : true) &&
         (r.status === 'Submitted' || r.status === 'UnderReview' || (r.status === 'Approved' && !r.classTransfer?.isExecuted))
     );
-  }, [requests, activeChild]);
-
-  const hasPendingTransfer = !!pendingTransferRequest;
+  }, [serverHasPendingTransfer, requests, activeChild]);
 
   // Kiểm tra học sinh có đang có đơn xin cấp cùng loại giấy tờ đang xử lý không
-  const pendingDocForSelectedType = useMemo(() => {
-    return requests.find(
+  const hasPendingDocument = useMemo(() => {
+    const normalizedType = documentType.trim().toLowerCase();
+    if (serverPendingDocTypes.some((t) => t.trim().toLowerCase() === normalizedType)) {
+      return true;
+    }
+    return requests.some(
       (r) =>
         r.requestType === 'Document' &&
         (activeChild?.studentId ? r.studentId === activeChild.studentId : true) &&
         (r.status === 'Submitted' || r.status === 'UnderReview') &&
-        r.documentRequest?.documentType?.trim().toLowerCase() === documentType.trim().toLowerCase()
+        r.documentRequest?.documentType?.trim().toLowerCase() === normalizedType
     );
-  }, [requests, activeChild, documentType]);
-
-  const hasPendingDocument = !!pendingDocForSelectedType;
+  }, [serverPendingDocTypes, requests, activeChild, documentType]);
 
   // Xác định khối hiện tại của học sinh đang chọn
   const currentChildGrade = useMemo(() => {
@@ -429,7 +459,7 @@ export default function AdministrativeRequestsPage() {
         >
           <History size={18} />
           Danh sách đơn đã gửi
-          {requests.length > 0 && (
+          {totalCount > 0 && (
             <span
               style={{
                 backgroundColor: '#6366F1',
@@ -440,7 +470,7 @@ export default function AdministrativeRequestsPage() {
                 fontWeight: 800,
               }}
             >
-              {requests.length}
+              {totalCount}
             </span>
           )}
         </button>
@@ -764,7 +794,12 @@ export default function AdministrativeRequestsPage() {
                               gap: 6,
                             }}
                           >
-                            <CheckCircle2 size={14} /> {isTransfer ? 'Đã hoàn tất chuyển lớp' : 'Đã phát hành văn bản'}
+                            <CheckCircle2 size={14} />{' '}
+                            {isTransfer
+                              ? 'Đã hoàn tất chuyển lớp'
+                              : req.requestType === 'Other'
+                                ? 'Đã tiếp nhận & giải quyết'
+                                : 'Đã phát hành văn bản'}
                           </span>
                         ) : req.status === 'Approved' ? (
                           <span
@@ -843,12 +878,16 @@ export default function AdministrativeRequestsPage() {
 
                       {!isTransfer && req.documentRequest && (
                         <div>
-                          <div style={{ fontSize: 13, color: '#64748B', marginBottom: 4 }}>Loại tài liệu yêu cầu:</div>
+                          <div style={{ fontSize: 13, color: '#64748B', marginBottom: 4 }}>
+                            {req.requestType === 'Other' ? 'Tiêu đề / Kiến nghị:' : 'Loại tài liệu yêu cầu:'}
+                          </div>
                           <div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A' }}>
-                            {req.documentRequest.documentType} ({req.documentRequest.numberOfCopies} bản)
+                            {req.documentRequest.documentType}
+                            {req.requestType !== 'Other' && ` (${req.documentRequest.numberOfCopies} bản)`}
                           </div>
                           <div style={{ marginTop: 6, fontSize: 13, color: '#334155' }}>
-                            <strong>Mục đích:</strong> {req.documentRequest.purpose}
+                            <strong>{req.requestType === 'Other' ? 'Nội dung trình bày:' : 'Mục đích:'}</strong>{' '}
+                            {req.documentRequest.purpose}
                           </div>
                         </div>
                       )}
@@ -1054,6 +1093,18 @@ export default function AdministrativeRequestsPage() {
               })}
             </div>
           )}
+
+          <PaginationBar
+            pageIndex={pageIndex}
+            pageSize={pageSize}
+            totalCount={totalCount}
+            onPageChange={setPageIndex}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPageIndex(1);
+            }}
+            itemLabel="đơn đã gửi"
+          />
         </div>
       )}
 
@@ -1285,7 +1336,7 @@ export default function AdministrativeRequestsPage() {
           </div>
 
           {/* Cảnh báo nếu đã có đơn cùng loại đang chờ xử lý */}
-          {hasPendingDocument && pendingDocForSelectedType && (
+          {hasPendingDocument && (
             <div
               style={{
                 backgroundColor: '#FEF2F2',
@@ -1299,7 +1350,7 @@ export default function AdministrativeRequestsPage() {
                 <AlertCircle size={18} /> Đang có đơn xin cấp cùng loại giấy tờ chờ xử lý
               </div>
               <div style={{ fontSize: 13, color: '#7F1D1D', marginTop: 4 }}>
-                Học sinh này hiện đang có đơn xin cấp "<strong>{documentType}</strong>" (Mã đơn: <strong>{pendingDocForSelectedType.requestNumber}</strong>) đang trong quá trình xét duyệt. Quý phụ huynh vui lòng chờ kết quả đơn trước đó hoặc chọn loại giấy tờ khác cần cấp.
+                Học sinh này hiện đang có đơn xin cấp "<strong>{documentType}</strong>" đang trong quá trình xét duyệt. Quý phụ huynh vui lòng chờ kết quả đơn trước đó hoặc chọn loại giấy tờ khác cần cấp.
               </div>
             </div>
           )}

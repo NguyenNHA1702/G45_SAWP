@@ -618,47 +618,163 @@ public class LeaveRequestService : ILeaveRequestService
 
     public async Task<ApiResponse<List<LeaveRequestItemDto>>> GetMyLeaveRequestsAsync(int parentUserId, CancellationToken cancellationToken = default)
     {
-        var requests = await _unitOfWork.Repository<AdministrativeRequest>()
+        var query = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
             .AsNoTracking()
-            .Include(ar => ar.Student)
-            .Include(ar => ar.RequesterUser)
-            .Include(ar => ar.ReviewerUser)
-            .Include(ar => ar.LeaveRequest)
-            .Where(ar => ar.RequesterUserId == parentUserId && ar.RequestType == RequestTypes.Leave)
+            .Where(ar => ar.RequesterUserId == parentUserId && ar.RequestType == RequestTypes.Leave && ar.LeaveRequest != null)
             .OrderByDescending(ar => ar.SubmissionDate)
-            .ToListAsync(cancellationToken);
+            .ThenByDescending(ar => ar.Id);
 
-        var list = await MapToDtosAsync(requests, cancellationToken);
+        var list = await FetchProjectedLeaveRequestsAsync(query, null, null, cancellationToken);
         return ApiResponse<List<LeaveRequestItemDto>>.Ok(list);
+    }
+
+    public async Task<ApiResponse<PagedLeaveRequestsDto>> GetMyLeaveRequestsPagedAsync(
+        int parentUserId,
+        int? studentId = null,
+        string? status = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var baseQuery = _unitOfWork.Repository<AdministrativeRequest>()
+            .Query()
+            .AsNoTracking()
+            .Where(ar => ar.RequesterUserId == parentUserId && ar.RequestType == RequestTypes.Leave && ar.LeaveRequest != null);
+
+        if (studentId.HasValue)
+        {
+            baseQuery = baseQuery.Where(ar => ar.StudentId == studentId.Value);
+        }
+
+        var stats = await ComputeLeaveStatsAsync(baseQuery, false, null, cancellationToken);
+
+        var filtered = baseQuery;
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase) && Enum.TryParse<RequestStatus>(status, true, out var st))
+        {
+            filtered = filtered.Where(ar => ar.Status == st);
+        }
+
+        var totalCount = await filtered.CountAsync(cancellationToken);
+        var items = totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount
+            ? new List<LeaveRequestItemDto>()
+            : await FetchProjectedLeaveRequestsAsync(
+                filtered.OrderByDescending(ar => ar.SubmissionDate).ThenByDescending(ar => ar.Id),
+                pageIndex,
+                pageSize,
+                cancellationToken);
+
+        return ApiResponse<PagedLeaveRequestsDto>.Ok(new PagedLeaveRequestsDto
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            Stats = stats
+        });
     }
 
     public async Task<ApiResponse<List<LeaveRequestItemDto>>> GetClassLeaveRequestsAsync(int teacherUserId, int? classId = null, string? status = null, DateTime? date = null, CancellationToken cancellationToken = default)
     {
+        var scope = await BuildClassLeaveBaseQueryAsync(teacherUserId, classId, cancellationToken);
+        if (scope.IsEmpty)
+        {
+            return ApiResponse<List<LeaveRequestItemDto>>.Ok(new List<LeaveRequestItemDto>());
+        }
+
+        var reqQuery = ApplyClassLeaveFilters(scope.BaseQuery, scope.IsSchoolBoardOrAdmin, scope.NoHomeroomStudentIdsQuery, status, date, null);
+        var list = await FetchProjectedLeaveRequestsAsync(
+            reqQuery.OrderByDescending(ar => ar.SubmissionDate).ThenByDescending(ar => ar.Id),
+            null,
+            null,
+            cancellationToken);
+        return ApiResponse<List<LeaveRequestItemDto>>.Ok(list);
+    }
+
+    public async Task<ApiResponse<PagedLeaveRequestsDto>> GetClassLeaveRequestsPagedAsync(
+        int teacherUserId,
+        int? classId = null,
+        string? status = null,
+        DateTime? date = null,
+        string? search = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var scope = await BuildClassLeaveBaseQueryAsync(teacherUserId, classId, cancellationToken);
+        if (scope.IsEmpty)
+        {
+            return ApiResponse<PagedLeaveRequestsDto>.Ok(new PagedLeaveRequestsDto
+            {
+                PageIndex = pageIndex,
+                PageSize = pageSize
+            });
+        }
+
+        var statsBaseQuery = scope.BaseQuery;
+        if (date.HasValue)
+        {
+            var d = date.Value.Date;
+            statsBaseQuery = statsBaseQuery.Where(ar => ar.LeaveRequest != null && ar.LeaveRequest.StartDate.Date <= d && ar.LeaveRequest.EndDate.Date >= d);
+        }
+
+        var stats = await ComputeLeaveStatsAsync(statsBaseQuery, scope.IsSchoolBoardOrAdmin, scope.NoHomeroomStudentIdsQuery, cancellationToken);
+        var reqQuery = ApplyClassLeaveFilters(scope.BaseQuery, scope.IsSchoolBoardOrAdmin, scope.NoHomeroomStudentIdsQuery, status, date, search);
+
+        var totalCount = await reqQuery.CountAsync(cancellationToken);
+        var items = totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount
+            ? new List<LeaveRequestItemDto>()
+            : await FetchProjectedLeaveRequestsAsync(
+                reqQuery.OrderByDescending(ar => ar.SubmissionDate).ThenByDescending(ar => ar.Id),
+                pageIndex,
+                pageSize,
+                cancellationToken);
+
+        return ApiResponse<PagedLeaveRequestsDto>.Ok(new PagedLeaveRequestsDto
+        {
+            Items = items,
+            TotalCount = totalCount,
+            PageIndex = pageIndex,
+            PageSize = pageSize,
+            Stats = stats
+        });
+    }
+
+    private async Task<(IQueryable<AdministrativeRequest> BaseQuery, bool IsSchoolBoardOrAdmin, IQueryable<int>? NoHomeroomStudentIdsQuery, bool IsEmpty)> BuildClassLeaveBaseQueryAsync(
+        int teacherUserId,
+        int? classId,
+        CancellationToken cancellationToken)
+    {
         var userRoles = await _unitOfWork.Repository<UserRole>()
             .Query()
-            .Include(ur => ur.Role)
+            .AsNoTracking()
             .Where(ur => ur.UserId == teacherUserId)
             .Select(ur => ur.Role.Name)
             .ToListAsync(cancellationToken);
 
         var isSchoolBoardOrAdmin = userRoles.Any(r => r == "SchoolBoard" || r == "Admin");
 
-        var queryClasses = _unitOfWork.Repository<Class>().Query();
+        var queryClasses = _unitOfWork.Repository<Class>().Query().AsNoTracking();
         if (!isSchoolBoardOrAdmin)
         {
             var staffRepo = _unitOfWork.Repository<StaffProfile>();
-            var teacherProfile = staffRepo != null
-                ? await staffRepo.Query().FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken)
+            var teacherProfileId = staffRepo != null
+                ? await staffRepo.Query().AsNoTracking().Where(sp => sp.UserId == teacherUserId).Select(sp => (int?)sp.Id).FirstOrDefaultAsync(cancellationToken)
                 : null;
 
-            if (teacherProfile != null)
+            if (teacherProfileId.HasValue)
             {
-                queryClasses = queryClasses.Where(c => c.HomeroomTeacherId == teacherProfile.Id);
+                queryClasses = queryClasses.Where(c => c.HomeroomTeacherId == teacherProfileId.Value);
             }
             else if (!classId.HasValue)
             {
-                return ApiResponse<List<LeaveRequestItemDto>>.Ok(new List<LeaveRequestItemDto>());
+                return (Enumerable.Empty<AdministrativeRequest>().AsQueryable(), isSchoolBoardOrAdmin, null, true);
             }
         }
         if (classId.HasValue)
@@ -669,46 +785,55 @@ public class LeaveRequestService : ILeaveRequestService
         var targetClasses = await queryClasses
             .Select(c => new { c.Id, c.HomeroomTeacherId })
             .ToListAsync(cancellationToken);
+
         var targetClassIds = targetClasses.Select(c => c.Id).ToList();
+        if (targetClassIds.Count == 0)
+        {
+            return (Enumerable.Empty<AdministrativeRequest>().AsQueryable(), isSchoolBoardOrAdmin, null, true);
+        }
+
         var classesWithoutHomeroom = targetClasses
             .Where(c => c.HomeroomTeacherId == null)
             .Select(c => c.Id)
-            .ToHashSet();
-
-        var activeAssignments = await _unitOfWork.Repository<ClassAssignment>()
-            .Query()
-            .Where(ca => targetClassIds.Contains(ca.ClassId) && ca.IsActive)
-            .Select(ca => new { ca.StudentId, ca.ClassId, ca.StartDate, ca.Id })
-            .ToListAsync(cancellationToken);
-
-        var latestAssignments = activeAssignments
-            .GroupBy(ca => ca.StudentId)
-            .Select(g => g.OrderByDescending(x => x.StartDate).ThenByDescending(x => x.Id).First())
             .ToList();
 
-        var activeStudentIds = latestAssignments.Select(x => x.StudentId).ToList();
-        var noHomeroomStudentIds = latestAssignments
-            .Where(x => classesWithoutHomeroom.Contains(x.ClassId))
-            .Select(x => x.StudentId)
-            .ToList();
+        // Filter via composable ClassAssignment subquery (zero parameter bloat, supports test mocks)
+        var assignmentsQuery = _unitOfWork.Repository<ClassAssignment>().Query().AsNoTracking();
+        var activeStudentIdsQuery = assignmentsQuery
+            .Where(ca => ca.IsActive && targetClassIds.Contains(ca.ClassId))
+            .Select(ca => ca.StudentId);
+
+        IQueryable<int>? noHomeroomStudentIdsQuery = classesWithoutHomeroom.Count > 0
+            ? assignmentsQuery.Where(ca => ca.IsActive && classesWithoutHomeroom.Contains(ca.ClassId)).Select(ca => ca.StudentId)
+            : null;
 
         var reqQuery = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
             .AsNoTracking()
-            .Include(ar => ar.Student)
-            .Include(ar => ar.RequesterUser)
-            .Include(ar => ar.ReviewerUser)
-            .Include(ar => ar.LeaveRequest)
-            .Where(ar => ar.RequestType == RequestTypes.Leave && ar.StudentId.HasValue && activeStudentIds.Contains(ar.StudentId.Value));
+            .Where(ar => ar.RequestType == RequestTypes.Leave
+                      && ar.LeaveRequest != null
+                      && ar.StudentId.HasValue
+                      && activeStudentIdsQuery.Contains(ar.StudentId.Value));
 
-        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<RequestStatus>(status, true, out var parsedStatus))
+        return (reqQuery, isSchoolBoardOrAdmin, noHomeroomStudentIdsQuery, false);
+    }
+
+    private static IQueryable<AdministrativeRequest> ApplyClassLeaveFilters(
+        IQueryable<AdministrativeRequest> reqQuery,
+        bool isSchoolBoardOrAdmin,
+        IQueryable<int>? noHomeroomStudentIdsQuery,
+        string? status,
+        DateTime? date,
+        string? search)
+    {
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase) && Enum.TryParse<RequestStatus>(status, true, out var parsedStatus))
         {
-            if (isSchoolBoardOrAdmin && parsedStatus == RequestStatus.UnderReview && noHomeroomStudentIds.Count > 0)
+            if (isSchoolBoardOrAdmin && parsedStatus == RequestStatus.UnderReview && noHomeroomStudentIdsQuery != null)
             {
-                // LV-04: BGH xem hàng chờ duyệt của mình bao gồm cả đơn Submitted từ các lớp chưa có GVCN
+                // LV-04: BGH xem hàng chờ duyệt bao gồm cả đơn Submitted từ lớp chưa có GVCN
                 reqQuery = reqQuery.Where(ar =>
                     ar.Status == RequestStatus.UnderReview ||
-                    (ar.Status == RequestStatus.Submitted && ar.StudentId.HasValue && noHomeroomStudentIds.Contains(ar.StudentId.Value)));
+                    (ar.Status == RequestStatus.Submitted && ar.StudentId.HasValue && noHomeroomStudentIdsQuery.Contains(ar.StudentId.Value)));
             }
             else
             {
@@ -722,9 +847,150 @@ public class LeaveRequestService : ILeaveRequestService
             reqQuery = reqQuery.Where(ar => ar.LeaveRequest != null && ar.LeaveRequest.StartDate.Date <= d && ar.LeaveRequest.EndDate.Date >= d);
         }
 
-        var requests = await reqQuery.OrderByDescending(ar => ar.SubmissionDate).ToListAsync(cancellationToken);
-        var list = await MapToDtosAsync(requests, cancellationToken);
-        return ApiResponse<List<LeaveRequestItemDto>>.Ok(list);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            reqQuery = reqQuery.Where(ar =>
+                ar.RequestNumber.ToLower().Contains(term) ||
+                (ar.Student != null && (ar.Student.FullName.ToLower().Contains(term) || ar.Student.StudentCode.ToLower().Contains(term))) ||
+                (ar.RequesterUser != null && ar.RequesterUser.FullName.ToLower().Contains(term)));
+        }
+
+        return reqQuery;
+    }
+
+    private static async Task<LeaveRequestStatsDto> ComputeLeaveStatsAsync(
+        IQueryable<AdministrativeRequest> baseQuery,
+        bool isSchoolBoardOrAdmin,
+        IQueryable<int>? noHomeroomStudentIdsQuery,
+        CancellationToken cancellationToken)
+    {
+        var counts = await baseQuery
+            .GroupBy(ar => ar.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var submittedCount = counts.FirstOrDefault(x => x.Status == RequestStatus.Submitted)?.Count ?? 0;
+        var underReviewCount = counts.FirstOrDefault(x => x.Status == RequestStatus.UnderReview)?.Count ?? 0;
+        if (isSchoolBoardOrAdmin && noHomeroomStudentIdsQuery != null)
+        {
+            var noHomeroomSubmitted = await baseQuery.CountAsync(
+                ar => ar.Status == RequestStatus.Submitted
+                   && ar.StudentId.HasValue
+                   && noHomeroomStudentIdsQuery.Contains(ar.StudentId.Value),
+                cancellationToken);
+            underReviewCount += noHomeroomSubmitted;
+        }
+
+        return new LeaveRequestStatsDto
+        {
+            TotalCount = counts.Sum(x => x.Count),
+            SubmittedCount = submittedCount,
+            NeedMoreInfoCount = counts.FirstOrDefault(x => x.Status == RequestStatus.NeedMoreInfo)?.Count ?? 0,
+            UnderReviewCount = underReviewCount,
+            ApprovedCount = counts.FirstOrDefault(x => x.Status == RequestStatus.Approved)?.Count ?? 0,
+            RejectedCount = counts.FirstOrDefault(x => x.Status == RequestStatus.Rejected)?.Count ?? 0,
+            CancelledCount = counts.FirstOrDefault(x => x.Status == RequestStatus.Cancelled)?.Count ?? 0
+        };
+    }
+
+    private async Task<List<LeaveRequestItemDto>> FetchProjectedLeaveRequestsAsync(
+        IQueryable<AdministrativeRequest> orderedQuery,
+        int? pageIndex,
+        int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<AdministrativeRequest> targetQuery = orderedQuery;
+        List<int>? pageIds = null;
+
+        if (pageIndex.HasValue && pageSize.HasValue)
+        {
+            pageIds = await orderedQuery
+                .Skip((pageIndex.Value - 1) * pageSize.Value)
+                .Take(pageSize.Value)
+                .Select(ar => ar.Id)
+                .ToListAsync(cancellationToken);
+
+            if (pageIds.Count == 0)
+            {
+                return new List<LeaveRequestItemDto>();
+            }
+
+            targetQuery = _unitOfWork.Repository<AdministrativeRequest>()
+                .Query()
+                .AsNoTracking()
+                .Where(ar => pageIds.Contains(ar.Id));
+        }
+
+        // Scalar projection avoids loading User.PasswordHash & Student.AvatarUrl
+        var projected = await targetQuery
+            .Select(ar => new
+            {
+                ar.Id,
+                ar.RequestNumber,
+                ar.RequestType,
+                ar.StudentId,
+                StudentFullName = ar.Student != null ? ar.Student.FullName : string.Empty,
+                StudentCode = ar.Student != null ? ar.Student.StudentCode : string.Empty,
+                ar.RequesterUserId,
+                RequesterFullName = ar.RequesterUser != null ? ar.RequesterUser.FullName : string.Empty,
+                RequesterPhoneNumber = ar.RequesterUser != null ? ar.RequesterUser.PhoneNumber : null,
+                ar.Status,
+                ar.SubmissionDate,
+                ar.ReviewerUserId,
+                ReviewerFullName = ar.ReviewerUser != null ? ar.ReviewerUser.FullName : null,
+                ar.ProcessedDate,
+                ar.ReviewerNotes,
+                StartDate = ar.LeaveRequest!.StartDate,
+                EndDate = ar.LeaveRequest.EndDate,
+                Session = ar.LeaveRequest.Session,
+                KeepLunchService = ar.LeaveRequest.KeepLunchService,
+                IsLunchCancelled = ar.LeaveRequest.IsLunchCancelled,
+                Reason = ar.LeaveRequest.Reason,
+                DoctorNoteAttachmentUrl = ar.LeaveRequest.DoctorNoteAttachmentUrl
+            })
+            .ToListAsync(cancellationToken);
+
+        if (projected.Count == 0)
+        {
+            return new List<LeaveRequestItemDto>();
+        }
+
+        if (pageIds != null)
+        {
+            var orderMap = pageIds.Select((id, idx) => new { id, idx }).ToDictionary(x => x.id, x => x.idx);
+            projected = projected.OrderBy(p => orderMap[p.Id]).ToList();
+        }
+
+        var entities = projected.Select(p => new AdministrativeRequest
+        {
+            Id = p.Id,
+            RequestNumber = p.RequestNumber,
+            RequestType = p.RequestType,
+            StudentId = p.StudentId,
+            Student = new Student { Id = p.StudentId ?? 0, FullName = p.StudentFullName, StudentCode = p.StudentCode },
+            RequesterUserId = p.RequesterUserId,
+            RequesterUser = new User { Id = p.RequesterUserId, FullName = p.RequesterFullName, PhoneNumber = p.RequesterPhoneNumber },
+            Status = p.Status,
+            SubmissionDate = p.SubmissionDate,
+            ReviewerUserId = p.ReviewerUserId,
+            ReviewerUser = p.ReviewerUserId.HasValue ? new User { Id = p.ReviewerUserId.Value, FullName = p.ReviewerFullName ?? string.Empty } : null,
+            ProcessedDate = p.ProcessedDate,
+            ReviewerNotes = p.ReviewerNotes,
+            LeaveRequest = new LeaveRequest
+            {
+                AdministrativeRequestId = p.Id,
+                StartDate = p.StartDate,
+                EndDate = p.EndDate,
+                Session = p.Session,
+                KeepLunchService = p.KeepLunchService,
+                IsLunchCancelled = p.IsLunchCancelled,
+                Reason = p.Reason,
+                DoctorNoteAttachmentUrl = p.DoctorNoteAttachmentUrl
+            }
+        }).ToList();
+
+        return await MapToDtosAsync(entities, cancellationToken);
     }
 
     private async Task<bool> CanAccessLeaveRequestAsync(

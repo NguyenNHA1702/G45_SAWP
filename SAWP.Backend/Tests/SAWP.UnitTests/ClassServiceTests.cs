@@ -1526,5 +1526,20 @@ public class ClassServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
+    [Theory]
+    [InlineData(1, "2A")]
+    [InlineData(1, "1<b>Z")]
+    [InlineData(1, "1AB")]
+    [InlineData(2, "21")]
+    public async Task SC13_CreateClass_InvalidNameOrGradeMismatch_FailsWithMSG01(int grade, string className)
+    {
+        var request = new CreateClassDto { SchoolYearId = 1, ClassName = className, Grade = grade, Capacity = 35 };
+
+        var result = await _service.CreateClassAsync(request, 10);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
     #endregion
 }

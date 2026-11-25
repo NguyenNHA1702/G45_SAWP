@@ -23,13 +23,8 @@ import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { formatViDateTime } from '../../utils/date';
 import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
-
-interface LinkedChild {
-  studentId: number;
-  fullName: string;
-  studentCode: string;
-  currentClassName?: string | null;
-}
+import { PaginationBar } from '../../components/common/PaginationBar';
+import { useParentChild } from '../../contexts/ParentChildContext';
 
 interface AttachedFileItem {
   id: string;
@@ -40,7 +35,11 @@ interface AttachedFileItem {
 }
 
 export default function LeaveRequestPage() {
+  const { children: contextChildren, activeChild } = useParentChild();
   const [requests, setRequests] = useState<LeaveRequestItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingRequestId, setEditingRequestId] = useState<number | null>(null);
@@ -63,7 +62,7 @@ export default function LeaveRequestPage() {
   const [withdrawing, setWithdrawing] = useState(false);
 
   // Form states
-  const [children, setChildren] = useState<LinkedChild[]>([]);
+  const children = contextChildren;
   const [selectedStudentId, setSelectedStudentId] = useState<number>(0);
   const nowLocal = new Date();
   const todayStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
@@ -104,9 +103,13 @@ export default function LeaveRequestPage() {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const res = await leaveRequestApi.getMyRequests();
-      if (res.success) {
-        setRequests(res.data);
+      const res = await leaveRequestApi.getMyRequestsPaged({
+        pageIndex,
+        pageSize,
+      });
+      if (res.success && res.data) {
+        setRequests(res.data.items);
+        setTotalCount(res.data.totalCount);
       }
     } catch (err: unknown) {
       const apiErr = asApiError(err);
@@ -116,35 +119,16 @@ export default function LeaveRequestPage() {
     }
   };
 
-  const fetchChildren = async () => {
-    try {
-      const res = await apiClient.get('/guardians/my-children').catch(() => null);
-      if (res?.data?.data && Array.isArray(res.data.data)) {
-        setChildren(res.data.data);
-        if (res.data.data.length > 0) {
-          setSelectedStudentId(res.data.data[0].studentId);
-        }
-      } else {
-        const fallback = await apiClient.get('/students?pageSize=5').catch(() => null);
-        if (fallback?.data?.data?.items) {
-          const mapped = fallback.data.data.items.map((s: { id: number; fullName: string; studentCode: string }) => ({
-            studentId: s.id,
-            fullName: s.fullName,
-            studentCode: s.studentCode,
-          }));
-          setChildren(mapped);
-          if (mapped.length > 0) setSelectedStudentId(mapped[0].studentId);
-        }
-      }
-    } catch {
-      // silent
+  useEffect(() => {
+    if (selectedStudentId === 0) {
+      const preferred = activeChild?.studentId ?? contextChildren[0]?.studentId;
+      if (preferred) setSelectedStudentId(preferred);
     }
-  };
+  }, [activeChild?.studentId, contextChildren, selectedStudentId]);
 
   useEffect(() => {
     fetchRequests();
-    fetchChildren();
-  }, []);
+  }, [pageIndex, pageSize]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files ? Array.from(e.target.files) : [];
@@ -819,6 +803,18 @@ export default function LeaveRequestPage() {
           })}
         </div>
       )}
+
+      <PaginationBar
+        pageIndex={pageIndex}
+        pageSize={pageSize}
+        totalCount={totalCount}
+        onPageChange={setPageIndex}
+        onPageSizeChange={(s) => {
+          setPageSize(s);
+          setPageIndex(1);
+        }}
+        itemLabel="đơn xin nghỉ"
+      />
 
       {/* CREATE / EDIT MODAL (GeometricModal) */}
       <GeometricModal

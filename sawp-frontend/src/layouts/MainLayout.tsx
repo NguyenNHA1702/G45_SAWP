@@ -306,6 +306,7 @@ export function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -364,18 +365,28 @@ export function MainLayout() {
     });
   }, [location.pathname, location.search]);
 
+  const fetchUnreadCount = async () => {
+    try {
+      const count = await notificationApi.getUnreadCount();
+      setUnreadCount(count);
+    } catch {
+      // silent
+    }
+  };
+
   const fetchNotifications = async () => {
     try {
       const page = await notificationApi.getPaged(1, 20);
       setNotifications(page.items);
+      setUnreadCount(page.items.filter((n) => !n.isRead).length);
     } catch {
       // silent
     }
   };
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 15000);
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -390,12 +401,11 @@ export function MainLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-
   const handleOpenNotification = async (item: AppNotification) => {
     if (!item.isRead) {
       await notificationApi.markRead(item.id).catch(() => null);
       setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)));
+      setUnreadCount((c) => Math.max(0, c - 1));
     }
     setShowNotifs(false);
     if (item.linkUrl) {
@@ -583,7 +593,13 @@ export function MainLayout() {
                   type="button"
                   className="header-btn"
                   aria-label={`Thông báo, ${unreadCount} chưa đọc`}
-                  onClick={() => setShowNotifs((v) => !v)}
+                  onClick={() => {
+                    const next = !showNotifs;
+                    setShowNotifs(next);
+                    if (next) {
+                      void fetchNotifications();
+                    }
+                  }}
                   style={{ position: 'relative' }}
                 >
                   <Bell size={18} />

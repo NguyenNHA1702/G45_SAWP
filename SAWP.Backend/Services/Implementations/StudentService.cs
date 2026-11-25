@@ -26,6 +26,30 @@ public class StudentService : IStudentService
         string? requestingUserRole = null,
         CancellationToken cancellationToken = default)
     {
+        var fastLookup = await _unitOfWork.Students.GetStudentProfileDtoAsync(studentId, cancellationToken);
+        if (fastLookup != null)
+        {
+            if (!string.IsNullOrEmpty(requestingUserRole) && requestingUserId.HasValue)
+            {
+                if (string.Equals(requestingUserRole, UserRoles.Parent.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!fastLookup.GuardianUserIds.Contains(requestingUserId.Value))
+                    {
+                        return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG10);
+                    }
+                }
+                else if (string.Equals(requestingUserRole, UserRoles.Teacher.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!fastLookup.HomeroomTeacherUserIds.Contains(requestingUserId.Value))
+                    {
+                        return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG10);
+                    }
+                }
+            }
+
+            return ApiResponse<StudentProfileDto>.Ok(fastLookup.Profile);
+        }
+
         var student = await _unitOfWork.Students.GetStudentWithProfileAsync(studentId, cancellationToken);
         if (student == null)
         {
@@ -106,20 +130,112 @@ public class StudentService : IStudentService
                 new PaginatedResult<StudentProfileDto>(new List<StudentProfileDto>(), totalItems, pageIndex, pageSize));
         }
 
-        var items = await baseQuery
-            .Include(s => s.StudentGuardians)
-                .ThenInclude(sg => sg.Guardian)
-            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
-                .ThenInclude(ca => ca.Class)
-                    .ThenInclude(c => c.HomeroomTeacher)
-                        .ThenInclude(t => t!.User)
-            .AsSplitQuery()
+        // Two-step pageIds fetch avoids 4x split-query re-evaluation and keeps sort grants minimal
+        var pageIds = await baseQuery
             .OrderByDescending(s => s.CreatedAt)
+            .ThenByDescending(s => s.Id)
             .Skip((pageIndex - 1) * pageSize)
             .Take(pageSize)
+            .Select(s => s.Id)
             .ToListAsync(cancellationToken);
 
-        var dtoList = items.Select(MapToStudentProfileDto).ToList();
+        var rows = await _unitOfWork.Repository<Student>()
+            .Query()
+            .AsNoTracking()
+            .Where(s => pageIds.Contains(s.Id))
+            .Select(s => new
+            {
+                s.Id,
+                s.StudentCode,
+                s.FullName,
+                s.DateOfBirth,
+                s.Gender,
+                s.EnrollmentDate,
+                s.Status,
+                s.ResidentialArea,
+                s.IsSpecialNeeds,
+                s.SpecialNeedsNotes,
+                s.CreatedAt,
+                ActiveClass = s.ClassAssignments
+                    .Where(ca => ca.IsActive)
+                    .Select(ca => new
+                    {
+                        ca.Class.Id,
+                        ca.Class.ClassName,
+                        ca.Class.Grade,
+                        ca.Class.RoomNumber,
+                        HomeroomTeacherName = ca.Class.HomeroomTeacher != null && ca.Class.HomeroomTeacher.User != null
+                            ? ca.Class.HomeroomTeacher.User.FullName
+                            : null
+                    })
+                    .FirstOrDefault(),
+                Guardians = s.StudentGuardians
+                    .Select(sg => new
+                    {
+                        sg.GuardianId,
+                        sg.Guardian.UserId,
+                        sg.Guardian.FullName,
+                        sg.Guardian.PhoneNumber,
+                        sg.Guardian.Email,
+                        sg.Guardian.IdentityCardNumber,
+                        sg.Guardian.Occupation,
+                        sg.Guardian.Address,
+                        Relationship = (int)sg.Relationship,
+                        RelationshipName = sg.Relationship.ToString(),
+                        sg.IsPrimaryContact
+                    })
+                    .ToList()
+            })
+            .ToListAsync(cancellationToken);
+
+        var orderMap = pageIds
+            .Select((id, idx) => new { id, idx })
+            .ToDictionary(x => x.id, x => x.idx);
+
+        var dtoList = rows
+            .OrderBy(r => orderMap[r.Id])
+            .Select(r =>
+            {
+                var primaryGuardian = r.Guardians.FirstOrDefault(g => g.IsPrimaryContact) ?? r.Guardians.FirstOrDefault();
+                return new StudentProfileDto
+                {
+                    Id = r.Id,
+                    StudentCode = r.StudentCode,
+                    FullName = r.FullName,
+                    DateOfBirth = r.DateOfBirth,
+                    Gender = r.Gender,
+                    EnrollmentDate = r.EnrollmentDate,
+                    Status = r.Status,
+                    Address = r.ResidentialArea ?? primaryGuardian?.Address,
+                    ResidentialArea = r.ResidentialArea,
+                    IsSpecialNeeds = r.IsSpecialNeeds,
+                    SpecialNeedsNotes = r.SpecialNeedsNotes,
+                    CurrentClassId = r.ActiveClass?.Id,
+                    CurrentClassName = r.ActiveClass?.ClassName,
+                    CurrentGrade = r.ActiveClass?.Grade,
+                    CurrentRoomNumber = r.ActiveClass?.RoomNumber,
+                    HomeroomTeacherName = r.ActiveClass?.HomeroomTeacherName,
+                    PrimaryGuardianName = primaryGuardian?.FullName,
+                    PrimaryGuardianPhone = primaryGuardian?.PhoneNumber,
+                    GuardiansCount = r.Guardians.Count,
+                    CreatedAt = r.CreatedAt,
+                    Guardians = r.Guardians.Select(g => new StudentGuardianItemDto
+                    {
+                        GuardianId = g.GuardianId,
+                        UserId = g.UserId,
+                        FullName = g.FullName,
+                        PhoneNumber = g.PhoneNumber,
+                        Email = g.Email,
+                        IdentityCardNumber = g.IdentityCardNumber,
+                        Occupation = g.Occupation,
+                        Address = g.Address,
+                        Relationship = g.Relationship,
+                        RelationshipName = g.RelationshipName,
+                        IsPrimaryContact = g.IsPrimaryContact
+                    }).ToList()
+                };
+            })
+            .ToList();
 
         var paginated = new PaginatedResult<StudentProfileDto>(dtoList, totalItems, pageIndex, pageSize);
         return ApiResponse<PaginatedResult<StudentProfileDto>>.Ok(paginated);
@@ -143,11 +259,10 @@ public class StudentService : IStudentService
                 new List<string> { "Mã học sinh chỉ được chứa chữ cái, chữ số, dấu gạch ngang (-) và gạch dưới (_) từ 3 đến 30 ký tự." });
         }
 
-        if (request.FullName.Contains('<') || request.FullName.Contains('>'))
+        var nameErr = StudentValidationHelper.ValidateFullName(request.FullName, "họ và tên học sinh");
+        if (nameErr != null)
         {
-            return ApiResponse<StudentProfileDto>.Fail(
-                SystemMessages.MSG01,
-                new List<string> { "Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML." });
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { nameErr });
         }
 
         var validGenders = new[] { "Nam", "Nữ", "Male", "Female" };
@@ -200,6 +315,12 @@ public class StudentService : IStudentService
 
             if (!string.IsNullOrWhiteSpace(request.InitialGuardian.FullName))
             {
+                var guardianNameErr = StudentValidationHelper.ValidateFullName(request.InitialGuardian.FullName, "họ tên phụ huynh");
+                if (guardianNameErr != null)
+                {
+                    return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { guardianNameErr });
+                }
+
                 var (match, error) = await MatchGuardianAsync(request.InitialGuardian, cancellationToken);
                 if (error != null)
                 {
@@ -209,31 +330,35 @@ public class StudentService : IStudentService
             }
         }
 
-        // Validate InitialClassId (capacity & age-grade compatibility) BEFORE saving student (SC-03)
+        // Validate InitialClassId (existence, capacity & age-grade compatibility) BEFORE saving student (SC-03, SC-10)
         Class? initialTargetClass = null;
         if (request.InitialClassId.HasValue)
         {
             initialTargetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.InitialClassId.Value, cancellationToken);
-            if (initialTargetClass != null)
+            if (initialTargetClass == null)
             {
-                if (request.DateOfBirth != default)
-                {
-                    var gradeAgeError = StudentValidationHelper.ValidateAgeForGrade(
-                        request.DateOfBirth,
-                        initialTargetClass.Grade,
-                        initialTargetClass.SchoolYear?.StartDate.Year,
-                        request.IsSpecialNeeds);
-                    if (gradeAgeError != null)
-                    {
-                        return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { gradeAgeError });
-                    }
-                }
+                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Lớp học được chọn không tồn tại." });
+            }
 
-                var enrolledCount = initialTargetClass.ClassAssignments.Count(ca => ca.IsActive);
-                if (initialTargetClass.Capacity > 0 && enrolledCount >= initialTargetClass.Capacity)
+            if (request.DateOfBirth != default)
+            {
+                var gradeAgeError = StudentValidationHelper.ValidateAgeForGrade(
+                    request.DateOfBirth,
+                    initialTargetClass.Grade,
+                    initialTargetClass.SchoolYear?.StartDate.Year,
+                    request.IsSpecialNeeds);
+                if (gradeAgeError != null)
                 {
-                    initialTargetClass = null; // Class at full capacity: create student without assignment
+                    return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { gradeAgeError });
                 }
+            }
+
+            var enrolledCount = initialTargetClass.ClassAssignments.Count(ca => ca.IsActive);
+            if (initialTargetClass.Capacity > 0 && enrolledCount >= initialTargetClass.Capacity)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(
+                    SystemMessages.MSG15,
+                    new List<string> { $"Lớp {initialTargetClass.ClassName} đã đủ sĩ số ({enrolledCount}/{initialTargetClass.Capacity}). Vui lòng chọn lớp khác hoặc chọn 'Chưa xếp lớp'." });
             }
         }
 
@@ -329,11 +454,10 @@ public class StudentService : IStudentService
                 new List<string> { $"Độ tuổi học sinh tiểu học không hợp lệ ({updateAge} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi." });
         }
 
-        if (request.FullName.Contains('<') || request.FullName.Contains('>'))
+        var nameErr = StudentValidationHelper.ValidateFullName(request.FullName, "họ và tên học sinh");
+        if (nameErr != null)
         {
-            return ApiResponse<StudentProfileDto>.Fail(
-                SystemMessages.MSG01,
-                new List<string> { "Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML." });
+            return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { nameErr });
         }
 
         var validUpdateGenders = new[] { "Nam", "Nữ", "Male", "Female" };
@@ -342,6 +466,29 @@ public class StudentService : IStudentService
             return ApiResponse<StudentProfileDto>.Fail(
                 SystemMessages.MSG01,
                 new List<string> { "Giới tính không hợp lệ. Vui lòng chọn 'Nam' hoặc 'Nữ'." });
+        }
+
+        // SC-09: Validate age-grade compatibility even when student remains in current class
+        var currentActiveAssignments = student.ClassAssignments?.Where(ca => ca.IsActive).ToList() ?? new List<ClassAssignment>();
+        if (!request.CurrentClassId.HasValue || currentActiveAssignments.Any(ca => ca.ClassId == request.CurrentClassId.Value))
+        {
+            var currentClass = currentActiveAssignments.FirstOrDefault()?.Class;
+            if (currentClass == null && currentActiveAssignments.Count > 0)
+            {
+                currentClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(currentActiveAssignments[0].ClassId, cancellationToken);
+            }
+            if (currentClass != null)
+            {
+                var gradeAgeError = StudentValidationHelper.ValidateAgeForGrade(
+                    request.DateOfBirth,
+                    currentClass.Grade,
+                    currentClass.SchoolYear?.StartDate.Year,
+                    request.IsSpecialNeeds);
+                if (gradeAgeError != null)
+                {
+                    return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { gradeAgeError });
+                }
+            }
         }
 
         var oldValues = new { student.FullName, student.DateOfBirth, student.Gender, student.Status };
@@ -361,7 +508,7 @@ public class StudentService : IStudentService
         // If CurrentClassId changed
         if (request.CurrentClassId.HasValue)
         {
-            var activeAssignments = student.ClassAssignments.Where(ca => ca.IsActive).ToList();
+            var activeAssignments = currentActiveAssignments;
             if (activeAssignments.Count == 0 || activeAssignments.Any(ca => ca.ClassId != request.CurrentClassId.Value))
             {
                 var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(request.CurrentClassId.Value, cancellationToken);
@@ -695,6 +842,12 @@ public class StudentService : IStudentService
         }
         else if (request.NewGuardian != null && !string.IsNullOrWhiteSpace(request.NewGuardian.FullName))
         {
+            var gNameErr = StudentValidationHelper.ValidateFullName(request.NewGuardian.FullName, "họ tên phụ huynh");
+            if (gNameErr != null)
+            {
+                return ApiResponse<StudentProfileDto>.Fail(SystemMessages.MSG01, new List<string> { gNameErr });
+            }
+
             var (match, error) = await MatchGuardianAsync(request.NewGuardian, ct);
             if (error != null)
             {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Check, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
@@ -57,6 +57,23 @@ interface CreateStudentModalProps {
   onDuplicateDetected: (pending: CreateStudentDto, existing: StudentProfileDto) => void;
 }
 
+const createInitialFormState = (): StudentFormState => ({
+  studentCode: '',
+  fullName: '',
+  dateOfBirth: '2020-01-01',
+  gender: 'Nam',
+  address: '',
+  classId: undefined,
+  parentFullName: '',
+  parentPhone: '',
+  parentEmail: '',
+  parentIdentityCard: '',
+  parentRelationship: 'Bố',
+});
+
+const PERSON_NAME_REGEX = /^[\p{L}\s'\-.]+$/u;
+const HAS_LETTER_REGEX = /\p{L}/u;
+
 export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
   open,
   onClose,
@@ -64,23 +81,18 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
   onCreated,
   onDuplicateDetected,
 }) => {
-  const [formData, setFormData] = useState<StudentFormState>({
-    studentCode: '',
-    fullName: '',
-    dateOfBirth: '2020-01-01',
-    gender: 'Nam',
-    address: '',
-    classId: undefined,
-    parentFullName: '',
-    parentPhone: '',
-    parentEmail: '',
-    parentIdentityCard: '',
-    parentRelationship: 'Bố',
-  });
+  const [formData, setFormData] = useState<StudentFormState>(createInitialFormState);
 
   const [loading, setLoading] = useState(false);
   const [dupChecking, setDupChecking] = useState(false);
   const [dupWarning, setDupWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setFormData(createInitialFormState());
+      setDupWarning(null);
+    }
+  }, [open]);
 
   const checkCodeDuplicate = async (code: string) => {
     if (!code.trim()) return;
@@ -115,10 +127,23 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
       return;
     }
 
-    const name = formData.fullName.trim();
+    const name = formData.fullName.trim().replace(/\s+/g, ' ');
     if (name.includes('<') || name.includes('>')) {
-      toast.error('Họ và tên học sinh không được chứa ký tự đặc biệt hoặc thẻ HTML!');
+      toast.error('Họ và tên học sinh không được chứa thẻ HTML!');
       return;
+    }
+    if (!PERSON_NAME_REGEX.test(name) || !HAS_LETTER_REGEX.test(name)) {
+      toast.error("Họ và tên học sinh chỉ được chứa chữ cái, khoảng trắng và dấu (' - .), không được chứa chữ số hoặc ký tự đặc biệt!");
+      return;
+    }
+
+    if (formData.classId) {
+      const targetCls = classes.find((c) => c.id === formData.classId);
+      const enrolled = targetCls ? (targetCls.enrolledCount ?? targetCls.enrolledStudentsCount ?? 0) : 0;
+      if (targetCls && targetCls.capacity > 0 && enrolled >= targetCls.capacity) {
+        toast.error(`Lớp ${targetCls.className} đã đủ sĩ số (${enrolled}/${targetCls.capacity}). Vui lòng chọn lớp khác hoặc chọn "Chưa xếp lớp"!`);
+        return;
+      }
     }
 
     if (!formData.dateOfBirth) {
@@ -149,9 +174,16 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
       return;
     }
 
-    if (parentName && (parentName.includes('<') || parentName.includes('>'))) {
-      toast.error('Họ tên phụ huynh không được chứa ký tự đặc biệt hoặc thẻ HTML!');
-      return;
+    if (parentName) {
+      const cleanedParentName = parentName.replace(/\s+/g, ' ');
+      if (cleanedParentName.includes('<') || cleanedParentName.includes('>')) {
+        toast.error('Họ tên phụ huynh không được chứa thẻ HTML!');
+        return;
+      }
+      if (!PERSON_NAME_REGEX.test(cleanedParentName) || !HAS_LETTER_REGEX.test(cleanedParentName)) {
+        toast.error("Họ tên phụ huynh chỉ được chứa chữ cái, khoảng trắng và dấu (' - .), không được chứa chữ số hoặc ký tự đặc biệt!");
+        return;
+      }
     }
 
     if (phone) {
@@ -308,9 +340,10 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 <option value="">-- Chưa xếp lớp (Xếp lớp sau) --</option>
                 {classes.map((c) => {
                   const enrolled = c.enrolledCount ?? c.enrolledStudentsCount ?? 0;
+                  const isFull = c.capacity > 0 && enrolled >= c.capacity;
                   return (
-                    <option key={c.id} value={c.id}>
-                      Lớp {c.className} (Khối {c.grade}) - Hiện có {enrolled}/{c.capacity} học sinh
+                    <option key={c.id} value={c.id} disabled={isFull}>
+                      Lớp {c.className} (Khối {c.grade}) - {isFull ? `Đã đầy (${enrolled}/${c.capacity})` : `Hiện có ${enrolled}/${c.capacity} học sinh`}
                     </option>
                   );
                 })}

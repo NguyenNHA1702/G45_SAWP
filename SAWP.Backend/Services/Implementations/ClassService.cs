@@ -121,6 +121,12 @@ public class ClassService : IClassService
 
     public async Task<ApiResponse<List<SchoolYearDto>>> GetSchoolYearsAsync(CancellationToken cancellationToken = default)
     {
+        var fast = await _unitOfWork.Classes.GetSchoolYearDtosAsync(cancellationToken);
+        if (fast != null)
+        {
+            return ApiResponse<List<SchoolYearDto>>.Ok(fast);
+        }
+
         var years = await _unitOfWork.Classes.GetAllSchoolYearsAsync(cancellationToken);
         var result = years.Select(y => new SchoolYearDto
         {
@@ -137,6 +143,12 @@ public class ClassService : IClassService
 
     public async Task<ApiResponse<SchoolYearDto>> GetActiveSchoolYearAsync(CancellationToken cancellationToken = default)
     {
+        var fast = await _unitOfWork.Classes.GetActiveSchoolYearDtoAsync(cancellationToken);
+        if (fast != null)
+        {
+            return ApiResponse<SchoolYearDto>.Ok(fast);
+        }
+
         var activeYear = await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
         if (activeYear == null)
         {
@@ -214,7 +226,7 @@ public class ClassService : IClassService
 
         // Check if any attendance records exist
         var classIds = classesInYear.Select(c => c.Id).ToList();
-        var hasAttendance = (await _unitOfWork.Repository<AttendanceRecord>().FindAsync(a => classIds.Contains(a.ClassId), cancellationToken)).Any();
+        var hasAttendance = await AnyRecordAsync<AttendanceRecord>(a => classIds.Contains(a.ClassId), cancellationToken);
         if (hasAttendance)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đã có dữ liệu điểm danh phát sinh." });
@@ -273,6 +285,19 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5." });
         }
 
+        var classNameError = StudentValidationHelper.ValidateClassNameForGrade(request.ClassName, request.Grade);
+        if (classNameError != null)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { classNameError });
+        }
+
+        if (StudentValidationHelper.ContainsHtmlTags(request.RoomNumber))
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên phòng học không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
+
+        var normalizedClassName = request.ClassName.Trim().ToUpperInvariant();
+
         if (request.Capacity < 25 || request.Capacity > 40)
         {
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Sĩ số tối đa mỗi lớp phải từ 25 đến 40 học sinh (BR-15)." });
@@ -285,15 +310,15 @@ public class ClassService : IClassService
         }
 
         var existingClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(request.SchoolYearId, null, null, cancellationToken);
-        if (existingClasses != null && existingClasses.Any(c => c.ClassName.Equals(request.ClassName.Trim(), StringComparison.OrdinalIgnoreCase)))
+        if (existingClasses != null && existingClasses.Any(c => c.ClassName.Equals(normalizedClassName, StringComparison.OrdinalIgnoreCase)))
         {
-            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { $"Lớp {request.ClassName} đã tồn tại trong năm học {schoolYear.YearName}." });
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { $"Lớp {normalizedClassName} đã tồn tại trong năm học {schoolYear.YearName}." });
         }
 
         var newClass = new Class
         {
             SchoolYearId = request.SchoolYearId,
-            ClassName = request.ClassName.Trim(),
+            ClassName = normalizedClassName,
             Grade = request.Grade,
             RoomNumber = request.RoomNumber?.Trim(),
             Capacity = request.Capacity,
@@ -375,6 +400,14 @@ public class ClassService : IClassService
             .Where(s => !string.IsNullOrEmpty(s))
             .Distinct()
             .ToList();
+
+        var invalidSuffix = suffixes.FirstOrDefault(s => !StudentValidationHelper.IsValidSectionSuffix(s));
+        if (invalidSuffix != null)
+        {
+            return ApiResponse<List<ClassSummaryDto>>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Ký tự phân lớp '{invalidSuffix}' không hợp lệ. Chỉ cho phép đúng 1 chữ cái (A–Z)." });
+        }
 
         // Resolve capacity (Sĩ số tối đa)
         var capacity = request.CapacityPerClass ?? (request.DefaultCapacity > 0 ? request.DefaultCapacity : 35);
@@ -492,12 +525,26 @@ public class ClassService : IClassService
         }
         else
         {
-            var activeYear = await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
-            if (activeYear == null)
+            var activeYearDto = await _unitOfWork.Classes.GetActiveSchoolYearDtoAsync(cancellationToken);
+            if (activeYearDto != null)
             {
-                return ApiResponse<List<ClassSummaryDto>>.Fail(SystemMessages.MSG14);
+                targetYearId = activeYearDto.Id;
             }
-            targetYearId = activeYear.Id;
+            else
+            {
+                var activeYear = await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
+                if (activeYear == null)
+                {
+                    return ApiResponse<List<ClassSummaryDto>>.Fail(SystemMessages.MSG14);
+                }
+                targetYearId = activeYear.Id;
+            }
+        }
+
+        var fastClasses = await _unitOfWork.Classes.GetClassSummaryDtosAsync(targetYearId, grade, status, cancellationToken);
+        if (fastClasses != null)
+        {
+            return ApiResponse<List<ClassSummaryDto>>.Ok(fastClasses);
         }
 
         var classes = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(targetYearId, grade, status, cancellationToken);
@@ -563,6 +610,18 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5 và sĩ số tối đa phải lớn hơn 0." });
         }
 
+        var classNameError = StudentValidationHelper.ValidateClassNameForGrade(request.ClassName, request.Grade);
+        if (classNameError != null)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { classNameError });
+        }
+
+        if (StudentValidationHelper.ContainsHtmlTags(request.RoomNumber))
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên phòng học không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+        }
+
+        var normalizedName = request.ClassName.Trim().ToUpperInvariant();
         var enrolledCount = c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0;
         if (request.Capacity < enrolledCount)
         {
@@ -571,7 +630,7 @@ public class ClassService : IClassService
 
         var oldValues = new { c.ClassName, c.Grade, c.RoomNumber, c.Capacity, c.Status };
 
-        c.ClassName = request.ClassName.Trim();
+        c.ClassName = normalizedName;
         c.Grade = request.Grade;
         c.RoomNumber = request.RoomNumber?.Trim();
         c.Capacity = request.Capacity;
@@ -632,7 +691,7 @@ public class ClassService : IClassService
                 new List<string> { "Không thể xóa lớp học vì lớp đang có Giáo viên chủ nhiệm phân công. Vui lòng gỡ GVCN trước khi xóa lớp." });
         }
 
-        var hasAttendance = (await _unitOfWork.Repository<AttendanceRecord>().FindAsync(a => a.ClassId == classId, cancellationToken)).Any();
+        var hasAttendance = await AnyRecordAsync<AttendanceRecord>(a => a.ClassId == classId, cancellationToken);
         if (hasAttendance)
         {
             return ApiResponse<bool>.Fail(
@@ -640,7 +699,7 @@ public class ClassService : IClassService
                 new List<string> { "Không thể xóa lớp học vì lớp đã phát sinh dữ liệu điểm danh." });
         }
 
-        var hasSchedule = (await _unitOfWork.Repository<ClassSchedule>().FindAsync(s => s.ClassId == classId, cancellationToken)).Any();
+        var hasSchedule = await AnyRecordAsync<ClassSchedule>(s => s.ClassId == classId, cancellationToken);
         if (hasSchedule)
         {
             return ApiResponse<bool>.Fail(
@@ -690,12 +749,26 @@ public class ClassService : IClassService
         }
         else
         {
-            var activeYear = await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
-            if (activeYear == null)
+            var activeYearDto = await _unitOfWork.Classes.GetActiveSchoolYearDtoAsync(cancellationToken);
+            if (activeYearDto != null)
             {
-                return ApiResponse<List<TeacherOptionDto>>.Fail(SystemMessages.MSG14);
+                targetYearId = activeYearDto.Id;
             }
-            targetYearId = activeYear.Id;
+            else
+            {
+                var activeYear = await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
+                if (activeYear == null)
+                {
+                    return ApiResponse<List<TeacherOptionDto>>.Fail(SystemMessages.MSG14);
+                }
+                targetYearId = activeYear.Id;
+            }
+        }
+
+        var fastTeachers = await _unitOfWork.Classes.GetEligibleTeacherDtosAsync(targetYearId, cancellationToken);
+        if (fastTeachers != null)
+        {
+            return ApiResponse<List<TeacherOptionDto>>.Ok(fastTeachers);
         }
 
         var teachers = await _unitOfWork.Classes.GetEligibleTeachersAsync(cancellationToken);
@@ -875,6 +948,64 @@ public class ClassService : IClassService
         }).ToList();
 
         return ApiResponse<List<RosterStudentItemDto>>.Ok(result);
+    }
+
+    public async Task<ApiResponse<PaginatedResult<RosterStudentItemDto>>> GetEligibleStudentsForAssignmentPagedAsync(
+        int classId,
+        string? search = null,
+        int pageIndex = 1,
+        int pageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageIndex < 1) pageIndex = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 25;
+
+        int? schoolYearId = null;
+        var classQuery = _unitOfWork.Repository<Class>()?.Query();
+        if (classQuery != null)
+        {
+            schoolYearId = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AsNoTracking(classQuery)
+                    .Where(c => c.Id == classId)
+                    .Select(c => (int?)c.SchoolYearId),
+                cancellationToken);
+        }
+        else
+        {
+            var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(classId, cancellationToken);
+            schoolYearId = targetClass?.SchoolYearId;
+        }
+
+        if (!schoolYearId.HasValue)
+        {
+            return ApiResponse<PaginatedResult<RosterStudentItemDto>>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
+        }
+
+        var fastPaged = await _unitOfWork.Classes.GetEligibleStudentsPagedAsync(schoolYearId.Value, search, pageIndex, pageSize, cancellationToken);
+        if (fastPaged != null)
+        {
+            return ApiResponse<PaginatedResult<RosterStudentItemDto>>.Ok(fastPaged);
+        }
+
+        var unpaged = await GetEligibleStudentsForAssignmentAsync(classId, cancellationToken);
+        if (!unpaged.Success)
+        {
+            return ApiResponse<PaginatedResult<RosterStudentItemDto>>.Fail(SystemMessages.MSG01, unpaged.Errors);
+        }
+
+        var items = unpaged.Data ?? new List<RosterStudentItemDto>();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLowerInvariant();
+            items = items.Where(s =>
+                s.FullName.ToLowerInvariant().Contains(term) ||
+                s.StudentCode.ToLowerInvariant().Contains(term)).ToList();
+        }
+
+        var totalCount = items.Count;
+        var paged = items.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToList();
+        return ApiResponse<PaginatedResult<RosterStudentItemDto>>.Ok(
+            new PaginatedResult<RosterStudentItemDto>(paged, totalCount, pageIndex, pageSize));
     }
 
     public async Task<ApiResponse<bool>> AssignStudentsToClassAsync(int classId, AssignStudentsDto request, int? actorUserId = null, CancellationToken cancellationToken = default)
@@ -1173,6 +1304,20 @@ public class ClassService : IClassService
 
     public async Task<ApiResponse<ClassRosterDto>> GetClassRosterAsync(int classId, int? requestingUserId = null, string? requestingUserRole = null, CancellationToken cancellationToken = default)
     {
+        var fastRoster = await _unitOfWork.Classes.GetClassRosterWithAccessCheckAsync(classId, cancellationToken);
+        if (fastRoster.HasValue)
+        {
+            if (string.Equals(requestingUserRole, UserRoles.Teacher.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                if (!fastRoster.Value.HomeroomTeacherUserId.HasValue || fastRoster.Value.HomeroomTeacherUserId.Value != requestingUserId)
+                {
+                    return ApiResponse<ClassRosterDto>.Fail(SystemMessages.MSG20); // MSG20: Bạn không được phân công phụ trách lớp này.
+                }
+            }
+
+            return ApiResponse<ClassRosterDto>.Ok(fastRoster.Value.Roster);
+        }
+
         var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(classId, cancellationToken);
         if (targetClass == null)
         {
@@ -1233,6 +1378,12 @@ public class ClassService : IClassService
 
     public async Task<ApiResponse<ClassRosterDto>> GetMyHomeroomClassAsync(int teacherUserId, CancellationToken cancellationToken = default)
     {
+        var fastClassId = await _unitOfWork.Classes.GetHomeroomClassIdByTeacherUserIdAsync(teacherUserId, null, cancellationToken);
+        if (fastClassId.HasValue)
+        {
+            return await GetClassRosterAsync(fastClassId.Value, teacherUserId, UserRoles.Teacher.ToString(), cancellationToken);
+        }
+
         var homeroomClass = await _unitOfWork.Classes.GetHomeroomClassByTeacherUserIdAsync(teacherUserId, null, cancellationToken);
         if (homeroomClass == null)
         {
@@ -1240,6 +1391,22 @@ public class ClassService : IClassService
         }
 
         return await GetClassRosterAsync(homeroomClass.Id, teacherUserId, UserRoles.Teacher.ToString(), cancellationToken);
+    }
+
+    private async Task<bool> AnyRecordAsync<T>(System.Linq.Expressions.Expression<Func<T, bool>> predicate, CancellationToken cancellationToken) where T : class
+    {
+        var repo = _unitOfWork.Repository<T>();
+        var query = repo.Query();
+        if (query != null)
+        {
+            return await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AnyAsync(
+                Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AsNoTracking(query),
+                predicate,
+                cancellationToken);
+        }
+
+        var results = await repo.FindAsync(predicate, cancellationToken);
+        return results != null && results.Any();
     }
 
     #endregion

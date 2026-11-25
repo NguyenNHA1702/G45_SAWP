@@ -1992,5 +1992,52 @@ public class RequestWorkflowEngineTests : TestBase
         list.Data![0].SubmissionDate.Kind.Should().Be(DateTimeKind.Utc);
     }
 
+    [Fact]
+    public async Task RQ07_SubmitOtherRequest_WithHtmlOrScript_FailsWithMSG01()
+    {
+        var result = await _service.SubmitOtherRequestAsync(20, new OtherRequestDto
+        {
+            StudentId = 10,
+            Title = "<b>Tieu de hop le</b>",
+            Content = "<script>alert(1)</script> noi dung"
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task RQ08_SubmitClassTransfer_WithoutEffectiveDate_LeavesEffectiveDateNull()
+    {
+        var guardian = new Guardian
+        {
+            Id = 1,
+            UserId = 20,
+            StudentGuardians = new List<StudentGuardian> { new() { StudentId = 10, GuardianId = 1 } }
+        };
+        SetupRepository(new List<Guardian> { guardian });
+        StudentRepoMock.Setup(r => r.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 10, FullName = "Em A" });
+
+        var currentClass = new Class { Id = 1, ClassName = "1A", Grade = 1 };
+        var targetClass = new Class { Id = 2, ClassName = "1B", Grade = 1, Capacity = 35 };
+        SetupRepository(new List<Class> { currentClass, targetClass });
+        SetupRepository(new List<ClassAssignment> { new() { StudentId = 10, ClassId = 1, Class = currentClass, IsActive = true } });
+
+        var details = new List<ClassTransferDetail>();
+        SetupRepository(details);
+
+        var result = await _service.SubmitClassTransferRequestAsync(20, new ClassTransferRequestDto
+        {
+            StudentId = 10,
+            TargetClassId = 2,
+            TransferReason = "Xin chuyển lớp gần bạn thân"
+        });
+
+        result.Success.Should().BeTrue();
+        details.Should().HaveCount(1);
+        details[0].EffectiveDate.Should().BeNull();
+    }
+
     #endregion
 }
