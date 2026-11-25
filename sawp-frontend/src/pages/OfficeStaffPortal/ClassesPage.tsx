@@ -55,6 +55,7 @@ export default function ClassesPage() {
   const [createYearModalOpen, setCreateYearModalOpen] = useState(false);
   const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchInitialGrade, setBatchInitialGrade] = useState<number>(1);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [studentsModalOpen, setStudentsModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -414,7 +415,10 @@ export default function ClassesPage() {
                   <button
                     type="button"
                     className="btn btn--primary"
-                    onClick={() => setBatchModalOpen(true)}
+                    onClick={() => {
+                      setBatchInitialGrade(1);
+                      setBatchModalOpen(true);
+                    }}
                   >
                     <Layers size={18} /> Khởi tạo lớp hàng loạt
                   </button>
@@ -621,7 +625,10 @@ export default function ClassesPage() {
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={() => setBatchModalOpen(true)}
+                onClick={() => {
+                  setBatchInitialGrade(selectedGrade || 1);
+                  setBatchModalOpen(true);
+                }}
               >
                 <Layers size={18} /> Khởi tạo lớp hàng loạt
               </button>
@@ -885,6 +892,7 @@ export default function ClassesPage() {
         open={batchModalOpen}
         onClose={() => setBatchModalOpen(false)}
         activeSchoolYear={activeSchoolYear}
+        initialGrade={batchInitialGrade}
         onClassesCreated={(_classes, grade) => {
           setSelectedGrade(grade);
           loadClasses(selectedYearId, grade);
