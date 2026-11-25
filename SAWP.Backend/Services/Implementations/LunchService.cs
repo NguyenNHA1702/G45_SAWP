@@ -82,7 +82,7 @@ public class LunchService : ILunchService
         var isServing = isCalendarSchoolDay == false ? false : (day != null ? day.IsServing : defaultServing);
         var cutoff = (day != null && day.CutoffTime != TimeSpan.Zero) ? day.CutoffTime : _options.LunchCutoff;
         var isLocked = day?.IsLocked ?? false;
-        var lockedAt = day?.LockedAt;
+        var lockedAt = UtcDateTimeHelper.Normalize(day?.LockedAt);
 
         string? remarks = day?.Remarks;
         if ((string.IsNullOrWhiteSpace(remarks) || remarks == "Phục vụ bán trú bình thường") && isServing)
@@ -241,7 +241,7 @@ public class LunchService : ILunchService
                 IsServing = existing.IsServing,
                 CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"),
                 IsLocked = existing.IsLocked,
-                LockedAt = existing.LockedAt,
+                LockedAt = UtcDateTimeHelper.Normalize(existing.LockedAt),
                 Remarks = existing.Remarks
             });
         }
@@ -389,6 +389,27 @@ public class LunchService : ILunchService
 
         var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(startOfMonth, endOfMonth, cancellationToken);
 
+        // BD-02: Lấy các ngày đang có đơn xin nghỉ đã duyệt (buổi Sáng / Cả ngày, không giữ suất ăn) để hiển thị rõ trên lịch bán trú phụ huynh
+        var approvedLeaveRanges = new List<(DateTime Start, DateTime End)>();
+        var leaveRepo = _unitOfWork.Repository<LeaveRequest>();
+        if (leaveRepo != null)
+        {
+            var leaves = await leaveRepo.Query()
+                .Include(lr => lr.AdministrativeRequest)
+                .Where(lr => lr.AdministrativeRequest != null
+                          && lr.AdministrativeRequest.StudentId == studentId
+                          && lr.AdministrativeRequest.RequestType == RequestTypes.Leave
+                          && lr.AdministrativeRequest.Status == RequestStatus.Approved
+                          && !lr.KeepLunchService
+                          && (lr.Session == LeaveSession.FullDay || lr.Session == LeaveSession.Morning)
+                          && lr.StartDate <= endOfMonth
+                          && lr.EndDate >= startOfMonth)
+                .Select(lr => new { lr.StartDate, lr.EndDate })
+                .ToListAsync(cancellationToken);
+
+            approvedLeaveRanges = leaves.Select(l => (l.StartDate.Date, l.EndDate.Date)).ToList();
+        }
+
         var days = new List<StudentLunchDayDto>();
         for (var cur = startOfMonth; cur <= endOfMonth; cur = cur.AddDays(1))
         {
@@ -398,6 +419,7 @@ public class LunchService : ILunchService
 
             var resolved = ResolveServiceDay(cur, sDay, isCalSchoolDay);
             var cutoffPassed = IsCutoffPassed(cur, resolved.Cutoff, resolved.IsLocked);
+            var hasApprovedLeave = approvedLeaveRanges.Any(r => r.Start <= cur && r.End >= cur);
 
             days.Add(new StudentLunchDayDto
             {
@@ -406,13 +428,14 @@ public class LunchService : ILunchService
                 CutoffTime = resolved.Cutoff.ToString(@"hh\:mm"),
                 IsLocked = resolved.IsLocked,
                 IsCutoffPassed = cutoffPassed,
+                HasApprovedLeave = hasApprovedLeave,
                 ServiceRemarks = resolved.Remarks,
                 RegistrationId = reg?.Id,
                 IsRegistered = reg != null && reg.IsActive,
                 MealType = reg?.MealType,
                 StudentRemarks = reg?.Remarks,
                 CancellationSource = (reg != null && !reg.IsActive) ? reg.CancellationSource : null,
-                CancelledAt = (reg != null && !reg.IsActive) ? reg.CancelledAt : null,
+                CancelledAt = (reg != null && !reg.IsActive) ? UtcDateTimeHelper.Normalize(reg.CancelledAt) : null,
                 CancellationReason = (reg != null && !reg.IsActive) ? reg.CancellationReason : null
             });
         }
@@ -1031,6 +1054,29 @@ public class LunchService : ILunchService
             });
         }
 
+        // BD-01: Nếu xem toàn trường và có học sinh chưa phân lớp đăng ký suất ăn, hiển thị thêm nhóm "Chưa phân lớp" để tổng cột khớp 100% KPI
+        if (isFullSchoolView)
+        {
+            var unassignedRegs = scopedRegistrations
+                .Where(r => GetPrimaryClassAssignment(r) == null)
+                .ToList();
+            if (unassignedRegs.Count > 0)
+            {
+                classBreakdowns.Add(new ClassMealSummaryDto
+                {
+                    ClassId = 0,
+                    ClassName = "Chưa phân lớp",
+                    Grade = 0,
+                    InitialRegistered = unassignedRegs.Count(r => !r.IsWaitlisted),
+                    CancelledCount = unassignedRegs.Count(r => !r.IsActive && !r.IsWaitlisted),
+                    ActualCount = unassignedRegs.Count(r => r.IsActive && !r.IsWaitlisted),
+                    StandardCount = unassignedRegs.Count(r => r.IsActive && !r.IsWaitlisted && r.MealType == MealType.StandardLunch),
+                    VegetarianCount = unassignedRegs.Count(r => r.IsActive && !r.IsWaitlisted && r.MealType == MealType.VegetarianLunch),
+                    SpecialDietCount = unassignedRegs.Count(r => r.IsActive && !r.IsWaitlisted && r.MealType == MealType.SpecialDiet)
+                });
+            }
+        }
+
         // 4. Danh sách học sinh tối thiểu phục vụ vận hành (UC-33)
         var studentMeals = scopedRegistrations
             .Select(r =>
@@ -1052,11 +1098,12 @@ public class LunchService : ILunchService
                         ? r.Student.SpecialNeedsNotes
                         : (r.Remarks != null && r.Remarks.Contains("Dị ứng", StringComparison.OrdinalIgnoreCase) ? r.Remarks : null),
                     CancellationSource = r.CancellationSource,
-                    CancelledAt = r.CancelledAt,
+                    CancelledAt = UtcDateTimeHelper.Normalize(r.CancelledAt),
                     CancellationReason = r.CancellationReason
                 };
             })
-            .OrderBy(s => s.Grade)
+            .OrderBy(s => s.ClassId == 0 ? 1 : 0)
+            .ThenBy(s => s.Grade)
             .ThenBy(s => s.ClassName)
             .ThenBy(s => s.StudentName)
             .ToList();
@@ -1074,9 +1121,7 @@ public class LunchService : ILunchService
                     : "AutoCancelled")
                 : "Restored";
             var changedAt = isCancelled && reg.CancelledAt.HasValue ? reg.CancelledAt.Value : reg.CreatedAt;
-            var changedAtUtc = changedAt.Kind == DateTimeKind.Local
-                ? changedAt.ToUniversalTime()
-                : DateTime.SpecifyKind(changedAt, DateTimeKind.Utc);
+            var changedAtUtc = UtcDateTimeHelper.Normalize(changedAt);
 
             logs.Add(new MealAuditLogDto
             {
@@ -1133,7 +1178,11 @@ public class LunchService : ILunchService
             TotalAutoCancelled = totalCancelled,
             TotalActiveToCook = totalActive,
             TotalAnomalies = totalAnomalies,
-            ClassBreakdowns = classBreakdowns.OrderBy(c => c.Grade).ThenBy(c => c.ClassName).ToList(),
+            ClassBreakdowns = classBreakdowns
+                .OrderBy(c => c.ClassId == 0 ? 1 : 0)
+                .ThenBy(c => c.Grade)
+                .ThenBy(c => c.ClassName)
+                .ToList(),
             MealChangeLogs = logs.OrderByDescending(l => l.Timestamp).ToList(),
             StudentMeals = studentMeals
         };
@@ -1457,9 +1506,11 @@ public class LunchService : ILunchService
             .Select(g => g.OrderByDescending(x => x.IsActive).ThenByDescending(x => x.Id).First())
             .ToList();
 
+        var isFullSchoolView = allowedClassIds == null && !classId.HasValue;
         var regWithPrimaryClass = dedupedRegs
-            .Select(r => new { Reg = r, PrimaryClassId = GetPrimaryClassAssignment(r, classIds)?.ClassId })
-            .Where(x => x.PrimaryClassId.HasValue)
+            .Select(r => new { Reg = r, PrimaryCa = GetPrimaryClassAssignment(r) })
+            .Where(x => x.PrimaryCa != null ? classIds.Contains(x.PrimaryCa.ClassId) : isFullSchoolView)
+            .Select(x => new { x.Reg, PrimaryClassId = x.PrimaryCa?.ClassId })
             .ToList();
 
         var scopedRegs = regWithPrimaryClass.Select(x => x.Reg).ToList();
@@ -1483,6 +1534,30 @@ public class LunchService : ILunchService
                 SpecialDietCount = cRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet)
             };
         }).ToList();
+
+        // BD-01: Bổ sung dòng "Chưa phân lớp" khi xem báo cáo toàn trường để đồng bộ tổng với bảng ngày
+        if (isFullSchoolView)
+        {
+            var unassignedRegs = regWithPrimaryClass
+                .Where(x => !x.PrimaryClassId.HasValue)
+                .Select(x => x.Reg)
+                .ToList();
+            if (unassignedRegs.Count > 0)
+            {
+                summaries.Add(new ClassMealSummaryDto
+                {
+                    ClassId = 0,
+                    ClassName = "Chưa phân lớp",
+                    Grade = 0,
+                    InitialRegistered = unassignedRegs.Count,
+                    CancelledCount = unassignedRegs.Count(r => !r.IsActive),
+                    ActualCount = unassignedRegs.Count(r => r.IsActive),
+                    StandardCount = unassignedRegs.Count(r => r.IsActive && r.MealType == MealType.StandardLunch),
+                    VegetarianCount = unassignedRegs.Count(r => r.IsActive && r.MealType == MealType.VegetarianLunch),
+                    SpecialDietCount = unassignedRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet)
+                });
+            }
+        }
 
         return ApiResponse<LunchPeriodReportDto>.Ok(new LunchPeriodReportDto
         {

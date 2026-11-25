@@ -21,6 +21,8 @@ import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { getAuthUser } from '../../services/apiClient';
 import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
+import { formatViDateTime } from '../../utils/date';
+import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
 export default function LeaveApprovalPage() {
@@ -61,8 +63,9 @@ export default function LeaveApprovalPage() {
       if (res.success) {
         setRequests(res.data);
       }
-    } catch {
-      toast.error('Không thể tải danh sách đơn xin nghỉ.');
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể tải danh sách đơn xin nghỉ.');
     } finally {
       setLoading(false);
     }
@@ -96,14 +99,14 @@ export default function LeaveApprovalPage() {
         toast.error(res.message);
       }
     } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra.';
-      toast.error(errorMsg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setProcessing(false);
     }
   };
 
-  // Ban Giám Hiệu duyệt đơn chuyển cấp (> 3 ngày học)
+  // Ban Giám Hiệu duyệt đơn chuyển cấp (> 3 ngày học) hoặc đơn từ lớp chưa có GVCN
   const handleBghApprove = async (item: LeaveRequestItem) => {
     if (!window.confirm(`Ban Giám Hiệu xác nhận PHÊ DUYỆT đơn xin nghỉ ${item.totalDays} ngày học cho học sinh ${item.studentName}?`)) return;
 
@@ -124,8 +127,8 @@ export default function LeaveApprovalPage() {
         toast.error(res.message);
       }
     } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra.';
-      toast.error(errorMsg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setProcessing(false);
     }
@@ -161,8 +164,8 @@ export default function LeaveApprovalPage() {
         toast.error(res.message);
       }
     } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra.';
-      toast.error(errorMsg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setProcessing(false);
     }
@@ -197,8 +200,8 @@ export default function LeaveApprovalPage() {
         toast.error(res.message);
       }
     } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra.';
-      toast.error(errorMsg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setProcessing(false);
     }
@@ -225,8 +228,8 @@ export default function LeaveApprovalPage() {
         toast.error(res.message);
       }
     } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra.';
-      toast.error(errorMsg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setProcessing(false);
     }
@@ -269,7 +272,7 @@ export default function LeaveApprovalPage() {
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)' }}>
               {isSchoolBoard
-                ? 'Phê duyệt các đơn xin nghỉ trên 3 ngày học (> 3 ngày) do Giáo viên chủ nhiệm chuyển tiếp. Tự động đồng bộ điểm danh và suất ăn bán trú.'
+                ? 'Phê duyệt các đơn xin nghỉ trên 3 ngày học (> 3 ngày) do Giáo viên chủ nhiệm chuyển tiếp và các đơn từ lớp chưa có GVCN. Tự động đồng bộ điểm danh và suất ăn bán trú.'
                 : 'Đơn từ 1 đến 3 ngày học do GVCN duyệt trực tiếp. Đơn trên 3 ngày học (> 3 ngày) GVCN xác nhận và chuyển Ban Giám Hiệu phê duyệt.'}
             </p>
           </div>
@@ -310,13 +313,14 @@ export default function LeaveApprovalPage() {
         <div style={{ display: 'grid', gap: 18 }}>
           {requests.map((r) => {
             const isEscalated = Boolean(r.isEscalated);
+            const noHomeroom = r.hasHomeroomTeacher === false;
             return (
               <div
                 key={r.id}
                 className="card card--hover"
                 style={{
-                  border: isEscalated ? '2px solid var(--color-accent)' : 'var(--border)',
-                  boxShadow: isEscalated ? '8px 8px 0 0 var(--color-accent-soft)' : 'var(--shadow-card)',
+                  border: isEscalated || noHomeroom ? '2px solid var(--color-accent)' : 'var(--border)',
+                  boxShadow: isEscalated || noHomeroom ? '8px 8px 0 0 var(--color-accent-soft)' : 'var(--shadow-card)',
                 }}
               >
                 {/* Header card */}
@@ -340,8 +344,12 @@ export default function LeaveApprovalPage() {
 
                   <div>
                     {r.status === 'Submitted' && (
-                      <span className="badge badge--amber">
-                        {isEscalated ? 'Chờ GVCN chuyển BGH' : 'Chờ GVCN duyệt'}
+                      <span className={noHomeroom ? 'badge badge--violet' : 'badge badge--amber'}>
+                        {noHomeroom
+                          ? 'Chờ BGH duyệt (lớp chưa có GVCN)'
+                          : isEscalated
+                            ? 'Chờ GVCN chuyển BGH'
+                            : 'Chờ GVCN duyệt'}
                       </span>
                     )}
                     {r.status === 'UnderReview' && (
@@ -379,7 +387,28 @@ export default function LeaveApprovalPage() {
                 </div>
 
                 {/* Routing Banner on Card */}
-                {r.status === 'Submitted' && isEscalated && (
+                {r.status === 'Submitted' && noHomeroom && (
+                  <div
+                    className="card"
+                    style={{
+                      background: 'var(--color-accent-soft)',
+                      borderColor: 'var(--color-accent)',
+                      padding: '10px 14px',
+                      marginBottom: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 'var(--fs-sm)',
+                    }}
+                  >
+                    <ShieldAlert size={18} color="var(--color-accent)" style={{ flexShrink: 0 }} />
+                    <span>
+                      {r.className ? `Lớp ${r.className}` : 'Lớp của học sinh'} hiện <strong>chưa có GVCN</strong> — Đơn được chuyển thẳng tới Ban Giám Hiệu xem xét phê duyệt.
+                    </span>
+                  </div>
+                )}
+
+                {r.status === 'Submitted' && isEscalated && !noHomeroom && (
                   <div
                     className="card"
                     style={{
@@ -536,7 +565,7 @@ export default function LeaveApprovalPage() {
                             <strong>{h.actionLabel}</strong>
                             {h.actorName ? ` (${h.actorName})` : ''}
                             {' — '}
-                            <span style={{ color: 'var(--color-muted-fg)' }}>{formatDateDDMMYYYY(h.timestamp)}</span>
+                            <span style={{ color: 'var(--color-muted-fg)' }}>{formatViDateTime(h.timestamp)}</span>
                             {h.notes ? `: ${h.notes}` : ''}
                           </div>
                         ))}
@@ -547,7 +576,7 @@ export default function LeaveApprovalPage() {
 
                 {/* ACTION BUTTONS */}
                 {/* 1. Branch: <= 3 ngày học (GVCN xem xét đơn nghỉ thông thường) */}
-                {r.status === 'Submitted' && !isEscalated && (
+                {r.status === 'Submitted' && !isEscalated && !noHomeroom && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     <button
                       type="button"
@@ -585,7 +614,7 @@ export default function LeaveApprovalPage() {
                 )}
 
                 {/* 2. Branch: > 3 ngày học (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu) */}
-                {r.status === 'Submitted' && isEscalated && (
+                {r.status === 'Submitted' && isEscalated && !noHomeroom && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     <button
                       type="button"
@@ -624,8 +653,8 @@ export default function LeaveApprovalPage() {
                   </div>
                 )}
 
-                {/* 3. Branch: Đơn tại Ban Giám Hiệu (Status == UnderReview) */}
-                {r.status === 'UnderReview' && (
+                {/* 3. Branch: Đơn tại Ban Giám Hiệu (Status == UnderReview hoặc lớp chưa có GVCN) */}
+                {(r.status === 'UnderReview' || (r.status === 'Submitted' && noHomeroom)) && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     {isSchoolBoard || isAdmin ? (
                       <>

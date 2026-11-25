@@ -122,6 +122,7 @@ export interface StudentLunchDay {
   cutoffTime: string;
   isLocked: boolean;
   isCutoffPassed: boolean;
+  hasApprovedLeave?: boolean;
   serviceRemarks?: string | null;
   registrationId?: number | null;
   isRegistered: boolean;

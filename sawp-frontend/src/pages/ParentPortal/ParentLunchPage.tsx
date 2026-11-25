@@ -156,17 +156,17 @@ export default function ParentLunchPage() {
       setLoading(true);
       const data = await lunchApi.getStudentSchedule(studentId, month);
       setSchedule(data);
-      // Giữ lại những ngày đang chọn nếu vẫn còn hợp lệ để đăng ký
+      // Giữ lại những ngày đang chọn nếu vẫn còn hợp lệ để đăng ký (BD-02: loại bỏ ngày đang có đơn nghỉ đã duyệt)
       setSelectedDates((prev) =>
         prev.filter((dKey) => {
           const found = data.days.find((x) => toDateKey(x.date) === dKey);
-          return found && found.isServing && !found.isCutoffPassed && !found.isRegistered;
+          return found && found.isServing && !found.isCutoffPassed && !found.isRegistered && !found.hasApprovedLeave;
         })
       );
     } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { code?: string; message?: string } } })?.response?.data;
+      const apiErr = (err as { response?: { data?: { code?: string; message?: string; errors?: string[] } } })?.response?.data;
       const sysMsg = apiErr?.code ? getSystemMessage(apiErr.code) : undefined;
-      toast.error(sysMsg?.content || apiErr?.message || 'Không thể tải lịch bán trú của học sinh.');
+      toast.error(apiErr?.errors?.[0] || sysMsg?.content || apiErr?.message || 'Không thể tải lịch bán trú của học sinh.');
     } finally {
       setLoading(false);
     }
@@ -179,9 +179,19 @@ export default function ParentLunchPage() {
   const openSelectableDates = useMemo(() => {
     if (!schedule) return [];
     return schedule.days
-      .filter((d) => d.isServing && !d.isCutoffPassed && !d.isRegistered)
+      .filter((d) => d.isServing && !d.isCutoffPassed && !d.isRegistered && !d.hasApprovedLeave)
       .map((d) => toDateKey(d.date));
   }, [schedule]);
+
+  // BD-03: Luôn reset chế độ ăn về Mặc định (Suất tiêu chuẩn) và xóa ghi chú mỗi lần mở modal đăng ký mới
+  const openRegisterModal = (overrideDates?: string[]) => {
+    if (overrideDates) {
+      setSelectedDates(overrideDates);
+    }
+    setMealType(1);
+    setStudentRemarks('');
+    setShowRegisterModal(true);
+  };
 
   const toggleSelectDate = (day: StudentLunchDay) => {
     const key = toDateKey(day.date);
@@ -198,6 +208,11 @@ export default function ParentLunchPage() {
       }
       setCancelTargetDay(day);
       setCancelReason('');
+      return;
+    }
+
+    if (day.hasApprovedLeave) {
+      toast.error('Ngày này học sinh đang có đơn xin nghỉ đã được phê duyệt. Vui lòng thu hồi đơn xin nghỉ trước khi đăng ký lại suất ăn.');
       return;
     }
 
@@ -250,6 +265,7 @@ export default function ParentLunchPage() {
       toast.success(`${msg} (${res.data.registeredCount} ngày)`);
       setShowRegisterModal(false);
       setSelectedDates([]);
+      setMealType(1);
       setStudentRemarks('');
       await fetchSchedule();
     } catch (err: unknown) {
@@ -281,7 +297,7 @@ export default function ParentLunchPage() {
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { code?: string; message?: string; errors?: string[] } } })?.response?.data;
       const sysMsg = apiErr?.code ? getSystemMessage(apiErr.code) : undefined;
-      toast.error(sysMsg?.content || apiErr?.message || SYSTEM_MESSAGES.MSG27.content);
+      toast.error(apiErr?.errors?.[0] || sysMsg?.content || apiErr?.message || SYSTEM_MESSAGES.MSG27.content);
     } finally {
       setSubmittingCancel(false);
     }
@@ -530,7 +546,7 @@ export default function ParentLunchPage() {
             <button
               type="button"
               className="btn"
-              onClick={() => setShowRegisterModal(true)}
+              onClick={() => openRegisterModal()}
               style={{
                 borderRadius: 'var(--radius-full)',
                 border: '2px solid var(--color-fg)',
@@ -777,7 +793,7 @@ export default function ParentLunchPage() {
             <button
               type="button"
               className="btn"
-              onClick={() => setShowRegisterModal(true)}
+              onClick={() => openRegisterModal()}
               style={{
                 borderRadius: 'var(--radius-full)',
                 border: '2px solid var(--color-fg)',
@@ -839,6 +855,9 @@ export default function ParentLunchPage() {
             <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
               Đã hủy
             </span>
+            <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+              Nghỉ học (đã duyệt)
+            </span>
             <span className="badge badge--muted" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
               Nghỉ / Đã chốt {LUNCH_CUTOFF_LABEL}
             </span>
@@ -878,7 +897,8 @@ export default function ParentLunchPage() {
             const dayNum = Number(dKey.slice(8, 10));
             const isSelected = selectedDates.includes(dKey);
             const isCancelled = !day.isRegistered && day.cancellationSource != null;
-            const canSelectToRegister = day.isServing && !day.isCutoffPassed && !day.isRegistered;
+            const isBlockedByLeave = Boolean(day.hasApprovedLeave) && !day.isRegistered;
+            const canSelectToRegister = day.isServing && !day.isCutoffPassed && !day.isRegistered && !isBlockedByLeave;
             const canCancel = day.isRegistered && !day.isCutoffPassed;
             const cleanedRemarks = cleanText(day.serviceRemarks);
 
@@ -902,6 +922,10 @@ export default function ParentLunchPage() {
               bg = '#FFF1F2';
               borderColor = 'var(--color-secondary)';
               shadow = '2px 2px 0 0 var(--color-secondary)';
+            } else if (isBlockedByLeave) {
+              bg = '#FFFBEB';
+              borderColor = '#D97706';
+              shadow = '2px 2px 0 0 #D97706';
             } else if (day.isCutoffPassed) {
               bg = '#F8FAFC';
               borderColor = '#CBD5E1';
@@ -1029,6 +1053,18 @@ export default function ParentLunchPage() {
                       {day.cancellationSource === 'Leave' || day.cancellationSource === 2
                         ? 'Đã hủy (Đơn nghỉ)'
                         : 'Đã hủy'}
+                    </span>
+                  ) : isBlockedByLeave ? (
+                    <span
+                      className="badge badge--amber"
+                      style={{
+                        fontSize: '10px',
+                        border: '1.5px solid var(--color-fg)',
+                        fontWeight: 800,
+                        padding: '2px 8px',
+                      }}
+                    >
+                      Nghỉ học (đã duyệt)
                     </span>
                   ) : day.isCutoffPassed ? (
                     <span
@@ -1304,14 +1340,11 @@ export default function ParentLunchPage() {
                           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
                             Đã qua hạn {day.cutoffTime}
                           </span>
-                        ) : !day.isCutoffPassed && day.isServing ? (
+                        ) : !day.isCutoffPassed && day.isServing && !day.hasApprovedLeave ? (
                           <button
                             type="button"
                             className="btn btn--primary btn--sm"
-                            onClick={() => {
-                              setSelectedDates([dKey]);
-                              setShowRegisterModal(true);
-                            }}
+                            onClick={() => openRegisterModal([dKey])}
                             style={{
                               borderRadius: 'var(--radius-full)',
                               border: '1.5px solid var(--color-fg)',
@@ -1323,6 +1356,10 @@ export default function ParentLunchPage() {
                           >
                             Đăng ký lại
                           </button>
+                        ) : day.hasApprovedLeave ? (
+                          <span style={{ fontSize: 'var(--fs-xs)', color: '#B45309', fontWeight: 700 }}>
+                            Đang có đơn nghỉ đã duyệt
+                          </span>
                         ) : (
                           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>—</span>
                         )}

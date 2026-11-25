@@ -1359,4 +1359,132 @@ public class LunchServiceTests : TestBase
         earlyRes.Success.Should().BeFalse();
         earlyRes.Code.Should().Be(SystemMessages.MSG01.Code);
     }
+
+    // ==================== Round 3 Regression Tests (BD-01, BD-02, GEN-01) ====================
+
+    [Fact]
+    public async Task BD01_DailyBoardAndPeriodReport_UnassignedStudentsShownInUnassignedRowAndMatchTotals()
+    {
+        // Arrange: 1 HS thuộc lớp 1A + 1 HS chưa phân lớp cùng đăng ký ăn trưa
+        var targetDate = new DateTime(2026, 11, 24);
+        var class1A = new Class { Id = 1, ClassName = "1A", Grade = 1, SchoolYearId = 1, Status = "Active" };
+        var assignedStudent = new Student
+        {
+            Id = 1,
+            StudentCode = "HS001",
+            FullName = "HS Đã Phân Lớp",
+            ClassAssignments = new List<ClassAssignment> { new() { Id = 1, StudentId = 1, ClassId = 1, Class = class1A, IsActive = true } }
+        };
+        var unassignedStudent = new Student
+        {
+            Id = 2,
+            StudentCode = "HS002",
+            FullName = "HS Chưa Phân Lớp",
+            ClassAssignments = new List<ClassAssignment>()
+        };
+
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, YearName = "2026-2027", IsActive = true } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<LunchRegistration>
+        {
+            new() { Id = 1, StudentId = 1, Student = assignedStudent, Date = targetDate, MealType = MealType.StandardLunch, IsActive = true, IsWaitlisted = false },
+            new() { Id = 2, StudentId = 2, Student = unassignedStudent, Date = targetDate, MealType = MealType.VegetarianLunch, IsActive = true, IsWaitlisted = false }
+        });
+
+        // Act
+        var boardRes = await _service.GetDailyMealBoardAsync(targetDate, 5, new[] { UserRoles.ServiceStaff });
+        var reportRes = await _service.GetPeriodReportAsync(targetDate, targetDate, null, 5, new[] { UserRoles.ServiceStaff });
+
+        // Assert
+        boardRes.Success.Should().BeTrue();
+        boardRes.Data!.TotalActiveToCook.Should().Be(2);
+        boardRes.Data.ClassBreakdowns.Sum(c => c.ActualCount).Should().Be(boardRes.Data.TotalActiveToCook);
+        boardRes.Data.ClassBreakdowns.Should().ContainSingle(c => c.ClassId == 0 && c.ClassName == "Chưa phân lớp" && c.ActualCount == 1);
+
+        reportRes.Success.Should().BeTrue();
+        reportRes.Data!.TotalActualMeals.Should().Be(2);
+        reportRes.Data.ClassSummaries.Sum(c => c.ActualCount).Should().Be(reportRes.Data.TotalActualMeals);
+        reportRes.Data.ClassSummaries.Should().ContainSingle(c => c.ClassId == 0 && c.ClassName == "Chưa phân lớp" && c.ActualCount == 1);
+    }
+
+    [Fact]
+    public async Task BD02_GetStudentSchedule_SetsHasApprovedLeaveTrueOnApprovedLeaveDay()
+    {
+        // Arrange
+        var leaveDate = new DateTime(2026, 10, 29);
+        var student = new Student { Id = 1, StudentCode = "HS001", FullName = "Trần Gia Bảo", ClassAssignments = new List<ClassAssignment>() };
+        SetupRepository(new List<Student> { student });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchRegistration>());
+        SetupRepository(new List<LeaveRequest>
+        {
+            new()
+            {
+                Id = 10,
+                StartDate = leaveDate,
+                EndDate = leaveDate,
+                Session = LeaveSession.FullDay,
+                KeepLunchService = false,
+                AdministrativeRequest = new AdministrativeRequest
+                {
+                    Id = 10,
+                    StudentId = 1,
+                    RequestType = RequestTypes.Leave,
+                    Status = RequestStatus.Approved
+                }
+            }
+        });
+
+        // Act
+        var res = await _service.GetStudentScheduleAsync(1, "2026-10", 5, new[] { UserRoles.ServiceStaff });
+
+        // Assert
+        res.Success.Should().BeTrue();
+        res.Data!.Days.Single(d => d.Date == leaveDate).HasApprovedLeave.Should().BeTrue();
+        res.Data.Days.Single(d => d.Date == leaveDate.AddDays(1)).HasApprovedLeave.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GEN01_LunchDtos_LockedAtAndCancelledAtNormalizedToUtcKind()
+    {
+        var targetDate = new DateTime(2026, 10, 28);
+        var unspecLockedAt = new DateTime(2026, 10, 28, 1, 15, 0, DateTimeKind.Unspecified);
+        var unspecCancelledAt = new DateTime(2026, 10, 28, 0, 45, 0, DateTimeKind.Unspecified);
+        var class1A = new Class { Id = 1, ClassName = "1A", Grade = 1, SchoolYearId = 1, Status = "Active" };
+        var student = new Student
+        {
+            Id = 1,
+            StudentCode = "HS001",
+            FullName = "Em A",
+            ClassAssignments = new List<ClassAssignment> { new() { Id = 1, StudentId = 1, ClassId = 1, Class = class1A, IsActive = true } }
+        };
+
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, IsActive = true } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<Student> { student });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<LeaveRequest>());
+        SetupRepository(new List<LunchServiceDay>
+        {
+            new() { Id = 1, Date = targetDate, IsServing = true, CutoffTime = new TimeSpan(8, 15, 0), IsLocked = true, LockedAt = unspecLockedAt }
+        });
+        SetupRepository(new List<LunchRegistration>
+        {
+            new() { Id = 1, StudentId = 1, Student = student, Date = targetDate, IsActive = false, CancellationSource = LunchCancellationSource.Parent, CancelledAt = unspecCancelledAt }
+        });
+
+        var serviceDaysRes = await _service.GetServiceDaysAsync(targetDate, targetDate);
+        var scheduleRes = await _service.GetStudentScheduleAsync(1, "2026-10", 5, new[] { UserRoles.ServiceStaff });
+        var boardRes = await _service.GetDailyMealBoardAsync(targetDate, 5, new[] { UserRoles.ServiceStaff });
+
+        serviceDaysRes.Data!.Single().LockedAt!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        scheduleRes.Data!.Days.Single(d => d.Date == targetDate).CancelledAt!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        boardRes.Data!.LockedAt!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        boardRes.Data.StudentMeals.Single().CancelledAt!.Value.Kind.Should().Be(DateTimeKind.Utc);
+    }
 }

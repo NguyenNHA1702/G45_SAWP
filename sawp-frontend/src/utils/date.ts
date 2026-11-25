@@ -33,7 +33,24 @@ const ensureUtcSuffix = (iso: string): string => {
 };
 
 export const formatViDateTime = (iso: string): string =>
-  new Date(ensureUtcSuffix(iso)).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+  new Date(ensureUtcSuffix(iso)).toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+
+/** Hiển thị HH:mm theo múi giờ Việt Nam (UTC+7) */
+export const formatViTime = (iso: string): string => {
+  if (!iso) return '';
+  const d = new Date(ensureUtcSuffix(iso));
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+};
 
 /** Tính ngày Thứ Hai của tuần kế tiếp (dạng YYYY-MM-DD theo giờ máy) */
 export const getNextMondayIso = (baseDate: Date = new Date()): string => {

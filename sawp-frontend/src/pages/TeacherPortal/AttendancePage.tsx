@@ -162,7 +162,8 @@ export default function AttendancePage() {
       const res = await attendanceApi.sendAbsenceNotice(noticeEntry.recordId);
       toast.success(res.message || SYSTEM_MESSAGES.MSG55.content);
     } catch (e) {
-      toast.error(asApiError(e).message);
+      const apiErr = asApiError(e);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setNoticeSending(false);
       setNoticeEntry(null);

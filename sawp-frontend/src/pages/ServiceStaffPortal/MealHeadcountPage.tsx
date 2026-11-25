@@ -29,6 +29,11 @@ import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } fro
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
 import { downloadCsv } from '../../utils/csv';
+import { formatViTime } from '../../utils/date';
+import { asApiError } from '../../utils/apiError';
+
+const formatClassLabel = (className: string, classId?: number): string =>
+  classId === 0 || className === 'Chưa phân lớp' ? className : `Lớp ${className}`;
 
 const COURSE_SLOTS = [
   { role: 'Món chính • Tinh bột', emoji: '🍚', bg: '#FEF3C7', accent: '#D97706' },
@@ -218,8 +223,9 @@ export default function MealHeadcountPage() {
       setLoadingReport(true);
       const data = await lunchApi.getPeriodReport(from, to);
       setPeriodReport(data);
-    } catch {
-      toast.error('Không thể tải báo cáo tổng hợp suất ăn.');
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể tải báo cáo tổng hợp suất ăn.');
     } finally {
       setLoadingReport(false);
     }
@@ -259,8 +265,9 @@ export default function MealHeadcountPage() {
       setCfgIsServing(data.isServing ?? true);
       setCfgCutoffTime(data.cutoffTime || LUNCH_CUTOFF_DEFAULT_TIME);
       setCfgRemarks(data.serviceRemarks || '');
-    } catch {
-      setMessage({ text: 'Không thể tải bảng tổng hợp suất ăn bán trú.', type: 'error' });
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      setMessage({ text: apiErr.errors?.[0] || apiErr.message || 'Không thể tải bảng tổng hợp suất ăn bán trú.', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1197,10 +1204,10 @@ export default function MealHeadcountPage() {
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
                           <td style={{ padding: '12px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>
-                            Lớp {cls.className}
+                            {formatClassLabel(cls.className, cls.classId)}
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                            Khối {cls.grade}
+                            {cls.grade > 0 ? `Khối ${cls.grade}` : '—'}
                           </td>
                           <td style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 600 }}>
                             {cls.initialRegistered}
@@ -1395,7 +1402,7 @@ export default function MealHeadcountPage() {
                 <option value="ALL">Tất cả các lớp</option>
                 {board?.classBreakdowns?.map((c) => (
                   <option key={c.classId} value={String(c.classId)}>
-                    Lớp {c.className} (Khối {c.grade})
+                    {c.grade > 0 ? `${formatClassLabel(c.className, c.classId)} (Khối ${c.grade})` : formatClassLabel(c.className, c.classId)}
                   </option>
                 ))}
               </select>
@@ -1488,7 +1495,7 @@ export default function MealHeadcountPage() {
                         {item.studentCode}
                       </td>
                       <td style={{ padding: '10px 14px', fontWeight: 700 }}>{item.studentName}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>Lớp {item.className}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{formatClassLabel(item.className, item.classId)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                         <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)' }}>
                           {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
@@ -1763,7 +1770,7 @@ export default function MealHeadcountPage() {
                           {(logPageIndex - 1) * logPageSize + idx + 1}
                         </td>
                         <td style={{ padding: '11px 14px', textAlign: 'center', fontWeight: 700, color: 'var(--color-fg)', fontSize: 'var(--fs-xs)' }}>
-                          {new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                          {formatViTime(log.timestamp)}
                         </td>
                         <td style={{ padding: '11px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>
                           {log.studentCode}
@@ -1771,7 +1778,7 @@ export default function MealHeadcountPage() {
                         <td style={{ padding: '11px 14px' }}>
                           <span style={{ fontWeight: 700, color: 'var(--color-fg)' }}>{log.studentName}</span>
                           <span className="badge badge--muted" style={{ marginLeft: 8, fontSize: 11, padding: '1px 6px' }}>
-                            Lớp {log.className}
+                            {formatClassLabel(log.className)}
                           </span>
                         </td>
                         <td style={{ padding: '11px 14px', textAlign: 'center' }}>
@@ -2007,8 +2014,8 @@ export default function MealHeadcountPage() {
                   <tbody>
                     {periodReport.classSummaries.map((c) => (
                       <tr key={c.classId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '10px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>Lớp {c.className}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>Khối {c.grade}</td>
+                        <td style={{ padding: '10px 14px', fontWeight: 800, color: 'var(--color-accent)' }}>{formatClassLabel(c.className, c.classId)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{c.grade > 0 ? `Khối ${c.grade}` : '—'}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700 }}>{c.initialRegistered}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'center', color: '#E11D48', fontWeight: 700 }}>
                           {c.cancelledCount > 0 ? `-${c.cancelledCount}` : '0'}
@@ -2033,7 +2040,7 @@ export default function MealHeadcountPage() {
       <GeometricModal
         open={Boolean(detailClass)}
         onClose={() => setDetailClass(null)}
-        title={`Chi Tiết Suất Ăn Lớp ${detailClass?.className ?? ''}`}
+        title={detailClass ? `Chi Tiết Suất Ăn ${formatClassLabel(detailClass.className, detailClass.classId)}` : 'Chi Tiết Suất Ăn'}
         subtitle={`Ngày ${formatDateDDMMYYYY(selectedDate)} • Danh sách học sinh và chế độ ăn của lớp`}
         badgeText={`Thực ăn: ${detailClass?.actualCount ?? 0}/${detailClass?.initialRegistered ?? 0} suất`}
         badgeColor="mint"
@@ -2152,7 +2159,7 @@ export default function MealHeadcountPage() {
         open={Boolean(selectedStudentTray)}
         onClose={() => setSelectedStudentTray(null)}
         title={`Khay Ăn Bán Trú • ${selectedStudentTray?.studentName ?? ''}`}
-        subtitle={`Lớp ${selectedStudentTray?.className ?? ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${formatDateDDMMYYYY(selectedDate)}`}
+        subtitle={`${selectedStudentTray ? formatClassLabel(selectedStudentTray.className, selectedStudentTray.classId) : ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${formatDateDDMMYYYY(selectedDate)}`}
         badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn') : ''}
         badgeColor="mint"
         icon={<Soup size={22} color="var(--color-fg)" strokeWidth={2.5} />}

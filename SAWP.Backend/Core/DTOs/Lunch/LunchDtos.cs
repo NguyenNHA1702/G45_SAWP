@@ -146,6 +146,7 @@ public class StudentLunchDayDto
     public string CutoffTime { get; set; } = "08:15";
     public bool IsLocked { get; set; }
     public bool IsCutoffPassed { get; set; }
+    public bool HasApprovedLeave { get; set; }
     public string? ServiceRemarks { get; set; }
     public int? RegistrationId { get; set; }
     public bool IsRegistered { get; set; }

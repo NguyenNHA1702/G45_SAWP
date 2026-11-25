@@ -20,6 +20,8 @@ import toast from 'react-hot-toast';
 import { leaveRequestApi, type LeaveRequestItem } from '../../services/implementations/leaveRequestApi';
 import { apiClient } from '../../services/apiClient';
 import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
+import { formatViDateTime } from '../../utils/date';
+import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
 interface LinkedChild {
@@ -106,8 +108,9 @@ export default function LeaveRequestPage() {
       if (res.success) {
         setRequests(res.data);
       }
-    } catch {
-      toast.error('Không thể tải danh sách đơn xin nghỉ.');
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể tải danh sách đơn xin nghỉ.');
     } finally {
       setLoading(false);
     }
@@ -150,9 +153,10 @@ export default function LeaveRequestPage() {
 
     // Validate file extensions theo BR-50: chỉ chấp nhận PDF, JPG, PNG
     const allowedExts = ['.jpg', '.jpeg', '.png', '.pdf'];
+    let currentCount = attachments.length;
 
     for (const file of fileList) {
-      if (attachments.length >= 5) {
+      if (currentCount >= 5) {
         toast.error('Chỉ được đính kèm tối đa 5 tệp / ảnh minh chứng.');
         break;
       }
@@ -168,6 +172,7 @@ export default function LeaveRequestPage() {
         continue;
       }
 
+      currentCount++;
       const tempId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
 
@@ -187,14 +192,14 @@ export default function LeaveRequestPage() {
           toast.success(`Đã tải lên: ${file.name}`);
         } else {
           toast.error(res.message || `Tải tệp "${file.name}" thất bại.`);
+          currentCount--;
           setAttachments((prev) => prev.filter((item) => item.id !== tempId));
           if (previewUrl) URL.revokeObjectURL(previewUrl);
         }
       } catch (err: unknown) {
-        const msg =
-          (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-          `Tải tệp "${file.name}" thất bại.`;
-        toast.error(msg);
+        const apiErr = asApiError(err);
+        toast.error(apiErr.errors?.[0] || apiErr.message || `Tải tệp "${file.name}" thất bại.`);
+        currentCount--;
         setAttachments((prev) => prev.filter((item) => item.id !== tempId));
         if (previewUrl) URL.revokeObjectURL(previewUrl);
       }
@@ -243,8 +248,9 @@ export default function LeaveRequestPage() {
     setSelectedStudentId(item.studentId);
     setStartDate(item.startDate.slice(0, 10));
     setEndDate(item.endDate.slice(0, 10));
-    setSession(item.session === 'Morning' ? 1 : item.session === 'Afternoon' ? 2 : 3);
-    setKeepLunch(item.keepLunchService);
+    const mappedSession = item.session === 'Morning' ? 1 : item.session === 'Afternoon' ? 2 : 3;
+    setSession(mappedSession);
+    setKeepLunch(mappedSession === 1 ? item.keepLunchService : false);
     setReason(item.reason);
     const existingUrls = (item.doctorNoteAttachmentUrl || '')
       .split('|')
@@ -373,12 +379,14 @@ export default function LeaveRequestPage() {
         .filter(Boolean)
         .join(' | ');
 
+      const effectiveKeepLunch = session === 1 ? keepLunch : false;
+
       if (editingRequestId) {
         const res = await leaveRequestApi.update(editingRequestId, {
           startDate,
           endDate,
           session,
-          keepLunchService: keepLunch,
+          keepLunchService: effectiveKeepLunch,
           reason,
           doctorNoteAttachmentUrl: combinedUrls || undefined,
         });
@@ -397,17 +405,20 @@ export default function LeaveRequestPage() {
           startDate,
           endDate,
           session,
-          keepLunchService: keepLunch,
+          keepLunchService: effectiveKeepLunch,
           reason,
           doctorNoteAttachmentUrl: combinedUrls || undefined,
         });
 
         if (res.success) {
           const actualDays = res.data?.totalDays ?? durationDays;
+          const noHomeroom = res.data?.hasHomeroomTeacher === false;
           toast.success(
-            actualDays > 3
-              ? 'Đã gửi đơn nghỉ (> 3 ngày học)! GVCN sẽ xác nhận và chuyển Ban Giám Hiệu phê duyệt.'
-              : res.message || 'Đã gửi đơn xin nghỉ thành công! GVCN sẽ sớm xem xét.',
+            noHomeroom
+              ? 'Đã gửi đơn xin nghỉ thành công! Lớp hiện chưa có GVCN nên đơn đã được chuyển thẳng tới Ban Giám Hiệu xem xét.'
+              : actualDays > 3
+                ? 'Đã gửi đơn nghỉ (> 3 ngày học)! GVCN sẽ xác nhận và chuyển Ban Giám Hiệu phê duyệt.'
+                : res.message || 'Đã gửi đơn xin nghỉ thành công! GVCN sẽ sớm xem xét.',
             { duration: 5000 }
           );
           setShowModal(false);
@@ -418,8 +429,8 @@ export default function LeaveRequestPage() {
         }
       }
     } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Có lỗi xảy ra khi gửi đơn.';
-      toast.error(errorMsg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể gửi đơn xin nghỉ.');
     } finally {
       setSubmitting(false);
     }
@@ -435,8 +446,9 @@ export default function LeaveRequestPage() {
       } else {
         toast.error(res.message);
       }
-    } catch {
-      toast.error('Không thể hủy đơn.');
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể hủy đơn.');
     }
   };
 
@@ -454,8 +466,8 @@ export default function LeaveRequestPage() {
         toast.error(res.message || 'Không thể thu hồi đơn.');
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Không thể thu hồi đơn.';
-      toast.error(msg);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Không thể thu hồi đơn.');
     } finally {
       setWithdrawing(false);
     }
@@ -579,8 +591,12 @@ export default function LeaveRequestPage() {
                   {/* Status Badge */}
                   <div>
                     {r.status === 'Submitted' && (
-                      <span className="badge badge--amber">
-                        {isLongLeave ? 'Chờ GVCN chuyển BGH' : 'Chờ GVCN duyệt'}
+                      <span className={r.hasHomeroomTeacher === false ? 'badge badge--violet' : 'badge badge--amber'}>
+                        {r.hasHomeroomTeacher === false
+                          ? 'Chờ BGH duyệt (lớp chưa có GVCN)'
+                          : isLongLeave
+                            ? 'Chờ GVCN chuyển BGH'
+                            : 'Chờ GVCN duyệt'}
                       </span>
                     )}
                     {r.status === 'UnderReview' && (
@@ -752,7 +768,7 @@ export default function LeaveRequestPage() {
                             <strong>{h.actionLabel}</strong>
                             {h.actorName ? ` (${h.actorName})` : ''}
                             {' — '}
-                            <span style={{ color: 'var(--color-muted-fg)' }}>{formatDateDDMMYYYY(h.timestamp)}</span>
+                            <span style={{ color: 'var(--color-muted-fg)' }}>{formatViDateTime(h.timestamp)}</span>
                             {h.notes ? `: ${h.notes}` : ''}
                           </div>
                         ))}
@@ -914,7 +930,10 @@ export default function LeaveRequestPage() {
                       key={s.val}
                       type="button"
                       className={session === s.val ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
-                      onClick={() => setSession(s.val)}
+                      onClick={() => {
+                        setSession(s.val);
+                        if (s.val !== 1) setKeepLunch(false);
+                      }}
                       style={{ width: '100%', padding: '6px 4px' }}
                     >
                       {s.label}

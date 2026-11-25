@@ -36,6 +36,7 @@ export interface LeaveRequestItem {
   studentCode: string;
   classId?: number;
   className: string;
+  hasHomeroomTeacher?: boolean;
   requesterUserId: number;
   requesterName: string;
   requesterPhone?: string;
