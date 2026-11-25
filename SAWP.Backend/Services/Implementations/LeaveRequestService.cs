@@ -24,6 +24,8 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ISchoolCalendarService _calendarService;
 
     private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+    private const int MaxAttachmentCount = 5;
+    private const int FallbackMaxAdvanceDays = 180;
     private const int MinReasonLength = 5;
     private const int MaxReasonLength = 500;
     private const string AttachmentUrlPrefix = "/api/LeaveRequests/attachment-file?path=";
@@ -192,6 +194,7 @@ public class LeaveRequestService : ILeaveRequestService
         DateTime startDate,
         DateTime endDate,
         LeaveSession session,
+        bool keepLunchService,
         string reason,
         string? attachmentUrl,
         int? excludeRequestId,
@@ -215,6 +218,29 @@ public class LeaveRequestService : ILeaveRequestService
             return (false, "Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.", SystemMessages.MSG24, new List<DateTime>());
         }
 
+        // LV-01: Giới hạn trên của ngày nghỉ theo năm học hiện hành (hoặc tối đa 180 ngày nếu chưa cấu hình năm học)
+        var schoolYearRepo = _unitOfWork.Repository<SchoolYear>();
+        SchoolYear? activeYear = null;
+        if (schoolYearRepo != null)
+        {
+            activeYear = await schoolYearRepo.Query()
+                .Where(sy => sy.IsActive)
+                .OrderByDescending(sy => sy.Id)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (activeYear != null && activeYear.EndDate.Date >= CurrentToday)
+        {
+            if (start > activeYear.EndDate.Date || end > activeYear.EndDate.Date)
+            {
+                return (false, $"Thời gian xin nghỉ không được vượt quá ngày kết thúc năm học hiện tại ({activeYear.EndDate:dd-MM-yyyy}).", SystemMessages.MSG01, new List<DateTime>());
+            }
+        }
+        else if (start > CurrentToday.AddDays(FallbackMaxAdvanceDays))
+        {
+            return (false, $"Không thể đặt ngày bắt đầu xin nghỉ quá {FallbackMaxAdvanceDays} ngày kể từ hôm nay.", SystemMessages.MSG01, new List<DateTime>());
+        }
+
         var calendarSpanDays = (end - start).Days + 1;
         if (calendarSpanDays > MaxLeaveCalendarSpanDays)
         {
@@ -232,6 +258,29 @@ public class LeaveRequestService : ILeaveRequestService
             return (false, $"Tổng số ngày học xin nghỉ không được vượt quá {MaxLeaveSchoolDays} ngày học.", SystemMessages.MSG01, new List<DateTime>());
         }
 
+        // LV-03: Chỉ cho phép giữ suất ăn khi nghỉ buổi Sáng và học sinh có đăng ký bán trú active trong khoảng ngày nghỉ
+        if (keepLunchService)
+        {
+            if (session != LeaveSession.Morning)
+            {
+                return (false, "Tùy chọn giữ suất ăn bán trú chỉ áp dụng cho đơn nghỉ buổi sáng (trưa học sinh vào trường ăn để học buổi chiều).", SystemMessages.MSG01, new List<DateTime>());
+            }
+
+            var lunchRegRepo = _unitOfWork.Repository<LunchRegistration>();
+            if (lunchRegRepo != null)
+            {
+                var hasActiveLunch = await lunchRegRepo.Query()
+                    .AnyAsync(r => r.StudentId == studentId
+                                && schoolDays.Contains(r.Date)
+                                && r.IsActive
+                                && !r.IsWaitlisted, ct);
+                if (!hasActiveLunch)
+                {
+                    return (false, "Học sinh chưa đăng ký suất ăn bán trú trong các ngày xin nghỉ nên không thể chọn giữ suất ăn.", SystemMessages.MSG01, new List<DateTime>());
+                }
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(reason))
         {
             return (false, "Vui lòng nhập lý do xin nghỉ học.", SystemMessages.MSG01, new List<DateTime>());
@@ -241,6 +290,16 @@ public class LeaveRequestService : ILeaveRequestService
         if (trimmedReasonLen < MinReasonLength || trimmedReasonLen > MaxReasonLength)
         {
             return (false, $"Lý do xin nghỉ học phải từ {MinReasonLength} đến {MaxReasonLength} ký tự.", SystemMessages.MSG01, new List<DateTime>());
+        }
+
+        // LV-02: Giới hạn tối đa 5 tệp đính kèm trên mỗi đơn xin nghỉ
+        if (!string.IsNullOrWhiteSpace(attachmentUrl))
+        {
+            var attachmentParts = attachmentUrl.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (attachmentParts.Length > MaxAttachmentCount)
+            {
+                return (false, $"Chỉ được đính kèm tối đa {MaxAttachmentCount} tệp minh chứng cho mỗi đơn xin nghỉ.", SystemMessages.MSG01, new List<DateTime>());
+            }
         }
 
         if (!IsValidAttachmentUrls(attachmentUrl))
@@ -281,7 +340,10 @@ public class LeaveRequestService : ILeaveRequestService
         var currentAssignment = await classRepo.Query()
             .Include(ca => ca.Class)
                 .ThenInclude(c => c.HomeroomTeacher)
-            .FirstOrDefaultAsync(ca => ca.StudentId == studentId && ca.IsActive, ct);
+            .Where(ca => ca.StudentId == studentId && ca.IsActive)
+            .OrderByDescending(ca => ca.StartDate)
+            .ThenByDescending(ca => ca.Id)
+            .FirstOrDefaultAsync(ct);
 
         if (currentAssignment?.Class?.HomeroomTeacher?.UserId != null)
         {
@@ -294,7 +356,43 @@ public class LeaveRequestService : ILeaveRequestService
                 CreatedAt = DateTime.UtcNow
             }, ct);
             await _unitOfWork.SaveChangesAsync(ct);
+            return;
         }
+
+        // LV-04: Lớp chưa có GVCN -> tự động gửi thông báo cho Ban Giám Hiệu (SchoolBoard) xử lý
+        var roleRepo = _unitOfWork.Repository<Role>();
+        var userRoleRepo = _unitOfWork.Repository<UserRole>();
+        if (roleRepo == null || userRoleRepo == null) return;
+
+        var boardRole = await roleRepo.Query().FirstOrDefaultAsync(r => r.Name == "SchoolBoard", ct);
+        if (boardRole == null) return;
+
+        var boardUserIds = await userRoleRepo.Query()
+            .Where(ur => ur.RoleId == boardRole.Id)
+            .Select(ur => ur.UserId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        if (boardUserIds.Count == 0) return;
+
+        var classLabel = currentAssignment?.Class?.ClassName;
+        var boardContent = !string.IsNullOrWhiteSpace(classLabel)
+            ? $"Lớp {classLabel} hiện chưa phân công GVCN. {content}"
+            : $"Học sinh hiện chưa có GVCN phụ trách. {content}";
+
+        foreach (var bId in boardUserIds)
+        {
+            await notifRepo.AddAsync(new Notification
+            {
+                UserId = bId,
+                Title = $"{title} (lớp chưa có GVCN)",
+                Content = boardContent,
+                LinkUrl = linkUrl,
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
     }
 
     public async Task<ApiResponse<LeaveRequestItemDto>> SubmitLeaveRequestAsync(int parentUserId, CreateLeaveRequestDto request, CancellationToken cancellationToken = default)
@@ -320,6 +418,7 @@ public class LeaveRequestService : ILeaveRequestService
             request.StartDate,
             request.EndDate,
             request.Session,
+            request.KeepLunchService,
             request.Reason,
             request.DoctorNoteAttachmentUrl,
             null,
@@ -419,6 +518,7 @@ public class LeaveRequestService : ILeaveRequestService
             request.StartDate,
             request.EndDate,
             request.Session,
+            request.KeepLunchService,
             request.Reason,
             request.DoctorNoteAttachmentUrl,
             req.Id,
@@ -566,13 +666,31 @@ public class LeaveRequestService : ILeaveRequestService
             queryClasses = queryClasses.Where(c => c.Id == classId.Value);
         }
 
-        var targetClassIds = await queryClasses.Select(c => c.Id).ToListAsync(cancellationToken);
+        var targetClasses = await queryClasses
+            .Select(c => new { c.Id, c.HomeroomTeacherId })
+            .ToListAsync(cancellationToken);
+        var targetClassIds = targetClasses.Select(c => c.Id).ToList();
+        var classesWithoutHomeroom = targetClasses
+            .Where(c => c.HomeroomTeacherId == null)
+            .Select(c => c.Id)
+            .ToHashSet();
 
-        var activeStudentIds = await _unitOfWork.Repository<ClassAssignment>()
+        var activeAssignments = await _unitOfWork.Repository<ClassAssignment>()
             .Query()
             .Where(ca => targetClassIds.Contains(ca.ClassId) && ca.IsActive)
-            .Select(ca => ca.StudentId)
+            .Select(ca => new { ca.StudentId, ca.ClassId, ca.StartDate, ca.Id })
             .ToListAsync(cancellationToken);
+
+        var latestAssignments = activeAssignments
+            .GroupBy(ca => ca.StudentId)
+            .Select(g => g.OrderByDescending(x => x.StartDate).ThenByDescending(x => x.Id).First())
+            .ToList();
+
+        var activeStudentIds = latestAssignments.Select(x => x.StudentId).ToList();
+        var noHomeroomStudentIds = latestAssignments
+            .Where(x => classesWithoutHomeroom.Contains(x.ClassId))
+            .Select(x => x.StudentId)
+            .ToList();
 
         var reqQuery = _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
@@ -585,7 +703,17 @@ public class LeaveRequestService : ILeaveRequestService
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<RequestStatus>(status, true, out var parsedStatus))
         {
-            reqQuery = reqQuery.Where(ar => ar.Status == parsedStatus);
+            if (isSchoolBoardOrAdmin && parsedStatus == RequestStatus.UnderReview && noHomeroomStudentIds.Count > 0)
+            {
+                // LV-04: BGH xem hàng chờ duyệt của mình bao gồm cả đơn Submitted từ các lớp chưa có GVCN
+                reqQuery = reqQuery.Where(ar =>
+                    ar.Status == RequestStatus.UnderReview ||
+                    (ar.Status == RequestStatus.Submitted && ar.StudentId.HasValue && noHomeroomStudentIds.Contains(ar.StudentId.Value)));
+            }
+            else
+            {
+                reqQuery = reqQuery.Where(ar => ar.Status == parsedStatus);
+            }
         }
 
         if (date.HasValue)
@@ -1310,6 +1438,7 @@ public class LeaveRequestService : ILeaveRequestService
             var assignments = await classRepo.Query()
                 .AsNoTracking()
                 .Include(ca => ca.Class)
+                    .ThenInclude(c => c.HomeroomTeacher)
                 .Where(ca => studentIds.Contains(ca.StudentId) && ca.IsActive)
                 .ToListAsync(cancellationToken);
 
@@ -1369,6 +1498,10 @@ public class LeaveRequestService : ILeaveRequestService
             var isWithdrawn = req.Status == RequestStatus.Cancelled
                 && history.Any(h => h.Action == AuditActions.LeaveRequestWithdraw);
 
+            var hasHomeroomTeacher = currentClass?.Class == null
+                || currentClass.Class.HomeroomTeacherId.HasValue
+                || currentClass.Class.HomeroomTeacher != null;
+
             list.Add(new LeaveRequestItemDto
             {
                 Id = req.Id,
@@ -1378,6 +1511,7 @@ public class LeaveRequestService : ILeaveRequestService
                 StudentCode = req.Student?.StudentCode ?? string.Empty,
                 ClassId = currentClass?.ClassId,
                 ClassName = currentClass?.Class?.ClassName ?? string.Empty,
+                HasHomeroomTeacher = hasHomeroomTeacher,
                 RequesterUserId = req.RequesterUserId,
                 RequesterName = req.RequesterUser?.FullName ?? string.Empty,
                 RequesterPhone = req.RequesterUser?.PhoneNumber,
@@ -1394,10 +1528,10 @@ public class LeaveRequestService : ILeaveRequestService
                 CanWithdraw = canWithdraw,
                 IsWithdrawn = isWithdrawn,
                 Status = req.Status,
-                SubmissionDate = DateTime.SpecifyKind(req.SubmissionDate, DateTimeKind.Utc),
+                SubmissionDate = UtcDateTimeHelper.Normalize(req.SubmissionDate),
                 ReviewerUserId = req.ReviewerUserId,
                 ReviewerName = req.ReviewerUser?.FullName,
-                ProcessedDate = req.ProcessedDate.HasValue ? DateTime.SpecifyKind(req.ProcessedDate.Value, DateTimeKind.Utc) : null,
+                ProcessedDate = UtcDateTimeHelper.Normalize(req.ProcessedDate),
                 ReviewerNotes = req.ReviewerNotes,
                 StatusHistory = history
             });
@@ -1423,7 +1557,7 @@ public class LeaveRequestService : ILeaveRequestService
                     ActionLabel = GetActionLabel(log.Action, log.NewValues),
                     ActorName = actorName,
                     Notes = notes,
-                    Timestamp = DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Utc)
+                    Timestamp = UtcDateTimeHelper.Normalize(log.Timestamp)
                 };
             }).ToList();
         }
@@ -1437,7 +1571,7 @@ public class LeaveRequestService : ILeaveRequestService
                 ActionLabel = "Phụ huynh gửi đơn",
                 ActorName = req.RequesterUser?.FullName,
                 Notes = req.LeaveRequest?.Reason,
-                Timestamp = DateTime.SpecifyKind(req.SubmissionDate, DateTimeKind.Utc)
+                Timestamp = UtcDateTimeHelper.Normalize(req.SubmissionDate)
             }
         };
 
@@ -1465,7 +1599,7 @@ public class LeaveRequestService : ILeaveRequestService
                 },
                 ActorName = req.ReviewerUser?.FullName,
                 Notes = req.ReviewerNotes,
-                Timestamp = DateTime.SpecifyKind(req.ProcessedDate.Value, DateTimeKind.Utc)
+                Timestamp = UtcDateTimeHelper.Normalize(req.ProcessedDate.Value)
             });
         }
 

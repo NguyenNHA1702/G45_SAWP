@@ -71,6 +71,7 @@ public class LeaveRequestItemDto
 
     public int TotalDays { get; set; }
     public bool IsEscalated { get; set; }
+    public bool HasHomeroomTeacher { get; set; } = true;
     public bool CanEdit { get; set; }
     public bool CanWithdraw { get; set; }
     public bool IsWithdrawn { get; set; }
@@ -78,7 +79,9 @@ public class LeaveRequestItemDto
     public RequestStatus Status { get; set; }
     public string StatusName => Status switch
     {
-        RequestStatus.Submitted => IsEscalated ? "Chờ GV chuyển BGH" : "Chờ GVCN duyệt",
+        RequestStatus.Submitted => !HasHomeroomTeacher
+            ? "Chờ BGH duyệt (lớp chưa có GVCN)"
+            : (IsEscalated ? "Chờ GV chuyển BGH" : "Chờ GVCN duyệt"),
         RequestStatus.UnderReview => "Chờ BGH duyệt",
         RequestStatus.Approved => "Đã duyệt",
         RequestStatus.Rejected => "Từ chối",
