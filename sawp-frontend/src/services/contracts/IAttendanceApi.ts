@@ -5,6 +5,7 @@ import type {
   AttendanceSheet,
   AttendanceSheetEntry,
   AttendanceSubmitResult,
+  ClassAttendanceMatrix,
   ClassAttendanceSummary,
   CorrectAttendancePayload,
   StudentAttendanceHistory,
@@ -19,5 +20,6 @@ export interface IAttendanceApi {
   correctRecord(recordId: number, payload: CorrectAttendancePayload): Promise<ApiResponse<AttendanceSheetEntry>>;
   sendAbsenceNotice(recordId: number): Promise<ApiResponse<AbsenceNoticeResult>>;
   getClassSummary(classId: number, from: string, to: string): Promise<ClassAttendanceSummary>;
+  getClassMatrix(classId: number, from: string, to: string): Promise<ClassAttendanceMatrix>;
   getStudentHistory(studentId: number, from: string, to: string): Promise<StudentAttendanceHistory>;
 }

@@ -1503,4 +1503,83 @@ public class AttendanceServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG01.Code);
         result.Errors.Should().Contain(e => e.Contains("lý do"));
     }
+
+    [Fact]
+    public async Task GetClassMatrix_Exceeds31Days_FailsWithMSG01()
+    {
+        var result = await _service.GetClassMatrixAsync(1, new DateTime(2026, 10, 1), new DateTime(2026, 11, 15), 30, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task GetClassMatrix_ValidRange_ReturnsStudentsAndSchoolDates()
+    {
+        var from = new DateTime(2026, 10, 26); // Monday
+        var to = new DateTime(2026, 10, 28);   // Wednesday (Today)
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10 } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<SchoolCalendarDay>());
+        AttendanceRepoMock.Setup(a => a.GetClassMatrixAsync(1, from, to, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ClassMatrixStudentDto>
+            {
+                new()
+                {
+                    StudentId = 1,
+                    StudentCode = "HS001",
+                    FullName = "Em A",
+                    JoinedDate = new DateTime(2026, 9, 1),
+                    Present = 2,
+                    Cells = new List<ClassMatrixCellDto>
+                    {
+                        new() { Date = from, Session = AttendanceSession.Morning, Status = AttendanceStatus.Present },
+                        new() { Date = to, Session = AttendanceSession.Morning, Status = AttendanceStatus.Present }
+                    }
+                }
+            });
+
+        var result = await _service.GetClassMatrixAsync(1, from, to, 30, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeTrue();
+        result.Data!.ClassName.Should().Be("1A");
+        result.Data.Dates.Should().HaveCount(3);
+        result.Data.Students.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task RecordDailyAttendance_ExcusedWithoutApprovedLeave_WithExternalRemarks_Succeeds()
+    {
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(7.5));
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        var dto = new SubmitAttendanceSheetDto
+        {
+            Date = today,
+            Session = AttendanceSession.Morning,
+            Entries = new List<DailyAttendanceEntryDto>
+            {
+                new() { StudentId = 1, Status = AttendanceStatus.ExcusedAbsence, Remarks = "Xin phép ngoài hệ thống" }
+            }
+        };
+
+        var result = await _service.RecordDailyAttendanceAsync(1, dto, 30, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeTrue();
+        AttendanceRepoMock.Verify(a => a.AddAsync(It.Is<AttendanceRecord>(r =>
+            r.StudentId == 1 && r.Status == AttendanceStatus.ExcusedAbsence && r.Remarks == "Xin phép ngoài hệ thống"), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

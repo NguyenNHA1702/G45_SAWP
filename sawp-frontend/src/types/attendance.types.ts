@@ -144,3 +144,32 @@ export interface ClassAttendanceSummary {
   attendanceRate: number;
   students: StudentAttendanceRow[];
 }
+
+export interface ClassMatrixCell {
+  date: string;
+  session: AttendanceSession;
+  status: AttendanceStatus;
+  remarks: string | null;
+  leaveRequestNumber: string | null;
+}
+
+export interface ClassMatrixStudent {
+  studentId: number;
+  studentCode: string;
+  fullName: string;
+  joinedDate: string;
+  present: number;
+  late: number;
+  excusedAbsence: number;
+  unexcusedAbsence: number;
+  cells: ClassMatrixCell[];
+}
+
+export interface ClassAttendanceMatrix {
+  classId: number;
+  className: string;
+  from: string;
+  to: string;
+  dates: string[];
+  students: ClassMatrixStudent[];
+}

@@ -60,8 +60,19 @@ export function useAttendanceSheet(classId: number | null, date: string, session
 
   // 2. Thao tác sửa draft
   const setStatus = useCallback((studentId: number, status: AttendanceStatus) => {
-    setDraft((prev) => ({ ...prev, [studentId]: { ...prev[studentId], status } }));
-  }, []);
+    const entry = sheet?.entries.find((e) => e.studentId === studentId);
+    const hasApprovedLeave = entry?.leave?.status === 'Approved';
+    setDraft((prev) => {
+      const current = prev[studentId];
+      let nextRemarks = current?.remarks ?? '';
+      if (status === 'ExcusedAbsence' && !hasApprovedLeave && !nextRemarks.trim()) {
+        nextRemarks = 'Xin phép ngoài hệ thống';
+      } else if (status !== 'ExcusedAbsence' && nextRemarks.trim() === 'Xin phép ngoài hệ thống') {
+        nextRemarks = '';
+      }
+      return { ...prev, [studentId]: { ...current, status, remarks: nextRemarks } };
+    });
+  }, [sheet]);
 
   const setRemarks = useCallback((studentId: number, remarks: string) => {
     setDraft((prev) => ({ ...prev, [studentId]: { ...prev[studentId], remarks } }));

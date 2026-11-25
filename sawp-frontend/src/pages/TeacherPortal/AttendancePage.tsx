@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { BarChart3, CalendarCheck2, CheckCheck, Clock, GraduationCap, PencilLine, RotateCcw, Save, TriangleAlert, Users } from 'lucide-react';
+import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, PencilLine, RotateCcw, Save, Search, Table2, TriangleAlert, Users } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
@@ -14,11 +14,15 @@ import type {
   AttendanceSheetEntry,
   AttendanceStatus,
   AttendanceSubmitResult,
+  ClassAttendanceMatrix,
   ClassAttendanceSummary,
+  StudentAttendanceHistory,
   TeacherClassOption,
 } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
 import { AttendanceRosterTable } from '../../components/attendance/AttendanceRosterTable';
+import { ClassAttendanceMatrixTable } from '../../components/attendance/ClassAttendanceMatrixTable';
+import { StudentAttendanceDetailView } from '../../components/attendance/StudentAttendanceDetailView';
 import { LockedBanner } from '../../components/attendance/LockedBanner';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { GeometricModal } from '../../components/common/GeometricModal';
@@ -73,6 +77,14 @@ export default function AttendancePage() {
   const [classSummary, setClassSummary] = useState<ClassAttendanceSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryViewMode, setSummaryViewMode] = useState<'table' | 'matrix'>('table');
+  const [summarySearch, setSummarySearch] = useState('');
+  const [classMatrix, setClassMatrix] = useState<ClassAttendanceMatrix | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
+  const [detailStudent, setDetailStudent] = useState<{ studentId: number; fullName: string; studentCode: string } | null>(null);
+  const [detailHistory, setDetailHistory] = useState<StudentAttendanceHistory | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const vm = useAttendanceSheet(classId, date, session);
   useUnsavedChangesWarning(vm.isDirty);
@@ -132,6 +144,61 @@ export default function AttendancePage() {
       cancelled = true;
     };
   }, [activeTab, classId, summaryFrom, summaryTo]);
+
+  // Load ma trận điểm danh theo ngày của cả lớp khi ở chế độ Ma trận
+  useEffect(() => {
+    if (activeTab !== 'summary' || summaryViewMode !== 'matrix' || classId === null) return;
+    if (!summaryFrom || !summaryTo) return;
+    if (summaryFrom > summaryTo) {
+      setClassMatrix(null);
+      setMatrixError('Từ ngày phải trước hoặc bằng Đến ngày.');
+      return;
+    }
+    const diffDays = Math.round((new Date(summaryTo).getTime() - new Date(summaryFrom).getTime()) / 86400000);
+    if (diffDays > 31) {
+      setClassMatrix(null);
+      setMatrixError('Chế độ ma trận theo ngày hỗ trợ tối đa 31 ngày. Vui lòng thu hẹp khoảng thời gian.');
+      return;
+    }
+    let cancelled = false;
+    setMatrixLoading(true);
+    setMatrixError(null);
+    attendanceApi
+      .getClassMatrix(classId, summaryFrom, summaryTo)
+      .then((data) => {
+        if (!cancelled) setClassMatrix(data);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const err = asApiError(e);
+        setClassMatrix(null);
+        setMatrixError(
+          err.code === 'MSG43'
+            ? 'Không có dữ liệu chuyên cần trong khoảng thời gian đã chọn.'
+            : err.message
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setMatrixLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, summaryViewMode, classId, summaryFrom, summaryTo]);
+
+  const openStudentDetail = async (studentId: number, fullName: string, studentCode: string) => {
+    setDetailStudent({ studentId, fullName, studentCode });
+    setDetailHistory(null);
+    setDetailLoading(true);
+    try {
+      const history = await attendanceApi.getStudentHistory(studentId, summaryFrom, summaryTo);
+      setDetailHistory(history);
+    } catch (e: unknown) {
+      toast.error(asApiError(e).message);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const guardDirty = () => !vm.isDirty || window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi?');
 
@@ -455,92 +522,195 @@ export default function AttendancePage() {
 
       {activeTab === 'summary' ? (
         <section aria-label="Báo cáo tổng hợp chuyên cần lớp">
-          {summaryLoading && (
-            <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="skeleton" />
-              ))}
-            </div>
-          )}
-
-          {!summaryLoading && summaryError && (
-            <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
-              <BarChart3 size={36} aria-hidden="true" />
-              <p style={{ margin: 0, fontWeight: 600 }}>{summaryError}</p>
-            </div>
-          )}
-
-          {!summaryLoading && !summaryError && classSummary && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
-                <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-muted-fg)' }}>SỐ NGÀY HỌC</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{classSummary.schoolDays}</div>
-                </div>
-                <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)', background: '#ECFDF5' }}>
-                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: '#065F46' }}>TỈ LỆ CHUYÊN CẦN</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669' }}>{classSummary.attendanceRate}%</div>
-                </div>
-                <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-muted-fg)' }}>KHOẢNG THỜI GIAN</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, marginTop: 6 }}>
-                    {formatDashDate(classSummary.from)} – {formatDashDate(classSummary.to)}
-                  </div>
-                </div>
-              </div>
-
-              <AttendanceSummaryBar summary={classSummary.totals} totalLabel="Tổng lượt điểm danh" />
-
-              <div
-                className="card pop-in"
-                style={{
-                  border: '2px solid var(--color-fg)',
-                  boxShadow: '4px 4px 0 0 var(--color-fg)',
-                  borderRadius: 'var(--radius-lg)',
-                  background: 'var(--color-card)',
-                  padding: 0,
-                  overflow: 'hidden',
-                }}
+          {/* Thanh chuyển chế độ xem: Bảng thống kê vs Ma trận theo ngày */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button
+                type="button"
+                className={`btn btn--sm ${summaryViewMode === 'table' ? 'btn--primary' : 'btn--secondary'}`}
+                onClick={() => setSummaryViewMode('table')}
+                style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', fontWeight: 700 }}
               >
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 48, fontWeight: 800 }}>#</th>
-                        <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 800 }}>Học sinh</th>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Có mặt</th>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đi muộn</th>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng có phép</th>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng không phép</th>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Chưa điểm danh</th>
-                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Tỉ lệ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {classSummary.students.map((st, idx) => {
-                        const total = st.present + st.late + st.excusedAbsence + st.unexcusedAbsence;
-                        const rateDisplay =
-                          total > 0 ? `${Math.round(((st.present + st.late) * 10000) / total) / 100}%` : '—';
-                        return (
-                          <tr key={st.studentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600 }}>{idx + 1}</td>
-                            <td style={{ padding: '10px 16px' }}>
-                              <strong style={{ display: 'block' }}>{st.fullName}</strong>
-                              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>{st.studentCode}</span>
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#059669' }}>{st.present}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#D97706' }}>{st.late}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#2563EB' }}>{st.excusedAbsence}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#DC2626' }}>{st.unexcusedAbsence}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#64748B' }}>{st.notMarked ?? 0}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800 }}>{rateDisplay}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <Table2 size={14} /> Bảng thống kê
+              </button>
+              <button
+                type="button"
+                className={`btn btn--sm ${summaryViewMode === 'matrix' ? 'btn--primary' : 'btn--secondary'}`}
+                onClick={() => setSummaryViewMode('matrix')}
+                style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', fontWeight: 700 }}
+              >
+                <CalendarRange size={14} /> Ma trận theo ngày
+              </button>
+            </div>
+
+            {summaryViewMode === 'table' && classSummary && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                <div style={{ position: 'relative' }}>
+                  <Search
+                    size={14}
+                    style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted-fg)' }}
+                  />
+                  <input
+                    type="text"
+                    className="input"
+                    value={summarySearch}
+                    onChange={(e) => setSummarySearch(e.target.value)}
+                    placeholder="Tìm tên hoặc mã HS..."
+                    aria-label="Tìm học sinh trong báo cáo"
+                    style={{
+                      paddingLeft: 30,
+                      paddingRight: 12,
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      borderRadius: 'var(--radius-full)',
+                      border: '2px solid var(--color-fg)',
+                      fontSize: 'var(--fs-xs)',
+                      width: 210,
+                    }}
+                  />
                 </div>
               </div>
+            )}
+          </div>
+
+          {summaryViewMode === 'matrix' ? (
+            <>
+              {matrixLoading && (
+                <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="skeleton" />
+                  ))}
+                </div>
+              )}
+              {!matrixLoading && matrixError && (
+                <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
+                  <CalendarRange size={36} aria-hidden="true" />
+                  <p style={{ margin: 0, fontWeight: 600 }}>{matrixError}</p>
+                </div>
+              )}
+              {!matrixLoading && !matrixError && classMatrix && (
+                <ClassAttendanceMatrixTable
+                  matrix={classMatrix}
+                  onSelectStudent={openStudentDetail}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              {summaryLoading && (
+                <div aria-busy="true" style={{ display: 'grid', gap: 8 }}>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="skeleton" />
+                  ))}
+                </div>
+              )}
+
+              {!summaryLoading && summaryError && (
+                <div className="card empty-state" style={{ border: '2px solid var(--color-fg)', boxShadow: '4px 4px 0 0 var(--color-fg)', borderRadius: 'var(--radius-lg)' }}>
+                  <BarChart3 size={36} aria-hidden="true" />
+                  <p style={{ margin: 0, fontWeight: 600 }}>{summaryError}</p>
+                </div>
+              )}
+
+              {!summaryLoading && !summaryError && classSummary && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+                    <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-muted-fg)' }}>SỐ NGÀY HỌC</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{classSummary.schoolDays}</div>
+                    </div>
+                    <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)', background: '#ECFDF5' }}>
+                      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: '#065F46' }}>TỈ LỆ CHUYÊN CẦN</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669' }}>{classSummary.attendanceRate}%</div>
+                    </div>
+                    <div className="card" style={{ padding: '14px 18px', border: '2px solid var(--color-fg)', boxShadow: '3px 3px 0 0 var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-muted-fg)' }}>KHOẢNG THỜI GIAN</div>
+                      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, marginTop: 6 }}>
+                        {formatDashDate(classSummary.from)} – {formatDashDate(classSummary.to)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <AttendanceSummaryBar summary={classSummary.totals} totalLabel="Tổng lượt điểm danh" />
+
+                  <div
+                    className="card pop-in"
+                    style={{
+                      border: '2px solid var(--color-fg)',
+                      boxShadow: '4px 4px 0 0 var(--color-fg)',
+                      borderRadius: 'var(--radius-lg)',
+                      background: 'var(--color-card)',
+                      padding: 0,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 48, fontWeight: 800 }}>#</th>
+                            <th scope="col" style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 800 }}>Học sinh</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Có mặt</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đi muộn</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng có phép</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng không phép</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Chưa điểm danh</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Tỉ lệ</th>
+                            <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Chi tiết</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {classSummary.students
+                            .filter((st) => {
+                              const q = summarySearch.trim().toLowerCase();
+                              if (!q) return true;
+                              return st.fullName.toLowerCase().includes(q) || st.studentCode.toLowerCase().includes(q);
+                            })
+                            .map((st, idx) => {
+                              const total = st.present + st.late + st.excusedAbsence + st.unexcusedAbsence;
+                              const rateDisplay =
+                                total > 0 ? `${Math.round(((st.present + st.late) * 10000) / total) / 100}%` : '—';
+                              return (
+                                <tr key={st.studentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600 }}>{idx + 1}</td>
+                                  <td style={{ padding: '10px 16px' }}>
+                                    <strong style={{ display: 'block' }}>{st.fullName}</strong>
+                                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>{st.studentCode}</span>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#059669' }}>{st.present}</td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#D97706' }}>{st.late}</td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#2563EB' }}>{st.excusedAbsence}</td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#DC2626' }}>{st.unexcusedAbsence}</td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#64748B' }}>{st.notMarked ?? 0}</td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800 }}>{rateDisplay}</td>
+                                  <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                    <button
+                                      type="button"
+                                      className="btn btn--secondary btn--sm"
+                                      onClick={() => openStudentDetail(st.studentId, st.fullName, st.studentCode)}
+                                      style={{ borderRadius: 'var(--radius-full)', border: '1.5px solid var(--color-fg)', fontWeight: 700 }}
+                                    >
+                                      <Eye size={13} /> Xem
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
         </section>
@@ -925,6 +1095,39 @@ export default function AttendancePage() {
           {formatDashDate(date)}) tới phụ huynh? Mỗi buổi vắng chỉ gửi được một lần.
         </p>
       </ConfirmDialog>
+
+      <GeometricModal
+        open={detailStudent !== null}
+        onClose={() => {
+          setDetailStudent(null);
+          setDetailHistory(null);
+        }}
+        title="Chi Tiết Chuyên Cần Học Sinh"
+        subtitle={
+          detailStudent
+            ? `${detailStudent.fullName} (${detailStudent.studentCode}) • ${formatDashDate(summaryFrom)} – ${formatDashDate(summaryTo)}`
+            : ''
+        }
+        badgeText="Cá nhân"
+        badgeColor="mint"
+        icon={<CalendarCheck2 size={20} color="var(--color-fg)" />}
+        iconBg="var(--status-present)"
+        maxWidth="lg"
+      >
+        {detailLoading ? (
+          <div aria-busy="true" style={{ display: 'grid', gap: 8, padding: '16px 0' }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="skeleton" />
+            ))}
+          </div>
+        ) : detailHistory ? (
+          <StudentAttendanceDetailView data={detailHistory} />
+        ) : (
+          <div className="empty-state" style={{ padding: 24 }}>
+            {SYSTEM_MESSAGES.MSG43.content}
+          </div>
+        )}
+      </GeometricModal>
     </main>
   );
 }

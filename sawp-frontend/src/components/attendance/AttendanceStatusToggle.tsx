@@ -44,7 +44,7 @@ export function AttendanceStatusToggle({ label, value, excusedAllowed, disabled 
       {OPTIONS.map((o) => {
         const isExcused = o.value === AttendanceStatus.ExcusedAbsence;
         const isUnexcused = o.value === AttendanceStatus.UnexcusedAbsence;
-        const off = disabled || (isExcused && !excusedAllowed) || (isUnexcused && excusedAllowed);
+        const off = disabled || (isUnexcused && excusedAllowed);
         const Icon = o.icon;
         const isSelected = value === o.value;
 
@@ -80,7 +80,7 @@ export function AttendanceStatusToggle({ label, value, excusedAllowed, disabled 
             disabled={off}
             title={
               isExcused && !excusedAllowed
-                ? 'Cần đơn xin nghỉ đã được duyệt trên hệ thống'
+                ? 'Chưa có đơn trên hệ thống — tự động ghi chú "Xin phép ngoài hệ thống"'
                 : isUnexcused && excusedAllowed
                 ? 'Học sinh đã có đơn xin nghỉ được duyệt, không thể đánh dấu Vắng không phép'
                 : o.label

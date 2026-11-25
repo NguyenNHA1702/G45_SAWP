@@ -455,7 +455,7 @@ public class AttendanceService : IAttendanceService
             }
         }
 
-        // V6: Validate ExcusedAbsence phải có đơn Approved (chỉ kiểm tra khi MỚI chuyển sang Vắng có phép — ATT-3)
+        // V6: ExcusedAbsence nếu có đơn Approved trên hệ thống thì hợp lệ; nếu xin phép ngoài hệ thống (chưa có đơn duyệt) thì bắt buộc có ghi chú >= 5 ký tự
         // AT-04: Không cho phép đánh dấu Vắng không phép nếu học sinh đã có đơn nghỉ được duyệt
         var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(rosterIds, targetDate, session, ct);
         foreach (var entry in dto.Entries)
@@ -464,10 +464,14 @@ public class AttendanceService : IAttendanceService
             {
                 var wasAlreadyExcused = existingRecords.TryGetValue(entry.StudentId, out var prevRec)
                     && prevRec.Status == AttendanceStatus.ExcusedAbsence;
-                if (!wasAlreadyExcused && (!leaves.TryGetValue(entry.StudentId, out var leave) || leave.Status != RequestStatus.Approved))
+                var hasApprovedLeave = leaves.TryGetValue(entry.StudentId, out var leave) && leave.Status == RequestStatus.Approved;
+                var hasValidExternalRemarks = !string.IsNullOrWhiteSpace(entry.Remarks) && entry.Remarks.Trim().Length >= 5;
+                if (!wasAlreadyExcused && !hasApprovedLeave && !hasValidExternalRemarks)
                 {
                     var studentCode = rosterMap.TryGetValue(entry.StudentId, out var s) ? s.StudentCode : entry.StudentId.ToString();
-                    return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { $"Học sinh {studentCode}: vắng có phép cần đơn đã được phê duyệt." });
+                    return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                        SystemMessages.MSG01,
+                        new List<string> { $"Học sinh {studentCode}: vắng có phép chưa có đơn duyệt trên hệ thống cần nhập ghi chú tối thiểu 5 ký tự (ví dụ: Xin phép ngoài hệ thống)." });
                 }
             }
             else if (entry.Status == AttendanceStatus.UnexcusedAbsence
@@ -698,9 +702,13 @@ public class AttendanceService : IAttendanceService
             }
 
             var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
-            if (!leaves.TryGetValue(rec.StudentId, out var leave) || leave.Status != RequestStatus.Approved)
+            var hasApprovedLeave = leaves.TryGetValue(rec.StudentId, out var leave) && leave.Status == RequestStatus.Approved;
+            var hasValidExternalRemarks = !string.IsNullOrWhiteSpace(dto.Remarks) && dto.Remarks.Trim().Length >= 5;
+            if (!hasApprovedLeave && !hasValidExternalRemarks)
             {
-                return ApiResponse<AttendanceSheetEntryDto>.Fail(SystemMessages.MSG01, new List<string> { "Vắng có phép cần đơn nghỉ phép đã được phê duyệt." });
+                return ApiResponse<AttendanceSheetEntryDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Vắng có phép chưa có đơn duyệt trên hệ thống cần nhập ghi chú tối thiểu 5 ký tự (ví dụ: Xin phép ngoài hệ thống)." });
             }
         }
         else if (dto.Status == AttendanceStatus.UnexcusedAbsence)
@@ -1004,6 +1012,69 @@ public class AttendanceService : IAttendanceService
         };
 
         return ApiResponse<ClassAttendanceSummaryDto>.Ok(dto);
+    }
+
+    public async Task<ApiResponse<ClassAttendanceMatrixDto>> GetClassMatrixAsync(
+        int classId,
+        DateTime from,
+        DateTime to,
+        int userId,
+        IReadOnlyList<UserRoles> roles,
+        CancellationToken ct = default)
+    {
+        var fromDate = from.Date;
+        var toDate = to.Date;
+
+        if (toDate < fromDate || (toDate - fromDate).TotalDays > 31)
+        {
+            return ApiResponse<ClassAttendanceMatrixDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Khoảng thời gian xem ma trận tối đa 31 ngày và Từ ngày phải trước Đến ngày." });
+        }
+
+        if (!await CanViewClassAsync(classId, userId, roles, ct))
+        {
+            return ApiResponse<ClassAttendanceMatrixDto>.Fail(SystemMessages.MSG10);
+        }
+
+        var cls = await _unitOfWork.Repository<Class>().GetByIdAsync(classId, ct);
+        if (cls == null)
+        {
+            return ApiResponse<ClassAttendanceMatrixDto>.Fail(SystemMessages.MSG43);
+        }
+
+        var effectiveTo = toDate > _clock.Today ? _clock.Today : toDate;
+        var students = effectiveTo < fromDate
+            ? new List<ClassMatrixStudentDto>()
+            : await _unitOfWork.Attendance.GetClassMatrixAsync(classId, fromDate, effectiveTo, ct);
+
+        if (students.Count == 0)
+        {
+            return ApiResponse<ClassAttendanceMatrixDto>.Fail(SystemMessages.MSG43);
+        }
+
+        var schoolYearId = cls.SchoolYearId > 0 ? cls.SchoolYearId : (int?)null;
+        var calMap = await GetCalendarDayMapAsync(fromDate, effectiveTo, schoolYearId, ct);
+        var recordedDates = students.SelectMany(s => s.Cells.Select(c => c.Date.Date)).ToHashSet();
+
+        var dates = new List<DateTime>();
+        for (var d = fromDate; d <= effectiveTo; d = d.AddDays(1))
+        {
+            if (IsSchoolDayByMap(d, calMap) || recordedDates.Contains(d))
+            {
+                dates.Add(d);
+            }
+        }
+
+        return ApiResponse<ClassAttendanceMatrixDto>.Ok(new ClassAttendanceMatrixDto
+        {
+            ClassId = classId,
+            ClassName = cls.ClassName,
+            From = fromDate,
+            To = effectiveTo,
+            Dates = dates,
+            Students = students
+        });
     }
     #endregion
 

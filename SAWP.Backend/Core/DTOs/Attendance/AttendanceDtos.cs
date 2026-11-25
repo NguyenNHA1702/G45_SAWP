@@ -150,3 +150,35 @@ public class AbsenceNoticeResultDto
     public DateTime AbsenceNoticeSentAt { get; set; }               // UTC
     public int ParentsNotifiedCount { get; set; }
 }
+
+public class ClassAttendanceMatrixDto
+{
+    public int ClassId { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+    public DateTime From { get; set; }
+    public DateTime To { get; set; }
+    public List<DateTime> Dates { get; set; } = new();
+    public List<ClassMatrixStudentDto> Students { get; set; } = new();
+}
+
+public class ClassMatrixStudentDto
+{
+    public int StudentId { get; set; }
+    public string StudentCode { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public DateTime JoinedDate { get; set; }
+    public int Present { get; set; }
+    public int Late { get; set; }
+    public int ExcusedAbsence { get; set; }
+    public int UnexcusedAbsence { get; set; }
+    public List<ClassMatrixCellDto> Cells { get; set; } = new();
+}
+
+public class ClassMatrixCellDto
+{
+    public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; }
+    public AttendanceStatus Status { get; set; }
+    public string? Remarks { get; set; }
+    public string? LeaveRequestNumber { get; set; }
+}

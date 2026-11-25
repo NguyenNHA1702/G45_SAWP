@@ -117,6 +117,25 @@ public class AttendanceController : BaseApiController
     }
 
     /// <summary>
+    /// API-5b: Ma trận điểm danh theo ngày của cả lớp (tối đa 31 ngày)
+    /// </summary>
+    [HttpGet("classes/{classId}/matrix")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    public async Task<IActionResult> GetClassMatrix(
+        int classId,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var fromDate = from ?? _clock.Today.AddDays(-30);
+        var toDate = to ?? _clock.Today;
+        var result = await _attendanceService.GetClassMatrixAsync(classId, fromDate, toDate, userId, roles, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
     /// API-6: Lịch sử điểm danh chi tiết của một học sinh
     /// </summary>
     [HttpGet("students/{studentId}/history")]

@@ -297,6 +297,125 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             .ToHashSet();
     }
 
+    private async Task<Dictionary<DateTime, bool>> GetSchoolCalendarMapAsync(int classId, DateTime fromDate, DateTime toDate, CancellationToken ct)
+    {
+        var classSchoolYearId = await _context.Classes
+            .AsNoTracking()
+            .Where(c => c.Id == classId)
+            .Select(c => (int?)c.SchoolYearId)
+            .FirstOrDefaultAsync(ct);
+
+        var calendarQuery = _context.SchoolCalendarDays
+            .AsNoTracking()
+            .Where(d => d.Date >= fromDate && d.Date <= toDate);
+
+        if (classSchoolYearId.HasValue && classSchoolYearId.Value > 0)
+        {
+            calendarQuery = calendarQuery.Where(d => d.SchoolYearId == classSchoolYearId.Value);
+        }
+        else
+        {
+            calendarQuery = calendarQuery.Where(d => d.SchoolYear.IsActive);
+        }
+
+        return (await calendarQuery.ToListAsync(ct))
+            .GroupBy(d => d.Date.Date)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().IsSchoolDay);
+    }
+
+    private static bool IsValidSchoolDayByMap(DateTime dt, IReadOnlyDictionary<DateTime, bool> calendarMap)
+    {
+        var d = dt.Date;
+        if (calendarMap.TryGetValue(d, out var isSchoolDay)) return isSchoolDay;
+        return d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday;
+    }
+
+    public async Task<List<ClassMatrixStudentDto>> GetClassMatrixAsync(
+        int classId,
+        DateTime from,
+        DateTime to,
+        CancellationToken ct = default)
+    {
+        var fromDate = from.Date;
+        var toDate = to.Date;
+        var calendarMap = await GetSchoolCalendarMapAsync(classId, fromDate, toDate, ct);
+
+        var activeRoster = await _context.ClassAssignments
+            .AsNoTracking()
+            .Where(ca => ca.ClassId == classId && ca.IsActive)
+            .Select(ca => new
+            {
+                ca.StudentId,
+                ca.Student.StudentCode,
+                ca.Student.FullName,
+                ca.StartDate,
+                ca.EndDate
+            })
+            .ToListAsync(ct);
+
+        if (activeRoster.Count == 0)
+        {
+            return new List<ClassMatrixStudentDto>();
+        }
+
+        var rosterIds = activeRoster.Select(s => s.StudentId).ToList();
+        var rosterRecords = (await _context.AttendanceRecords
+            .AsNoTracking()
+            .Where(ar => rosterIds.Contains(ar.StudentId) && ar.Date >= fromDate && ar.Date <= toDate)
+            .Select(ar => new
+            {
+                ar.Date,
+                ar.Session,
+                ar.StudentId,
+                ar.Status,
+                ar.Remarks,
+                LeaveRequestNumber = ar.LeaveRequest != null && ar.LeaveRequest.AdministrativeRequest != null
+                    ? ar.LeaveRequest.AdministrativeRequest.RequestNumber
+                    : null
+            })
+            .ToListAsync(ct))
+            .Where(x => IsValidSchoolDayByMap(x.Date, calendarMap))
+            .GroupBy(x => x.StudentId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return activeRoster
+            .Select(s =>
+            {
+                var startDate = s.StartDate.Date;
+                var endDate = s.EndDate?.Date;
+                var cells = rosterRecords.TryGetValue(s.StudentId, out var list)
+                    ? list
+                        .Where(x => x.Date.Date >= startDate && (!endDate.HasValue || x.Date.Date <= endDate.Value))
+                        .OrderBy(x => x.Date)
+                        .ThenBy(x => x.Session)
+                        .Select(x => new ClassMatrixCellDto
+                        {
+                            Date = x.Date.Date,
+                            Session = x.Session,
+                            Status = x.Status,
+                            Remarks = x.Remarks,
+                            LeaveRequestNumber = x.LeaveRequestNumber
+                        })
+                        .ToList()
+                    : new List<ClassMatrixCellDto>();
+
+                return new ClassMatrixStudentDto
+                {
+                    StudentId = s.StudentId,
+                    StudentCode = s.StudentCode,
+                    FullName = s.FullName,
+                    JoinedDate = startDate,
+                    Present = cells.Count(c => c.Status == AttendanceStatus.Present),
+                    Late = cells.Count(c => c.Status == AttendanceStatus.Late),
+                    ExcusedAbsence = cells.Count(c => c.Status == AttendanceStatus.ExcusedAbsence),
+                    UnexcusedAbsence = cells.Count(c => c.Status == AttendanceStatus.UnexcusedAbsence),
+                    Cells = cells
+                };
+            })
+            .OrderBy(x => x.FullName)
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<AttendanceRecord>> GetStudentAttendanceHistoryAsync(
         int studentId, 
         DateTime fromDate, 

@@ -1,30 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
 import { asApiError } from '../../utils/apiError';
 import { monthRange, toIsoDate } from '../../utils/date';
-import { SYSTEM_MESSAGES } from '../../constants/messages';
-import type { AttendanceDay, AttendanceStatus, StudentAttendanceHistory } from '../../types/attendance.types';
-import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
+import type { StudentAttendanceHistory } from '../../types/attendance.types';
 import { useParentChild } from '../../contexts/ParentChildContext';
-
-const TONE: Record<AttendanceStatus, string> = {
-  Present: 'var(--status-present)',
-  Late: 'var(--status-late)',
-  ExcusedAbsence: 'var(--status-excused)',
-  UnexcusedAbsence: 'var(--status-unexcused)',
-};
-
-// Mỗi ngày có thể có 2 buổi (Sáng/Chiều): ô lịch tô theo trạng thái "nặng" nhất trong ngày
-const SEVERITY: Record<AttendanceStatus, number> = {
-  Present: 0,
-  Late: 1,
-  ExcusedAbsence: 2,
-  UnexcusedAbsence: 3,
-};
-
-const SESSION_LABEL = { Morning: 'Sáng', Afternoon: 'Chiều' } as const;
+import { StudentAttendanceDetailView } from '../../components/attendance/StudentAttendanceDetailView';
 
 export default function ChildAttendancePage() {
   const { activeChildId } = useParentChild();
@@ -50,19 +32,6 @@ export default function ChildAttendancePage() {
       .then(setData)
       .catch((e: unknown) => toast.error(asApiError(e).message));
   }, [studentId, month]);
-
-  const byDate = useMemo(() => {
-    const map = new Map<string, AttendanceDay[]>();
-    for (const d of data?.days ?? []) {
-      const key = d.date.slice(0, 10);
-      map.set(key, [...(map.get(key) ?? []), d]);
-    }
-    return map;
-  }, [data]);
-
-  const [y, m] = month.split('-').map(Number);
-  const daysInMonth = new Date(y, m, 0).getDate();
-  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
 
   return (
     <main className="container">
@@ -90,78 +59,7 @@ export default function ChildAttendancePage() {
         </div>
       </div>
 
-      {data && <AttendanceSummaryBar summary={data.summary} totalLabel="Tổng số buổi" />}
-      {data && data.days.length === 0 && <div className="card empty-state">{SYSTEM_MESSAGES.MSG43.content}</div>}
-
-      <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
-          {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((d) => (
-            <div key={d} style={{ textAlign: 'center', fontWeight: 800, padding: '4px 0', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
-              {d}
-            </div>
-          ))}
-          {Array.from({ length: offset }).map((_, i) => (
-            <span key={`e${i}`} />
-          ))}
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const iso = `${month}-${String(i + 1).padStart(2, '0')}`;
-            const sessions = byDate.get(iso) ?? [];
-            const rec = sessions.reduce<AttendanceDay | undefined>(
-              (worst, d) => (!worst || SEVERITY[d.status] > SEVERITY[worst.status] ? d : worst),
-              undefined,
-            );
-            const isDarkBg = rec && (rec.status === 'ExcusedAbsence' || rec.status === 'UnexcusedAbsence');
-            return (
-              <div
-                key={iso}
-                title={sessions
-                  .map((d) => `${SESSION_LABEL[d.session]}: ${d.status}${d.remarks ? ' – ' + d.remarks : ''}`)
-                  .join('\n')}
-                style={{
-                  aspectRatio: '1',
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontWeight: 700,
-                  fontSize: 'var(--fs-base)',
-                  border: '2px solid var(--color-fg)',
-                  borderRadius: 12,
-                  boxShadow: rec ? '2px 2px 0 0 var(--color-fg)' : 'none',
-                  background: rec ? TONE[rec.status] : 'var(--color-muted)',
-                  color: isDarkBg ? '#ffffff' : 'var(--color-fg)',
-                  transition: 'transform 120ms ease',
-                  cursor: rec ? 'default' : 'initial',
-                }}
-              >
-                {i + 1}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Chú thích màu sắc */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 20, paddingTop: 16, borderTop: '1px dashed var(--color-border)', fontSize: 'var(--fs-sm)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 14, height: 14, borderRadius: 4, border: '1.5px solid var(--color-fg)', background: 'var(--status-present)' }} />
-            <span>Có mặt</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 14, height: 14, borderRadius: 4, border: '1.5px solid var(--color-fg)', background: 'var(--status-late)' }} />
-            <span>Đi muộn</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 14, height: 14, borderRadius: 4, border: '1.5px solid var(--color-fg)', background: 'var(--status-excused)' }} />
-            <span>Vắng có phép</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 14, height: 14, borderRadius: 4, border: '1.5px solid var(--color-fg)', background: 'var(--status-unexcused)' }} />
-            <span>Vắng không phép</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 14, height: 14, borderRadius: 4, border: '1.5px solid var(--color-fg)', background: 'var(--color-muted)' }} />
-            <span>Không có lịch / Chưa điểm danh</span>
-          </div>
-        </div>
-      </div>
+      {data && <StudentAttendanceDetailView data={data} month={month} />}
     </main>
   );
 }

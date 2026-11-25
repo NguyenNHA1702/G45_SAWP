@@ -23,6 +23,9 @@ public interface IAttendanceService
     // API-5: GET /api/attendance/classes/{classId}/summary?from=&to=
     Task<ApiResponse<ClassAttendanceSummaryDto>> GetClassSummaryAsync(int classId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
 
+    // API-5b: GET /api/attendance/classes/{classId}/matrix?from=&to=
+    Task<ApiResponse<ClassAttendanceMatrixDto>> GetClassMatrixAsync(int classId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
     // API-6: GET /api/attendance/students/{studentId}/history?from=&to=
     Task<ApiResponse<StudentAttendanceHistoryDto>> GetStudentHistoryAsync(int studentId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
 }
