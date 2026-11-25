@@ -412,6 +412,25 @@ Development, accept an origin only if its host is in an allowlist of the school'
 reject the request or fall back to the configured base URL. Never put the origin into an email without this
 check.
 
+### 2.5. User Role Names
+
+Role names are stored as text in the `Roles` table and in the JWT role claims. They have a single source:
+the `UserRoles` enum (`Core/Enums/UserRoles.cs`): `Admin`, `SchoolBoard`, `OfficeStaff`, `Teacher`,
+`ServiceStaff`, `Parent`. The enum's numbers are not stored anywhere; only the names are used.
+
+- **Seeding:** `DbInitializer.SeedRolesAsync` creates one role per enum name (`Enum.GetNames<UserRoles>()`),
+  and the demo data looks role ids up with `rolesMap[UserRoles.X.ToString()]`. A new role is added to the
+  enum only, never as a string in the seeder.
+- **Backend code:** compare names with `UserRoles.X.ToString()` or `nameof(UserRoles.X)` (case-insensitive,
+  as role names come from the database), never with a string literal such as `"Teacher"`. Unit tests do the
+  same.
+- **Frontend code:** use the `UserRole` constant in `src/types/admin.types.ts` (`UserRole.Teacher`), which
+  mirrors the enum; type role values as `UserRole` where you can. When the backend enum changes, update that
+  constant in the same change.
+- **Known gap:** `[Authorize(Roles = "...")]` attributes need compile-time constants, so they still hold
+  literals, as do older backend services (e.g. `AdminService.StaffRoleNames`) and many frontend files
+  (`App.tsx` route guards). Do not add new literals; convert old ones when you touch that code.
+
 ## 3. Standard System Messages & Error Codes (SRS MSG01 - MSG50)
 
 Per the **SRS Specification (Section 5.3 Message Dictionary)**, all user feedback, toast notifications, confirmation dialogs, inline form errors, and workflow alerts are standardized into 50 codes (**MSG01** through **MSG50**).

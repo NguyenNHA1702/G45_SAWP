@@ -1,3 +1,14 @@
+// Role names as stored by the API; mirrors SAWP.Backend/Core/Enums/UserRoles.cs
+export const UserRole = {
+  Admin: 'Admin',
+  SchoolBoard: 'SchoolBoard',
+  OfficeStaff: 'OfficeStaff',
+  Teacher: 'Teacher',
+  ServiceStaff: 'ServiceStaff',
+  Parent: 'Parent',
+} as const;
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
+
 export interface RoleOptionDto {
   id: number;
   name: string;
