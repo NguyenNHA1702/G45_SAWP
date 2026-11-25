@@ -8,6 +8,7 @@ const TEXT: Record<SheetLockReason, string> = {
   NonSchoolDay: 'Ngày đã chọn không phải ngày học.',
   Future: 'Chưa thể điểm danh cho ngày trong tương lai.',
   EmptyRoster: 'Lớp hiện chưa có học sinh nào được xếp vào ngày đã chọn.',
+  AlreadySubmitted: 'Bảng điểm danh hôm nay đã được giáo viên nộp.',
 };
 
 export function LockedBanner({ reason }: { reason: SheetLockReason | null }) {

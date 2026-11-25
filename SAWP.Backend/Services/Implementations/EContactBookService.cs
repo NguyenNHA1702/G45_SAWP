@@ -179,12 +179,18 @@ public class EContactBookService : IEContactBookService
     {
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
         {
-            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01);
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề và nội dung bài viết không được để trống." });
         }
 
-        if (request.Title.Trim().Length > 200 || request.Content.Trim().Length > 5000)
+        var trimmedTitle = request.Title.Trim();
+        var trimmedContent = request.Content.Trim();
+        if (trimmedTitle.Length < 5 || trimmedTitle.Length > 200)
         {
-            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề tối đa 200 ký tự và nội dung tối đa 5000 ký tự." });
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề bài viết phải từ 5 đến 200 ký tự." });
+        }
+        if (trimmedContent.Length < 10 || trimmedContent.Length > 5000)
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung bài viết phải từ 10 đến 5000 ký tự." });
         }
 
         var category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim();
@@ -360,6 +366,83 @@ public class EContactBookService : IEContactBookService
         };
 
         return ApiResponse<ClassPostDto>.Ok(dto, SystemMessages.MSG51);
+    }
+
+    public async Task<ApiResponse<ClassPostDto>> UpdateClassPostAsync(int teacherUserId, int postId, UpdateClassPostDto request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề và nội dung bài viết không được để trống." });
+        }
+
+        var trimmedTitle = request.Title.Trim();
+        var trimmedContent = request.Content.Trim();
+        if (trimmedTitle.Length < 5 || trimmedTitle.Length > 200)
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề bài viết phải từ 5 đến 200 ký tự." });
+        }
+        if (trimmedContent.Length < 10 || trimmedContent.Length > 5000)
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung bài viết phải từ 10 đến 5000 ký tự." });
+        }
+
+        var category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim();
+        if (!AllowedCategories.Contains(category))
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Phân loại bài viết không hợp lệ." });
+        }
+
+        var post = await _context.ClassPosts
+            .Include(p => p.Class)
+            .Include(p => p.Attachments)
+            .Include(p => p.Reactions)
+            .FirstOrDefaultAsync(p => p.Id == postId, cancellationToken);
+        if (post == null)
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG43);
+        }
+
+        var staff = await _context.StaffProfiles.FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
+        if (staff == null || (post.Class.HomeroomTeacherId != staff.Id && post.AuthorUserId != teacherUserId))
+        {
+            return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG20);
+        }
+
+        post.Title = trimmedTitle;
+        post.Content = trimmedContent;
+        post.Category = category;
+        post.IsPinned = request.IsPinned;
+        post.AllowComments = request.AllowComments;
+        post.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var authorUser = await _context.Users.FindAsync(new object[] { post.AuthorUserId }, cancellationToken);
+
+        return ApiResponse<ClassPostDto>.Ok(new ClassPostDto
+        {
+            Id = post.Id,
+            ClassId = post.ClassId,
+            ClassName = post.Class.ClassName,
+            AuthorUserId = post.AuthorUserId,
+            AuthorName = authorUser?.FullName ?? "Giáo viên",
+            Title = post.Title,
+            Content = post.Content,
+            Category = post.Category,
+            IsPinned = post.IsPinned,
+            AllowComments = post.AllowComments,
+            CreatedAt = post.CreatedAt,
+            UpdatedAt = post.UpdatedAt,
+            ReactionCount = post.Reactions.Count,
+            Attachments = post.Attachments.Select(a => new PostAttachmentDto
+            {
+                Id = a.Id,
+                FileUrl = a.FileUrl,
+                FileName = a.FileName,
+                FileType = a.FileType,
+                FileSizeBytes = a.FileSizeBytes
+            }).ToList()
+        }, SystemMessages.MSG08);
     }
 
     public async Task<ApiResponse<bool>> TogglePinPostAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default)
@@ -723,9 +806,15 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Tuần học phải nằm trong khoảng 1 đến 52." });
         }
 
-        if (request.TeacherNote.Trim().Length > 1500 || (request.PrivateRemind?.Trim().Length ?? 0) > 500)
+        var trimmedNote = request.TeacherNote.Trim();
+        if (trimmedNote.Length < 10 || trimmedNote.Length > 1500)
         {
-            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Nhận xét tối đa 1500 ký tự và dặn dò riêng tối đa 500 ký tự." });
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Lời nhận xét của giáo viên phải từ 10 đến 1500 ký tự." });
+        }
+
+        if ((request.PrivateRemind?.Trim().Length ?? 0) > 500)
+        {
+            return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { "Dặn dò riêng tối đa 500 ký tự." });
         }
 
         var targetClass = await _context.Classes.FindAsync(new object[] { request.ClassId }, cancellationToken);
@@ -733,6 +822,31 @@ public class EContactBookService : IEContactBookService
         if (targetClass == null || student == null)
         {
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG11);
+        }
+
+        var schoolYear = targetClass.SchoolYearId > 0
+            ? await _context.SchoolYears.FindAsync(new object[] { targetClass.SchoolYearId }, cancellationToken)
+            : null;
+        if (schoolYear != null)
+        {
+            var start = schoolYear.StartDate.Date;
+            int diff = ((int)start.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+            var week1Monday = start.AddDays(-diff);
+            var totalWeeks = Math.Clamp((int)Math.Ceiling((schoolYear.EndDate.Date - week1Monday).TotalDays / 7.0), 1, 52);
+            if (request.WeekNumber > totalWeeks)
+            {
+                return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { $"Tuần học phải nằm trong phạm vi năm học (từ tuần 1 đến tuần {totalWeeks})." });
+            }
+
+            var vnToday = DateTime.UtcNow.AddHours(7).Date;
+            if (vnToday >= week1Monday)
+            {
+                var currentWeek = Math.Max(1, (int)((vnToday - week1Monday).TotalDays / 7) + 1);
+                if (request.WeekNumber > currentWeek)
+                {
+                    return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG01, new List<string> { $"Không thể nhận xét cho tuần tương lai (hiện tại là tuần {currentWeek})." });
+                }
+            }
         }
 
         bool hasAnyActiveAssignment = await _context.ClassAssignments.AnyAsync(
@@ -787,19 +901,37 @@ public class EContactBookService : IEContactBookService
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
+            var evalRefKey = $"EVAL:{existing.Id}";
+            var existingNotifs = await _context.Notifications
+                .Where(n => updateGuardianUserIds.Contains(n.UserId) && n.ReferenceKey == evalRefKey)
+                .ToListAsync(cancellationToken);
+            var existingNotifMap = existingNotifs.ToDictionary(n => n.UserId);
+
             foreach (var gUid in updateGuardianUserIds)
             {
-                _context.Notifications.Add(new Notification
+                var title = $"Cập nhật phiếu nhận xét tuần {request.WeekNumber} của em {student.FullName}";
+                var content = $"GVCN đã cập nhật nhận xét nề nếp tuần {request.WeekNumber}. Vui lòng xem lại và ký xác nhận.";
+                if (existingNotifMap.TryGetValue(gUid, out var existingNotif))
                 {
-                    UserId = gUid,
-                    Title = $"Cập nhật phiếu nhận xét tuần {request.WeekNumber} của em {student.FullName}",
-                    Content = $"GVCN đã cập nhật nhận xét nề nếp tuần {request.WeekNumber}. Vui lòng xem lại và ký xác nhận.",
-                    Type = "StudentEvaluation",
-                    ReferenceKey = $"EVAL:{existing.Id}",
-                    LinkUrl = "/parent/contact-book",
-                    CreatedAt = DateTime.UtcNow,
-                    IsRead = false
-                });
+                    existingNotif.Title = title;
+                    existingNotif.Content = content;
+                    existingNotif.IsRead = false;
+                    existingNotif.CreatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _context.Notifications.Add(new Notification
+                    {
+                        UserId = gUid,
+                        Title = title,
+                        Content = content,
+                        Type = "StudentEvaluation",
+                        ReferenceKey = evalRefKey,
+                        LinkUrl = "/parent/contact-book",
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    });
+                }
             }
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -813,7 +945,7 @@ public class EContactBookService : IEContactBookService
             TeacherUserId = teacherUserId,
             EvaluationDate = request.EvaluationDate,
             WeekNumber = request.WeekNumber,
-            Rating = request.Rating,
+            Rating = rating,
             BadgesJson = JsonSerializer.Serialize(request.Badges ?? new List<string>()),
             TeacherNote = request.TeacherNote.Trim(),
             PrivateRemind = request.PrivateRemind?.Trim(),

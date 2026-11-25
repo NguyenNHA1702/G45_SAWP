@@ -3,6 +3,7 @@ import type { ApiResponse } from '../../types/common.types';
 import type {
   ClassPostDto,
   CreateClassPostDto,
+  UpdateClassPostDto,
   CreatePostCommentDto,
   PostCommentDto,
   StudentEvaluationDto,
@@ -21,6 +22,11 @@ export const contactBookApi = {
 
   createClassPost: async (payload: CreateClassPostDto): Promise<ApiResponse<ClassPostDto>> => {
     const res = await apiClient.post<ApiResponse<ClassPostDto>>('/contact-book/posts', payload);
+    return res.data;
+  },
+
+  updateClassPost: async (postId: number, payload: UpdateClassPostDto): Promise<ApiResponse<ClassPostDto>> => {
+    const res = await apiClient.put<ApiResponse<ClassPostDto>>(`/contact-book/posts/${postId}`, payload);
     return res.data;
   },
 

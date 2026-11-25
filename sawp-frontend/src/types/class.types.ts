@@ -104,6 +104,8 @@ export interface ClassRosterDto {
   capacity: number;
   academicYear?: string;
   schoolYearName?: string;
+  schoolYearStartDate?: string;
+  schoolYearEndDate?: string;
   roomNumber?: string;
   totalEnrolled?: number;
   totalStudents?: number;

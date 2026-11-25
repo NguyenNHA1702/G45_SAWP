@@ -600,10 +600,20 @@ public static class DbInitializer
         }
         await context.SaveChangesAsync();
 
-        // Điểm danh chuyên cần toàn diện cho toàn bộ 86 học sinh (1A, 1B, 1C) từ đầu năm học 2026 (Tháng 9, 10, 11) (Ca sáng & Ca chiều)
+        // Dọn dẹp bản ghi điểm danh tương lai (nếu từng được seed trước đó - AT-10)
+        var futureAttendance = await context.AttendanceRecords
+            .Where(ar => ar.Date > today)
+            .ToListAsync();
+        if (futureAttendance.Count > 0)
+        {
+            context.AttendanceRecords.RemoveRange(futureAttendance);
+            await context.SaveChangesAsync();
+        }
+
+        // Điểm danh chuyên cần toàn diện cho toàn bộ học sinh (1A, 1B, 1C) từ đầu năm học 2026 đến hết hôm qua (Ca sáng & Ca chiều)
         var schoolDays = new List<DateTime>();
         var checkDate = new DateTime(2026, 9, 1);
-        var endSchoolDate = new DateTime(2026, 11, 30);
+        var endSchoolDate = today.AddDays(-1);
         while (checkDate <= endSchoolDate)
         {
             if (checkDate.DayOfWeek != DayOfWeek.Saturday && checkDate.DayOfWeek != DayOfWeek.Sunday && checkDate != new DateTime(2026, 9, 2))
@@ -677,7 +687,7 @@ public static class DbInitializer
                             Status = attStatus,
                             Remarks = attRem,
                             RecordedByUserId = teacherUser.Id,
-                            CreatedAt = sDate.AddHours(session == AttendanceSession.Morning ? 8 : 14)
+                            CreatedAt = DateTime.SpecifyKind(sDate.AddHours(session == AttendanceSession.Morning ? 1 : 7), DateTimeKind.Utc)
                         });
                     }
                 }

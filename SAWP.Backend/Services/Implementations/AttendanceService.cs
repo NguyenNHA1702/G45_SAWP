@@ -197,9 +197,24 @@ public class AttendanceService : IAttendanceService
                 canEdit = false;
                 lockReason = "PastDay";
             }
+            else if (targetDate == _clock.Today && hasTeacherSubmittedAttendance)
+            {
+                var (canRecordToday, _) = await CanRecordAsync(classId, targetDate, userId, ct);
+                if (canRecordToday)
+                {
+                    canEdit = true;
+                    lockReason = null;
+                }
+                else
+                {
+                    // AT-11: Bảng hôm nay đã có giáo viên nộp -> khóa sửa hàng loạt đối với Giáo vụ/Admin không phụ trách lớp
+                    canEdit = false;
+                    lockReason = "AlreadySubmitted";
+                }
+            }
             else
             {
-                // Hôm nay hoặc ngày quá khứ CHƯA có điểm danh (Giáo vụ bổ sung lần đầu)
+                // Hôm nay (chưa nộp) hoặc ngày quá khứ CHƯA có điểm danh (Giáo vụ bổ sung lần đầu)
                 canEdit = true;
                 lockReason = null;
             }
@@ -323,10 +338,21 @@ public class AttendanceService : IAttendanceService
         var now = _clock.Now;
         var isAdminOrOffice = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff);
 
-        // V1: Validate ngày (Admin / OfficeStaff được phép bổ sung ngày quá khứ chưa có điểm danh)
-        if (targetDate < _clock.Today && !isAdminOrOffice)
+        // V1: Validate ngày (Admin / OfficeStaff được phép bổ sung ngày quá khứ chưa có điểm danh kèm lý do)
+        if (targetDate < _clock.Today)
         {
-            return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG19);
+            if (!isAdminOrOffice)
+            {
+                return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG19);
+            }
+
+            var supplementReason = dto.CorrectionReason?.Trim();
+            if (string.IsNullOrEmpty(supplementReason) || supplementReason.Length < 5 || supplementReason.Length > 500)
+            {
+                return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Bổ sung điểm danh ngày quá khứ bắt buộc nhập lý do từ 5 đến 500 ký tự." });
+            }
         }
         if (targetDate > _clock.Today)
         {
@@ -409,14 +435,28 @@ public class AttendanceService : IAttendanceService
         var existingRecords = await LoadExistingRecordsForRosterAsync(classId, rosterIds, targetDate, session, track: true, ct);
 
         // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt ngay cả với Giáo vụ/Admin
-        if (targetDate < _clock.Today && existingRecords.Values.Any(r => r.ClassId == classId && IsTeacherSubmittedRecord(r)))
+        var hasSubmittedRecords = existingRecords.Values.Any(r => r.ClassId == classId && IsTeacherSubmittedRecord(r));
+        if (targetDate < _clock.Today && hasSubmittedRecords)
         {
             return ApiResponse<AttendanceSubmitResultDto>.Fail(
                 SystemMessages.MSG19,
                 new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng sử dụng chức năng điều chỉnh từng bản ghi kèm lý do." });
         }
 
+        // AT-11: Bảng hôm nay đã có giáo viên nộp -> Giáo vụ/Admin không phụ trách lớp không được ghi đè hàng loạt
+        if (targetDate == _clock.Today && hasSubmittedRecords && isAdminOrOffice)
+        {
+            var (canRecordToday, _) = await CanRecordAsync(classId, targetDate, userId, ct);
+            if (!canRecordToday)
+            {
+                return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                    SystemMessages.MSG20,
+                    new List<string> { "Bảng điểm danh hôm nay đã được giáo viên nộp. Vui lòng dùng chức năng điều chỉnh từng bản ghi kèm lý do." });
+            }
+        }
+
         // V6: Validate ExcusedAbsence phải có đơn Approved (chỉ kiểm tra khi MỚI chuyển sang Vắng có phép — ATT-3)
+        // AT-04: Không cho phép đánh dấu Vắng không phép nếu học sinh đã có đơn nghỉ được duyệt
         var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(rosterIds, targetDate, session, ct);
         foreach (var entry in dto.Entries)
         {
@@ -429,6 +469,13 @@ public class AttendanceService : IAttendanceService
                     var studentCode = rosterMap.TryGetValue(entry.StudentId, out var s) ? s.StudentCode : entry.StudentId.ToString();
                     return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { $"Học sinh {studentCode}: vắng có phép cần đơn đã được phê duyệt." });
                 }
+            }
+            else if (entry.Status == AttendanceStatus.UnexcusedAbsence
+                && leaves.TryGetValue(entry.StudentId, out var approvedLeave)
+                && approvedLeave.Status == RequestStatus.Approved)
+            {
+                var studentCode = rosterMap.TryGetValue(entry.StudentId, out var s) ? s.StudentCode : entry.StudentId.ToString();
+                return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { $"Học sinh {studentCode}: đã có đơn xin nghỉ được duyệt, không thể đánh dấu Vắng không phép." });
             }
         }
 
@@ -473,12 +520,23 @@ public class AttendanceService : IAttendanceService
 
                     if (hasChanged || needsTeacherConfirmation)
                     {
+                        var retractNotice = rec.Status == AttendanceStatus.UnexcusedAbsence
+                            && entry.Status != AttendanceStatus.UnexcusedAbsence
+                            && rec.AbsenceNoticeSentAt != null;
+
                         rec.ClassId = classId;
                         rec.Status = entry.Status;
                         rec.Remarks = entry.Remarks;
                         rec.LeaveRequestId = leaveRequestId;
                         rec.UpdatedAt = utcNow;
                         rec.UpdatedByUserId = userId;
+                        if (retractNotice)
+                        {
+                            rec.AbsenceNoticeSentAt = null;
+                            rec.AbsenceNoticeSentByUserId = null;
+                            var studentName = rosterMap.TryGetValue(entry.StudentId, out var st) ? st.FullName : $"HS #{entry.StudentId}";
+                            await SendAbsenceRetractionNoticesAsync(rec.Id, rec.StudentId, studentName, cls.ClassName, targetDate, entry.Status, utcNow, ct);
+                        }
                     }
                 }
                 else
@@ -645,6 +703,16 @@ public class AttendanceService : IAttendanceService
                 return ApiResponse<AttendanceSheetEntryDto>.Fail(SystemMessages.MSG01, new List<string> { "Vắng có phép cần đơn nghỉ phép đã được phê duyệt." });
             }
         }
+        else if (dto.Status == AttendanceStatus.UnexcusedAbsence)
+        {
+            var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
+            if (leaves != null && leaves.TryGetValue(rec.StudentId, out var leave) && leave.Status == RequestStatus.Approved)
+            {
+                return ApiResponse<AttendanceSheetEntryDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Học sinh đã có đơn xin nghỉ được duyệt, không thể đánh dấu Vắng không phép." });
+            }
+        }
 
         if (dto.Status == rec.Status && (dto.Remarks ?? string.Empty) == (rec.Remarks ?? string.Empty))
         {
@@ -711,7 +779,23 @@ public class AttendanceService : IAttendanceService
                 }
             }
 
-            // OVR-01 (BR-62): a correction never notifies parents either.
+            // AT-08: Nếu đã gửi thông báo vắng không phép mà nay sửa sang trạng thái khác -> thu hồi trạng thái đã gửi và gửi đính chính cho phụ huynh
+            if (oldStatus == AttendanceStatus.UnexcusedAbsence
+                && dto.Status != AttendanceStatus.UnexcusedAbsence
+                && rec.AbsenceNoticeSentAt != null)
+            {
+                rec.AbsenceNoticeSentAt = null;
+                rec.AbsenceNoticeSentByUserId = null;
+                await SendAbsenceRetractionNoticesAsync(
+                    rec.Id,
+                    rec.StudentId,
+                    rec.Student?.FullName ?? $"HS #{rec.StudentId}",
+                    rec.Class?.ClassName ?? string.Empty,
+                    rec.Date,
+                    dto.Status,
+                    utcNow,
+                    ct);
+            }
 
             await _unitOfWork.SaveChangesAsync(ct);
 
@@ -754,6 +838,14 @@ public class AttendanceService : IAttendanceService
         if (rec == null)
         {
             return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG43);
+        }
+
+        // AT-08: Chỉ cho phép gửi thông báo vắng mặt cho bản ghi điểm danh của ngày hôm nay
+        if (rec.Date.Date != _clock.Today)
+        {
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(
+                SystemMessages.MSG09,
+                new List<string> { "Chỉ được gửi thông báo vắng mặt cho bản ghi điểm danh của ngày hôm nay." });
         }
 
         // Only an unexcused absence, at most one notice per record (BR-62, UC-23 E2)
@@ -884,15 +976,8 @@ public class AttendanceService : IAttendanceService
             .Select(r => r.Date.Date)
             .Distinct()
             .Count(d => IsSchoolDayByMap(d, calMap));
-        var recordedSessionSlots = classRecords
-            .Where(r => IsSchoolDayByMap(r.Date, calMap))
-            .Select(r => new { Date = r.Date.Date, r.Session })
-            .Distinct()
-            .Count();
-
         var markedTotal = rows.Sum(r => r.Present + r.Late + r.ExcusedAbsence + r.UnexcusedAbsence);
-        var expectedSlots = rows.Count * recordedSessionSlots;
-        var notMarked = Math.Max(0, expectedSlots - markedTotal);
+        var notMarked = rows.Sum(r => r.NotMarked);
 
         var totals = new AttendanceSummaryDto
         {
@@ -1037,8 +1122,9 @@ public class AttendanceService : IAttendanceService
         int userId, 
         CancellationToken ct = default)
     {
-        var staffList = await _unitOfWork.Repository<StaffProfile>()
-            .FindAsync(sp => sp.UserId == userId, ct);
+        var staffRepo = _unitOfWork.Repository<StaffProfile>();
+        if (staffRepo == null) return (false, "NotAssigned");
+        var staffList = await staffRepo.FindAsync(sp => sp.UserId == userId, ct);
         var staff = staffList.FirstOrDefault();
 
         if (staff == null) return (false, "NotAssigned");
@@ -1195,6 +1281,48 @@ public class AttendanceService : IAttendanceService
 
         // Mặc định Thứ 2 đến Thứ 6 trừ ngày lễ cố định là ngày học
         return SchoolCalendarHelper.IsDefaultSchoolDay(date);
+    }
+
+    private async Task SendAbsenceRetractionNoticesAsync(
+        int recordId,
+        int studentId,
+        string studentName,
+        string className,
+        DateTime date,
+        AttendanceStatus newStatus,
+        DateTime utcNow,
+        CancellationToken ct)
+    {
+        var guardians = await _unitOfWork.Students.GetGuardianUserIdsAsync(new[] { studentId }, ct);
+        var guardianUserIds = guardians.TryGetValue(studentId, out var ids) ? ids.Distinct().ToList() : new List<int>();
+        if (guardianUserIds.Count == 0) return;
+
+        var statusText = newStatus switch
+        {
+            AttendanceStatus.Present => "Có mặt",
+            AttendanceStatus.Late => "Đi muộn",
+            AttendanceStatus.ExcusedAbsence => "Vắng có phép",
+            _ => newStatus.ToString()
+        };
+
+        var notifRepo = _unitOfWork.Repository<Notification>();
+        if (notifRepo == null) return;
+
+        var key = NotificationTemplates.AbsenceNoticeRetractKey(recordId, utcNow);
+        foreach (var guardianUserId in guardianUserIds)
+        {
+            await notifRepo.AddAsync(new Notification
+            {
+                UserId = guardianUserId,
+                Type = NotificationTemplates.AttendanceAbsentRetractType,
+                Title = NotificationTemplates.AttendanceAbsentRetractTitle,
+                Content = string.Format(NotificationTemplates.AttendanceAbsentRetractContent, studentName, className, $"{date:dd/MM/yyyy}", statusText),
+                LinkUrl = $"/parent/attendance?studentId={studentId}&month={date:yyyy-MM}",
+                ReferenceKey = key,
+                CreatedAt = utcNow,
+                IsRead = false
+            }, ct);
+        }
     }
 
     #endregion

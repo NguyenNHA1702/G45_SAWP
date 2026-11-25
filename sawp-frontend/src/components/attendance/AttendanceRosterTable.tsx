@@ -16,6 +16,8 @@ interface Props {
   onSendAbsenceNotice?: (entry: AttendanceSheetEntry) => void;
   /** Disables the send buttons, e.g. while sending or while the sheet has unsaved changes. */
   absenceNoticeDisabled?: boolean;
+  /** Only today's records allow sending a new absence notice (AT-08). */
+  canSendNoticeForDate?: boolean;
 }
 
 /** A notice can be sent for a saved unexcused absence not covered by an approved leave. */
@@ -36,6 +38,7 @@ export function AttendanceRosterTable({
   onCorrect,
   onSendAbsenceNotice,
   absenceNoticeDisabled = false,
+  canSendNoticeForDate = true,
 }: Props) {
   const showNotice = onSendAbsenceNotice !== undefined;
   return (
@@ -206,7 +209,7 @@ export function AttendanceRosterTable({
                   )}
                   {showNotice && (
                     <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                      {e.absenceNoticeSentAt ? (
+                      {e.status === 'UnexcusedAbsence' && e.absenceNoticeSentAt ? (
                         <span
                           className="badge badge--mint"
                           style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}
@@ -214,7 +217,7 @@ export function AttendanceRosterTable({
                         >
                           Đã gửi · {formatViDateTime(e.absenceNoticeSentAt)}
                         </span>
-                      ) : canSendAbsenceNotice(e) ? (
+                      ) : canSendAbsenceNotice(e) && canSendNoticeForDate ? (
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"

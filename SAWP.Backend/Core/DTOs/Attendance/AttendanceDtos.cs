@@ -140,6 +140,7 @@ public class StudentAttendanceRowDto
     public int Late { get; set; }
     public int ExcusedAbsence { get; set; }
     public int UnexcusedAbsence { get; set; }
+    public int NotMarked { get; set; }
 }
 
 // OVR-01 (UC-23 A2): result of sending an absence notice for one attendance record.

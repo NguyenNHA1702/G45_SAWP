@@ -55,7 +55,7 @@ public class EContactBookServiceTests
         {
             ClassId = 1,
             Title = "hoạt động ngoại khóa",
-            Content = "Mang đủ đồ",
+            Content = "Mang đủ đồ dùng học tập và nước uống",
             Attachments = new List<PostAttachmentInputDto>
             {
                 new() { FileName = "ngoai_khoa.jpg", FileUrl = "/files/ngoai_khoa.jpg", FileSizeBytes = 5 * 1024 * 1024, FileType = "Image" }
@@ -85,7 +85,7 @@ public class EContactBookServiceTests
         {
             ClassId = 1,
             Title = "Video hoạt động",
-            Content = "Nội dung",
+            Content = "Nội dung chi tiết hoạt động lớp",
             Attachments = new List<PostAttachmentInputDto>
             {
                 new() { FileName = "video_hoat_dong.jpg", FileUrl = "/files/video_hoat_dong.jpg", FileSizeBytes = 6 * 1024 * 1024, FileType = "Image" }
@@ -115,7 +115,7 @@ public class EContactBookServiceTests
         {
             ClassId = 1,
             Title = "Phần mềm",
-            Content = "Nội dung",
+            Content = "Nội dung chi tiết hoạt động lớp",
             Attachments = new List<PostAttachmentInputDto>
             {
                 new() { FileName = "setup.exe", FileUrl = "/files/setup.exe", FileSizeBytes = 1024, FileType = "Document" }
@@ -450,5 +450,108 @@ public class EContactBookServiceTests
         var commentRes = await _service.AddCommentAsync(10, 1, new CreatePostCommentDto { Content = "Bình luận sau khi khóa" });
         commentRes.Success.Should().BeFalse();
         commentRes.Code.Should().Be(SystemMessages.MSG54.Code);
+    }
+
+    [Fact]
+    public async Task CB03_UpdateEvaluation_WithLinkedGuardian_ShouldUpdateNotificationWithoutDuplicateKey()
+    {
+        var staff = new StaffProfile { Id = 1, UserId = 10, StaffCode = "GV01" };
+        var cls = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 1 };
+        var student = new Student { Id = 1, StudentCode = "HS001", FullName = "Trần Gia Bảo" };
+        var guardian = new Guardian { Id = 1, UserId = 200, FullName = "Phụ huynh A" };
+        _context.StaffProfiles.Add(staff);
+        _context.Classes.Add(cls);
+        _context.Students.Add(student);
+        _context.Guardians.Add(guardian);
+        _context.StudentGuardians.Add(new StudentGuardian { StudentId = 1, GuardianId = 1, Relationship = Core.Enums.RelationshipTypes.Father, IsPrimaryContact = true });
+        await _context.SaveChangesAsync();
+
+        var createRes = await _service.CreateOrUpdateEvaluationAsync(10, new CreateStudentEvaluationDto
+        {
+            StudentId = 1,
+            ClassId = 1,
+            WeekNumber = 9,
+            EvaluationDate = DateTime.UtcNow,
+            Rating = "Good",
+            TeacherNote = "Em chăm ngoan, hoàn thành tốt nhiệm vụ học tập."
+        });
+        createRes.Success.Should().BeTrue();
+        var evalId = createRes.Data!.Id;
+
+        var updateRes = await _service.CreateOrUpdateEvaluationAsync(10, new CreateStudentEvaluationDto
+        {
+            Id = evalId,
+            StudentId = 1,
+            ClassId = 1,
+            WeekNumber = 9,
+            EvaluationDate = DateTime.UtcNow,
+            Rating = "Excellent",
+            TeacherNote = "Cập nhật: Em rất tích cực phát biểu xây dựng bài."
+        });
+
+        updateRes.Success.Should().BeTrue();
+        updateRes.Data!.Rating.Should().Be("Excellent");
+        var notifs = await _context.Notifications.Where(n => n.UserId == 200 && n.ReferenceKey == $"EVAL:{evalId}").ToListAsync();
+        notifs.Should().HaveCount(1);
+        notifs[0].Title.Should().Contain("Cập nhật");
+    }
+
+    [Fact]
+    public async Task CB04_ShortTitleOrShortNote_ShouldFailWithSpecificMessage()
+    {
+        var staff = new StaffProfile { Id = 1, UserId = 10, StaffCode = "GV01" };
+        var cls = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 1 };
+        var student = new Student { Id = 1, StudentCode = "HS001", FullName = "Trần Gia Bảo" };
+        _context.StaffProfiles.Add(staff);
+        _context.Classes.Add(cls);
+        _context.Students.Add(student);
+        await _context.SaveChangesAsync();
+
+        var postRes = await _service.CreateClassPostAsync(10, new CreateClassPostDto
+        {
+            ClassId = 1,
+            Title = "abcd",
+            Content = "Nội dung đủ dài để kiểm tra tiêu đề."
+        });
+        postRes.Success.Should().BeFalse();
+        postRes.Errors.Should().Contain(e => e.Contains("5 đến 200"));
+
+        var evalRes = await _service.CreateOrUpdateEvaluationAsync(10, new CreateStudentEvaluationDto
+        {
+            StudentId = 1,
+            ClassId = 1,
+            WeekNumber = 1,
+            EvaluationDate = DateTime.UtcNow,
+            Rating = "Good",
+            TeacherNote = "abc"
+        });
+        evalRes.Success.Should().BeFalse();
+        evalRes.Errors.Should().Contain(e => e.Contains("10 đến 1500"));
+    }
+
+    [Fact]
+    public async Task CB05_UpdateClassPost_ByHomeroomTeacher_ShouldSucceed()
+    {
+        var staff = new StaffProfile { Id = 1, UserId = 10, StaffCode = "GV01" };
+        var cls = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 1 };
+        var post = new ClassPost { Id = 1, ClassId = 1, AuthorUserId = 10, Title = "Tiêu đề cũ", Content = "Nội dung cũ đủ dài", Category = "General" };
+        _context.StaffProfiles.Add(staff);
+        _context.Classes.Add(cls);
+        _context.ClassPosts.Add(post);
+        await _context.SaveChangesAsync();
+
+        var res = await _service.UpdateClassPostAsync(10, 1, new UpdateClassPostDto
+        {
+            Title = "Tiêu đề đã sửa",
+            Content = "Nội dung mới đã được cập nhật đầy đủ.",
+            Category = "Announcement",
+            IsPinned = true,
+            AllowComments = false
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.Title.Should().Be("Tiêu đề đã sửa");
+        res.Data.IsPinned.Should().BeTrue();
+        res.Data.AllowComments.Should().BeFalse();
     }
 }

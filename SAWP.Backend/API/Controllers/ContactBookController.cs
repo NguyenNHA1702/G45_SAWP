@@ -135,6 +135,19 @@ public class ContactBookController : BaseApiController
     }
 
     /// <summary>
+    /// GVCN chỉnh sửa bài viết trên bảng tin lớp
+    /// </summary>
+    [HttpPut("posts/{postId}")]
+    public async Task<IActionResult> UpdateClassPost(int postId, [FromBody] UpdateClassPostDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        var result = await _contactBookService.UpdateClassPostAsync(userId.Value, postId, request, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
     /// Ghim hoặc gỡ ghim bài viết lớp học
     /// </summary>
     [HttpPost("posts/{postId}/pin")]

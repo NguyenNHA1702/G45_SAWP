@@ -11,7 +11,7 @@ export type RequestStatus = 'Submitted' | 'UnderReview' | 'Approved' | 'Rejected
 export type AttendanceSession = 'Morning' | 'Afternoon';
 export type LeaveSession = 'Morning' | 'Afternoon' | 'FullDay';
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff';
-export type SheetLockReason = 'PastDay' | 'NotAssigned' | 'NonSchoolDay' | 'Future' | 'EmptyRoster';
+export type SheetLockReason = 'PastDay' | 'NotAssigned' | 'NonSchoolDay' | 'Future' | 'EmptyRoster' | 'AlreadySubmitted';
 
 export interface TeacherClassOption {
   classId: number;
@@ -131,6 +131,7 @@ export interface StudentAttendanceRow {
   late: number;
   excusedAbsence: number;
   unexcusedAbsence: number;
+  notMarked?: number;
 }
 
 export interface ClassAttendanceSummary {

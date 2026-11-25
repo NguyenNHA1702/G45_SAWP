@@ -117,6 +117,8 @@ public class ClassRosterDto
     public string ClassName { get; set; } = string.Empty;
     public int Grade { get; set; }
     public string AcademicYear { get; set; } = string.Empty;
+    public DateTime? SchoolYearStartDate { get; set; }
+    public DateTime? SchoolYearEndDate { get; set; }
     public string? RoomNumber { get; set; }
     public int Capacity { get; set; }
     public int TotalEnrolled { get; set; }

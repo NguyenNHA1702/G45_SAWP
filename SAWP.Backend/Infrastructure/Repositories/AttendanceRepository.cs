@@ -161,7 +161,9 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
             {
                 ca.StudentId,
                 ca.Student.StudentCode,
-                ca.Student.FullName
+                ca.Student.FullName,
+                ca.StartDate,
+                ca.EndDate
             })
             .ToListAsync(ct);
 
@@ -174,6 +176,7 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
                 .Select(ar => new
                 {
                     ar.Date,
+                    ar.Session,
                     ar.StudentId,
                     ar.Status
                 })
@@ -182,22 +185,43 @@ public class AttendanceRepository : Repository<AttendanceRecord>, IAttendanceRep
                 .GroupBy(x => x.StudentId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            var recordedSlots = (await _context.AttendanceRecords
+                .AsNoTracking()
+                .Where(ar => ar.ClassId == classId && ar.Date >= fromDate && ar.Date <= toDate)
+                .Select(ar => new { ar.Date, ar.Session })
+                .Distinct()
+                .ToListAsync(ct))
+                .Where(x => IsValidSchoolDay(x.Date))
+                .Select(x => (Date: x.Date.Date, x.Session))
+                .Distinct()
+                .ToList();
+
             return activeRoster
                 .Select(s =>
                 {
+                    var startDate = s.StartDate.Date;
+                    var endDate = s.EndDate?.Date;
                     var studentRecords = rosterRecords.TryGetValue(s.StudentId, out var list)
-                        ? list
+                        ? list.Where(x => x.Date.Date >= startDate && (!endDate.HasValue || x.Date.Date <= endDate.Value)).ToList()
                         : null;
+
+                    var present = studentRecords?.Count(x => x.Status == AttendanceStatus.Present) ?? 0;
+                    var late = studentRecords?.Count(x => x.Status == AttendanceStatus.Late) ?? 0;
+                    var excused = studentRecords?.Count(x => x.Status == AttendanceStatus.ExcusedAbsence) ?? 0;
+                    var unexcused = studentRecords?.Count(x => x.Status == AttendanceStatus.UnexcusedAbsence) ?? 0;
+                    var expectedSlots = recordedSlots.Count(slot => slot.Date >= startDate && (!endDate.HasValue || slot.Date <= endDate.Value));
+                    var notMarked = Math.Max(0, expectedSlots - (present + late + excused + unexcused));
 
                     return new StudentAttendanceRowDto
                     {
                         StudentId = s.StudentId,
                         StudentCode = s.StudentCode,
                         FullName = s.FullName,
-                        Present = studentRecords?.Count(x => x.Status == AttendanceStatus.Present) ?? 0,
-                        Late = studentRecords?.Count(x => x.Status == AttendanceStatus.Late) ?? 0,
-                        ExcusedAbsence = studentRecords?.Count(x => x.Status == AttendanceStatus.ExcusedAbsence) ?? 0,
-                        UnexcusedAbsence = studentRecords?.Count(x => x.Status == AttendanceStatus.UnexcusedAbsence) ?? 0
+                        Present = present,
+                        Late = late,
+                        ExcusedAbsence = excused,
+                        UnexcusedAbsence = unexcused,
+                        NotMarked = notMarked
                     };
                 })
                 .OrderBy(x => x.FullName)

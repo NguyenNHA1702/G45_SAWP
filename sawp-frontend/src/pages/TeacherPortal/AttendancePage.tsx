@@ -63,6 +63,9 @@ export default function AttendancePage() {
   const [correctionRemarks, setCorrectionRemarks] = useState('');
   const [correctionReason, setCorrectionReason] = useState('');
   const [submittingCorrection, setSubmittingCorrection] = useState(false);
+  const [supplementReason, setSupplementReason] = useState('');
+  const todayStr = todayIso();
+  const isSupplementingPastDay = date < todayStr;
 
   // ATT-14: Tab Tổng hợp chuyên cần lớp (UC-23, UC-28, UC-50)
   const [summaryFrom, setSummaryFrom] = useState<string>(defaultSummaryFromIso);
@@ -137,15 +140,23 @@ export default function AttendancePage() {
       toast.error(`Còn ${vm.summary.notMarked} học sinh chưa điểm danh.`);
       return;
     }
+    if (isSupplementingPastDay) {
+      const trimmed = supplementReason.trim();
+      if (trimmed.length < 5 || trimmed.length > 500) {
+        toast.error('Bổ sung điểm danh ngày quá khứ bắt buộc nhập lý do từ 5 đến 500 ký tự.');
+        return;
+      }
+    }
     setConfirmOpen(true);
   };
 
   const handleConfirm = async () => {
     setConfirmOpen(false);
     try {
-      const res = await vm.submit();
+      const res = await vm.submit(isSupplementingPastDay ? supplementReason.trim() : undefined);
       toast.success(res.message || SYSTEM_MESSAGES.MSG18.content);
       setResult(res.data);
+      setSupplementReason('');
       res.data?.warnings?.forEach((w) => toast(w, { icon: '⚠️', duration: 6000 }));
     } catch (e) {
       const err = asApiError(e);
@@ -172,7 +183,10 @@ export default function AttendancePage() {
   };
 
   const canEdit = vm.sheet?.canEdit ?? false;
-  const canCorrectPastDay = !canEdit && vm.sheet?.lockReason === 'PastDay' && isOfficeOrAdmin;
+  const canCorrectPastDay =
+    !canEdit &&
+    (vm.sheet?.lockReason === 'PastDay' || vm.sheet?.lockReason === 'AlreadySubmitted') &&
+    isOfficeOrAdmin;
 
   const openCorrectionModal = (entry: AttendanceSheetEntry) => {
     setCorrectingEntry(entry);
@@ -498,13 +512,15 @@ export default function AttendancePage() {
                         <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Đi muộn</th>
                         <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng có phép</th>
                         <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Vắng không phép</th>
+                        <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Chưa điểm danh</th>
                         <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Tỉ lệ</th>
                       </tr>
                     </thead>
                     <tbody>
                       {classSummary.students.map((st, idx) => {
                         const total = st.present + st.late + st.excusedAbsence + st.unexcusedAbsence;
-                        const rate = total > 0 ? Math.round(((st.present + st.late) * 10000) / total) / 100 : 0;
+                        const rateDisplay =
+                          total > 0 ? `${Math.round(((st.present + st.late) * 10000) / total) / 100}%` : '—';
                         return (
                           <tr key={st.studentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
                             <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600 }}>{idx + 1}</td>
@@ -516,7 +532,8 @@ export default function AttendancePage() {
                             <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#D97706' }}>{st.late}</td>
                             <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#2563EB' }}>{st.excusedAbsence}</td>
                             <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#DC2626' }}>{st.unexcusedAbsence}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800 }}>{rate}%</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: '#64748B' }}>{st.notMarked ?? 0}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800 }}>{rateDisplay}</td>
                           </tr>
                         );
                       })}
@@ -539,7 +556,7 @@ export default function AttendancePage() {
                 alignItems: 'center',
                 gap: 12,
                 padding: '14px 20px',
-                background: '#EDE9FE',
+                background: vm.summary.notMarked > 0 ? '#FEF3C7' : '#EDE9FE',
                 border: '2px solid var(--color-fg)',
                 boxShadow: '3px 3px 0 0 var(--color-fg)',
                 borderRadius: 'var(--radius-md)',
@@ -549,14 +566,26 @@ export default function AttendancePage() {
               }}
               role="status"
             >
-              <Clock size={18} color="var(--color-accent)" />
+              <Clock size={18} color={vm.summary.notMarked > 0 ? '#B45309' : 'var(--color-accent)'} />
               <div>
-                Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
-                {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
-                {canEdit && (
-                  <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
-                    ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
-                  </span>
+                {vm.summary.notMarked > 0 ? (
+                  <>
+                    Chưa hoàn tất điểm danh (đã ghi nhận một phần lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
+                    {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}) ·{' '}
+                    <span style={{ color: '#B45309', fontWeight: 700 }}>
+                      Còn {vm.summary.notMarked} học sinh chưa điểm danh.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
+                    {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
+                    {canEdit && (
+                      <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
+                        ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -604,7 +633,36 @@ export default function AttendancePage() {
               onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
               onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
               absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
+              canSendNoticeForDate={date === todayStr}
             />
+          )}
+
+          {canEdit && isSupplementingPastDay && vm.sheet && vm.sheet.entries.length > 0 && (
+            <div
+              className="card pop-in"
+              style={{
+                padding: '14px 18px',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                background: '#FFFBEB',
+                marginTop: 16,
+              }}
+            >
+              <label htmlFor="supplement-reason" className="label" style={{ display: 'block', marginBottom: 6, fontWeight: 700 }}>
+                Lý do bổ sung điểm danh ngày quá khứ * (5–500 ký tự)
+              </label>
+              <input
+                id="supplement-reason"
+                className="input"
+                type="text"
+                maxLength={500}
+                value={supplementReason}
+                onChange={(e) => setSupplementReason(e.target.value)}
+                placeholder="Ví dụ: Giáo viên nghỉ ốm đột xuất, Phòng Giáo vụ bổ sung điểm danh ngày..."
+                style={{ width: '100%' }}
+              />
+            </div>
           )}
 
           {canEdit && vm.sheet && vm.sheet.entries.length > 0 && (
@@ -767,7 +825,7 @@ export default function AttendancePage() {
       <GeometricModal
         open={Boolean(correctingEntry)}
         onClose={() => setCorrectingEntry(null)}
-        title="Điều Chỉnh Điểm Danh Ngày Quá Khứ"
+        title={date < todayStr ? 'Điều Chỉnh Điểm Danh Ngày Quá Khứ' : 'Điều Chỉnh Điểm Danh'}
         subtitle={correctingEntry ? `${correctingEntry.fullName} (${correctingEntry.studentCode}) • Ngày ${formatDashDate(date)}` : ''}
         badgeText="Ghi nhận Audit Log"
         badgeColor="amber"
@@ -777,7 +835,9 @@ export default function AttendancePage() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-md)', background: '#FEF3C7', border: '1.5px solid var(--color-fg)', fontSize: 'var(--fs-xs)', fontWeight: 700, color: '#92400E' }}>
-            Chỉ dùng để sửa lỗi nhập liệu ngày quá khứ (không chuyển sang Vắng có phép). Mọi thao tác đều lưu lý do và lịch sử kiểm toán.
+            {date < todayStr
+              ? 'Chỉ dùng để sửa lỗi nhập liệu ngày quá khứ (không chuyển sang Vắng có phép). Mọi thao tác đều lưu lý do và lịch sử kiểm toán.'
+              : 'Điều chỉnh từng bản ghi điểm danh hôm nay. Mọi thao tác đều lưu lý do và lịch sử kiểm toán.'}
           </div>
 
           <div>
@@ -793,7 +853,12 @@ export default function AttendancePage() {
             >
               <option value="Present">Có mặt</option>
               <option value="Late">Đi muộn</option>
-              <option value="UnexcusedAbsence">Vắng không phép</option>
+              <option
+                value="UnexcusedAbsence"
+                disabled={correctingEntry?.leave?.status === 'Approved'}
+              >
+                Vắng không phép{correctingEntry?.leave?.status === 'Approved' ? ' (Đã có đơn nghỉ duyệt)' : ''}
+              </option>
             </select>
           </div>
 

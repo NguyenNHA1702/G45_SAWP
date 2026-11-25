@@ -1175,7 +1175,8 @@ public class AttendanceServiceTests : TestBase
         var today = new DateTime(2026, 10, 28);
         _clockMock.Setup(c => c.Today).Returns(today);
         _clockMock.Setup(c => c.Now).Returns(today.AddHours(8));
-        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1B", Status = "Active", SchoolYearId = 1 } });
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1B", Status = "Active", SchoolYearId = 1, HomeroomTeacherId = 10 } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 20 } });
         SetupRepository(new List<SchoolCalendarDay>());
         SetupRepository(new List<LunchServiceDay>());
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
@@ -1206,7 +1207,7 @@ public class AttendanceServiceTests : TestBase
         };
 
         // Act
-        var result = await _service.RecordDailyAttendanceAsync(1, dto, 20, new[] { UserRoles.OfficeStaff });
+        var result = await _service.RecordDailyAttendanceAsync(1, dto, 20, new[] { UserRoles.Teacher });
 
         // Assert
         result.Success.Should().BeTrue();
@@ -1409,5 +1410,97 @@ public class AttendanceServiceTests : TestBase
         existingFromOldClass.ClassId.Should().Be(2);
         existingFromOldClass.Status.Should().Be(AttendanceStatus.UnexcusedAbsence);
         AttendanceRepoMock.Verify(a => a.AddAsync(It.IsAny<AttendanceRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AT04_RecordDailyAttendance_UnexcusedWhenApprovedLeaveExists_FailsWithConflict()
+    {
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(8));
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<SchoolCalendarDay>());
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>
+            {
+                [1] = new LeaveIndicatorDto { LeaveRequestId = 5, Status = RequestStatus.Approved }
+            });
+
+        var dto = new SubmitAttendanceSheetDto
+        {
+            Date = today,
+            Session = AttendanceSession.Morning,
+            Entries = new List<DailyAttendanceEntryDto> { new() { StudentId = 1, Status = AttendanceStatus.UnexcusedAbsence } }
+        };
+
+        var result = await _service.RecordDailyAttendanceAsync(1, dto, 30, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Contains("đơn xin nghỉ được duyệt"));
+    }
+
+    [Fact]
+    public async Task AT08_SendAbsenceNotice_PastDate_FailsWithMSG09()
+    {
+        var rec = UnexcusedRecord();
+        rec.Date = new DateTime(2026, 10, 27); // yesterday
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+
+        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        result.Errors.Should().Contain(e => e.Contains("hôm nay"));
+    }
+
+    [Fact]
+    public async Task AT08_CorrectAttendance_FromUnexcusedWithNoticeToPresent_ClearsNoticeAndNotifiesParent()
+    {
+        var today = new DateTime(2026, 10, 28);
+        var rec = UnexcusedRecord();
+        rec.Date = today.AddDays(-1);
+        rec.AbsenceNoticeSentAt = DateTime.UtcNow.AddHours(-2);
+        rec.AbsenceNoticeSentByUserId = 40;
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupRepository(new List<LunchServiceDay>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), rec.Date, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int> { 20 } });
+        var notifRepo = SetupRepository(new List<Notification>());
+
+        var result = await _service.CorrectAttendanceAsync(10, new CorrectAttendanceDto
+        {
+            Status = AttendanceStatus.Present,
+            CorrectionReason = "Học sinh có đi học, GV chấm nhầm"
+        }, 40);
+
+        result.Success.Should().BeTrue();
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+        rec.AbsenceNoticeSentByUserId.Should().BeNull();
+        notifRepo.Verify(r => r.AddAsync(It.Is<Notification>(n => n.Type == NotificationTemplates.AttendanceAbsentRetractType && n.UserId == 20), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AT11_OfficeStaffSupplementPastDay_WithoutReason_Fails()
+    {
+        var pastDate = new DateTime(2026, 10, 27);
+        var dto = new SubmitAttendanceSheetDto
+        {
+            Date = pastDate,
+            Session = AttendanceSession.Morning,
+            Entries = new List<DailyAttendanceEntryDto> { new() { StudentId = 1, Status = AttendanceStatus.Present } }
+        };
+
+        var result = await _service.RecordDailyAttendanceAsync(1, dto, 10, new[] { UserRoles.OfficeStaff });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("lý do"));
     }
 }

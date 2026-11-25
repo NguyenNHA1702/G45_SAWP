@@ -1583,7 +1583,9 @@ public class LeaveRequestService : ILeaveRequestService
                               && withdrawableDates.Contains(ar.Date)
                               && matchingSessions.Contains(ar.Session)
                               && ar.LeaveRequestId == req.LeaveRequest.Id
-                              && ar.Status == AttendanceStatus.ExcusedAbsence)
+                              && ar.Status == AttendanceStatus.ExcusedAbsence
+                              && ar.UpdatedAt == null
+                              && ar.UpdatedByUserId == null)
                     .ToListAsync(cancellationToken);
 
                 foreach (var ar in autoRecords)

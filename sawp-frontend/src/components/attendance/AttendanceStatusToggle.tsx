@@ -43,7 +43,8 @@ export function AttendanceStatusToggle({ label, value, excusedAllowed, disabled 
     >
       {OPTIONS.map((o) => {
         const isExcused = o.value === AttendanceStatus.ExcusedAbsence;
-        const off = disabled || (isExcused && !excusedAllowed);
+        const isUnexcused = o.value === AttendanceStatus.UnexcusedAbsence;
+        const off = disabled || (isExcused && !excusedAllowed) || (isUnexcused && excusedAllowed);
         const Icon = o.icon;
         const isSelected = value === o.value;
 
@@ -77,7 +78,13 @@ export function AttendanceStatusToggle({ label, value, excusedAllowed, disabled 
             role="radio"
             aria-checked={isSelected}
             disabled={off}
-            title={isExcused && !excusedAllowed ? 'Cần đơn xin nghỉ đã được duyệt trên hệ thống' : o.label}
+            title={
+              isExcused && !excusedAllowed
+                ? 'Cần đơn xin nghỉ đã được duyệt trên hệ thống'
+                : isUnexcused && excusedAllowed
+                ? 'Học sinh đã có đơn xin nghỉ được duyệt, không thể đánh dấu Vắng không phép'
+                : o.label
+            }
             onClick={() => onChange(o.value)}
             style={{
               display: 'inline-flex',

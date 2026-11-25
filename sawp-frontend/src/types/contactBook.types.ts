@@ -63,6 +63,14 @@ export interface CreateClassPostDto {
   attachments?: PostAttachmentInputDto[];
 }
 
+export interface UpdateClassPostDto {
+  title: string;
+  content: string;
+  category?: string;
+  isPinned?: boolean;
+  allowComments?: boolean;
+}
+
 export interface CreatePostCommentDto {
   content: string;
 }

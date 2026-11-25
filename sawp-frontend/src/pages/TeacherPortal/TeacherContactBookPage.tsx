@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Award,
   Check,
@@ -6,6 +6,7 @@ import {
   Heart,
   MessageCircle,
   Newspaper,
+  Pencil,
   Pin,
   Plus,
   RefreshCw,
@@ -21,7 +22,6 @@ import { GeometricModal } from '../../components/common/GeometricModal';
 import { PostAttachmentsRenderer } from '../../components/contactBook/PostAttachmentsRenderer';
 import type {
   ClassPostDto,
-  CreateClassPostDto,
   StudentEvaluationRosterItemDto,
   CreateStudentEvaluationDto,
   PostAttachmentInputDto,
@@ -42,6 +42,52 @@ const AVAILABLE_BADGES = [
   '💪 Nỗ lực tiến bộ',
 ];
 
+interface SchoolWeekOption {
+  weekNumber: number;
+  label: string;
+  isFuture: boolean;
+}
+
+function computeSchoolWeeks(startDateStr?: string, endDateStr?: string): {
+  weeks: SchoolWeekOption[];
+  currentWeek: number;
+} {
+  const start = startDateStr ? new Date(startDateStr) : new Date(2026, 8, 1);
+  const end = endDateStr ? new Date(endDateStr) : new Date(2027, 5, 30);
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+  const diffToMonday = (startDay.getDay() + 6) % 7;
+  const week1Monday = new Date(startDay);
+  week1Monday.setDate(startDay.getDate() - diffToMonday);
+
+  const msPerDay = 86400000;
+  const totalDays = Math.max(7, Math.ceil((endDay.getTime() - week1Monday.getTime()) / msPerDay) + 1);
+  const totalWeeks = Math.min(52, Math.max(1, Math.ceil(totalDays / 7)));
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysSinceStart = Math.floor((today.getTime() - week1Monday.getTime()) / msPerDay);
+  const currentWeek = Math.min(totalWeeks, Math.max(1, Math.floor(daysSinceStart / 7) + 1));
+
+  const fmt = (d: Date) =>
+    `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+  const weeks: SchoolWeekOption[] = [];
+  for (let w = 1; w <= totalWeeks; w++) {
+    const wStart = new Date(week1Monday);
+    wStart.setDate(week1Monday.getDate() + (w - 1) * 7);
+    const wEnd = new Date(wStart);
+    wEnd.setDate(wStart.getDate() + 6);
+    weeks.push({
+      weekNumber: w,
+      label: `Tuần ${w} (${fmt(wStart)} – ${fmt(wEnd)})`,
+      isFuture: w > currentWeek,
+    });
+  }
+  return { weeks, currentWeek };
+}
+
 export default function TeacherContactBookPage() {
   const [homeroom, setHomeroom] = useState<ClassRosterDto | null>(null);
   const [loadingHomeroom, setLoadingHomeroom] = useState(false);
@@ -51,6 +97,7 @@ export default function TeacherContactBookPage() {
   const [posts, setPosts] = useState<ClassPostDto[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingPost, setEditingPost] = useState<ClassPostDto | null>(null);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
   const [postCategory] = useState('General');
@@ -62,7 +109,11 @@ export default function TeacherContactBookPage() {
   const [submittingPost, setSubmittingPost] = useState(false);
 
   // Tab 2: Evaluations
-  const [weekNumber, setWeekNumber] = useState<number>(8);
+  const { weeks: schoolWeeks, currentWeek } = useMemo(
+    () => computeSchoolWeeks(homeroom?.schoolYearStartDate, homeroom?.schoolYearEndDate),
+    [homeroom?.schoolYearStartDate, homeroom?.schoolYearEndDate]
+  );
+  const [weekNumber, setWeekNumber] = useState<number>(() => computeSchoolWeeks().currentWeek);
   const [roster, setRoster] = useState<StudentEvaluationRosterItemDto[]>([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentEvaluationRosterItemDto | null>(null);
@@ -82,8 +133,10 @@ export default function TeacherContactBookPage() {
       const res = await classApi.getMyHomeroomClass();
       if (res.success && res.data) {
         setHomeroom(res.data);
+        const { currentWeek: cw } = computeSchoolWeeks(res.data.schoolYearStartDate, res.data.schoolYearEndDate);
+        setWeekNumber(cw);
         loadPosts(res.data.classId);
-        loadRoster(res.data.classId, weekNumber);
+        loadRoster(res.data.classId, cw);
       }
     } catch {
       toast.error('Lỗi khi tải thông tin lớp chủ nhiệm.');
@@ -171,40 +224,80 @@ export default function TeacherContactBookPage() {
     }
   };
 
+  const openCreatePostModal = () => {
+    setEditingPost(null);
+    setPostTitle('');
+    setPostContent('');
+    setPostIsPinned(false);
+    setPostAllowComments(true);
+    setPostImageUrl('');
+    setPostAttachments([]);
+    setShowCreateModal(true);
+  };
+
+  const openEditPostModal = (post: ClassPostDto) => {
+    setEditingPost(post);
+    setPostTitle(post.title);
+    setPostContent(post.content);
+    setPostIsPinned(post.isPinned);
+    setPostAllowComments(post.allowComments);
+    setPostImageUrl('');
+    setPostAttachments([]);
+    setShowCreateModal(true);
+  };
+
   const handleCreatePost = async () => {
-    if (!postTitle.trim() || !postContent.trim()) {
-      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ.');
+    const trimmedTitle = postTitle.trim();
+    const trimmedContent = postContent.trim();
+    if (trimmedTitle.length < 5 || trimmedTitle.length > 200) {
+      toast.error('Tiêu đề bài viết phải từ 5 đến 200 ký tự.');
+      return;
+    }
+    if (trimmedContent.length < 10 || trimmedContent.length > 5000) {
+      toast.error('Nội dung bài viết phải từ 10 đến 5000 ký tự.');
       return;
     }
     if (!homeroom) return;
 
     setSubmittingPost(true);
     try {
-      const payload: CreateClassPostDto = {
-        classId: homeroom.classId,
-        title: postTitle.trim(),
-        content: postContent.trim(),
-        category: postCategory,
-        isPinned: postIsPinned,
-        allowComments: postAllowComments,
-        attachmentUrls: postImageUrl.trim() ? [postImageUrl.trim()] : undefined,
-        attachments: postAttachments.length > 0 ? postAttachments : undefined,
-      };
+      const res = editingPost
+        ? await contactBookApi.updateClassPost(editingPost.id, {
+            title: trimmedTitle,
+            content: trimmedContent,
+            category: editingPost.category || postCategory,
+            isPinned: postIsPinned,
+            allowComments: postAllowComments,
+          })
+        : await contactBookApi.createClassPost({
+            classId: homeroom.classId,
+            title: trimmedTitle,
+            content: trimmedContent,
+            category: postCategory,
+            isPinned: postIsPinned,
+            allowComments: postAllowComments,
+            attachmentUrls: postImageUrl.trim() ? [postImageUrl.trim()] : undefined,
+            attachments: postAttachments.length > 0 ? postAttachments : undefined,
+          });
 
-      const res = await contactBookApi.createClassPost(payload);
       if (res.success) {
-        toast.success(getSystemMessage('MSG51')?.content || 'Đăng bài viết lên bảng tin lớp thành công.');
+        toast.success(
+          editingPost
+            ? 'Cập nhật bài viết thành công.'
+            : getSystemMessage('MSG51')?.content || 'Đăng bài viết lên bảng tin lớp thành công.'
+        );
         setShowCreateModal(false);
+        setEditingPost(null);
         setPostTitle('');
         setPostContent('');
         setPostImageUrl('');
         setPostAttachments([]);
         loadPosts(homeroom.classId);
       } else {
-        toast.error(res.errors?.[0] || res.message || 'Không thể đăng bài viết.');
+        toast.error(res.errors?.[0] || res.message || 'Không thể lưu bài viết.');
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.errors?.[0] || err?.response?.data?.message || 'Không thể đăng bài viết lên bảng tin.');
+      toast.error(err?.response?.data?.errors?.[0] || err?.response?.data?.message || 'Không thể lưu bài viết lên bảng tin.');
     } finally {
       setSubmittingPost(false);
     }
@@ -279,8 +372,21 @@ export default function TeacherContactBookPage() {
 
   const handleSaveEvaluation = async () => {
     if (!selectedStudent || !homeroom) return;
-    if (!evalRating || !evalNote.trim()) {
-      toast.error(getSystemMessage('MSG01')?.content || 'Vui lòng kiểm tra và nhập đầy đủ thông tin hợp lệ.');
+    const trimmedNote = evalNote.trim();
+    if (!evalRating) {
+      toast.error('Vui lòng chọn xếp loại nề nếp.');
+      return;
+    }
+    if (trimmedNote.length < 10 || trimmedNote.length > 1500) {
+      toast.error('Lời nhận xét của giáo viên phải từ 10 đến 1500 ký tự.');
+      return;
+    }
+    if (evalRemind.trim().length > 500) {
+      toast.error('Dặn dò riêng tối đa 500 ký tự.');
+      return;
+    }
+    if (weekNumber > currentWeek) {
+      toast.error(`Không thể nhận xét cho tuần tương lai (hiện tại là tuần ${currentWeek}).`);
       return;
     }
 
@@ -361,7 +467,7 @@ export default function TeacherContactBookPage() {
             <button
               type="button"
               className="btn btn--primary"
-              onClick={() => setShowCreateModal(true)}
+              onClick={openCreatePostModal}
             >
               <Plus size={18} /> Đăng bài viết mới
             </button>
@@ -405,7 +511,7 @@ export default function TeacherContactBookPage() {
               <button
                 type="button"
                 className="btn btn--primary btn--sm"
-                onClick={() => setShowCreateModal(true)}
+                onClick={openCreatePostModal}
               >
                 <Plus size={16} /> Đăng bài viết đầu tiên
               </button>
@@ -442,7 +548,15 @@ export default function TeacherContactBookPage() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn--outline btn--sm"
+                        onClick={() => openEditPostModal(post)}
+                        title="Chỉnh sửa bài viết"
+                      >
+                        <Pencil size={14} /> Sửa
+                      </button>
                       <button
                         type="button"
                         className="btn btn--outline btn--sm"
@@ -548,7 +662,7 @@ export default function TeacherContactBookPage() {
               <span style={{ fontWeight: 700 }}>Chọn tuần học:</span>
               <select
                 className="input"
-                style={{ width: 140 }}
+                style={{ width: 240 }}
                 value={weekNumber}
                 onChange={(e) => {
                   const w = Number(e.target.value);
@@ -556,9 +670,9 @@ export default function TeacherContactBookPage() {
                   if (homeroom) loadRoster(homeroom.classId, w);
                 }}
               >
-                {Array.from({ length: 35 }, (_, i) => i + 1).map((w) => (
-                  <option key={w} value={w}>
-                    Tuần {w}
+                {schoolWeeks.map((w) => (
+                  <option key={w.weekNumber} value={w.weekNumber} disabled={w.isFuture}>
+                    {w.label}{w.isFuture ? ' (Chưa đến)' : ''}
                   </option>
                 ))}
               </select>
@@ -658,11 +772,14 @@ export default function TeacherContactBookPage() {
         </div>
       )}
 
-      {/* MODAL 1: CREATE CLASS POST */}
+      {/* MODAL 1: CREATE / EDIT CLASS POST */}
       <GeometricModal
         open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Đăng bài viết mới cho lớp"
+        onClose={() => {
+          setShowCreateModal(false);
+          setEditingPost(null);
+        }}
+        title={editingPost ? 'Chỉnh sửa bài viết lớp' : 'Đăng bài viết mới cho lớp'}
         subtitle={`Lớp ${homeroom?.className} · Năm học ${homeroom?.academicYear || homeroom?.schoolYearName || '—'}`}
         badgeText="Bảng tin lớp"
         badgeColor="violet"
@@ -780,7 +897,10 @@ export default function TeacherContactBookPage() {
             <button
               type="button"
               className="btn btn--outline"
-              onClick={() => setShowCreateModal(false)}
+              onClick={() => {
+                setShowCreateModal(false);
+                setEditingPost(null);
+              }}
             >
               Hủy
             </button>
@@ -790,7 +910,7 @@ export default function TeacherContactBookPage() {
               disabled={submittingPost}
               onClick={handleCreatePost}
             >
-              <Send size={15} /> Đăng bài ngay
+              <Send size={15} /> {editingPost ? 'Lưu thay đổi' : 'Đăng bài ngay'}
             </button>
           </div>
         </div>

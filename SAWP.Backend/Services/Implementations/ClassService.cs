@@ -1341,6 +1341,8 @@ public class ClassService : IClassService
             ClassName = targetClass.ClassName,
             Grade = targetClass.Grade,
             AcademicYear = targetClass.SchoolYear?.YearName ?? string.Empty,
+            SchoolYearStartDate = targetClass.SchoolYear?.StartDate,
+            SchoolYearEndDate = targetClass.SchoolYear?.EndDate,
             RoomNumber = targetClass.RoomNumber,
             Capacity = targetClass.Capacity,
             TotalEnrolled = activeAssignments.Count,

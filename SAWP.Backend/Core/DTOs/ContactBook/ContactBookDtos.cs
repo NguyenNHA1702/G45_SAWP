@@ -73,6 +73,15 @@ public class CreateClassPostDto
     public List<PostAttachmentInputDto>? Attachments { get; set; }
 }
 
+public class UpdateClassPostDto
+{
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string Category { get; set; } = "General";
+    public bool IsPinned { get; set; }
+    public bool AllowComments { get; set; } = true;
+}
+
 public class CreatePostCommentDto
 {
     public string Content { get; set; } = string.Empty;
