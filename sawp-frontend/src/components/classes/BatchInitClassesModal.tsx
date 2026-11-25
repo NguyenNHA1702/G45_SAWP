@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, Layers, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
@@ -9,6 +9,7 @@ interface BatchInitClassesModalProps {
   open: boolean;
   onClose: () => void;
   activeSchoolYear: SchoolYearDto | null;
+  initialGrade?: number;
   onClassesCreated: (newClasses: ClassSummaryDto[], grade: number) => void;
 }
 
@@ -16,12 +17,19 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
   open,
   onClose,
   activeSchoolYear,
+  initialGrade = 1,
   onClassesCreated,
 }) => {
-  const [targetGrade, setTargetGrade] = useState(1);
+  const [targetGrade, setTargetGrade] = useState(initialGrade);
   const [sectionsStr, setSectionsStr] = useState('A, B, C');
   const [capacity, setCapacity] = useState(35);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setTargetGrade(initialGrade >= 1 && initialGrade <= 5 ? initialGrade : 1);
+    }
+  }, [open, initialGrade]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,7 +131,7 @@ export const BatchInitClassesModal: React.FC<BatchInitClassesModalProps> = ({
             required
           />
           <small style={{ color: 'var(--color-muted-fg)' }}>
-            Ví dụ: Nhập <code>A, B, C</code> sẽ tạo ra các lớp <strong>1A, 1B, 1C</strong>.
+            Ví dụ: Nhập <code>A, B, C</code> sẽ tạo ra các lớp <strong>{targetGrade}A, {targetGrade}B, {targetGrade}C</strong>.
           </small>
         </div>
 

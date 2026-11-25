@@ -23,7 +23,7 @@ import { RequestHistoryModal } from '../../components/requests/RequestHistoryMod
 import { DirectFileUploader } from '../../components/common/DirectFileUploader';
 import { AttachmentViewer } from '../../components/common/AttachmentViewer';
 import { PaginationBar } from '../../components/common/PaginationBar';
-import { formatDDMMYYYY, formatDDMMYYYYHHMM, todayIso } from '../../utils/date';
+import { formatDDMMYYYY, formatDDMMYYYYHHMM, getNextMondayIso, todayIso } from '../../utils/date';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
@@ -45,7 +45,7 @@ export default function AdministrativeRequestsPage() {
   // Form Chuyển lớp
   const [targetClassId, setTargetClassId] = useState<number | ''>('');
   const [transferReason, setTransferReason] = useState('');
-  const [effectiveDate, setEffectiveDate] = useState('');
+  const [effectiveDate, setEffectiveDate] = useState<string>(() => getNextMondayIso());
   const [transferAttachment, setTransferAttachment] = useState('');
 
   // Form Giấy tờ
@@ -154,7 +154,7 @@ export default function AdministrativeRequestsPage() {
       if (res.success) {
         toast.success(res.message || 'Đã gửi đơn xin chuyển lớp thành công!');
         setTransferReason('');
-        setEffectiveDate('');
+        setEffectiveDate(getNextMondayIso());
         setTransferAttachment('');
         setTargetClassId('');
         setActiveTab('list');
@@ -1233,7 +1233,7 @@ export default function AdministrativeRequestsPage() {
                 disabled={hasPendingTransfer}
               />
               <div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                (Không bắt buộc. Ngày chuyển chính thức sẽ do Ban Giám Hiệu xem xét và ấn định căn cứ theo kế hoạch học tập của trường).
+                (Mặc định là Thứ Hai tuần tới ({formatDDMMYYYY(getNextMondayIso())}). Phụ huynh có thể thay đổi ngày khác hoặc bỏ trống nếu không yêu cầu ngày cụ thể; ngày chuyển chính thức sẽ do Ban Giám Hiệu ấn định).
               </div>
             </div>
 
