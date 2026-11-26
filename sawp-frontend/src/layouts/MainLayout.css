@@ -417,41 +417,8 @@
   padding: 0;
 }
 
-/* Tablet compact rail */
-@media (max-width: 1024px) and (min-width: 769px) {
-  .layout-sidebar {
-    width: 74px;
-  }
-  .brand-title,
-  .brand-subtitle,
-  .nav-section-label,
-  .nav-link__label,
-  .nav-badge,
-  .nav-chevron,
-  .nav-chevron-toggle,
-  .nav-submenu,
-  .user-info,
-  .sidebar-actions span,
-  .user-greeting {
-    display: none;
-  }
-  .sidebar-brand {
-    justify-content: center;
-    padding: var(--space-4) 0;
-  }
-  .nav-link,
-  .nav-parent-btn {
-    justify-content: center;
-    padding: 10px 0;
-  }
-  .user-card {
-    justify-content: center;
-    padding: var(--space-2) 0;
-  }
-}
-
-/* Mobile phone: Slide-over Drawer + Bottom Navigation */
-@media (max-width: 768px) {
+/* Tablet & Mobile (<= 1024px): Full Slide-over Drawer so submenus are always accessible */
+@media (max-width: 1024px) {
   .mobile-sidebar-backdrop {
     display: block;
     position: fixed;
@@ -516,6 +483,13 @@
     flex-shrink: 0;
   }
 
+  .header-pill {
+    display: none;
+  }
+}
+
+/* Mobile phone (<= 768px): Compact header + Bottom Navigation */
+@media (max-width: 768px) {
   .layout-header {
     height: 58px;
     padding: 0 var(--space-3);
@@ -528,7 +502,6 @@
     flex: 1;
   }
 
-  .header-pill,
   .user-greeting {
     display: none;
   }
