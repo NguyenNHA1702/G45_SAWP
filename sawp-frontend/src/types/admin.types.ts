@@ -29,6 +29,7 @@ export interface AdminUserDto {
   staffCode: string | null;
   position: string | null;
   department: string | null;
+  homeroomClassName?: string | null;
 }
 
 export interface AdminUserQuery {

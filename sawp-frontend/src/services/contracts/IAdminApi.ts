@@ -12,6 +12,7 @@ import type {
 
 export interface IAdminApi {
   getUsers(query: AdminUserQuery): Promise<ApiResponse<PaginatedResult<AdminUserDto>>>;
+  getStaff(query: AdminUserQuery): Promise<ApiResponse<PaginatedResult<AdminUserDto>>>;
   getRoles(): Promise<ApiResponse<RoleOptionDto[]>>;
   createUser(payload: CreateUserPayload): Promise<ApiResponse<AdminUserDto>>;
   updateUserRoles(userId: number, roles: string[]): Promise<ApiResponse<AdminUserDto>>;

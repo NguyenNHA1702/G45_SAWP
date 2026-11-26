@@ -691,83 +691,139 @@ export default function TeacherContactBookPage() {
               <div>Đang tải danh sách học sinh...</div>
             </div>
           ) : (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid var(--color-border)' }}>
-                    <th style={{ padding: '12px 16px' }}>Học sinh</th>
-                    <th style={{ padding: '12px 16px' }}>Đánh giá nề nếp</th>
-                    <th style={{ padding: '12px 16px' }}>Huy hiệu</th>
-                    <th style={{ padding: '12px 16px' }}>Ký nhận PH</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {roster.map((item) => (
-                    <tr key={item.studentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ fontWeight: 700 }}>{item.studentName}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--color-muted-fg)' }}>{item.studentCode}</div>
-                      </td>
+            <>
+              <div className="card desktop-table-wrap" style={{ padding: 0, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid var(--color-border)' }}>
+                      <th style={{ padding: '12px 16px' }}>Học sinh</th>
+                      <th style={{ padding: '12px 16px' }}>Đánh giá nề nếp</th>
+                      <th style={{ padding: '12px 16px' }}>Huy hiệu</th>
+                      <th style={{ padding: '12px 16px' }}>Ký nhận PH</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right' }}>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roster.map((item) => (
+                      <tr key={item.studentId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ fontWeight: 700 }}>{item.studentName}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--color-muted-fg)' }}>{item.studentCode}</div>
+                        </td>
 
-                      <td style={{ padding: '12px 16px' }}>
-                        {item.evaluation ? (
-                          <span
-                            className={`badge ${
-                              item.evaluation.rating === 'Excellent'
-                                ? 'badge--pink'
+                        <td style={{ padding: '12px 16px' }}>
+                          {item.evaluation ? (
+                            <span
+                              className={`badge ${
+                                item.evaluation.rating === 'Excellent'
+                                  ? 'badge--pink'
+                                  : item.evaluation.rating === 'Good'
+                                  ? 'badge--green'
+                                  : 'badge--yellow'
+                              }`}
+                            >
+                              {item.evaluation.rating === 'Excellent'
+                                ? '⭐⭐⭐ Tích cực'
                                 : item.evaluation.rating === 'Good'
-                                ? 'badge--green'
-                                : 'badge--yellow'
-                            }`}
+                                ? '⭐⭐ Đạt'
+                                : '⭐ Cần lưu ý'}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--color-muted-fg)', fontStyle: 'italic', fontSize: '0.85rem' }}>
+                              Chưa nhận xét
+                            </span>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '12px 16px' }}>
+                          {item.evaluation?.badges && item.evaluation.badges.length > 0 ? (
+                            <span style={{ fontSize: '0.85rem' }}>{item.evaluation.badges.length} huy hiệu</span>
+                          ) : (
+                            <span style={{ color: 'var(--color-muted-fg)', fontSize: '0.85rem' }}>--</span>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '12px 16px' }}>
+                          {item.evaluation?.isAcknowledged ? (
+                            <span style={{ color: '#15803D', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <CheckCircle2 size={14} /> Đã ký nhận
+                            </span>
+                          ) : item.evaluation ? (
+                            <span style={{ color: '#B45309', fontSize: '0.8rem' }}>Chờ phụ huynh ký</span>
+                          ) : (
+                            <span style={{ color: 'var(--color-muted-fg)', fontSize: '0.8rem' }}>--</span>
+                          )}
+                        </td>
+
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="btn btn--primary btn--sm"
+                            onClick={() => openEvaluationModal(item)}
                           >
-                            {item.evaluation.rating === 'Excellent'
-                              ? '⭐⭐⭐ Tích cực'
+                            {item.evaluation ? 'Sửa nhận xét' : 'Viết nhận xét'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mobile-card-list">
+                {roster.map((item) => (
+                  <div key={`m-${item.studentId}`} className="mobile-item-card">
+                    <div className="mobile-item-card__head">
+                      <div>
+                        <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{item.studentName}</strong>
+                        <div className="mobile-item-card__meta">{item.studentCode}</div>
+                      </div>
+                      {item.evaluation ? (
+                        <span
+                          className={`badge ${
+                            item.evaluation.rating === 'Excellent'
+                              ? 'badge--pink'
                               : item.evaluation.rating === 'Good'
-                              ? '⭐⭐ Đạt'
-                              : '⭐ Cần lưu ý'}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--color-muted-fg)', fontStyle: 'italic', fontSize: '0.85rem' }}>
-                            Chưa nhận xét
-                          </span>
-                        )}
-                      </td>
+                              ? 'badge--green'
+                              : 'badge--yellow'
+                          }`}
+                        >
+                          {item.evaluation.rating === 'Excellent'
+                            ? '⭐⭐⭐ Tích cực'
+                            : item.evaluation.rating === 'Good'
+                            ? '⭐⭐ Đạt'
+                            : '⭐ Cần lưu ý'}
+                        </span>
+                      ) : (
+                        <span className="badge badge--muted">Chưa nhận xét</span>
+                      )}
+                    </div>
 
-                      <td style={{ padding: '12px 16px' }}>
-                        {item.evaluation?.badges && item.evaluation.badges.length > 0 ? (
-                          <span style={{ fontSize: '0.85rem' }}>{item.evaluation.badges.length} huy hiệu</span>
-                        ) : (
-                          <span style={{ color: 'var(--color-muted-fg)', fontSize: '0.85rem' }}>--</span>
+                    <div className="mobile-item-card__foot">
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 'var(--fs-xs)' }}>
+                        {item.evaluation?.badges && item.evaluation.badges.length > 0 && (
+                          <span className="badge badge--amber">{item.evaluation.badges.length} huy hiệu</span>
                         )}
-                      </td>
-
-                      <td style={{ padding: '12px 16px' }}>
                         {item.evaluation?.isAcknowledged ? (
-                          <span style={{ color: '#15803D', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ color: '#15803D', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <CheckCircle2 size={14} /> Đã ký nhận
                           </span>
                         ) : item.evaluation ? (
-                          <span style={{ color: '#B45309', fontSize: '0.8rem' }}>Chờ phụ huynh ký</span>
-                        ) : (
-                          <span style={{ color: 'var(--color-muted-fg)', fontSize: '0.8rem' }}>--</span>
-                        )}
-                      </td>
-
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          className="btn btn--primary btn--sm"
-                          onClick={() => openEvaluationModal(item)}
-                        >
-                          {item.evaluation ? 'Sửa nhận xét' : 'Viết nhận xét'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          <span style={{ color: '#B45309', fontWeight: 600 }}>Chờ phụ huynh ký</span>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--sm"
+                        onClick={() => openEvaluationModal(item)}
+                      >
+                        {item.evaluation ? 'Sửa nhận xét' : 'Viết nhận xét'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

@@ -24,6 +24,7 @@ import EContactBookPage from './pages/ParentPortal/EContactBookPage';
 import TeacherContactBookPage from './pages/TeacherPortal/TeacherContactBookPage';
 import AuditLogsPage from './pages/SystemPortal/AuditLogsPage';
 import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
+import StaffListPage from './pages/AdminPortal/StaffListPage';
 import AccountRequestReviewPage from './pages/AdminPortal/AccountRequestReviewPage';
 import AccountRequestsPage from './pages/OfficeStaffPortal/AccountRequestsPage';
 import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
@@ -283,6 +284,14 @@ export default function App() {
             element={
               <RequireRole roles={['Admin']}>
                 <UsersManagementPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/staff"
+            element={
+              <RequireRole roles={['SchoolBoard', 'Admin']}>
+                <StaffListPage />
               </RequireRole>
             }
           />

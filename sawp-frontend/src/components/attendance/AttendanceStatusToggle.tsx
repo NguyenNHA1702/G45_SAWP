@@ -78,6 +78,7 @@ export function AttendanceStatusToggle({ label, value, excusedAllowed, disabled 
             role="radio"
             aria-checked={isSelected}
             disabled={off}
+            className="status-toggle__btn"
             title={
               isExcused && !excusedAllowed
                 ? 'Chưa có đơn trên hệ thống — tự động ghi chú "Xin phép ngoài hệ thống"'

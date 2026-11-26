@@ -153,4 +153,19 @@ public class AttendanceController : BaseApiController
         var result = await _attendanceService.GetStudentHistoryAsync(studentId, fromDate, toDate, userId, roles, ct);
         return ToActionResult(result);
     }
+
+    /// <summary>
+    /// Giáo viên gửi yêu cầu Phòng Giáo vụ hỗ trợ điểm danh / điều chỉnh lại kèm lý do
+    /// </summary>
+    [HttpPost("classes/{classId}/request-reattendance")]
+    [Authorize(Roles = "Teacher")]
+    public async Task<IActionResult> RequestReattendance(
+        int classId,
+        [FromBody] RequestReattendanceDto dto,
+        CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _attendanceService.RequestReattendanceAsync(classId, dto, userId, ct);
+        return ToActionResult(result);
+    }
 }

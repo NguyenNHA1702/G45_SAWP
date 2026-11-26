@@ -22,4 +22,8 @@ export interface IAttendanceApi {
   getClassSummary(classId: number, from: string, to: string): Promise<ClassAttendanceSummary>;
   getClassMatrix(classId: number, from: string, to: string): Promise<ClassAttendanceMatrix>;
   getStudentHistory(studentId: number, from: string, to: string): Promise<StudentAttendanceHistory>;
+  requestReattendance(
+    classId: number,
+    payload: { date: string; session: AttendanceSession; reason?: string }
+  ): Promise<ApiResponse<boolean>>;
 }

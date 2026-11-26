@@ -29,6 +29,44 @@ const initials = (name: string) => {
   return (parts.at(-1)?.[0] ?? '?').toUpperCase();
 };
 
+function renderLunchBadge(e: AttendanceSheetEntry) {
+  if (e.hasLunch) {
+    return (
+      <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+        <Utensils size={13} aria-hidden="true" /> Có
+      </span>
+    );
+  }
+  if (e.lunchCancelledBy === 'Attendance') {
+    return (
+      <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }} title="Đã trừ do vắng">
+        Đã trừ
+      </span>
+    );
+  }
+  if (e.lunchCancelledBy === 'Leave' || e.lunchCancelledBy === 'Parent' || e.lunchCancelledBy === 'Staff') {
+    return (
+      <span
+        className="badge"
+        style={{
+          border: '1.5px solid var(--color-fg)',
+          fontWeight: 700,
+          background: '#F1F5F9',
+          color: '#334155',
+        }}
+        title={
+          e.lunchCancelledBy === 'Leave'
+            ? 'Không ăn (suất ăn đã được hủy do đơn xin nghỉ được duyệt)'
+            : 'Không ăn (đã hủy suất ăn bán trú)'
+        }
+      >
+        Không
+      </span>
+    );
+  }
+  return <span style={{ color: 'var(--color-muted-fg)' }}>—</span>;
+}
+
 export function AttendanceRosterTable({
   entries,
   draft,
@@ -42,19 +80,20 @@ export function AttendanceRosterTable({
 }: Props) {
   const showNotice = onSendAbsenceNotice !== undefined;
   return (
-    <div
-      className="card roster-card pop-in"
-      style={{
-        border: '2px solid var(--color-fg)',
-        boxShadow: '4px 4px 0 0 var(--color-fg)',
-        borderRadius: 'var(--radius-lg)',
-        background: 'var(--color-card)',
-        padding: 0,
-        overflow: 'hidden',
-        marginBottom: 24,
-      }}
-    >
-      <div style={{ overflowX: 'auto' }}>
+    <>
+      <div
+        className="card roster-card roster-desktop-wrap pop-in"
+        style={{
+          border: '2px solid var(--color-fg)',
+          boxShadow: '4px 4px 0 0 var(--color-fg)',
+          borderRadius: 'var(--radius-lg)',
+          background: 'var(--color-card)',
+          padding: 0,
+          overflow: 'hidden',
+          marginBottom: 24,
+        }}
+      >
+        <div style={{ overflowX: 'auto' }}>
         <table className="table roster-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
@@ -115,45 +154,7 @@ export function AttendanceRosterTable({
                     </div>
                   </td>
                   <td style={{ padding: '12px 14px', textAlign: 'center' }}><LeaveBadge leave={e.leave} /></td>
-                  <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                    {e.hasLunch ? (
-                      <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
-                        <Utensils size={13} aria-hidden="true" /> Có
-                      </span>
-                    ) : e.lunchCancelledBy === 'Attendance' ? (
-                      <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }} title="Đã trừ do vắng">
-                        Đã trừ
-                      </span>
-                    ) : e.lunchCancelledBy === 'Leave' ? (
-                      <span
-                        className="badge"
-                        style={{
-                          border: '1.5px solid var(--color-fg)',
-                          fontWeight: 700,
-                          background: '#F1F5F9',
-                          color: '#334155',
-                        }}
-                        title="Không ăn (suất ăn đã được hủy do đơn xin nghỉ được duyệt)"
-                      >
-                        Không
-                      </span>
-                    ) : e.lunchCancelledBy === 'Parent' || e.lunchCancelledBy === 'Staff' ? (
-                      <span
-                        className="badge"
-                        style={{
-                          border: '1.5px solid var(--color-fg)',
-                          fontWeight: 700,
-                          background: '#F1F5F9',
-                          color: '#334155',
-                        }}
-                        title="Không ăn (đã hủy suất ăn bán trú)"
-                      >
-                        Không
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--color-muted-fg)' }}>—</span>
-                    )}
-                  </td>
+                  <td style={{ padding: '12px 14px', textAlign: 'center' }}>{renderLunchBadge(e)}</td>
                   <td style={{ padding: '10px 16px', textAlign: 'center' }}>
                     <AttendanceStatusToggle
                       label={`Trạng thái của ${e.fullName}`}
@@ -249,5 +250,89 @@ export function AttendanceRosterTable({
         </table>
       </div>
     </div>
+
+    {/* Mobile Card List (<= 768px) */}
+    <div className="roster-mobile-list">
+      {entries.map((e, i) => {
+        const row = draft[e.studentId];
+        const unmarked = !row?.status;
+        return (
+          <div
+            key={e.studentId}
+            className={`card roster-mobile-card ${unmarked ? 'roster-mobile-card--unmarked' : ''}`}
+          >
+            <div className="roster-mobile-card__head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <span className="roster-mobile-card__stt">{i + 1}</span>
+                <span className="roster-mobile-card__avatar" aria-hidden="true">
+                  {initials(e.fullName)}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ display: 'block', fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {e.fullName}
+                  </strong>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                    {e.studentCode}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <LeaveBadge leave={e.leave} />
+                {renderLunchBadge(e)}
+              </div>
+            </div>
+
+            <AttendanceStatusToggle
+              label={`Trạng thái của ${e.fullName}`}
+              value={row?.status ?? null}
+              excusedAllowed={e.leave?.status === 'Approved'}
+              disabled={disabled}
+              onChange={(s) => onStatusChange(e.studentId, s)}
+            />
+
+            <div className="roster-mobile-card__foot">
+              <input
+                className="input input--sm"
+                maxLength={500}
+                placeholder="Ghi chú thêm…"
+                value={row?.remarks ?? ''}
+                disabled={disabled}
+                onChange={(ev) => onRemarksChange(e.studentId, ev.target.value)}
+                aria-label={`Ghi chú cho ${e.fullName}`}
+                style={{
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1.5px solid var(--color-fg)',
+                  fontSize: 'var(--fs-xs)',
+                  padding: '6px 10px',
+                  flex: 1,
+                }}
+              />
+              {onCorrect && e.recordId != null && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => onCorrect(e)}
+                  style={{ flexShrink: 0 }}
+                >
+                  <PencilLine size={13} /> Sửa
+                </button>
+              )}
+              {showNotice && canSendAbsenceNotice(e) && canSendNoticeForDate && !(e.status === 'UnexcusedAbsence' && e.absenceNoticeSentAt) && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => onSendAbsenceNotice(e)}
+                  disabled={absenceNoticeDisabled}
+                  style={{ flexShrink: 0 }}
+                >
+                  <BellRing size={13} /> Báo vắng
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+    </>
   );
 }

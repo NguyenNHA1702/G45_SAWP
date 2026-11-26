@@ -1397,4 +1397,80 @@ public class AttendanceService : IAttendanceService
     }
 
     #endregion
+
+    public async Task<ApiResponse<bool>> RequestReattendanceAsync(
+        int classId,
+        RequestReattendanceDto dto,
+        int requesterUserId,
+        CancellationToken ct = default)
+    {
+        var reason = dto.Reason?.Trim() ?? string.Empty;
+        if (reason.Length < 5)
+        {
+            return ApiResponse<bool>.Fail("MSG01", "Vui lòng nhập lý do yêu cầu điểm danh lại (tối thiểu 5 ký tự).");
+        }
+
+        var cls = await _unitOfWork.Repository<Class>()
+            .Query()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == classId, ct);
+
+        if (cls == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG43);
+        }
+
+        var officeStaffUserIds = await _unitOfWork.Repository<User>()
+            .Query()
+            .AsNoTracking()
+            .Where(u => u.Status == AccountStatus.Active && u.UserRoles.Any(ur => ur.Role.Name == "OfficeStaff"))
+            .Select(u => u.Id)
+            .Distinct()
+            .ToListAsync(ct);
+
+        if (officeStaffUserIds.Count == 0)
+        {
+            return ApiResponse<bool>.Fail("MSG01", "Không tìm thấy tài khoản Giáo vụ đang hoạt động để tiếp nhận yêu cầu.");
+        }
+
+        var requester = await _unitOfWork.Repository<User>()
+            .Query()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == requesterUserId, ct);
+
+        var targetDate = dto.Date.Date;
+        var sessionLabel = dto.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
+        var requesterName = requester?.FullName ?? "Giáo viên";
+        var utcNow = DateTime.UtcNow;
+
+        foreach (var staffUserId in officeStaffUserIds)
+        {
+            await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+            {
+                UserId = staffUserId,
+                Type = "AttendanceReattendanceRequest",
+                Title = $"GV yêu cầu điểm danh lại lớp {cls.ClassName}",
+                Content = $"{requesterName} yêu cầu Giáo vụ hỗ trợ điểm danh lại {sessionLabel} ngày {targetDate:dd/MM/yyyy} cho lớp {cls.ClassName}. Lý do: {reason}",
+                LinkUrl = $"/teacher/attendance?classId={classId}&date={targetDate:yyyy-MM-dd}&session={dto.Session}",
+                ReferenceKey = $"reattendance:{classId}:{targetDate:yyyy-MM-dd}:{dto.Session}:{staffUserId}:{utcNow.Ticks}",
+                CreatedAt = utcNow,
+                IsRead = false
+            }, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditService.LogActionAsync(
+            requesterUserId,
+            "TeacherRequestReattendance",
+            nameof(Class),
+            classId.ToString(),
+            null,
+            new { ClassId = classId, Date = targetDate.ToString("yyyy-MM-dd"), Session = dto.Session.ToString(), Reason = reason, NotifiedStaff = officeStaffUserIds.Count },
+            null,
+            ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return ApiResponse<bool>.Ok(true, "Đã gửi yêu cầu điểm danh lại tới Phòng Giáo vụ.");
+    }
 }

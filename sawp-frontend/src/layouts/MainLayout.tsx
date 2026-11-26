@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   Bell,
@@ -24,6 +25,8 @@ import {
   UserCog,
   ShieldAlert,
   UserPlus,
+  Menu,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clearAuthSession, getAuthUser } from '../services/apiClient';
@@ -176,6 +179,12 @@ const NAV_ITEMS: NavItem[] = [
         icon: CalendarCheck2,
       },
       {
+        id: 'board-staff',
+        label: 'Danh sách nhân sự',
+        path: '/staff',
+        icon: Users,
+      },
+      {
         id: 'board-audit-logs',
         label: 'Nhật ký hệ thống',
         path: '/system/audit-logs',
@@ -281,6 +290,12 @@ const NAV_ITEMS: NavItem[] = [
         icon: UserCog,
       },
       {
+        id: 'admin-staff',
+        label: 'Danh sách nhân sự',
+        path: '/staff',
+        icon: Users,
+      },
+      {
         id: 'admin-account-requests',
         label: 'Duyệt yêu cầu cấp tài khoản',
         path: '/admin/account-requests',
@@ -308,6 +323,7 @@ export function MainLayout() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
   // Expanded submenus state
@@ -350,11 +366,12 @@ export function MainLayout() {
       return location.search.includes(targetQuery);
     }
 
-    return !location.search || location.search.includes('tab=summary');
+    return true;
   };
 
-  // Tự động mở menu chứa trang hiện tại
+    // Tự động mở menu chứa trang hiện tại & đóng mobile drawer khi chuyển trang
   useEffect(() => {
+    setIsMobileMenuOpen(false);
     NAV_ITEMS.forEach((item) => {
       if (item.children) {
         const hasActive = item.children.some((c) => isChildActive(c.path));
@@ -364,6 +381,21 @@ export function MainLayout() {
       }
     });
   }, [location.pathname, location.search]);
+
+  // Khóa cuộn body & hỗ trợ phím Escape khi mở mobile drawer
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMobileMenuOpen]);
 
   const fetchUnreadCount = async () => {
     try {
@@ -433,21 +465,94 @@ export function MainLayout() {
     return true;
   });
 
+  // Các mục điều hướng nhanh trên Bottom Nav (tối đa 4 mục + nút Menu)
+  const mobileQuickNav = (() => {
+    const base = [{ id: 'm-dashboard', label: 'Tổng quan', path: '/dashboard', icon: LayoutDashboard }];
+    const has = (r: string) => userRoles.some((ur) => typeof ur === 'string' && ur.toLowerCase() === r.toLowerCase());
+
+    if (has('Parent')) {
+      return [
+        ...base,
+        { id: 'm-contact', label: 'Sổ liên lạc', path: '/parent/contact-book', icon: Newspaper },
+        { id: 'm-lunch', label: 'Bán trú', path: '/parent/lunch', icon: UtensilsCrossed },
+        { id: 'm-leave', label: 'Xin nghỉ', path: '/parent/leave-requests', icon: FileText },
+      ];
+    }
+    if (has('Teacher')) {
+      return [
+        ...base,
+        { id: 'm-attend', label: 'Điểm danh', path: '/teacher/attendance', icon: CalendarCheck2 },
+        { id: 'm-boarding', label: 'Bán trú', path: '/teacher/boarding', icon: UtensilsCrossed },
+        { id: 'm-leave', label: 'Duyệt đơn', path: '/teacher/leave-requests', icon: FileCheck },
+      ];
+    }
+    if (has('ServiceStaff')) {
+      return [
+        ...base,
+        { id: 'm-summary', label: 'Chốt suất', path: '/service/headcount?tab=summary', icon: FileSpreadsheet },
+        { id: 'm-students', label: 'Nhận suất', path: '/service/headcount?tab=students', icon: Users },
+        { id: 'm-report', label: 'Thống kê', path: '/service/headcount?tab=report', icon: ClipboardList },
+      ];
+    }
+    if (has('OfficeStaff')) {
+      return [
+        ...base,
+        { id: 'm-students', label: 'Học sinh', path: '/students', icon: Users },
+        { id: 'm-classes', label: 'Lớp học', path: '/classes', icon: GraduationCap },
+        { id: 'm-requests', label: 'Đơn từ', path: '/office/requests', icon: FileCheck },
+      ];
+    }
+    if (has('SchoolBoard')) {
+      return [
+        ...base,
+        { id: 'm-requests', label: 'Duyệt đơn', path: '/board/requests', icon: ShieldCheck },
+        { id: 'm-attend', label: 'Chuyên cần', path: '/teacher/attendance', icon: CalendarCheck2 },
+        { id: 'm-classes', label: 'Lớp học', path: '/classes', icon: GraduationCap },
+      ];
+    }
+    if (has('Admin')) {
+      return [
+        ...base,
+        { id: 'm-users', label: 'Tài khoản', path: '/admin/users', icon: UserCog },
+        { id: 'm-acc-req', label: 'Cấp TK', path: '/admin/account-requests', icon: UserPlus },
+        { id: 'm-config', label: 'Cấu hình', path: '/admin/config', icon: Settings },
+      ];
+    }
+    return base;
+  })();
+
   return (
     <ParentChildProvider userId={currentUser?.id} userRoles={userRoles}>
       <div className="layout-root">
-        {/* SIDEBAR */}
-        <aside className="layout-sidebar">
+        {/* MOBILE DRAWER BACKDROP */}
+        {isMobileMenuOpen && (
+          <div
+            className="mobile-sidebar-backdrop"
+            onClick={() => setIsMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* SIDEBAR / MOBILE DRAWER */}
+        <aside className={`layout-sidebar ${isMobileMenuOpen ? 'layout-sidebar--open' : ''}`}>
           <div className="sidebar-brand">
             <div className="brand-icon">
               <School size={24} color="#1E293B" />
             </div>
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div className="brand-title">
                 SAWP <Sparkles size={14} className="brand-sparkle" />
               </div>
               <div className="brand-subtitle">Primary School</div>
             </div>
+            <button
+              type="button"
+              className="mobile-drawer-close"
+              onClick={() => setIsMobileMenuOpen(false)}
+              aria-label="Đóng menu"
+            >
+              <X size={20} />
+            </button>
           </div>
 
           <nav className="sidebar-nav">
@@ -580,6 +685,17 @@ export function MainLayout() {
           {/* TOP HEADER */}
           <header className="layout-header">
             <div className="header-left">
+              <button
+                type="button"
+                className="mobile-menu-btn"
+                onClick={() => setIsMobileMenuOpen(true)}
+                aria-label="Mở menu điều hướng"
+              >
+                <Menu size={20} />
+              </button>
+              <span className="mobile-header-brand" onClick={() => navigate('/dashboard')}>
+                SAWP
+              </span>
               <span className="badge badge--violet header-pill">
                 Hệ thống Quản trị & Bán trú Tiểu học
               </span>
@@ -631,20 +747,7 @@ export function MainLayout() {
                 </button>
 
                 {showNotifs && (
-                  <div
-                    className="card"
-                    style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 'calc(100% + 8px)',
-                      width: 360,
-                      maxHeight: 440,
-                      overflowY: 'auto',
-                      zIndex: 50,
-                      boxShadow: 'var(--shadow-card)',
-                      padding: 0,
-                    }}
-                  >
+                  <div className="card notif-dropdown">
                     <div
                       style={{
                         padding: '12px 16px',
@@ -755,6 +858,44 @@ export function MainLayout() {
           </main>
         </div>
       </div>
+
+      {/* MOBILE BOTTOM NAVIGATION (Portal to body so fixed positioning is never clipped) */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <nav className="mobile-bottom-nav" aria-label="Điều hướng nhanh">
+            {mobileQuickNav.map((item) => {
+              const Icon = item.icon;
+              const active =
+                item.path === '/dashboard'
+                  ? location.pathname === '/dashboard'
+                  : isChildActive(item.path);
+              return (
+                <Link
+                  key={item.id}
+                  to={item.path}
+                  className={`mobile-bottom-nav__item ${active ? 'mobile-bottom-nav__item--active' : ''}`}
+                >
+                  <span className="mobile-bottom-nav__icon">
+                    <Icon size={18} />
+                  </span>
+                  <span className="mobile-bottom-nav__label">{item.label}</span>
+                </Link>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+              className={`mobile-bottom-nav__item ${isMobileMenuOpen ? 'mobile-bottom-nav__item--active' : ''}`}
+              aria-label="Mở tất cả chức năng"
+            >
+              <span className="mobile-bottom-nav__icon">
+                <Menu size={18} />
+              </span>
+              <span className="mobile-bottom-nav__label">Menu</span>
+            </button>
+          </nav>,
+          document.body
+        )}
     </ParentChildProvider>
   );
 }

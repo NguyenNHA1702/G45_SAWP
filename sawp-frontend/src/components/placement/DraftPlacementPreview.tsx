@@ -474,7 +474,7 @@ export const DraftPlacementPreview: React.FC<DraftPlacementPreviewProps> = ({
         </div>
 
         {/* Classes Side-by-Side Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 20 }}>
           {plan.classes.map((cls) => {
             const hasOverSpecial = cls.specialNeedsCount > 2;
             const duplicateNamesInThisClass = cls.students

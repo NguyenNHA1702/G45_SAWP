@@ -6,6 +6,8 @@ public interface IAdminService
 {
     Task<ApiResponse<PaginatedResult<AdminUserDto>>> GetUsersPagedAsync(
         int pageIndex, int pageSize, string? role, bool? isActive, string? search, CancellationToken ct = default);
+    Task<ApiResponse<PaginatedResult<AdminUserDto>>> GetStaffPagedAsync(
+        int pageIndex, int pageSize, string? role, bool? isActive, string? search, CancellationToken ct = default);
     Task<ApiResponse<List<RoleOptionDto>>> GetRolesAsync(CancellationToken ct = default);
     Task<ApiResponse<AdminUserDto>> CreateUserAsync(int adminUserId, CreateUserRequestDto request, CancellationToken ct = default);
     Task<ApiResponse<AdminUserDto>> UpdateUserRolesAsync(int adminUserId, int targetUserId, UpdateUserRolesRequestDto request, CancellationToken ct = default);

@@ -501,7 +501,7 @@ export default function HomeroomRosterPage() {
               marginBottom: 24,
             }}
           >
-            <div style={{ overflowX: 'auto' }}>
+            <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
@@ -697,6 +697,102 @@ export default function HomeroomRosterPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mobile-card-list" style={{ padding: 12 }}>
+              {pagedStudents.length > 0 ? (
+                pagedStudents.map((s, idx) => {
+                  const mealInfo = mealMap[s.studentId];
+                  const badgeCfg = mealInfo ? MEAL_TYPE_BADGE[String(mealInfo.mealType)] : null;
+                  return (
+                    <div key={`m-${s.studentId}`} className="mobile-item-card">
+                      <div className="mobile-item-card__head">
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                              #{(pageIndex - 1) * pageSize + idx + 1}
+                            </span>
+                            <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{s.fullName}</strong>
+                          </div>
+                          <div className="mobile-item-card__meta" style={{ marginTop: 4 }}>
+                            <span className="badge badge--violet" style={{ border: '1px solid var(--color-fg)', fontWeight: 700, padding: '1px 6px' }}>
+                              {s.studentCode}
+                            </span>
+                            <span>{formatDDMMYYYY(s.dateOfBirth)}</span>
+                            <span>•</span>
+                            <span>{s.gender}</span>
+                          </div>
+                        </div>
+                        <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+                          {s.status === 'Active' ? 'Đang học' : s.status}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: 'var(--fs-xs)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                        <span>PH: <strong>{s.primaryGuardianName || 'Chưa cập nhật'}</strong></span>
+                        {s.primaryGuardianPhone && (
+                          <a
+                            href={`tel:${s.primaryGuardianPhone}`}
+                            style={{
+                              color: 'var(--color-accent)',
+                              textDecoration: 'none',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '2px 8px',
+                              background: '#EDE9FE',
+                              borderRadius: 'var(--radius-full)',
+                              border: '1px solid var(--color-fg)',
+                            }}
+                          >
+                            <Phone size={12} /> {s.primaryGuardianPhone}
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="mobile-item-card__foot">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {mealInfo && mealInfo.isActive && badgeCfg ? (
+                            <>
+                              <span className={`badge ${badgeCfg.cls}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                                {badgeCfg.label}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn--secondary btn--sm"
+                                style={{ padding: '4px 10px', fontSize: 12 }}
+                                onClick={() => setSelectedTrayStudent({ student: s, meal: mealInfo })}
+                              >
+                                <UtensilsCrossed size={12} /> Khay ăn
+                              </button>
+                            </>
+                          ) : mealInfo && !mealInfo.isActive ? (
+                            <span className="badge badge--muted">Đã hủy ăn</span>
+                          ) : (
+                            <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>Không ăn bán trú</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{ padding: '4px 10px', fontSize: 12 }}
+                          onClick={() => {
+                            setSelectedStudentId(s.studentId);
+                            setDetailModalOpen(true);
+                          }}
+                        >
+                          <Eye size={13} /> Chi tiết
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-muted-fg)' }}>
+                  Không tìm thấy học sinh nào phù hợp với bộ lọc tìm kiếm.
+                </div>
+              )}
             </div>
 
             {/* Pagination Controls */}

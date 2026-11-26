@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
-import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, PencilLine, RotateCcw, Save, Search, Table2, TriangleAlert, Users } from 'lucide-react';
+import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, PencilLine, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Users } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
@@ -42,24 +43,40 @@ const defaultSummaryFromIso = (): string => {
 const currentRoles = (): string[] => {
   try {
     const json = getAuthUser();
-    return json ? ((JSON.parse(json)?.roles as string[] | undefined) ?? []) : [];
+    if (!json) return [];
+    const parsed = JSON.parse(json);
+    const raw = parsed?.roles ?? (parsed?.role ? [parsed.role] : []);
+    return Array.isArray(raw) ? raw.map(String) : [String(raw)];
   } catch {
     return [];
   }
 };
 
 export default function AttendancePage() {
+  const [searchParams] = useSearchParams();
   const [roles] = useState(() => currentRoles());
+  const hasRole = (...targets: string[]) =>
+    roles.some((r) => targets.some((t) => t.toLowerCase() === r.toLowerCase()));
   // OVR-01 (UC-23 A2): only Office Staff send absence notices; the API checks the role too.
-  const isOfficeStaff = roles.includes('OfficeStaff');
-  const isOfficeOrAdmin = isOfficeStaff || roles.includes('Admin');
-  const [activeTab, setActiveTab] = useState<'sheet' | 'summary'>('sheet');
+  const isOfficeStaff = hasRole('OfficeStaff');
+  const isOfficeOrAdmin = isOfficeStaff || hasRole('Admin');
+  const isTeacherOnly = hasRole('Teacher') && !isOfficeOrAdmin;
+  const isSchoolBoardOnly = hasRole('SchoolBoard') && !hasRole('Teacher') && !isOfficeOrAdmin;
+  const [activeTab, setActiveTab] = useState<'sheet' | 'summary'>(() => (isSchoolBoardOnly ? 'summary' : 'sheet'));
   const [noticeEntry, setNoticeEntry] = useState<AttendanceSheetEntry | null>(null);
   const [noticeSending, setNoticeSending] = useState(false);
-  const [date, setDate] = useState<string>(todayIso());
-  const [session, setSession] = useState<AttendanceSession>('Morning');
+  const [reattendOpen, setReattendOpen] = useState(false);
+  const [reattendReason, setReattendReason] = useState('');
+  const [reattendSending, setReattendSending] = useState(false);
+  const [date, setDate] = useState<string>(() => searchParams.get('date') || todayIso());
+  const [session, setSession] = useState<AttendanceSession>(() =>
+    searchParams.get('session') === 'Afternoon' ? 'Afternoon' : 'Morning'
+  );
   const [classes, setClasses] = useState<TeacherClassOption[]>([]);
-  const [classId, setClassId] = useState<number | null>(null);
+  const [classId, setClassId] = useState<number | null>(() => {
+    const raw = Number(searchParams.get('classId'));
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<AttendanceSubmitResult | null>(null);
   const [correctingEntry, setCorrectingEntry] = useState<AttendanceSheetEntry | null>(null);
@@ -308,24 +325,26 @@ export default function AttendancePage() {
 
         {/* ATT-14: Chuyển đổi giữa Điểm danh theo ngày & Tổng hợp chuyên cần lớp */}
         <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }} role="tablist" aria-label="Chế độ xem điểm danh">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'sheet'}
-            className={`btn ${activeTab === 'sheet' ? 'btn--primary' : 'btn--secondary'}`}
-            onClick={() => setActiveTab('sheet')}
-            style={{
-              borderRadius: 'var(--radius-full)',
-              border: '2px solid var(--color-fg)',
-              boxShadow: activeTab === 'sheet' ? '3px 3px 0 0 var(--color-fg)' : 'none',
-              fontWeight: 800,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <CalendarCheck2 size={16} aria-hidden="true" /> Điểm danh theo ngày
-          </button>
+          {!isSchoolBoardOnly && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'sheet'}
+              className={`btn ${activeTab === 'sheet' ? 'btn--primary' : 'btn--secondary'}`}
+              onClick={() => setActiveTab('sheet')}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: activeTab === 'sheet' ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <CalendarCheck2 size={16} aria-hidden="true" /> Điểm danh theo ngày
+            </button>
+          )}
           <button
             type="button"
             role="tab"
@@ -346,6 +365,32 @@ export default function AttendancePage() {
           >
             <BarChart3 size={16} aria-hidden="true" /> Tổng hợp chuyên cần
           </button>
+          {isTeacherOnly && (
+            <button
+              id="btn-header-request-reattendance"
+              type="button"
+              className="btn btn--secondary"
+              disabled={classId === null}
+              onClick={() => {
+                setReattendReason('');
+                setReattendOpen(true);
+              }}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: classId === null ? 'none' : '3px 3px 0 0 var(--color-fg)',
+                fontWeight: 800,
+                background: 'var(--color-tertiary)',
+                color: 'var(--color-fg)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                marginLeft: 'auto',
+              }}
+            >
+              <RotateCcw size={16} aria-hidden="true" /> Yêu cầu Giáo vụ điểm danh lại
+            </button>
+          )}
         </div>
       </header>
 
@@ -1127,6 +1172,72 @@ export default function AttendancePage() {
             {SYSTEM_MESSAGES.MSG43.content}
           </div>
         )}
+      </GeometricModal>
+
+      <GeometricModal
+        open={reattendOpen}
+        onClose={() => !reattendSending && setReattendOpen(false)}
+        title="Yêu cầu Giáo vụ điểm danh lại"
+        subtitle={`Gửi yêu cầu tới Phòng Giáo vụ để hỗ trợ điểm danh / điều chỉnh lại (${session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} · ${formatDashDate(date)})`}
+        badgeText="Gửi Phòng Giáo vụ"
+        badgeColor="violet"
+        icon={<RotateCcw size={20} color="var(--color-fg)" />}
+        iconBg="var(--color-tertiary)"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="field">
+            <label className="label" htmlFor="reattend-reason">
+              Lý do yêu cầu điểm danh lại *
+            </label>
+            <textarea
+              id="reattend-reason"
+              className="input"
+              rows={3}
+              maxLength={300}
+              placeholder="VD: Đã quá giờ khóa sổ hoặc cần điều chỉnh lại trạng thái vắng của học sinh..."
+              value={reattendReason}
+              onChange={(e) => setReattendReason(e.target.value)}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setReattendOpen(false)}
+              disabled={reattendSending}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={reattendSending || classId === null}
+              onClick={async () => {
+                if (classId === null) return;
+                if (reattendReason.trim().length < 5) {
+                  toast.error('Vui lòng nhập lý do yêu cầu điểm danh lại (tối thiểu 5 ký tự).');
+                  return;
+                }
+                setReattendSending(true);
+                try {
+                  const res = await attendanceApi.requestReattendance(classId, {
+                    date,
+                    session,
+                    reason: reattendReason.trim(),
+                  });
+                  toast.success(res.message || 'Đã gửi yêu cầu điểm danh lại tới Phòng Giáo vụ.');
+                  setReattendOpen(false);
+                } catch (err) {
+                  toast.error(asApiError(err).message || 'Không thể gửi yêu cầu điểm danh lại.');
+                } finally {
+                  setReattendSending(false);
+                }
+              }}
+            >
+              <Send size={15} /> {reattendSending ? 'Đang gửi...' : 'Gửi yêu cầu'}
+            </button>
+          </div>
+        </div>
       </GeometricModal>
     </main>
   );

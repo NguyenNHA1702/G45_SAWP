@@ -211,11 +211,11 @@ No blur. Solid offset colors.
 
 ## Responsive Strategy
 
-- **Mobile**:
-  - Stack everything.
-  - Reduce "pop" shadows to 2px to save space.
-  - Turn horizontal squiggle lines into vertical dividers.
-  - Keep buttons big and tappable (min 48px height).
+- **Mobile (`<= 768px`, required for all new screens)**:
+  - Never allow horizontal page overflow on `375px–430px` viewports; use `.responsive-split`, `.responsive-1-2`, `.responsive-2col`, `.modal-grid-2col`, or `minmax(min(100%, ...), 1fr)`.
+  - For daily operational lists (Parent, Teacher, Kitchen), render `.desktop-table-wrap` on desktop and `.mobile-card-list` / `.mobile-item-card` on mobile; for wide analytics/audit tables, wrap in `.data-table-wrapper` (`overflow-x: auto`).
+  - Reduce "pop" shadows to `2px–3px` on mobile to save space; keep buttons big and tappable (min 40–48px height).
+  - Respect `MainLayout` mobile bottom navigation bar (`padding-bottom` on content, and position any `.sticky-footer` at `bottom: calc(74px + env(safe-area-inset-bottom, 0px))`).
   - Hide complex background floating shapes that might overlap text.
 
 ---

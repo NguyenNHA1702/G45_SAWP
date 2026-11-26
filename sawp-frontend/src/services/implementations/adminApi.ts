@@ -26,6 +26,19 @@ export const adminApi: IAdminApi = {
     return res.data;
   },
 
+  getStaff: async (query: AdminUserQuery): Promise<ApiResponse<PaginatedResult<AdminUserDto>>> => {
+    const res = await apiClient.get<ApiResponse<PaginatedResult<AdminUserDto>>>('/admin/staff', {
+      params: {
+        pageIndex: query.pageIndex ?? 1,
+        pageSize: query.pageSize ?? 20,
+        ...(query.role ? { role: query.role } : {}),
+        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+        ...(query.search ? { search: query.search } : {}),
+      },
+    });
+    return res.data;
+  },
+
   getRoles: async (): Promise<ApiResponse<RoleOptionDto[]>> => {
     const res = await apiClient.get<ApiResponse<RoleOptionDto[]>>('/admin/roles');
     return res.data;

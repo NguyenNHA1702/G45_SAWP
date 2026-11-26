@@ -28,4 +28,7 @@ public interface IAttendanceService
 
     // API-6: GET /api/attendance/students/{studentId}/history?from=&to=
     Task<ApiResponse<StudentAttendanceHistoryDto>> GetStudentHistoryAsync(int studentId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // POST /api/attendance/classes/{classId}/request-reattendance
+    Task<ApiResponse<bool>> RequestReattendanceAsync(int classId, RequestReattendanceDto dto, int requesterUserId, CancellationToken ct = default);
 }

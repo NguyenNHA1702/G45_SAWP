@@ -751,6 +751,7 @@ export default function MealHeadcountPage() {
             boxShadow: '3px 3px 0 0 var(--color-fg)',
             maxWidth: '100%',
             overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
           }}
         >
           <button
@@ -770,6 +771,8 @@ export default function MealHeadcountPage() {
               cursor: 'pointer',
               boxShadow: activeTab === 'summary' ? '2px 2px 0 0 var(--color-fg)' : 'none',
               transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <FileSpreadsheet size={15} />
@@ -793,6 +796,8 @@ export default function MealHeadcountPage() {
               cursor: 'pointer',
               boxShadow: activeTab === 'students' ? '2px 2px 0 0 var(--color-fg)' : 'none',
               transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <Users size={15} />
@@ -816,6 +821,8 @@ export default function MealHeadcountPage() {
               cursor: 'pointer',
               boxShadow: activeTab === 'logs' ? '2px 2px 0 0 var(--color-fg)' : 'none',
               transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <Clock size={15} />
@@ -839,6 +846,8 @@ export default function MealHeadcountPage() {
               cursor: 'pointer',
               boxShadow: activeTab === 'report' ? '2px 2px 0 0 var(--color-fg)' : 'none',
               transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             <CalendarRange size={15} />
@@ -1469,8 +1478,9 @@ export default function MealHeadcountPage() {
           </div>
 
           {/* Student Table */}
-          <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+          <div style={{ border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
                   <th style={{ padding: '12px 14px', textAlign: 'center', width: 56, fontWeight: 800 }}>STT</th>
@@ -1569,6 +1579,66 @@ export default function MealHeadcountPage() {
                 )}
               </tbody>
             </table>
+            </div>
+
+            <div className="mobile-card-list" style={{ padding: 12 }}>
+              {pagedStudents.length > 0 ? (
+                pagedStudents.map((item, idx) => (
+                  <div key={`m-${item.registrationId}`} className="mobile-item-card">
+                    <div className="mobile-item-card__head">
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                            #{(pageIndex - 1) * pageSize + idx + 1}
+                          </span>
+                          <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{item.studentName}</strong>
+                        </div>
+                        <div className="mobile-item-card__meta" style={{ marginTop: 4 }}>
+                          <span style={{ fontWeight: 800, color: 'var(--color-accent)' }}>{item.studentCode}</span>
+                          <span>•</span>
+                          <span>{formatClassLabel(item.className, item.classId)}</span>
+                        </div>
+                      </div>
+                      {item.isActive ? (
+                        <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)' }}>Thực ăn</span>
+                      ) : (
+                        <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)' }}>Đã hủy</span>
+                      )}
+                    </div>
+
+                    {(item.isActive ? formatCleanRemark(item.remarks) : item.cancellationReason) && (
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                        Ghi chú: {item.isActive ? formatCleanRemark(item.remarks) : item.cancellationReason}
+                      </div>
+                    )}
+
+                    <div className="mobile-item-card__foot">
+                      <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)' }}>
+                        {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
+                      </span>
+                      {item.isActive ? (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{ padding: '4px 10px', fontSize: 12 }}
+                          onClick={() => setSelectedStudentTray(item)}
+                        >
+                          <UtensilsCrossed size={12} color="var(--color-accent)" /> Xem khay ăn
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>
+                          Không chia khay
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-muted-fg)' }}>
+                  {SYSTEM_MESSAGES.MSG43.content}
+                </div>
+              )}
+            </div>
 
             {/* PAGINATION BAR */}
             <div
@@ -1745,8 +1815,9 @@ export default function MealHeadcountPage() {
           </div>
 
           {/* Audit Logs Table */}
-          <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+          <div style={{ border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
                   <th style={{ padding: '12px 14px', textAlign: 'center', width: 50, fontWeight: 800 }}>STT</th>
@@ -1833,6 +1904,68 @@ export default function MealHeadcountPage() {
                 )}
               </tbody>
             </table>
+            </div>
+
+            <div className="mobile-card-list" style={{ padding: 12 }}>
+              {pagedLogs.length > 0 ? (
+                pagedLogs.map((log, idx) => {
+                  const isParent = log.changeType === 'ParentCancelled';
+                  const isAuto = log.changeType === 'AutoCancelled';
+                  return (
+                    <div key={`m-log-${idx}`} className="mobile-item-card">
+                      <div className="mobile-item-card__head">
+                        <div>
+                          <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{log.studentName}</strong>
+                          <div className="mobile-item-card__meta" style={{ marginTop: 4 }}>
+                            <span style={{ fontWeight: 800, color: 'var(--color-accent)' }}>{log.studentCode}</span>
+                            <span>•</span>
+                            <span>{formatClassLabel(log.className)}</span>
+                            <span>•</span>
+                            <span>{formatViTime(log.timestamp)}</span>
+                          </div>
+                        </div>
+                        {isParent ? (
+                          <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                            PH báo hủy
+                          </span>
+                        ) : isAuto ? (
+                          <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                            Tự hủy
+                          </span>
+                        ) : (
+                          <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                            Khôi phục
+                          </span>
+                        )}
+                      </div>
+
+                      {log.reason && (
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)', fontStyle: 'italic' }}>
+                          {log.reason}
+                        </div>
+                      )}
+
+                      <div className="mobile-item-card__foot">
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>Mốc chốt:</span>
+                        {log.isBeforeCutoff ? (
+                          <span style={{ color: '#059669', fontWeight: 800, fontSize: 'var(--fs-xs)' }}>
+                            ✓ Trước {effectiveCutoffLabel}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#E11D48', fontWeight: 800, fontSize: 'var(--fs-xs)' }}>
+                            ! Sau {effectiveCutoffLabel}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-muted-fg)' }}>
+                  Không có biến động nào trong ngày
+                </div>
+              )}
+            </div>
 
             {/* Pagination Controls */}
             {totalLogCount > 0 && (

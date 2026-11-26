@@ -184,7 +184,7 @@ export default function SystemConfigPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <button
           type="button"
           className={activeTab === 'calendar' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
@@ -204,10 +204,10 @@ export default function SystemConfigPage() {
       </div>
 
       {activeTab === 'calendar' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
+        <div className="responsive-split">
           <form onSubmit={handleSaveCalendarDay} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <h3 style={{ margin: 0 }}>Cập nhật lịch ngày học / nghỉ</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
               <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
                 Từ ngày
                 <input
@@ -252,7 +252,7 @@ export default function SystemConfigPage() {
             </button>
           </form>
 
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card" style={{ padding: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {loading ? (
               <div style={{ padding: 30, textAlign: 'center' }}>Đang tải lịch năm học...</div>
             ) : calendarDays.length === 0 ? (
@@ -296,10 +296,10 @@ export default function SystemConfigPage() {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
+        <div className="responsive-split">
           <form onSubmit={handleSaveLunchCutoff} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <h3 style={{ margin: 0 }}>Cập nhật giờ chốt bán trú</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
               <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
                 Từ ngày
                 <input
@@ -348,7 +348,7 @@ export default function SystemConfigPage() {
             </button>
           </form>
 
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card" style={{ padding: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {loading ? (
               <div style={{ padding: 30, textAlign: 'center' }}>Đang tải danh sách ngày bán trú...</div>
             ) : lunchDays.length === 0 ? (

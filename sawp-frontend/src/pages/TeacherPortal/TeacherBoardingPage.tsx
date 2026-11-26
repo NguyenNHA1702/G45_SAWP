@@ -273,7 +273,7 @@ export default function TeacherBoardingPage() {
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--color-fg)', textAlign: 'left', background: '#F8FAFC' }}>
@@ -354,6 +354,74 @@ export default function TeacherBoardingPage() {
             </tbody>
           </table>
         </div>
+
+        <div className="mobile-card-list">
+          {filteredStudents.length === 0 ? (
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--color-muted-fg)' }}>
+              {loading ? 'Đang tải danh sách bán trú...' : 'Không có dữ liệu bán trú phù hợp.'}
+            </div>
+          ) : (
+            filteredStudents.map((s) => {
+              const allergy = getAllergyText(s);
+              const badgeCfg = MEAL_TYPE_BADGE[String(s.mealType)] ?? MEAL_TYPE_BADGE.StandardLunch;
+              return (
+                <div
+                  key={`m-${s.studentId}-${s.registrationId}`}
+                  className="mobile-item-card"
+                  style={allergy ? { background: '#FFF1F2' } : undefined}
+                >
+                  <div className="mobile-item-card__head">
+                    <div>
+                      <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{s.studentName}</strong>
+                      <div className="mobile-item-card__meta">
+                        <span>{s.studentCode}</span>
+                        <span>•</span>
+                        <span>Lớp {s.className}</span>
+                      </div>
+                    </div>
+                    {s.isActive ? (
+                      <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                        Đang ăn
+                      </span>
+                    ) : (
+                      <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                        Đã hủy
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    <span className={`badge ${badgeCfg.cls}`} style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                      {badgeCfg.label}
+                    </span>
+                    {allergy && (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 8px',
+                          borderRadius: 8,
+                          background: '#FEE2E2',
+                          border: '1.5px solid #DC2626',
+                          color: '#991B1B',
+                          fontWeight: 800,
+                          fontSize: 'var(--fs-xs)',
+                        }}
+                      >
+                        <AlertTriangle size={13} /> {allergy}
+                      </span>
+                    )}
+                  </div>
+                  {!allergy && s.cancellationReason && (
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                      Ghi chú: {s.cancellationReason}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
       </section>
 
       {/* A12: Danh sách học sinh hủy suất ăn trong ngày */}
@@ -370,7 +438,7 @@ export default function TeacherBoardingPage() {
           </span>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--color-fg)', textAlign: 'left', background: '#FFFBEB' }}>
@@ -411,6 +479,38 @@ export default function TeacherBoardingPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="mobile-card-list">
+          {cancelledStudents.length === 0 ? (
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--color-muted-fg)' }}>
+              {loading ? 'Đang tải...' : 'Chưa có học sinh nào hủy suất ăn trong ngày này.'}
+            </div>
+          ) : (
+            cancelledStudents.map((s) => (
+              <div key={`m-cancelled-${s.studentId}-${s.registrationId}`} className="mobile-item-card">
+                <div className="mobile-item-card__head">
+                  <div>
+                    <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{s.studentName}</strong>
+                    <div className="mobile-item-card__meta">
+                      <span>{s.studentCode}</span>
+                      <span>•</span>
+                      <span>Lớp {s.className}</span>
+                    </div>
+                  </div>
+                  <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                    {formatCancelSource(s.cancellationSource)}
+                  </span>
+                </div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)' }}>
+                  Lý do: <strong>{s.cancellationReason || 'Không ghi chú'}</strong>
+                </div>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                  Thời gian hủy: {formatDateTimeDDMMYYYY(s.cancelledAt)}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
     </div>

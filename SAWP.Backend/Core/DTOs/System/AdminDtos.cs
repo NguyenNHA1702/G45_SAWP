@@ -22,6 +22,7 @@ public class AdminUserDto
     public string? StaffCode { get; set; }
     public string? Position { get; set; }
     public string? Department { get; set; }
+    public string? HomeroomClassName { get; set; }
 }
 
 public class CreateUserRequestDto
@@ -35,6 +36,7 @@ public class CreateUserRequestDto
     public string? StaffCode { get; set; }
     public string? Position { get; set; }
     public string? Department { get; set; }
+    public string? HomeroomClassName { get; set; }
 }
 
 public class UpdateUserRolesRequestDto

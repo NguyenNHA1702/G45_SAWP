@@ -26,4 +26,7 @@ export const attendanceApi: IAttendanceApi = {
 
   getStudentHistory: (studentId, from, to) =>
     unwrapData(apiClient.get(`/attendance/students/${studentId}/history`, { params: { from, to } })),
+
+  requestReattendance: (classId, payload) =>
+    unwrap(apiClient.post(`/attendance/classes/${classId}/request-reattendance`, payload)),
 };

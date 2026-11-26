@@ -535,7 +535,7 @@ export default function AdministrativeApprovalPage() {
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', marginLeft: 'auto' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: '0 1 auto', maxWidth: '100%', flexWrap: 'wrap', marginLeft: 'auto' }}>
                     {/* View history button */}
                     <button
                       type="button"

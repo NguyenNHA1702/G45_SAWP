@@ -25,6 +25,13 @@ public class CorrectAttendanceDto
     public string CorrectionReason { get; set; } = string.Empty;   // required, 5..500
 }
 
+public class RequestReattendanceDto
+{
+    public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
+    public string? Reason { get; set; }
+}
+
 // ===== Response =====
 public class TeacherClassOptionDto
 {

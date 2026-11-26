@@ -65,6 +65,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .pop-in { animation: pop-in 450ms var(--ease-bounce) both; }
 
+@media (max-width: 640px) {
+  .container {
+    padding: var(--space-4) var(--space-3) var(--space-6);
+  }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

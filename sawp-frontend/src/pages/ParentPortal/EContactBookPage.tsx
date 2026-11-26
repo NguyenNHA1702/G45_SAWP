@@ -594,7 +594,7 @@ export default function EContactBookPage() {
 
       {/* TAB 3: TỔNG QUAN HÔM NAY (WIDGET READ-ONLY) */}
       {activeTab === 'overview' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 20 }}>
           {/* Card 1: Chuyên cần hôm nay */}
           <div className="card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>

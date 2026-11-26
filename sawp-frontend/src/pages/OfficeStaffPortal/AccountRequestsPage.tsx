@@ -305,7 +305,7 @@ export default function AccountRequestsPage() {
             <label className="label" htmlFor="request-title">Tiêu đề</label>
             <input id="request-title" className="input" value={form.title} maxLength={200} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+          <div className="responsive-1-2">
             <div className="field">
               <label className="label" htmlFor="request-reason">Lý do</label>
               <select id="request-reason" className="select" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value as AccountRequestReason })}>

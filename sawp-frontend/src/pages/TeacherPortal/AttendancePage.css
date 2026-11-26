@@ -54,19 +54,90 @@
   padding-left: var(--space-5);
 }
 
+.roster-mobile-list {
+  display: none;
+}
+
 @media (max-width: 768px) {
-  .roster-table th:nth-child(3),
-  .roster-table td:nth-child(3),
-  .roster-table th:nth-child(6),
-  .roster-table td:nth-child(6) {
+  .roster-desktop-wrap {
     display: none;
   }
-  .status-toggle__btn span {
-    display: none;
+
+  .roster-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
   }
+
+  .roster-mobile-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px !important;
+    border: 2px solid var(--color-fg);
+    box-shadow: 3px 3px 0 0 var(--color-fg) !important;
+  }
+
+  .roster-mobile-card--unmarked {
+    border-left: 6px solid var(--color-secondary);
+  }
+
+  .roster-mobile-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .roster-mobile-card__stt {
+    font-weight: 800;
+    font-size: var(--fs-xs);
+    color: var(--color-muted-fg);
+    min-width: 18px;
+  }
+
+  .roster-mobile-card__avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1.5px solid var(--color-fg);
+    box-shadow: 1.5px 1.5px 0 0 var(--color-fg);
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 0.8rem;
+    background: #EDE9FE;
+    flex-shrink: 0;
+  }
+
+  .roster-mobile-card__foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-toggle {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    border-radius: var(--radius-md) !important;
+    padding: 5px !important;
+    gap: 6px !important;
+  }
+
+  .status-toggle__btn {
+    justify-content: center;
+    padding: 8px 6px !important;
+    width: 100%;
+  }
+
   .sticky-footer {
+    bottom: calc(74px + env(safe-area-inset-bottom, 0px)) !important;
     border-radius: var(--radius-md) !important;
     flex-direction: column;
     align-items: stretch !important;
+    padding: 12px 14px !important;
+    gap: 10px !important;
   }
 }

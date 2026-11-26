@@ -35,6 +35,20 @@ public class AdminController : BaseApiController
         return ToActionResult(result);
     }
 
+    [HttpGet("staff")]
+    [Authorize(Roles = "Admin,SchoolBoard")]
+    public async Task<IActionResult> GetStaff(
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? role = null,
+        [FromQuery] bool? isActive = null,
+        [FromQuery] string? search = null,
+        CancellationToken ct = default)
+    {
+        var result = await _adminService.GetStaffPagedAsync(pageIndex, pageSize, role, isActive, search, ct);
+        return ToActionResult(result);
+    }
+
     [HttpGet("roles")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetRoles(CancellationToken ct = default)

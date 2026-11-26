@@ -864,6 +864,9 @@ export default function ParentLunchPage() {
           </div>
         </div>
 
+        {/* 7-column Calendar (horizontally scrollable on narrow mobile screens) */}
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 4 }}>
+          <div style={{ minWidth: 680 }}>
         {/* Day of Week Headers */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
           {['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'].map((dow, i) => (
@@ -1189,6 +1192,8 @@ export default function ParentLunchPage() {
             );
           })}
         </div>
+          </div>
+        </div>
       </div>
 
       {/* Detailed Registration & Cancellation History Table (UC-31 & UC-30) */}
@@ -1214,7 +1219,8 @@ export default function ParentLunchPage() {
             Chưa có bản ghi đăng ký bán trú nào trong tháng {month}. Phụ huynh hãy tích chọn các ngày còn mở trên lịch để đăng ký cho con.
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <>
+            <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#FFFDF5' }}>
@@ -1370,6 +1376,115 @@ export default function ParentLunchPage() {
               </tbody>
             </table>
           </div>
+
+          <div className="mobile-card-list">
+            {registeredOrCancelledDays.map((day) => {
+              const dKey = toDateKey(day.date);
+              const canCancel = day.isRegistered && !day.isCutoffPassed;
+              const cleanedRemarks = cleanText(day.serviceRemarks);
+
+              return (
+                <div key={`m-${dKey}`} className="mobile-item-card">
+                  <div className="mobile-item-card__head">
+                    <div>
+                      <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                        {formatWeekdayDateDDMMYYYY(day.date)}
+                      </strong>
+                      <div className="mobile-item-card__meta" style={{ marginTop: 4 }}>
+                        <span className="badge" style={{ border: '1px solid var(--color-fg)', fontWeight: 700, background: '#F1F5F9' }}>
+                          {day.mealType ? MEAL_TYPE_LABELS[String(day.mealType)] ?? 'Suất tiêu chuẩn' : 'Suất tiêu chuẩn'}
+                        </span>
+                        <span>Hạn chốt: <strong>{day.cutoffTime}</strong></span>
+                      </div>
+                    </div>
+                    {day.isRegistered ? (
+                      <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                        ✓ Còn hiệu lực
+                      </span>
+                    ) : (
+                      <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                        {SOURCE_LABELS[String(day.cancellationSource)] ?? 'Đã hủy'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)' }}>
+                    <div>{cleanedRemarks || 'Thực đơn tiêu chuẩn nhà bếp'}</div>
+                    {day.studentRemarks && (
+                      <div style={{ color: 'var(--color-accent)', marginTop: 4, fontWeight: 700 }}>
+                        Ghi chú PH: {day.studentRemarks}
+                      </div>
+                    )}
+                    {day.cancellationReason && (
+                      <div style={{ color: '#E11D48', marginTop: 4, fontWeight: 700 }}>
+                        Lý do hủy: {day.cancellationReason}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mobile-item-card__foot">
+                    {canCancel ? (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%' }}>
+                        <button
+                          type="button"
+                          className="btn btn--sm"
+                          onClick={() => openEditDietModal(day)}
+                          style={{
+                            flex: 1,
+                            border: '1.5px solid var(--color-fg)',
+                            boxShadow: '2px 2px 0 0 var(--color-fg)',
+                            background: '#FEF3C7',
+                            fontWeight: 800,
+                            fontSize: 'var(--fs-xs)',
+                          }}
+                        >
+                          Đổi chế độ ăn
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--sm"
+                          onClick={() => {
+                            setCancelTargetDay(day);
+                            setCancelReason('');
+                          }}
+                          style={{
+                            flex: 1,
+                            border: '1.5px solid #F43F5E',
+                            boxShadow: '2px 2px 0 0 var(--color-fg)',
+                            background: '#FFE4E6',
+                            color: '#E11D48',
+                            fontWeight: 800,
+                            fontSize: 'var(--fs-xs)',
+                          }}
+                        >
+                          <Trash2 size={13} /> Hủy đăng ký
+                        </button>
+                      </div>
+                    ) : day.isRegistered ? (
+                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                        Đã qua hạn {day.cutoffTime}
+                      </span>
+                    ) : !day.isCutoffPassed && day.isServing && !day.hasApprovedLeave ? (
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--sm btn--full"
+                        onClick={() => openRegisterModal([dKey])}
+                      >
+                        Đăng ký lại
+                      </button>
+                    ) : day.hasApprovedLeave ? (
+                      <span style={{ fontSize: 'var(--fs-xs)', color: '#B45309', fontWeight: 700 }}>
+                        Đang có đơn nghỉ đã duyệt
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
       </div>
 

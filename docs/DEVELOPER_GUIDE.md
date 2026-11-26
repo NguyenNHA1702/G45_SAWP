@@ -877,6 +877,11 @@ sawp-frontend/src/
 - **Typography:**
   - Headings: `"Outfit", system-ui, sans-serif` (Weights: 700, 800).
   - Body: `"Plus Jakarta Sans", system-ui, sans-serif` (Weights: 400, 500, 600, 700).
+- **Mobile & Responsive Rules (Required for all new screens):**
+  - Every new screen must render cleanly without horizontal overflow on mobile viewports (`<= 768px`, tested at `375px–430px`).
+  - Use the responsive grid classes in `styles/components.css` (`.responsive-split`, `.responsive-1-2`, `.responsive-2col`, `.modal-grid-2col`) or `minmax(min(100%, ...), 1fr)` instead of fixed multi-column `gridTemplateColumns`.
+  - For daily operational lists (Parent, Teacher, Kitchen), render `.desktop-table-wrap` on desktop and `.mobile-card-list` / `.mobile-item-card` on mobile (`<= 768px`); for wide analytics or audit tables, wrap in `.data-table-wrapper` (`overflow-x: auto`).
+  - `MainLayout` provides a Slide-over Drawer + fixed Bottom Navigation Bar on mobile; any bottom `.sticky-footer` must use `bottom: calc(74px + env(safe-area-inset-bottom, 0px))` at `<= 768px` so it sits above the bottom bar.
 
 ### 4.3. Role & Page Matrix
 | Portal / Role | Page Path | Component | Business Capabilities |
