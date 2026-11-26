@@ -968,6 +968,8 @@ public static class DbInitializer
         }
         await context.SaveChangesAsync();
 
+        await SeedLunchMenuCatalogAsync(context);
+
         // ====================================================================
         // 10. ADMINISTRATIVE REQUESTS SAMPLE SEED (Class Transfer & Documents)
         // ====================================================================
@@ -1090,6 +1092,156 @@ public static class DbInitializer
                     IssuedDate = DateTime.UtcNow.AddDays(-4),
                     IssuedDocumentUrl = $"/api/requests/{docReq4.Id}/download-document"
                 });
+                await context.SaveChangesAsync();
+            }
+        }
+    }
+
+    private static async Task SeedLunchMenuCatalogAsync(ApplicationDbContext context)
+    {
+        if (!await context.Dishes.AnyAsync())
+        {
+            var defaultDishes = new List<Dish>
+            {
+                // Tinh bột
+                new() { Name = "Cơm trắng dẻo", Category = DishCategory.Starch, SuitableMealTypes = "StandardLunch,VegetarianLunch" },
+                new() { Name = "Cơm mềm / Cháo dinh dưỡng", Category = DishCategory.Starch, SuitableMealTypes = "SpecialDiet" },
+                // Món mặn
+                new() { Name = "Thịt gà kho nấm hương", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch" },
+                new() { Name = "Cá basa sốt cà chua", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch", AllergenTags = "seafood" },
+                new() { Name = "Thịt lợn rim tiêu", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch" },
+                new() { Name = "Trứng đúc thịt hấp", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch", AllergenTags = "egg" },
+                new() { Name = "Bò hầm khoai tây cà rốt", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch" },
+                new() { Name = "Thịt nạc thăn hấp mềm", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch,SpecialDiet" },
+                new() { Name = "Đậu phụ sốt cà chua", Category = DishCategory.MainDish, SuitableMealTypes = "VegetarianLunch,StandardLunch", AllergenTags = "soy" },
+                new() { Name = "Nấm đùi gà kho xì dầu", Category = DishCategory.MainDish, SuitableMealTypes = "VegetarianLunch", AllergenTags = "soy" },
+                // Món rau / phụ
+                new() { Name = "Rau cải ngọt xào tỏi", Category = DishCategory.SideDish, SuitableMealTypes = "StandardLunch,VegetarianLunch" },
+                new() { Name = "Đậu cove xào thịt băm", Category = DishCategory.SideDish, SuitableMealTypes = "StandardLunch" },
+                new() { Name = "Su su xào cà rốt", Category = DishCategory.SideDish, SuitableMealTypes = "StandardLunch,VegetarianLunch" },
+                new() { Name = "Rau củ luộc thập cẩm", Category = DishCategory.SideDish, SuitableMealTypes = "StandardLunch,VegetarianLunch,SpecialDiet" },
+                // Canh
+                new() { Name = "Canh bí đỏ nấu tôm tươi", Category = DishCategory.Soup, SuitableMealTypes = "StandardLunch", AllergenTags = "seafood" },
+                new() { Name = "Canh cua mồng tơi", Category = DishCategory.Soup, SuitableMealTypes = "StandardLunch", AllergenTags = "seafood" },
+                new() { Name = "Canh rau ngót thịt băm", Category = DishCategory.Soup, SuitableMealTypes = "StandardLunch,SpecialDiet" },
+                new() { Name = "Canh sườn non hầm củ quả", Category = DishCategory.Soup, SuitableMealTypes = "StandardLunch" },
+                new() { Name = "Canh nấm hạt sen", Category = DishCategory.Soup, SuitableMealTypes = "VegetarianLunch,SpecialDiet" },
+                // Tráng miệng
+                new() { Name = "Chuối tiêu tráng miệng", Category = DishCategory.Dessert, SuitableMealTypes = "StandardLunch,VegetarianLunch,SpecialDiet" },
+                new() { Name = "Sữa chua men sống", Category = DishCategory.Dessert, SuitableMealTypes = "StandardLunch,VegetarianLunch,SpecialDiet", AllergenTags = "dairy" },
+                new() { Name = "Dưa hấu tươi", Category = DishCategory.Dessert, SuitableMealTypes = "StandardLunch,VegetarianLunch" },
+                new() { Name = "Cam tươi", Category = DishCategory.Dessert, SuitableMealTypes = "StandardLunch,VegetarianLunch,SpecialDiet" },
+                new() { Name = "Bánh flan caramel", Category = DishCategory.Dessert, SuitableMealTypes = "StandardLunch", AllergenTags = "egg,dairy" },
+            };
+
+            context.Dishes.AddRange(defaultDishes);
+            await context.SaveChangesAsync();
+        }
+
+        var dishByName = await context.Dishes.ToDictionaryAsync(d => d.Name, d => d.Id);
+
+        if (!await context.WeeklyMenuTemplates.AnyAsync())
+        {
+            var templateA = new WeeklyMenuTemplate
+            {
+                Name = "Thực đơn Tuần A – Cân bằng dinh dưỡng",
+                Description = "Thực đơn chuẩn 5 ngày Thứ 2 – Thứ 6, đầy đủ 3 chế độ (Tiêu chuẩn, Ăn chay, Đặc biệt).",
+                IsActive = true
+            };
+            var templateB = new WeeklyMenuTemplate
+            {
+                Name = "Thực đơn Tuần B – Đổi vị nhẹ bụng",
+                Description = "Thực đơn tuần luân phiên ưu tiên món hấp, canh thanh mát cho học sinh tiểu học.",
+                IsActive = true
+            };
+            context.WeeklyMenuTemplates.AddRange(templateA, templateB);
+            await context.SaveChangesAsync();
+
+            var stdWeekA = new Dictionary<int, string[]>
+            {
+                [1] = new[] { "Cơm trắng dẻo", "Thịt gà kho nấm hương", "Rau cải ngọt xào tỏi", "Canh bí đỏ nấu tôm tươi", "Chuối tiêu tráng miệng" },
+                [2] = new[] { "Cơm trắng dẻo", "Cá basa sốt cà chua", "Đậu cove xào thịt băm", "Canh cua mồng tơi", "Sữa chua men sống" },
+                [3] = new[] { "Cơm trắng dẻo", "Thịt lợn rim tiêu", "Đậu phụ sốt cà chua", "Canh rau ngót thịt băm", "Dưa hấu tươi" },
+                [4] = new[] { "Cơm trắng dẻo", "Trứng đúc thịt hấp", "Su su xào cà rốt", "Canh sườn non hầm củ quả", "Cam tươi" },
+                [5] = new[] { "Cơm trắng dẻo", "Bò hầm khoai tây cà rốt", "Rau củ luộc thập cẩm", "Canh rau ngót thịt băm", "Bánh flan caramel" },
+            };
+
+            var vegCommon = new[] { "Cơm trắng dẻo", "Đậu phụ sốt cà chua", "Nấm đùi gà kho xì dầu", "Rau củ luộc thập cẩm", "Canh nấm hạt sen", "Chuối tiêu tráng miệng" };
+            var spcCommon = new[] { "Cơm mềm / Cháo dinh dưỡng", "Thịt nạc thăn hấp mềm", "Rau củ luộc thập cẩm", "Canh rau ngót thịt băm", "Cam tươi" };
+
+            void AddDayItems(WeeklyMenuTemplate tpl, int dayOfWeek, MealType mealType, string[] names)
+            {
+                for (int i = 0; i < names.Length; i++)
+                {
+                    if (!dishByName.TryGetValue(names[i], out var dishId)) continue;
+                    tpl.Items.Add(new WeeklyMenuTemplateItem
+                    {
+                        DayOfWeek = dayOfWeek,
+                        MealType = mealType,
+                        DishId = dishId,
+                        SortOrder = i + 1
+                    });
+                }
+            }
+
+            foreach (var kv in stdWeekA)
+            {
+                AddDayItems(templateA, kv.Key, MealType.StandardLunch, kv.Value);
+                AddDayItems(templateA, kv.Key, MealType.VegetarianLunch, vegCommon);
+                AddDayItems(templateA, kv.Key, MealType.SpecialDiet, spcCommon);
+
+                var shiftedDay = kv.Key == 5 ? 1 : kv.Key + 1;
+                AddDayItems(templateB, kv.Key, MealType.StandardLunch, stdWeekA[shiftedDay]);
+                AddDayItems(templateB, kv.Key, MealType.VegetarianLunch, vegCommon);
+                AddDayItems(templateB, kv.Key, MealType.SpecialDiet, spcCommon);
+            }
+
+            await context.SaveChangesAsync();
+        }
+        else
+        {
+            var legacyTemplates = await context.WeeklyMenuTemplates
+                .Where(t => t.Name.StartsWith("Mẫu Tuần "))
+                .ToListAsync();
+            if (legacyTemplates.Count > 0)
+            {
+                foreach (var lt in legacyTemplates)
+                {
+                    lt.Name = "Thực đơn " + lt.Name["Mẫu ".Length..];
+                }
+                await context.SaveChangesAsync();
+            }
+        }
+
+        // Gắn thực đơn chi tiết cho các LunchServiceDay đang phục vụ chưa có món trong DB
+        var serviceDaysWithoutDishes = await context.LunchServiceDays
+            .Include(d => d.Dishes)
+            .Where(d => d.IsServing && !d.Dishes.Any())
+            .ToListAsync();
+
+        if (serviceDaysWithoutDishes.Count > 0)
+        {
+            var templateA = await context.WeeklyMenuTemplates
+                .Include(t => t.Items)
+                .FirstOrDefaultAsync();
+            if (templateA != null)
+            {
+                foreach (var sDay in serviceDaysWithoutDishes)
+                {
+                    var dow = sDay.Date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)sDay.Date.DayOfWeek;
+                    var effectiveDow = dow is >= 1 and <= 5 ? dow : 1;
+                    var matchingItems = templateA.Items.Where(i => i.DayOfWeek == effectiveDow).ToList();
+                    foreach (var item in matchingItems)
+                    {
+                        context.LunchServiceDayDishes.Add(new LunchServiceDayDish
+                        {
+                            LunchServiceDayId = sDay.Id,
+                            MealType = item.MealType,
+                            DishId = item.DishId,
+                            SortOrder = item.SortOrder
+                        });
+                    }
+                }
                 await context.SaveChangesAsync();
             }
         }

@@ -608,6 +608,48 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("ClassTransferDetails");
                 });
 
+            modelBuilder.Entity("Core.Entities.Dish", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AllergenTags")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("SuitableMealTypes")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Dishes");
+                });
+
             modelBuilder.Entity("Core.Entities.DocumentRequestDetail", b =>
                 {
                     b.Property<int>("Id")
@@ -876,6 +918,36 @@ namespace Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("LunchServiceDays");
+                });
+
+            modelBuilder.Entity("Core.Entities.LunchServiceDayDish", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("DishId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LunchServiceDayId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MealType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DishId");
+
+                    b.HasIndex("LunchServiceDayId", "MealType", "DishId")
+                        .IsUnique();
+
+                    b.ToTable("LunchServiceDayDishes");
                 });
 
             modelBuilder.Entity("Core.Entities.Notification", b =>
@@ -1417,6 +1489,44 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("StudentGuardians");
                 });
 
+            modelBuilder.Entity("Core.Entities.StudentMealProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AllergenTags")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("AllergyNotes")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<int>("DefaultMealType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StudentId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentId")
+                        .IsUnique();
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.ToTable("StudentMealProfiles");
+                });
+
             modelBuilder.Entity("Core.Entities.User", b =>
                 {
                     b.Property<int>("Id")
@@ -1539,6 +1649,78 @@ namespace Infrastructure.Data.Migrations
                     b.HasIndex("UserId", "Purpose");
 
                     b.ToTable("VerificationTokens");
+                });
+
+            modelBuilder.Entity("Core.Entities.WeeklyMenuTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("WeeklyMenuTemplates");
+                });
+
+            modelBuilder.Entity("Core.Entities.WeeklyMenuTemplateItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DishId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MealType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TemplateId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DishId");
+
+                    b.HasIndex("TemplateId", "DayOfWeek", "MealType", "DishId")
+                        .IsUnique();
+
+                    b.ToTable("WeeklyMenuTemplateItems");
                 });
 
             modelBuilder.Entity("Core.Entities.AccountRequest", b =>
@@ -1871,6 +2053,25 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("Core.Entities.LunchServiceDayDish", b =>
+                {
+                    b.HasOne("Core.Entities.Dish", "Dish")
+                        .WithMany("ServiceDayDishes")
+                        .HasForeignKey("DishId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.LunchServiceDay", "LunchServiceDay")
+                        .WithMany("Dishes")
+                        .HasForeignKey("LunchServiceDayId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Dish");
+
+                    b.Navigation("LunchServiceDay");
+                });
+
             modelBuilder.Entity("Core.Entities.Notification", b =>
                 {
                     b.HasOne("Core.Entities.User", "User")
@@ -2059,6 +2260,24 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("Core.Entities.StudentMealProfile", b =>
+                {
+                    b.HasOne("Core.Entities.Student", "Student")
+                        .WithOne()
+                        .HasForeignKey("Core.Entities.StudentMealProfile", "StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Student");
+
+                    b.Navigation("UpdatedByUser");
+                });
+
             modelBuilder.Entity("Core.Entities.UserRole", b =>
                 {
                     b.HasOne("Core.Entities.Role", "Role")
@@ -2087,6 +2306,35 @@ namespace Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Core.Entities.WeeklyMenuTemplate", b =>
+                {
+                    b.HasOne("Core.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("CreatedByUser");
+                });
+
+            modelBuilder.Entity("Core.Entities.WeeklyMenuTemplateItem", b =>
+                {
+                    b.HasOne("Core.Entities.Dish", "Dish")
+                        .WithMany("TemplateItems")
+                        .HasForeignKey("DishId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.WeeklyMenuTemplate", "Template")
+                        .WithMany("Items")
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Dish");
+
+                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Core.Entities.AccountRequest", b =>
@@ -2121,9 +2369,21 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("Reactions");
                 });
 
+            modelBuilder.Entity("Core.Entities.Dish", b =>
+                {
+                    b.Navigation("ServiceDayDishes");
+
+                    b.Navigation("TemplateItems");
+                });
+
             modelBuilder.Entity("Core.Entities.Guardian", b =>
                 {
                     b.Navigation("StudentGuardians");
+                });
+
+            modelBuilder.Entity("Core.Entities.LunchServiceDay", b =>
+                {
+                    b.Navigation("Dishes");
                 });
 
             modelBuilder.Entity("Core.Entities.PlacementPlan", b =>
@@ -2176,6 +2436,11 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("UserRoles");
 
                     b.Navigation("VerificationTokens");
+                });
+
+            modelBuilder.Entity("Core.Entities.WeeklyMenuTemplate", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

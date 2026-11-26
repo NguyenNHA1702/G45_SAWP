@@ -87,10 +87,10 @@ public class LunchController : BaseApiController
     }
 
     /// <summary>
-    /// Phụ huynh thay đổi chế độ ăn (Tiêu chuẩn / Ăn chay / Đặc biệt) và ghi chú trước hạn chốt 08h15
+    /// Nhân viên bán trú / Quản trị viên phân bổ chế độ khẩu phần (Tiêu chuẩn / Ăn chay / Đặc biệt) cho học sinh trước khi khóa sổ
     /// </summary>
     [HttpPut("registration")]
-    [Authorize(Roles = "Parent,ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff,Admin")]
     public async Task<IActionResult> UpdateRegistrationMealType([FromBody] UpdateLunchRegistrationMealTypeDto request, CancellationToken ct)
     {
         var userId = User.GetRequiredUserId();

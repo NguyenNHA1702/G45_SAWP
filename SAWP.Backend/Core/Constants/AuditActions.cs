@@ -90,6 +90,14 @@ public static class AuditActions
     public const string LunchRegistrationUpdateMealType = "LUNCH_REGISTRATION_UPDATE_MEAL_TYPE";
     public const string LunchMonthlyQuotaConfigure = "LUNCH_MONTHLY_QUOTA_CONFIGURE";
     public const string LunchMonthlyQuotaClear = "LUNCH_MONTHLY_QUOTA_CLEAR";
+    public const string LunchDishCreate = "LUNCH_DISH_CREATE";
+    public const string LunchDishUpdate = "LUNCH_DISH_UPDATE";
+    public const string LunchDishDelete = "LUNCH_DISH_DELETE";
+    public const string LunchMenuTemplateCreate = "LUNCH_MENU_TEMPLATE_CREATE";
+    public const string LunchMenuTemplateUpdate = "LUNCH_MENU_TEMPLATE_UPDATE";
+    public const string LunchMenuTemplateDelete = "LUNCH_MENU_TEMPLATE_DELETE";
+    public const string LunchMenuTemplateApply = "LUNCH_MENU_TEMPLATE_APPLY";
+    public const string StudentMealProfileUpdate = "STUDENT_MEAL_PROFILE_UPDATE";
     public const string BoardingIncidentCreate = "BOARDING_INCIDENT_CREATE";
 
     // E-contact book

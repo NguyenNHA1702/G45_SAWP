@@ -1,18 +1,26 @@
 import { apiClient } from '../apiClient';
 import { unwrapData } from '../../utils/apiError';
 import type {
+  ApplyMenuTemplatePayload,
+  ApplyMenuTemplateResult,
   BatchLunchRegistrationPayload,
   BatchLunchRegistrationResult,
   CancelLunchRegistrationPayload,
   DailyMealBoard,
+  Dish,
   LockMealDayPayload,
   LunchPeriodReport,
   LunchServiceDayConfig,
   MealHeadcount,
   RestoreMealPayload,
   StudentLunchSchedule,
+  StudentMealProfile,
   UpdateLunchRegistrationMealTypePayload,
+  UpsertDishPayload,
   UpsertLunchServiceDaysPayload,
+  UpsertStudentMealProfilePayload,
+  UpsertWeeklyMenuTemplatePayload,
+  WeeklyMenuTemplate,
 } from '../../types/lunch.types';
 
 export const lunchApi = {
@@ -114,5 +122,74 @@ export const lunchApi = {
     if (classId) params.classId = classId;
     const res = await apiClient.get<{ success: boolean; data: LunchPeriodReport }>('/lunch/report', { params });
     return res.data.data;
+  },
+
+  // ---- Thư viện món ăn ----
+  getDishes: async (params?: { category?: number; mealType?: number; search?: string; includeInactive?: boolean }): Promise<Dish[]> => {
+    const res = await apiClient.get<{ success: boolean; data: Dish[] }>('/lunch/dishes', { params });
+    return res.data.data ?? [];
+  },
+
+  createDish: async (payload: UpsertDishPayload): Promise<{ data: Dish; message: string }> => {
+    const res = await apiClient.post<{ success: boolean; data: Dish; message: string }>('/lunch/dishes', payload);
+    return { data: res.data.data, message: res.data.message };
+  },
+
+  updateDish: async (id: number, payload: UpsertDishPayload): Promise<{ data: Dish; message: string }> => {
+    const res = await apiClient.put<{ success: boolean; data: Dish; message: string }>(`/lunch/dishes/${id}`, payload);
+    return { data: res.data.data, message: res.data.message };
+  },
+
+  deleteDish: async (id: number): Promise<{ message: string }> => {
+    const res = await apiClient.delete<{ success: boolean; message: string }>(`/lunch/dishes/${id}`);
+    return { message: res.data.message };
+  },
+
+  // ---- Mẫu thực đơn tuần ----
+  getMenuTemplates: async (includeInactive = false): Promise<WeeklyMenuTemplate[]> => {
+    const res = await apiClient.get<{ success: boolean; data: WeeklyMenuTemplate[] }>('/lunch/menu-templates', {
+      params: { includeInactive },
+    });
+    return res.data.data ?? [];
+  },
+
+  createMenuTemplate: async (payload: UpsertWeeklyMenuTemplatePayload): Promise<{ data: WeeklyMenuTemplate; message: string }> => {
+    const res = await apiClient.post<{ success: boolean; data: WeeklyMenuTemplate; message: string }>('/lunch/menu-templates', payload);
+    return { data: res.data.data, message: res.data.message };
+  },
+
+  updateMenuTemplate: async (id: number, payload: UpsertWeeklyMenuTemplatePayload): Promise<{ data: WeeklyMenuTemplate; message: string }> => {
+    const res = await apiClient.put<{ success: boolean; data: WeeklyMenuTemplate; message: string }>(`/lunch/menu-templates/${id}`, payload);
+    return { data: res.data.data, message: res.data.message };
+  },
+
+  deleteMenuTemplate: async (id: number): Promise<{ message: string }> => {
+    const res = await apiClient.delete<{ success: boolean; message: string }>(`/lunch/menu-templates/${id}`);
+    return { message: res.data.message };
+  },
+
+  applyMenuTemplate: async (id: number, payload: ApplyMenuTemplatePayload): Promise<{ data: ApplyMenuTemplateResult; message: string }> => {
+    const res = await apiClient.post<{ success: boolean; data: ApplyMenuTemplateResult; message: string }>(
+      `/lunch/menu-templates/${id}/apply`,
+      payload
+    );
+    return { data: res.data.data, message: res.data.message };
+  },
+
+  // ---- Hồ sơ chế độ ăn học sinh ----
+  getStudentMealProfile: async (studentId: number): Promise<StudentMealProfile> => {
+    const res = await apiClient.get<{ success: boolean; data: StudentMealProfile }>(`/lunch/students/${studentId}/meal-profile`);
+    return res.data.data;
+  },
+
+  upsertStudentMealProfile: async (
+    studentId: number,
+    payload: UpsertStudentMealProfilePayload
+  ): Promise<{ data: StudentMealProfile; message: string }> => {
+    const res = await apiClient.put<{ success: boolean; data: StudentMealProfile; message: string }>(
+      `/lunch/students/${studentId}/meal-profile`,
+      payload
+    );
+    return { data: res.data.data, message: res.data.message };
   },
 };
