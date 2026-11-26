@@ -763,19 +763,18 @@ public class LeaveRequestService : ILeaveRequestService
         var queryClasses = _unitOfWork.Repository<Class>().Query().AsNoTracking();
         if (!isSchoolBoardOrAdmin)
         {
+            var isTeacher = userRoles.Any(r => r == "Teacher");
             var staffRepo = _unitOfWork.Repository<StaffProfile>();
-            var teacherProfileId = staffRepo != null
+            var teacherProfileId = isTeacher && staffRepo != null
                 ? await staffRepo.Query().AsNoTracking().Where(sp => sp.UserId == teacherUserId).Select(sp => (int?)sp.Id).FirstOrDefaultAsync(cancellationToken)
                 : null;
 
-            if (teacherProfileId.HasValue)
-            {
-                queryClasses = queryClasses.Where(c => c.HomeroomTeacherId == teacherProfileId.Value);
-            }
-            else if (!classId.HasValue)
+            if (!isTeacher || !teacherProfileId.HasValue)
             {
                 return (Enumerable.Empty<AdministrativeRequest>().AsQueryable(), isSchoolBoardOrAdmin, null, true);
             }
+
+            queryClasses = queryClasses.Where(c => c.HomeroomTeacherId == teacherProfileId.Value);
         }
         if (classId.HasValue)
         {

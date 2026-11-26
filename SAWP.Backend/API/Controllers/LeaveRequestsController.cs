@@ -80,6 +80,7 @@ public class LeaveRequestsController : ControllerBase
     /// GVCN xem danh sách đơn xin nghỉ học của lớp
     /// </summary>
     [HttpGet("class")]
+    [Authorize(Roles = "Teacher,SchoolBoard,Admin")]
     public async Task<IActionResult> GetClassLeaveRequests(
         [FromQuery] int? classId,
         [FromQuery] string? status,
@@ -100,6 +101,7 @@ public class LeaveRequestsController : ControllerBase
     /// GVCN / BGH xem danh sách đơn xin nghỉ học của lớp (phân trang + thống kê)
     /// </summary>
     [HttpGet("class/paged")]
+    [Authorize(Roles = "Teacher,SchoolBoard,Admin")]
     public async Task<IActionResult> GetClassLeaveRequestsPaged(
         [FromQuery] int? classId,
         [FromQuery] string? status,

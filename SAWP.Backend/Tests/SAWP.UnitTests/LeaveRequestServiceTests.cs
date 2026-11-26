@@ -326,6 +326,7 @@ public class LeaveRequestServiceTests : TestBase
     {
         // Arrange
         SetupRepository(new List<UserRole> { new() { UserId = 30, Role = new Role { Name = "Teacher" } } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
         SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10 } });
         SetupRepository(new List<ClassAssignment> { new() { ClassId = 1, StudentId = 1, IsActive = true } });
         SetupRepository(new List<AdministrativeRequest>
@@ -387,6 +388,66 @@ public class LeaveRequestServiceTests : TestBase
 
         // Act
         var result = await _service.GetClassLeaveRequestsAsync(99);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetClassLeaveRequests_ParentWithClassId_ReturnsEmpty()
+    {
+        // Arrange: Phụ huynh truyền classId = 1 dù lớp 1A có đơn xin nghỉ hợp lệ -> không rò rỉ dữ liệu
+        var class1A = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 10 };
+        SetupRepository(new List<UserRole> { new() { UserId = 20, Role = new Role { Name = "Parent" } } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<ClassAssignment> { new() { ClassId = 1, StudentId = 1, IsActive = true, Class = class1A } });
+        SetupRepository(new List<AdministrativeRequest>
+        {
+            new()
+            {
+                Id = 1,
+                StudentId = 1,
+                RequestType = RequestTypes.Leave,
+                Status = RequestStatus.Submitted,
+                LeaveRequest = new LeaveRequest { StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" }
+            }
+        });
+
+        // Act
+        var result = await _service.GetClassLeaveRequestsAsync(20, classId: 1);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Success.Should().BeTrue();
+        result.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetClassLeaveRequests_TeacherWithoutStaffProfileWithClassId_ReturnsEmpty()
+    {
+        // Arrange: Giáo viên chưa có StaffProfile truyền classId = 1 -> không rò rỉ dữ liệu
+        var class1A = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 10 };
+        SetupRepository(new List<UserRole> { new() { UserId = 99, Role = new Role { Name = "Teacher" } } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<ClassAssignment> { new() { ClassId = 1, StudentId = 1, IsActive = true, Class = class1A } });
+        SetupRepository(new List<AdministrativeRequest>
+        {
+            new()
+            {
+                Id = 1,
+                StudentId = 1,
+                RequestType = RequestTypes.Leave,
+                Status = RequestStatus.Submitted,
+                LeaveRequest = new LeaveRequest { StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" }
+            }
+        });
+
+        // Act
+        var result = await _service.GetClassLeaveRequestsAsync(99, classId: 1);
 
         // Assert
         result.Should().NotBeNull();
@@ -2234,6 +2295,64 @@ public class LeaveRequestServiceTests : TestBase
         res.Data.PageSize.Should().Be(100);
         res.Data.TotalCount.Should().Be(0);
         res.Data.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetClassLeaveRequestsPaged_ParentWithClassId_ReturnsEmptyPaged()
+    {
+        // Arrange: Phụ huynh truyền classId = 1 -> không rò rỉ dữ liệu phân trang hay thống kê
+        var class1A = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 10 };
+        SetupRepository(new List<UserRole> { new() { UserId = 20, Role = new Role { Name = "Parent" } } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<ClassAssignment> { new() { ClassId = 1, StudentId = 1, IsActive = true, Class = class1A } });
+        SetupRepository(new List<AdministrativeRequest>
+        {
+            new()
+            {
+                Id = 1, RequestNumber = "LR-101", StudentId = 1, RequestType = RequestTypes.Leave, Status = RequestStatus.Submitted,
+                Student = new Student { Id = 1, FullName = "Nguyen Van A", StudentCode = "HS001" },
+                LeaveRequest = new LeaveRequest { Id = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" }
+            }
+        });
+
+        // Act
+        var res = await _service.GetClassLeaveRequestsPagedAsync(20, classId: 1);
+
+        // Assert
+        res.Success.Should().BeTrue();
+        res.Data!.TotalCount.Should().Be(0);
+        res.Data.Items.Should().BeEmpty();
+        res.Data.Stats.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetClassLeaveRequestsPaged_TeacherWithoutStaffProfileWithClassId_ReturnsEmptyPaged()
+    {
+        // Arrange: Giáo viên chưa có StaffProfile truyền classId = 1 -> không rò rỉ dữ liệu phân trang hay thống kê
+        var class1A = new Class { Id = 1, ClassName = "1A", HomeroomTeacherId = 10 };
+        SetupRepository(new List<UserRole> { new() { UserId = 99, Role = new Role { Name = "Teacher" } } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { class1A });
+        SetupRepository(new List<ClassAssignment> { new() { ClassId = 1, StudentId = 1, IsActive = true, Class = class1A } });
+        SetupRepository(new List<AdministrativeRequest>
+        {
+            new()
+            {
+                Id = 1, RequestNumber = "LR-101", StudentId = 1, RequestType = RequestTypes.Leave, Status = RequestStatus.Submitted,
+                Student = new Student { Id = 1, FullName = "Nguyen Van A", StudentCode = "HS001" },
+                LeaveRequest = new LeaveRequest { Id = 1, StartDate = DefaultTestDate, EndDate = DefaultTestDate, Reason = "Ốm" }
+            }
+        });
+
+        // Act
+        var res = await _service.GetClassLeaveRequestsPagedAsync(99, classId: 1);
+
+        // Assert
+        res.Success.Should().BeTrue();
+        res.Data!.TotalCount.Should().Be(0);
+        res.Data.Items.Should().BeEmpty();
+        res.Data.Stats.TotalCount.Should().Be(0);
     }
 
     [Fact]
