@@ -608,4 +608,693 @@ public class LunchMenuServiceTests : TestBase
         res.Success.Should().BeTrue();
         reg.MealType.Should().Be(MealType.SpecialDiet);
     }
+
+    // ==================== 1. GetDishesAsync (N/A/B) ====================
+
+    [Fact]
+    public async Task GetDishes_DefaultExcludesInactive_ReturnsSortedActiveDishes()
+    {
+        SetupRepository(new List<Dish>
+        {
+            new() { Id = 1, Name = "Thịt kho", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch", IsActive = true },
+            new() { Id = 2, Name = "Canh bí", Category = DishCategory.Soup, SuitableMealTypes = "StandardLunch,VegetarianLunch", IsActive = true },
+            new() { Id = 3, Name = "Món cũ", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch", IsActive = false }
+        });
+
+        var res = await _menuService.GetDishesAsync();
+
+        res.Success.Should().BeTrue();
+        res.Data.Should().HaveCount(2);
+        res.Data!.Should().NotContain(d => !d.IsActive);
+        res.Data[0].Name.Should().Be("Thịt kho");
+        res.Data[1].Name.Should().Be("Canh bí");
+    }
+
+    [Fact]
+    public async Task GetDishes_IncludeInactiveAndFiltersByCategoryMealTypeSearch_ReturnsMatches()
+    {
+        SetupRepository(new List<Dish>
+        {
+            new() { Id = 1, Name = "Đậu phụ sốt cà", Category = DishCategory.MainDish, SuitableMealTypes = "VegetarianLunch", IsActive = false },
+            new() { Id = 2, Name = "Gà kho gừng", Category = DishCategory.MainDish, SuitableMealTypes = "StandardLunch", IsActive = true },
+            new() { Id = 3, Name = "Canh rau ngót", Category = DishCategory.Soup, SuitableMealTypes = "VegetarianLunch", IsActive = true }
+        });
+
+        var res = await _menuService.GetDishesAsync(DishCategory.MainDish, MealType.VegetarianLunch, "  đậu phụ ", includeInactive: true);
+
+        res.Success.Should().BeTrue();
+        res.Data.Should().ContainSingle(d => d.Id == 1);
+    }
+
+    [Fact]
+    public async Task GetDishes_NoMatchingSearch_ReturnsEmptyList()
+    {
+        SetupRepository(new List<Dish>
+        {
+            new() { Id = 1, Name = "Cơm trắng", Category = DishCategory.Starch, IsActive = true }
+        });
+
+        var res = await _menuService.GetDishesAsync(search: "pizza");
+
+        res.Success.Should().BeTrue();
+        res.Data.Should().BeEmpty();
+    }
+
+    // ==================== 2. CreateDishAsync (N/A/B) ====================
+
+    [Fact]
+    public async Task CreateDish_ValidInput_CreatesDishAndLogsAudit()
+    {
+        var dishes = new List<Dish>();
+        SetupRepository(dishes);
+
+        var res = await _menuService.CreateDishAsync(10, new UpsertDishRequestDto
+        {
+            Name = "  Cá hồi áp chảo  ",
+            Category = DishCategory.MainDish,
+            SuitableMealTypes = new List<MealType> { MealType.StandardLunch, MealType.SpecialDiet },
+            AllergenTags = new List<string> { "seafood", "unknown_tag" },
+            IsActive = true
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.Name.Should().Be("Cá hồi áp chảo");
+        res.Data.AllergenTags.Should().ContainSingle("seafood");
+        dishes.Should().ContainSingle();
+        AuditServiceMock.Verify(a => a.LogActionAsync(10, AuditActions.LunchDishCreate, nameof(Dish), It.IsAny<string>(), null, It.IsAny<object?>(), null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateDish_EmptyOrTooLongName_FailsWithMSG01()
+    {
+        SetupRepository(new List<Dish>());
+
+        var emptyRes = await _menuService.CreateDishAsync(10, new UpsertDishRequestDto { Name = "   " });
+        var longRes = await _menuService.CreateDishAsync(10, new UpsertDishRequestDto { Name = new string('A', 121) });
+
+        emptyRes.Success.Should().BeFalse();
+        emptyRes.Code.Should().Be(SystemMessages.MSG01.Code);
+        longRes.Success.Should().BeFalse();
+        longRes.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task CreateDish_Exact120CharNameAndEmptyMealTypes_SucceedsWithDefaultStandard()
+    {
+        SetupRepository(new List<Dish>());
+
+        var res = await _menuService.CreateDishAsync(10, new UpsertDishRequestDto
+        {
+            Name = new string('M', 120),
+            Category = DishCategory.SideDish,
+            SuitableMealTypes = new List<MealType>()
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.SuitableMealTypes.Should().ContainSingle(m => m == MealType.StandardLunch);
+    }
+
+    // ==================== 3. UpdateDishAsync (N/A/B) ====================
+
+    [Fact]
+    public async Task UpdateDish_ValidInput_UpdatesFieldsAndLogsAudit()
+    {
+        var dish = new Dish { Id = 1, Name = "Cơm trắng", Category = DishCategory.Starch, SuitableMealTypes = "StandardLunch", IsActive = true };
+        SetupRepository(new List<Dish> { dish });
+
+        var res = await _menuService.UpdateDishAsync(1, 10, new UpsertDishRequestDto
+        {
+            Name = "Cơm gạo lứt",
+            Category = DishCategory.Starch,
+            SuitableMealTypes = new List<MealType> { MealType.VegetarianLunch },
+            AllergenTags = new List<string>(),
+            IsActive = true
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.Name.Should().Be("Cơm gạo lứt");
+        res.Data.SuitableMealTypes.Should().ContainSingle(m => m == MealType.VegetarianLunch);
+        AuditServiceMock.Verify(a => a.LogActionAsync(10, AuditActions.LunchDishUpdate, nameof(Dish), "1", It.IsAny<object?>(), It.IsAny<object?>(), null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateDish_SameNameOnSameDish_Succeeds()
+    {
+        SetupRepository(new List<Dish> { new() { Id = 1, Name = "Cơm trắng", Category = DishCategory.Starch, IsActive = true } });
+
+        var res = await _menuService.UpdateDishAsync(1, 10, new UpsertDishRequestDto { Name = "cơm trắng", Category = DishCategory.Starch, IsActive = false });
+
+        res.Success.Should().BeTrue();
+        res.Data!.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UpdateDish_NotFound_FailsWithMSG11()
+    {
+        SetupRepository(new List<Dish>());
+
+        var res = await _menuService.UpdateDishAsync(999, 10, new UpsertDishRequestDto { Name = "Món mới" });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    [Fact]
+    public async Task UpdateDish_DuplicateNameAnotherDish_FailsWithMSG09()
+    {
+        SetupRepository(new List<Dish>
+        {
+            new() { Id = 1, Name = "Món A", IsActive = true },
+            new() { Id = 2, Name = "Món B", IsActive = true }
+        });
+
+        var res = await _menuService.UpdateDishAsync(1, 10, new UpsertDishRequestDto { Name = "món b" });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task UpdateDish_InvalidName_FailsWithMSG01()
+    {
+        SetupRepository(new List<Dish> { new() { Id = 1, Name = "Món A", IsActive = true } });
+
+        var emptyRes = await _menuService.UpdateDishAsync(1, 10, new UpsertDishRequestDto { Name = "" });
+        var longRes = await _menuService.UpdateDishAsync(1, 10, new UpsertDishRequestDto { Name = new string('Z', 121) });
+
+        emptyRes.Success.Should().BeFalse();
+        emptyRes.Code.Should().Be(SystemMessages.MSG01.Code);
+        longRes.Success.Should().BeFalse();
+        longRes.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    // ==================== 4. DeleteDishAsync (additional N/A) ====================
+
+    [Fact]
+    public async Task DeleteDish_WhenUsedInTemplate_SoftDeactivatesInsteadOfHardDelete()
+    {
+        var dishes = new List<Dish> { new() { Id = 7, Name = "Trứng chiên", IsActive = true } };
+        var dishRepo = SetupRepository(dishes);
+        SetupRepository(new List<WeeklyMenuTemplateItem> { new() { Id = 1, TemplateId = 1, DishId = 7 } });
+        SetupRepository(new List<LunchServiceDayDish>());
+
+        var res = await _menuService.DeleteDishAsync(7, 10);
+
+        res.Success.Should().BeTrue();
+        dishes[0].IsActive.Should().BeFalse();
+        dishRepo.Verify(r => r.DeleteAsync(It.IsAny<Dish>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteDish_NotFound_FailsWithMSG11()
+    {
+        SetupRepository(new List<Dish>());
+
+        var res = await _menuService.DeleteDishAsync(999, 10);
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    // ==================== 5. GetTemplatesAsync (N/B) ====================
+
+    [Fact]
+    public async Task GetTemplates_DefaultExcludesInactive_ReturnsSortedItems()
+    {
+        var dish1 = new Dish { Id = 1, Name = "Cơm", Category = DishCategory.Starch };
+        var dish2 = new Dish { Id = 2, Name = "Canh", Category = DishCategory.Soup };
+        SetupRepository(new List<WeeklyMenuTemplate>
+        {
+            new()
+            {
+                Id = 1, Name = "Mẫu B", IsActive = true,
+                Items = new List<WeeklyMenuTemplateItem>
+                {
+                    new() { Id = 2, DayOfWeek = 2, MealType = MealType.StandardLunch, DishId = 2, Dish = dish2, SortOrder = 2 },
+                    new() { Id = 1, DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 1, Dish = dish1, SortOrder = 1 }
+                }
+            },
+            new() { Id = 2, Name = "Mẫu A (Ẩn)", IsActive = false, Items = new List<WeeklyMenuTemplateItem>() }
+        });
+
+        var res = await _menuService.GetTemplatesAsync();
+
+        res.Success.Should().BeTrue();
+        res.Data.Should().ContainSingle(t => t.Id == 1);
+        res.Data![0].Items[0].DayOfWeek.Should().Be(1);
+        res.Data[0].Items[1].DayOfWeek.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetTemplates_IncludeInactive_ReturnsAllTemplates()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>
+        {
+            new() { Id = 1, Name = "Mẫu A", IsActive = true, Items = new List<WeeklyMenuTemplateItem>() },
+            new() { Id = 2, Name = "Mẫu B", IsActive = false, Items = new List<WeeklyMenuTemplateItem>() }
+        });
+
+        var res = await _menuService.GetTemplatesAsync(includeInactive: true);
+
+        res.Success.Should().BeTrue();
+        res.Data.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetTemplates_EmptyRepository_ReturnsEmptyList()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>());
+
+        var res = await _menuService.GetTemplatesAsync();
+
+        res.Success.Should().BeTrue();
+        res.Data.Should().BeEmpty();
+    }
+
+    // ==================== 6. CreateTemplateAsync (N/A/B) ====================
+
+    [Fact]
+    public async Task CreateTemplate_ValidInput_CreatesTemplateAndDeduplicatesItems()
+    {
+        var dish1 = new Dish { Id = 1, Name = "Cơm trắng", Category = DishCategory.Starch, IsActive = true };
+        SetupRepository(new List<Dish> { dish1 });
+        var templates = new List<WeeklyMenuTemplate>();
+        SetupRepository(templates);
+
+        var res = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto
+        {
+            Name = "Thực đơn Tuần 1",
+            Description = "Chuẩn tiểu học",
+            IsActive = true,
+            Items = new List<WeeklyMenuTemplateItemInputDto>
+            {
+                new() { DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 1, SortOrder = 1 },
+                new() { DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 1, SortOrder = 2 },
+                new() { DayOfWeek = 6, MealType = MealType.StandardLunch, DishId = 1, SortOrder = 1 }
+            }
+        });
+
+        res.Success.Should().BeTrue();
+        templates.Should().ContainSingle();
+        templates[0].Items.Should().HaveCount(2);
+        AuditServiceMock.Verify(a => a.LogActionAsync(10, AuditActions.LunchMenuTemplateCreate, nameof(WeeklyMenuTemplate), It.IsAny<string>(), null, It.IsAny<object?>(), null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTemplate_InvalidNameOrDescription_FailsWithMSG01()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>());
+
+        var emptyName = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto { Name = " " });
+        var longName = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto { Name = new string('N', 121) });
+        var longDesc = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto { Name = "Mẫu hợp lệ", Description = new string('D', 251) });
+
+        emptyName.Code.Should().Be(SystemMessages.MSG01.Code);
+        longName.Code.Should().Be(SystemMessages.MSG01.Code);
+        longDesc.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task CreateTemplate_DuplicateName_FailsWithMSG09()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate> { new() { Id = 1, Name = "Mẫu Tuần 1", IsActive = true } });
+
+        var res = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto { Name = "mẫu tuần 1" });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task CreateTemplate_EmptyItemsInvalidDayOfWeekOrMissingDish_FailsWithMSG01()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>());
+        SetupRepository(new List<Dish> { new() { Id = 1, Name = "Cơm" } });
+
+        var emptyItems = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto { Name = "T1", Items = new() });
+        var dayZero = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto
+        {
+            Name = "T2",
+            Items = new() { new() { DayOfWeek = 0, MealType = MealType.StandardLunch, DishId = 1 } }
+        });
+        var daySeven = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto
+        {
+            Name = "T3",
+            Items = new() { new() { DayOfWeek = 7, MealType = MealType.StandardLunch, DishId = 1 } }
+        });
+        var missingDish = await _menuService.CreateTemplateAsync(10, new UpsertWeeklyMenuTemplateRequestDto
+        {
+            Name = "T4",
+            Items = new() { new() { DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 999 } }
+        });
+
+        emptyItems.Code.Should().Be(SystemMessages.MSG01.Code);
+        dayZero.Code.Should().Be(SystemMessages.MSG01.Code);
+        daySeven.Code.Should().Be(SystemMessages.MSG01.Code);
+        missingDish.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    // ==================== 7. UpdateTemplateAsync (N/A) ====================
+
+    [Fact]
+    public async Task UpdateTemplate_ValidInput_ReplacesItemsAndLogsAudit()
+    {
+        var dish1 = new Dish { Id = 1, Name = "Cơm", Category = DishCategory.Starch };
+        var dish2 = new Dish { Id = 2, Name = "Canh", Category = DishCategory.Soup };
+        var oldItem = new WeeklyMenuTemplateItem { Id = 1, TemplateId = 10, DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 1, Dish = dish1 };
+        var template = new WeeklyMenuTemplate { Id = 10, Name = "Mẫu cũ", IsActive = true, Items = new List<WeeklyMenuTemplateItem> { oldItem } };
+        SetupRepository(new List<WeeklyMenuTemplate> { template });
+        SetupRepository(new List<WeeklyMenuTemplateItem> { oldItem });
+        SetupRepository(new List<Dish> { dish1, dish2 });
+
+        var res = await _menuService.UpdateTemplateAsync(10, 99, new UpsertWeeklyMenuTemplateRequestDto
+        {
+            Name = "Mẫu mới",
+            Description = "Đã cập nhật",
+            IsActive = true,
+            Items = new List<WeeklyMenuTemplateItemInputDto>
+            {
+                new() { DayOfWeek = 2, MealType = MealType.VegetarianLunch, DishId = 2, SortOrder = 1 }
+            }
+        });
+
+        res.Success.Should().BeTrue();
+        template.Name.Should().Be("Mẫu mới");
+        template.Items.Should().ContainSingle(i => i.DishId == 2 && i.DayOfWeek == 2);
+        AuditServiceMock.Verify(a => a.LogActionAsync(99, AuditActions.LunchMenuTemplateUpdate, nameof(WeeklyMenuTemplate), "10", It.IsAny<object?>(), It.IsAny<object?>(), null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateTemplate_NotFound_FailsWithMSG11()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>());
+
+        var res = await _menuService.UpdateTemplateAsync(999, 10, new UpsertWeeklyMenuTemplateRequestDto { Name = "Mẫu" });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    [Fact]
+    public async Task UpdateTemplate_DuplicateNameAnotherTemplate_FailsWithMSG09()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>
+        {
+            new() { Id = 1, Name = "Mẫu 1", Items = new List<WeeklyMenuTemplateItem>() },
+            new() { Id = 2, Name = "Mẫu 2", Items = new List<WeeklyMenuTemplateItem>() }
+        });
+
+        var res = await _menuService.UpdateTemplateAsync(1, 10, new UpsertWeeklyMenuTemplateRequestDto { Name = "mẫu 2" });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task UpdateTemplate_InvalidInputOrMissingDish_FailsWithMSG01()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate> { new() { Id = 1, Name = "Mẫu 1", Items = new List<WeeklyMenuTemplateItem>() } });
+        SetupRepository(new List<Dish>());
+
+        var emptyName = await _menuService.UpdateTemplateAsync(1, 10, new UpsertWeeklyMenuTemplateRequestDto { Name = "" });
+        var longDesc = await _menuService.UpdateTemplateAsync(1, 10, new UpsertWeeklyMenuTemplateRequestDto { Name = "Mẫu 1", Description = new string('X', 251) });
+        var missingDish = await _menuService.UpdateTemplateAsync(1, 10, new UpsertWeeklyMenuTemplateRequestDto
+        {
+            Name = "Mẫu 1",
+            Items = new() { new() { DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 999 } }
+        });
+
+        emptyName.Code.Should().Be(SystemMessages.MSG01.Code);
+        longDesc.Code.Should().Be(SystemMessages.MSG01.Code);
+        missingDish.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    // ==================== 8. DeleteTemplateAsync (N/A) ====================
+
+    [Fact]
+    public async Task DeleteTemplate_ExistingTemplate_HardDeletesAndLogsAudit()
+    {
+        var templates = new List<WeeklyMenuTemplate> { new() { Id = 10, Name = "Mẫu Tuần Cũ" } };
+        var repo = SetupRepository(templates);
+
+        var res = await _menuService.DeleteTemplateAsync(10, 99);
+
+        res.Success.Should().BeTrue();
+        repo.Verify(r => r.DeleteAsync(It.Is<WeeklyMenuTemplate>(t => t.Id == 10), It.IsAny<CancellationToken>()), Times.Once);
+        AuditServiceMock.Verify(a => a.LogActionAsync(99, AuditActions.LunchMenuTemplateDelete, nameof(WeeklyMenuTemplate), "10", It.IsAny<object?>(), null, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteTemplate_NotFound_FailsWithMSG11()
+    {
+        SetupRepository(new List<WeeklyMenuTemplate>());
+
+        var res = await _menuService.DeleteTemplateAsync(999, 99);
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    // ==================== 9. ApplyTemplateAsync (additional N/A/B) ====================
+
+    [Fact]
+    public async Task ApplyTemplate_OverwriteFalse_SkipsExistingAndNotServingDays()
+    {
+        var mon = new DateTime(2026, 11, 2);
+        var tue = new DateTime(2026, 11, 3);
+        var wed = new DateTime(2026, 11, 4);
+        var dish = new Dish { Id = 1, Name = "Cơm", IsActive = true };
+        var template = new WeeklyMenuTemplate
+        {
+            Id = 10, Name = "Mẫu", IsActive = true,
+            Items = new List<WeeklyMenuTemplateItem>
+            {
+                new() { DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 1, Dish = dish },
+                new() { DayOfWeek = 2, MealType = MealType.StandardLunch, DishId = 1, Dish = dish },
+                new() { DayOfWeek = 3, MealType = MealType.StandardLunch, DishId = 1, Dish = dish }
+            }
+        };
+        SetupRepository(new List<WeeklyMenuTemplate> { template });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>
+        {
+            new() { Id = 1, Date = mon, IsServing = true, IsLocked = false, Dishes = new List<LunchServiceDayDish> { new() { Id = 1, DishId = 1, Dish = dish } } },
+            new() { Id = 2, Date = tue, IsServing = false, IsLocked = false }
+        });
+        SetupRepository(new List<LunchServiceDayDish>());
+
+        var res = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto
+        {
+            FromDate = mon,
+            ToDate = wed,
+            OverwriteExistingMenus = false
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.SkippedExistingDates.Should().ContainSingle(d => d == mon);
+        res.Data.SkippedLockedDates.Should().ContainSingle(d => d == tue);
+        res.Data.AppliedDates.Should().ContainSingle(d => d == wed);
+    }
+
+    [Fact]
+    public async Task ApplyTemplate_InvalidDateRangeOrExceeds62Days_FailsWithMSG01()
+    {
+        var start = new DateTime(2026, 11, 2);
+
+        var endBefore = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto { FromDate = start.AddDays(1), ToDate = start });
+        var over62 = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto { FromDate = start, ToDate = start.AddDays(63) });
+
+        endBefore.Code.Should().Be(SystemMessages.MSG01.Code);
+        over62.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task ApplyTemplate_InvalidCutoffTime_FailsWithMSG01()
+    {
+        var start = new DateTime(2026, 11, 2);
+
+        var badFormat = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto { FromDate = start, ToDate = start, CutoffTime = "bad" });
+        var outOfRange = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto { FromDate = start, ToDate = start, CutoffTime = "12:00" });
+
+        badFormat.Code.Should().Be(SystemMessages.MSG01.Code);
+        outOfRange.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task ApplyTemplate_NotFoundOrInactive_FailsWithMSG11()
+    {
+        var start = new DateTime(2026, 11, 2);
+        SetupRepository(new List<WeeklyMenuTemplate> { new() { Id = 10, Name = "Inactive", IsActive = false } });
+
+        var notFound = await _menuService.ApplyTemplateAsync(999, 99, new ApplyMenuTemplateRequestDto { FromDate = start, ToDate = start });
+        var inactive = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto { FromDate = start, ToDate = start });
+
+        notFound.Code.Should().Be(SystemMessages.MSG11.Code);
+        inactive.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    [Fact]
+    public async Task ApplyTemplate_Exact62DaysAndMissingWeekdayInTemplate_SucceedsAndSkipsMissingDay()
+    {
+        var start = new DateTime(2026, 11, 2); // Monday
+        var dish = new Dish { Id = 1, Name = "Cơm", IsActive = true };
+        var template = new WeeklyMenuTemplate
+        {
+            Id = 10, Name = "Chỉ Thứ 2", IsActive = true,
+            Items = new List<WeeklyMenuTemplateItem> { new() { DayOfWeek = 1, MealType = MealType.StandardLunch, DishId = 1, Dish = dish } }
+        };
+        SetupRepository(new List<WeeklyMenuTemplate> { template });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<LunchServiceDayDish>());
+
+        var res = await _menuService.ApplyTemplateAsync(10, 99, new ApplyMenuTemplateRequestDto
+        {
+            FromDate = start,
+            ToDate = start.AddDays(62),
+            CutoffTime = "08:00"
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.AppliedDates.Should().NotBeEmpty();
+        res.Data.SkippedNonSchoolDates.Should().Contain(start.AddDays(1)); // Thứ 3 không có trong mẫu
+    }
+
+    // ==================== 10. GetStudentMealProfileAsync (N/A) ====================
+
+    [Fact]
+    public async Task GetStudentMealProfile_LinkedParentWithExistingProfile_ReturnsProfile()
+    {
+        var updatedAt = new DateTime(2026, 11, 1, 5, 0, 0, DateTimeKind.Unspecified);
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An" } });
+        SetupRepository(new List<Guardian> { new() { Id = 1, UserId = 50, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1 } } } });
+        SetupRepository(new List<StudentMealProfile>
+        {
+            new() { Id = 1, StudentId = 1, DefaultMealType = MealType.SpecialDiet, AllergenTags = "seafood,egg", AllergyNotes = "Kiêng tôm", UpdatedAt = updatedAt }
+        });
+
+        var res = await _menuService.GetStudentMealProfileAsync(1, 50, new[] { UserRoles.Parent });
+
+        res.Success.Should().BeTrue();
+        res.Data!.DefaultMealType.Should().Be(MealType.SpecialDiet);
+        res.Data.AllergenTags.Should().BeEquivalentTo(new[] { "seafood", "egg" });
+        res.Data.UpdatedAt!.Value.Kind.Should().Be(DateTimeKind.Utc);
+    }
+
+    [Fact]
+    public async Task GetStudentMealProfile_HomeroomTeacherWithoutProfile_FallsBackToSpecialNeedsNotes()
+    {
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An", SpecialNeedsNotes = "Dị ứng lạc" } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { new() { Id = 5, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<ClassAssignment> { new() { Id = 1, StudentId = 1, ClassId = 5, IsActive = true } });
+        SetupRepository(new List<StudentMealProfile>());
+
+        var res = await _menuService.GetStudentMealProfileAsync(1, 30, new[] { UserRoles.Teacher });
+
+        res.Success.Should().BeTrue();
+        res.Data!.DefaultMealType.Should().Be(MealType.StandardLunch);
+        res.Data.AllergyNotes.Should().Be("Dị ứng lạc");
+        res.Data.UpdatedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetStudentMealProfile_StudentNotFound_FailsWithMSG11()
+    {
+        SetupRepository(new List<Student>());
+
+        var res = await _menuService.GetStudentMealProfileAsync(999, 50, new[] { UserRoles.ServiceStaff });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    [Fact]
+    public async Task GetStudentMealProfile_UnlinkedParent_FailsWithMSG10()
+    {
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An" } });
+        SetupRepository(new List<Guardian>());
+
+        var res = await _menuService.GetStudentMealProfileAsync(1, 50, new[] { UserRoles.Parent });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    [Fact]
+    public async Task GetStudentMealProfile_NonHomeroomTeacher_FailsWithMSG10()
+    {
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An" } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { new() { Id = 5, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<ClassAssignment> { new() { Id = 1, StudentId = 1, ClassId = 99, IsActive = true } });
+
+        var res = await _menuService.GetStudentMealProfileAsync(1, 30, new[] { UserRoles.Teacher });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    // ==================== 11. UpsertStudentMealProfileAsync (additional N/A/B) ====================
+
+    [Fact]
+    public async Task UpsertStudentMealProfile_StudentNotFound_FailsWithMSG11()
+    {
+        SetupRepository(new List<Student>());
+
+        var res = await _menuService.UpsertStudentMealProfileAsync(999, 99, new[] { UserRoles.ServiceStaff }, new UpsertStudentMealProfileRequestDto());
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG11.Code);
+    }
+
+    [Fact]
+    public async Task UpsertStudentMealProfile_TeacherForbidden_FailsWithMSG10()
+    {
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An" } });
+
+        var res = await _menuService.UpsertStudentMealProfileAsync(1, 30, new[] { UserRoles.Teacher }, new UpsertStudentMealProfileRequestDto());
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    [Fact]
+    public async Task UpsertStudentMealProfile_AllergyNotesBoundary250And251Chars()
+    {
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An" } });
+        SetupRepository(new List<StudentMealProfile>());
+
+        var overRes = await _menuService.UpsertStudentMealProfileAsync(1, 99, new[] { UserRoles.ServiceStaff }, new UpsertStudentMealProfileRequestDto
+        {
+            DefaultMealType = MealType.StandardLunch,
+            AllergyNotes = new string('A', 251)
+        });
+        var exactRes = await _menuService.UpsertStudentMealProfileAsync(1, 99, new[] { UserRoles.ServiceStaff }, new UpsertStudentMealProfileRequestDto
+        {
+            DefaultMealType = MealType.StandardLunch,
+            AllergyNotes = new string('A', 250)
+        });
+
+        overRes.Success.Should().BeFalse();
+        overRes.Code.Should().Be(SystemMessages.MSG01.Code);
+        exactRes.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UpsertStudentMealProfile_StaffSpecialDietWithoutTagsOrNotes_FailsWithMSG01()
+    {
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Bé An" } });
+        SetupRepository(new List<StudentMealProfile>());
+
+        var res = await _menuService.UpsertStudentMealProfileAsync(1, 99, new[] { UserRoles.ServiceStaff }, new UpsertStudentMealProfileRequestDto
+        {
+            DefaultMealType = MealType.SpecialDiet,
+            AllergenTags = new List<string>(),
+            AllergyNotes = "  "
+        });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
 }
