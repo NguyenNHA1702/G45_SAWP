@@ -352,32 +352,34 @@ export function BoardDecisionModal({
                   PHÊ DUYỆT
                 </label>
 
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '11px 14px',
-                    borderRadius: 12,
-                    border: decision === 'return_to_staff' ? '2.5px solid #EA580C' : '2px solid #E2E8F0',
-                    backgroundColor: decision === 'return_to_staff' ? '#FFF7ED' : '#FFFFFF',
-                    boxShadow: decision === 'return_to_staff' ? '3px 3px 0 #EA580C' : 'none',
-                    cursor: 'pointer',
-                    fontWeight: 800,
-                    fontSize: 13,
-                    color: decision === 'return_to_staff' ? '#9A3412' : '#64748B',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="decision"
-                    checked={decision === 'return_to_staff'}
-                    onChange={() => setDecision('return_to_staff')}
-                    style={{ width: 16, height: 16, accentColor: '#EA580C' }}
-                  />
-                  <RotateCcw size={18} color="#EA580C" />
-                  YÊU CẦU GIÁO VỤ TRÌNH LẠI
-                </label>
+                {!isTransfer && (
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '11px 14px',
+                      borderRadius: 12,
+                      border: decision === 'return_to_staff' ? '2.5px solid #EA580C' : '2px solid #E2E8F0',
+                      backgroundColor: decision === 'return_to_staff' ? '#FFF7ED' : '#FFFFFF',
+                      boxShadow: decision === 'return_to_staff' ? '3px 3px 0 #EA580C' : 'none',
+                      cursor: 'pointer',
+                      fontWeight: 800,
+                      fontSize: 13,
+                      color: decision === 'return_to_staff' ? '#9A3412' : '#64748B',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="decision"
+                      checked={decision === 'return_to_staff'}
+                      onChange={() => setDecision('return_to_staff')}
+                      style={{ width: 16, height: 16, accentColor: '#EA580C' }}
+                    />
+                    <RotateCcw size={18} color="#EA580C" />
+                    YÊU CẦU GIÁO VỤ TRÌNH LẠI
+                  </label>
+                )}
 
                 <label
                   style={{
