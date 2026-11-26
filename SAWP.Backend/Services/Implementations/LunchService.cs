@@ -74,6 +74,59 @@ public class LunchService : ILunchService
         return row?.IsSchoolDay;
     }
 
+    private async Task<Dictionary<DateTime, List<LunchServiceDayDish>>> GetServiceDayDishesMapAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken ct)
+    {
+        var dayDishRepo = _unitOfWork.Repository<LunchServiceDayDish>();
+        if (dayDishRepo == null) return new Dictionary<DateTime, List<LunchServiceDayDish>>();
+
+        var rows = await dayDishRepo.Query()
+            .Include(sdd => sdd.LunchServiceDay)
+            .Include(sdd => sdd.Dish)
+            .Where(sdd => sdd.LunchServiceDay != null
+                          && sdd.LunchServiceDay.Date >= startDate.Date
+                          && sdd.LunchServiceDay.Date <= endDate.Date)
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => r.LunchServiceDay.Date.Date)
+            .ToDictionary(g => g.Key, g => g.ToList());
+    }
+
+    private async Task<Dictionary<int, StudentMealProfile>> GetStudentMealProfileMapAsync(
+        IEnumerable<int> studentIds,
+        CancellationToken ct)
+    {
+        var profileRepo = _unitOfWork.Repository<StudentMealProfile>();
+        if (profileRepo == null) return new Dictionary<int, StudentMealProfile>();
+
+        var ids = studentIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<int, StudentMealProfile>();
+
+        var rows = await profileRepo.Query()
+            .Where(p => ids.Contains(p.StudentId))
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(p => p.StudentId);
+    }
+
+    private static List<Dish> SelectDishesForMealType(List<LunchServiceDayDish>? dayDishes, MealType mealType)
+    {
+        if (dayDishes == null || dayDishes.Count == 0) return new List<Dish>();
+        var exact = dayDishes
+            .Where(d => d.MealType == mealType && d.Dish != null)
+            .Select(d => d.Dish)
+            .ToList();
+        if (exact.Count > 0) return exact;
+
+        return dayDishes
+            .Where(d => d.MealType == MealType.StandardLunch && d.Dish != null)
+            .Select(d => d.Dish)
+            .ToList();
+    }
+
     private (bool IsServing, TimeSpan Cutoff, bool IsLocked, DateTime? LockedAt, string? Remarks) ResolveServiceDay(DateTime date, LunchServiceDay? day, bool? isCalendarSchoolDay = null)
     {
         var targetDate = date.Date;
@@ -149,6 +202,7 @@ public class LunchService : ILunchService
         var calendarMap = await GetCalendarDayMapAsync(start, end, cancellationToken);
 
         var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(start, end, cancellationToken);
+        var dayDishesMap = await GetServiceDayDishesMapAsync(start, end, cancellationToken);
 
         var result = new List<LunchServiceDayConfigDto>();
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
@@ -156,6 +210,16 @@ public class LunchService : ILunchService
             existingDays.TryGetValue(cur, out var day);
             bool? isCalSchoolDay = calendarMap.TryGetValue(cur, out var calFlag) ? calFlag : null;
             var resolved = ResolveServiceDay(cur, day, isCalSchoolDay);
+            dayDishesMap.TryGetValue(cur, out var dayDishes);
+            var menusDto = LunchMenuService.BuildDailyMenusDto(dayDishes);
+            var effectiveRemarks = resolved.Remarks;
+            if (menusDto != null)
+            {
+                var rawDayRemarks = day?.Remarks;
+                effectiveRemarks = (!string.IsNullOrWhiteSpace(rawDayRemarks) && rawDayRemarks != "Phục vụ bán trú bình thường")
+                    ? rawDayRemarks
+                    : (LunchMenuService.BuildSummaryRemarks(menusDto) ?? resolved.Remarks);
+            }
             result.Add(new LunchServiceDayConfigDto
             {
                 Date = cur,
@@ -163,7 +227,8 @@ public class LunchService : ILunchService
                 CutoffTime = resolved.Cutoff.ToString(@"hh\:mm"),
                 IsLocked = resolved.IsLocked,
                 LockedAt = resolved.LockedAt,
-                Remarks = resolved.Remarks
+                Remarks = effectiveRemarks,
+                Menus = menusDto
             });
         }
 
@@ -198,8 +263,55 @@ public class LunchService : ILunchService
         var targetDates = request.Dates.Select(d => d.Date).Distinct().OrderBy(d => d).ToList();
         var existingMap = await _unitOfWork.Repository<LunchServiceDay>()
             .Query()
+            .Include(d => d.Dishes)
+                .ThenInclude(sdd => sdd.Dish)
             .Where(d => targetDates.Contains(d.Date))
             .ToDictionaryAsync(d => d.Date.Date, cancellationToken);
+
+        WeeklyMenuTemplate? selectedTemplate = null;
+        if (request.MenuTemplateId.HasValue && request.IsServing)
+        {
+            var tplRepo = _unitOfWork.Repository<WeeklyMenuTemplate>();
+            if (tplRepo != null)
+            {
+                selectedTemplate = await tplRepo.Query()
+                    .Include(t => t.Items)
+                        .ThenInclude(i => i.Dish)
+                    .FirstOrDefaultAsync(t => t.Id == request.MenuTemplateId.Value && t.IsActive, cancellationToken);
+            }
+            if (selectedTemplate == null)
+            {
+                return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(
+                    SystemMessages.MSG11,
+                    new List<string> { "Không tìm thấy bộ Thực đơn tuần đang hoạt động." });
+            }
+        }
+
+        Dictionary<int, Dish> dishLookup = new();
+        if (selectedTemplate == null && request.MenusByMealType != null)
+        {
+            var requestedDishIds = request.MenusByMealType.Values
+                .Where(v => v != null)
+                .SelectMany(v => v)
+                .Distinct()
+                .ToList();
+            if (requestedDishIds.Count > 0)
+            {
+                var dishRepo = _unitOfWork.Repository<Dish>();
+                if (dishRepo != null)
+                {
+                    dishLookup = await dishRepo.Query()
+                        .Where(d => requestedDishIds.Contains(d.Id))
+                        .ToDictionaryAsync(d => d.Id, cancellationToken);
+                    if (dishLookup.Count != requestedDishIds.Count)
+                    {
+                        return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(
+                            SystemMessages.MSG01,
+                            new List<string> { "Một hoặc nhiều món ăn được chọn không tồn tại trong thư viện." });
+                    }
+                }
+            }
+        }
 
         var lockedDates = targetDates
             .Where(d => existingMap.TryGetValue(d, out var ex) && ex.IsLocked)
@@ -213,6 +325,9 @@ public class LunchService : ILunchService
         }
 
         var updatedDtos = new List<LunchServiceDayConfigDto>();
+        var dayDishRepo = _unitOfWork.Repository<LunchServiceDayDish>();
+        var savedEntities = new List<LunchServiceDay>();
+        var preserveExistingMenu = selectedTemplate == null && request.MenusByMealType == null;
 
         foreach (var d in targetDates)
         {
@@ -220,7 +335,10 @@ public class LunchService : ILunchService
             {
                 existing.IsServing = request.IsServing;
                 existing.CutoffTime = parsedCutoff;
-                existing.Remarks = normalizedRemarks;
+                if (normalizedRemarks != null || !preserveExistingMenu || existing.Dishes.Count == 0 || !request.IsServing)
+                {
+                    existing.Remarks = normalizedRemarks;
+                }
             }
             else
             {
@@ -234,15 +352,107 @@ public class LunchService : ILunchService
                 };
                 await _unitOfWork.Repository<LunchServiceDay>().AddAsync(existing, cancellationToken);
             }
+            savedEntities.Add(existing);
+        }
 
+        if (selectedTemplate != null)
+        {
+            foreach (var existing in savedEntities)
+            {
+                foreach (var oldDish in existing.Dishes.ToList())
+                {
+                    if (dayDishRepo != null)
+                    {
+                        await dayDishRepo.DeleteAsync(oldDish, cancellationToken);
+                    }
+                    existing.Dishes.Remove(oldDish);
+                }
+
+                var dow = existing.Date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)existing.Date.DayOfWeek;
+                var tplItems = selectedTemplate.Items
+                    .Where(i => i.DayOfWeek == dow && i.Dish != null && i.Dish.IsActive)
+                    .ToList();
+                if (tplItems.Count == 0 && dow >= 6)
+                {
+                    tplItems = selectedTemplate.Items
+                        .Where(i => i.DayOfWeek == 1 && i.Dish != null && i.Dish.IsActive)
+                        .ToList();
+                }
+
+                var newDayDishes = new List<LunchServiceDayDish>();
+                foreach (var item in tplItems)
+                {
+                    var entry = new LunchServiceDayDish
+                    {
+                        LunchServiceDayId = existing.Id,
+                        LunchServiceDay = existing,
+                        MealType = item.MealType,
+                        DishId = item.DishId,
+                        Dish = item.Dish,
+                        SortOrder = item.SortOrder
+                    };
+                    existing.Dishes.Add(entry);
+                    newDayDishes.Add(entry);
+                }
+
+                var builtMenus = LunchMenuService.BuildDailyMenusDto(newDayDishes);
+                if (string.IsNullOrWhiteSpace(normalizedRemarks))
+                {
+                    existing.Remarks = LunchMenuService.BuildSummaryRemarks(builtMenus);
+                }
+            }
+        }
+        else if (request.MenusByMealType != null && dayDishRepo != null)
+        {
+            foreach (var existing in savedEntities)
+            {
+                foreach (var oldDish in existing.Dishes.ToList())
+                {
+                    await dayDishRepo.DeleteAsync(oldDish, cancellationToken);
+                    existing.Dishes.Remove(oldDish);
+                }
+
+                var newDayDishes = new List<LunchServiceDayDish>();
+                foreach (var kv in request.MenusByMealType)
+                {
+                    if (kv.Value == null) continue;
+                    int sort = 1;
+                    foreach (var dishId in kv.Value.Distinct())
+                    {
+                        if (!dishLookup.TryGetValue(dishId, out var dishObj)) continue;
+                        var entry = new LunchServiceDayDish
+                        {
+                            LunchServiceDayId = existing.Id,
+                            LunchServiceDay = existing,
+                            MealType = kv.Key,
+                            DishId = dishId,
+                            Dish = dishObj,
+                            SortOrder = sort++
+                        };
+                        existing.Dishes.Add(entry);
+                        newDayDishes.Add(entry);
+                    }
+                }
+
+                var builtMenus = LunchMenuService.BuildDailyMenusDto(newDayDishes);
+                if (string.IsNullOrWhiteSpace(normalizedRemarks))
+                {
+                    existing.Remarks = LunchMenuService.BuildSummaryRemarks(builtMenus);
+                }
+            }
+        }
+
+        foreach (var existing in savedEntities)
+        {
             updatedDtos.Add(new LunchServiceDayConfigDto
             {
-                Date = d,
+                Date = existing.Date,
                 IsServing = existing.IsServing,
                 CutoffTime = existing.CutoffTime.ToString(@"hh\:mm"),
                 IsLocked = existing.IsLocked,
                 LockedAt = UtcDateTimeHelper.Normalize(existing.LockedAt),
-                Remarks = existing.Remarks
+                Remarks = existing.Remarks,
+                Menus = LunchMenuService.BuildDailyMenusDto(existing.Dishes)
             });
         }
 
@@ -388,6 +598,13 @@ public class LunchService : ILunchService
             .ToDictionaryAsync(r => r.Date.Date, cancellationToken);
 
         var calendarSchoolDays = await _calendarService.GetSchoolDaysInRangeAsync(startOfMonth, endOfMonth, cancellationToken);
+        var dayDishesMap = await GetServiceDayDishesMapAsync(startOfMonth, endOfMonth, cancellationToken);
+        var profileMap = await GetStudentMealProfileMapAsync(new[] { studentId }, cancellationToken);
+        profileMap.TryGetValue(studentId, out var studentProfile);
+        var studentProfileDto = LunchMenuService.BuildProfileDto(student, studentProfile);
+        var studentAllergyTags = studentProfileDto.AllergenTags;
+        var trustedAllergyNotes = studentProfileDto.AllergyNotes;
+        var contextualStudentNote = AllergenCatalog.ExtractExplicitAllergyNote(student.SpecialNeedsNotes);
 
         // BD-02: Lấy các ngày đang có đơn xin nghỉ đã duyệt (buổi Sáng / Cả ngày, không giữ suất ăn) để hiển thị rõ trên lịch bán trú phụ huynh
         var approvedLeaveRanges = new List<(DateTime Start, DateTime End)>();
@@ -420,6 +637,12 @@ public class LunchService : ILunchService
             var resolved = ResolveServiceDay(cur, sDay, isCalSchoolDay);
             var cutoffPassed = IsCutoffPassed(cur, resolved.Cutoff, resolved.IsLocked);
             var hasApprovedLeave = approvedLeaveRanges.Any(r => r.Start <= cur && r.End >= cur);
+            dayDishesMap.TryGetValue(cur, out var dayDishes);
+            var menusDto = resolved.IsServing ? LunchMenuService.BuildDailyMenusDto(dayDishes) : null;
+            var effectiveMealType = reg?.MealType ?? studentProfileDto.DefaultMealType;
+            var servedDishes = resolved.IsServing ? SelectDishesForMealType(dayDishes, effectiveMealType) : new List<Dish>();
+            var contextualDayNote = contextualStudentNote ?? AllergenCatalog.ExtractExplicitAllergyNote(reg?.Remarks);
+            var conflicts = AllergenCatalog.DetectConflicts(studentAllergyTags, trustedAllergyNotes, servedDishes, contextualDayNote);
 
             days.Add(new StudentLunchDayDto
             {
@@ -430,10 +653,12 @@ public class LunchService : ILunchService
                 IsCutoffPassed = cutoffPassed,
                 HasApprovedLeave = hasApprovedLeave,
                 ServiceRemarks = resolved.Remarks,
+                Menus = menusDto,
                 RegistrationId = reg?.Id,
                 IsRegistered = reg != null && reg.IsActive,
                 MealType = reg?.MealType,
                 StudentRemarks = reg?.Remarks,
+                AllergyConflicts = conflicts,
                 CancellationSource = (reg != null && !reg.IsActive) ? reg.CancellationSource : null,
                 CancelledAt = (reg != null && !reg.IsActive) ? UtcDateTimeHelper.Normalize(reg.CancelledAt) : null,
                 CancellationReason = (reg != null && !reg.IsActive) ? reg.CancellationReason : null
@@ -456,6 +681,7 @@ public class LunchService : ILunchService
             TotalServingDays = days.Count(d => d.IsServing),
             TotalRegisteredDays = days.Count(d => d.IsRegistered),
             TotalCancelledDays = days.Count(d => !d.IsRegistered && d.CancellationSource != null),
+            MealProfile = studentProfileDto,
             Days = days
         };
 
@@ -476,9 +702,38 @@ public class LunchService : ILunchService
             return ApiResponse<BatchLunchRegistrationResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh và ít nhất một ngày phục vụ." });
         }
 
-        // D-B: Chế độ ăn đặc biệt bắt buộc có mô tả dị ứng / kiêng khem cụ thể
+        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
+        var profileMap = await GetStudentMealProfileMapAsync(new[] { request.StudentId }, cancellationToken);
+        profileMap.TryGetValue(request.StudentId, out var mealProfile);
+
+        // Phụ huynh chỉ được đăng ký bữa ăn theo chế độ nhà trường phân bổ (mặc định StandardLunch); không được tự chọn loại suất riêng từng bữa
+        var effectiveMealType = isStaffOrAdmin
+            ? request.MealType
+            : (mealProfile?.DefaultMealType ?? MealType.StandardLunch);
+
+        // D-B: Chế độ ăn đặc biệt bắt buộc có mô tả dị ứng / kiêng khem cụ thể (fallback từ StudentMealProfile).
+        // Suất thường không tự chép AllergyNotes vào Remarks để tách bạch hồ sơ dị ứng phụ huynh với ghi chú chế biến bếp từng ngày.
         var trimmedRemarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
-        if (request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
+        if (effectiveMealType == MealType.SpecialDiet && trimmedRemarks == null && mealProfile != null)
+        {
+            if (!string.IsNullOrWhiteSpace(mealProfile.AllergyNotes))
+            {
+                trimmedRemarks = mealProfile.AllergyNotes.Trim();
+            }
+            else
+            {
+                var tagLabels = AllergenCatalog.ParseTags(mealProfile.AllergenTags)
+                    .Select(AllergenCatalog.GetLabel)
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .ToList();
+                if (tagLabels.Count > 0)
+                {
+                    trimmedRemarks = $"Dị ứng: {string.Join(", ", tagLabels)}";
+                }
+            }
+        }
+
+        if (effectiveMealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
         {
             return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
                 SystemMessages.MSG01,
@@ -502,7 +757,6 @@ public class LunchService : ILunchService
             return ApiResponse<BatchLunchRegistrationResultDto>.Fail(SystemMessages.MSG11);
         }
 
-        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
         if (!isStaffOrAdmin && userId > 0)
         {
             var isLinked = await IsParentLinkedToStudentAsync(userId, request.StudentId, cancellationToken);
@@ -608,8 +862,8 @@ public class LunchService : ILunchService
                 // Bản ghi trước đó đã hủy -> kích hoạt lại thành bản đăng ký hợp lệ
                 existing.IsActive = true;
                 existing.IsWaitlisted = false;
-                existing.MealType = request.MealType;
-                existing.Remarks = request.Remarks?.Trim();
+                existing.MealType = effectiveMealType;
+                existing.Remarks = trimmedRemarks;
                 existing.CancellationSource = null;
                 existing.CancelledAt = null;
                 existing.CancelledByUserId = null;
@@ -622,10 +876,10 @@ public class LunchService : ILunchService
                 {
                     StudentId = request.StudentId,
                     Date = d,
-                    MealType = request.MealType,
+                    MealType = effectiveMealType,
                     IsActive = true,
                     IsWaitlisted = false,
-                    Remarks = request.Remarks?.Trim(),
+                    Remarks = trimmedRemarks,
                     CreatedAt = DateTime.UtcNow
                 };
                 await _unitOfWork.Repository<LunchRegistration>().AddAsync(newReg, cancellationToken);
@@ -1077,11 +1331,29 @@ public class LunchService : ILunchService
             }
         }
 
-        // 4. Danh sách học sinh tối thiểu phục vụ vận hành (UC-33)
+        // 4. Danh sách học sinh tối thiểu phục vụ vận hành (UC-33) + Thực đơn thật & Cảnh báo dị ứng tự động
+        var dayDishesMap = await GetServiceDayDishesMapAsync(targetDate, targetDate, cancellationToken);
+        dayDishesMap.TryGetValue(targetDate, out var todayDishes);
+        var todayMenusDto = resolved.IsServing ? LunchMenuService.BuildDailyMenusDto(todayDishes) : null;
+        var profileMap = await GetStudentMealProfileMapAsync(scopedRegistrations.Select(r => r.StudentId), cancellationToken);
+
         var studentMeals = scopedRegistrations
             .Select(r =>
             {
                 var activeCa = GetPrimaryClassAssignment(r);
+                profileMap.TryGetValue(r.StudentId, out var mealProfile);
+                var studentTags = mealProfile != null ? AllergenCatalog.ParseTags(mealProfile.AllergenTags) : new List<string>();
+                var trustedAllergyNotes = string.IsNullOrWhiteSpace(mealProfile?.AllergyNotes) ? null : mealProfile.AllergyNotes.Trim();
+                var contextualNotes = AllergenCatalog.ExtractExplicitAllergyNote(r.Student?.SpecialNeedsNotes)
+                    ?? AllergenCatalog.ExtractExplicitAllergyNote(r.Remarks);
+
+                var servedDishes = resolved.IsServing ? SelectDishesForMealType(todayDishes, r.MealType) : new List<Dish>();
+                var conflicts = r.IsActive
+                    ? AllergenCatalog.DetectConflicts(studentTags, trustedAllergyNotes, servedDishes, contextualNotes)
+                    : new List<string>();
+
+                var allergyWarning = AllergenCatalog.FormatAllergySummary(studentTags, trustedAllergyNotes, contextualNotes);
+
                 return new StudentMealOperationItemDto
                 {
                     RegistrationId = r.Id,
@@ -1094,9 +1366,10 @@ public class LunchService : ILunchService
                     MealType = r.MealType,
                     IsActive = r.IsActive,
                     Remarks = r.Remarks,
-                    AllergyWarning = !string.IsNullOrWhiteSpace(r.Student?.SpecialNeedsNotes)
-                        ? r.Student.SpecialNeedsNotes
-                        : (r.Remarks != null && r.Remarks.Contains("Dị ứng", StringComparison.OrdinalIgnoreCase) ? r.Remarks : null),
+                    StudentAllergenTags = studentTags,
+                    StudentAllergyNotes = trustedAllergyNotes,
+                    AllergyWarning = allergyWarning,
+                    AllergyConflicts = conflicts,
                     CancellationSource = r.CancellationSource,
                     CancelledAt = UtcDateTimeHelper.Normalize(r.CancelledAt),
                     CancellationReason = r.CancellationReason
@@ -1173,6 +1446,7 @@ public class LunchService : ILunchService
             LockedByName = lockedByName,
             CutoffTime = resolved.Cutoff.ToString(@"hh\:mm"),
             ServiceRemarks = resolved.Remarks,
+            Menus = todayMenusDto,
             CanManage = canManage,
             TotalInitialRegistered = totalInitial,
             TotalAutoCancelled = totalCancelled,
@@ -1363,20 +1637,21 @@ public class LunchService : ILunchService
         UpdateLunchRegistrationMealTypeDto request,
         CancellationToken cancellationToken = default)
     {
+        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
+        if (!isStaffOrAdmin)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG10,
+                new List<string> { "Phụ huynh không có quyền tự thay đổi loại suất ăn từng bữa; vui lòng khai báo dị ứng để Tổ Bán trú bố trí khẩu phần phù hợp." });
+        }
+
         if (request.StudentId <= 0)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01);
         }
 
-        // D-B & D-C: Chế độ ăn đặc biệt bắt buộc có mô tả; ghi chú không vượt quá 250 ký tự
+        // D-C: Ghi chú không vượt quá 250 ký tự
         var trimmedRemarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim();
-        if (request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
-        {
-            return ApiResponse<bool>.Fail(
-                SystemMessages.MSG01,
-                new List<string> { "Khi chọn chế độ ăn đặc biệt, vui lòng nhập mô tả dị ứng / kiêng khem cụ thể để nhà bếp chuẩn bị." });
-        }
-
         if (trimmedRemarks != null && trimmedRemarks.Length > MaxRemarksLength)
         {
             return ApiResponse<bool>.Fail(
@@ -1384,17 +1659,38 @@ public class LunchService : ILunchService
                 new List<string> { $"Ghi chú suất ăn không được vượt quá {MaxRemarksLength} ký tự." });
         }
 
-        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
-        if (!isStaffOrAdmin)
+        var targetDate = request.Date.Date;
+
+        // D-B: Nếu phân bổ Chế độ đặc biệt, chỉ bắt buộc nhập ghi chú chế biến bếp khi:
+        // (1) ngày đó chưa cấu hình thực đơn Đặc biệt riêng, HOẶC (2) thực đơn Đặc biệt vẫn còn món trùng dị ứng của học sinh.
+        if (request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
         {
-            var isLinked = await IsParentLinkedToStudentAsync(userId, request.StudentId, cancellationToken);
-            if (!isLinked)
+            var dayDishesMap = await GetServiceDayDishesMapAsync(targetDate, targetDate, cancellationToken);
+            dayDishesMap.TryGetValue(targetDate, out var todayDishes);
+            var specialMenuDishes = todayDishes?
+                .Where(d => d.MealType == MealType.SpecialDiet && d.Dish != null)
+                .Select(d => d.Dish)
+                .ToList() ?? new List<Dish>();
+
+            if (specialMenuDishes.Count == 0)
             {
-                return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+                return ApiResponse<bool>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Khi chọn chế độ ăn đặc biệt mà ngày này chưa cấu hình thực đơn Đặc biệt riêng, vui lòng nhập mô tả món / kiêng khem để nhà bếp chuẩn bị." });
+            }
+
+            var profileMap = await GetStudentMealProfileMapAsync(new[] { request.StudentId }, cancellationToken);
+            profileMap.TryGetValue(request.StudentId, out var mealProfile);
+            var studentTags = mealProfile != null ? AllergenCatalog.ParseTags(mealProfile.AllergenTags) : new List<string>();
+            var remainingConflicts = AllergenCatalog.DetectConflicts(studentTags, mealProfile?.AllergyNotes, specialMenuDishes);
+            if (remainingConflicts.Count > 0)
+            {
+                return ApiResponse<bool>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Thực đơn Đặc biệt ngày này vẫn còn món trùng dị ứng ({string.Join("; ", remainingConflicts)}). Vui lòng nhập ghi chú đổi/bỏ món cho nhà bếp." });
             }
         }
 
-        var targetDate = request.Date.Date;
         var reg = await _unitOfWork.Repository<LunchRegistration>()
             .Query()
             .FirstOrDefaultAsync(r => r.StudentId == request.StudentId && r.Date == targetDate, cancellationToken);
@@ -1409,9 +1705,11 @@ public class LunchService : ILunchService
             .FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken);
 
         var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
-        if (IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
+        if (resolved.IsLocked)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG27);
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG27,
+                new List<string> { "Ngày bán trú đã khóa sổ nấu, vui lòng mở khóa trước khi điều chỉnh chế độ khẩu phần." });
         }
 
         var oldVal = new { reg.MealType, reg.Remarks };

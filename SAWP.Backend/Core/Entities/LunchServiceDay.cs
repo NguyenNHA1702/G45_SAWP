@@ -9,4 +9,6 @@ public class LunchServiceDay
     public bool IsLocked { get; set; } = false;
     public DateTime? LockedAt { get; set; }
     public string? Remarks { get; set; }
+
+    public virtual ICollection<LunchServiceDayDish> Dishes { get; set; } = new List<LunchServiceDayDish>();
 }

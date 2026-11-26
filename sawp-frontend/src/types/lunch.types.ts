@@ -1,5 +1,95 @@
 export type MealType = 'StandardLunch' | 'VegetarianLunch' | 'SpecialDiet' | 1 | 2 | 3;
 
+export type DishCategory = 'Starch' | 'MainDish' | 'SideDish' | 'Soup' | 'Dessert' | 1 | 2 | 3 | 4 | 5;
+
+export interface DishSummary {
+  id: number;
+  name: string;
+  category: DishCategory;
+  allergenTags: string[];
+}
+
+export interface Dish extends DishSummary {
+  suitableMealTypes: MealType[];
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface UpsertDishPayload {
+  name: string;
+  category: number;
+  suitableMealTypes: number[];
+  allergenTags: string[];
+  isActive: boolean;
+}
+
+export interface DailyMenusByMealType {
+  standard: DishSummary[];
+  vegetarian: DishSummary[];
+  special: DishSummary[];
+}
+
+export interface WeeklyMenuTemplateItem {
+  dayOfWeek: number;
+  mealType: MealType;
+  dishId: number;
+  dishName: string;
+  category: DishCategory;
+  allergenTags: string[];
+  sortOrder: number;
+}
+
+export interface WeeklyMenuTemplate {
+  id: number;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  updatedAt: string;
+  items: WeeklyMenuTemplateItem[];
+}
+
+export interface WeeklyMenuTemplateItemInput {
+  dayOfWeek: number;
+  mealType: number;
+  dishId: number;
+  sortOrder: number;
+}
+
+export interface UpsertWeeklyMenuTemplatePayload {
+  name: string;
+  description?: string;
+  isActive: boolean;
+  items: WeeklyMenuTemplateItemInput[];
+}
+
+export interface ApplyMenuTemplatePayload {
+  fromDate: string;
+  toDate: string;
+  cutoffTime?: string;
+  overwriteExistingMenus: boolean;
+}
+
+export interface ApplyMenuTemplateResult {
+  appliedDates: string[];
+  skippedLockedDates: string[];
+  skippedNonSchoolDates: string[];
+  skippedExistingDates: string[];
+}
+
+export interface StudentMealProfile {
+  studentId: number;
+  defaultMealType: MealType;
+  allergenTags: string[];
+  allergyNotes?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface UpsertStudentMealProfilePayload {
+  defaultMealType: number;
+  allergenTags: string[];
+  allergyNotes?: string;
+}
+
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff' | 1 | 2 | 3 | 4;
 
 export interface ClassHeadcount {
@@ -58,7 +148,10 @@ export interface StudentMealOperationItem {
   mealType: MealType;
   isActive: boolean;
   remarks?: string | null;
+  studentAllergenTags?: string[];
+  studentAllergyNotes?: string | null;
   allergyWarning?: string | null;
+  allergyConflicts?: string[];
   cancellationSource?: LunchCancellationSource | null;
   cancelledAt?: string | null;
   cancellationReason?: string | null;
@@ -72,6 +165,7 @@ export interface DailyMealBoard {
   lockedByName?: string | null;
   cutoffTime: string;
   serviceRemarks?: string | null;
+  menus?: DailyMenusByMealType | null;
   canManage: boolean;
   totalInitialRegistered: number;
   totalAutoCancelled: number;
@@ -106,6 +200,7 @@ export interface LunchServiceDayConfig {
   isLocked: boolean;
   lockedAt?: string | null;
   remarks?: string | null;
+  menus?: DailyMenusByMealType | null;
 }
 
 export interface UpsertLunchServiceDaysPayload {
@@ -113,6 +208,8 @@ export interface UpsertLunchServiceDaysPayload {
   isServing: boolean;
   cutoffTime: string;
   remarks?: string;
+  menuTemplateId?: number;
+  menusByMealType?: Record<number, number[]>;
 }
 
 // ---- UC-31: Phụ huynh xem lịch và trạng thái đăng ký của con ----
@@ -124,10 +221,12 @@ export interface StudentLunchDay {
   isCutoffPassed: boolean;
   hasApprovedLeave?: boolean;
   serviceRemarks?: string | null;
+  menus?: DailyMenusByMealType | null;
   registrationId?: number | null;
   isRegistered: boolean;
   mealType?: MealType | null;
   studentRemarks?: string | null;
+  allergyConflicts?: string[];
   cancellationSource?: LunchCancellationSource | null;
   cancelledAt?: string | null;
   cancellationReason?: string | null;
@@ -142,6 +241,7 @@ export interface StudentLunchSchedule {
   totalServingDays: number;
   totalRegisteredDays: number;
   totalCancelledDays: number;
+  mealProfile?: StudentMealProfile | null;
   days: StudentLunchDay[];
 }
 

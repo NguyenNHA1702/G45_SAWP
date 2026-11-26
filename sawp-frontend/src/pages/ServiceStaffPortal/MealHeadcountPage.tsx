@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   FileSpreadsheet,
   Settings,
-  Download,
   Users,
   Filter,
   Search,
@@ -20,15 +19,32 @@ import {
   ChevronRight,
   CalendarRange,
   Calendar,
-  Plus,
+  BookOpen,
+  Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
-import type { ClassMealSummary, DailyMealBoard, LunchPeriodReport, StudentMealOperationItem } from '../../types/lunch.types';
+import type {
+  ClassMealSummary,
+  DailyMealBoard,
+  DailyMenusByMealType,
+  DishSummary,
+  LunchPeriodReport,
+  StudentMealOperationItem,
+  WeeklyMenuTemplate,
+} from '../../types/lunch.types';
 import { LUNCH_CUTOFF_DEFAULT_TIME, LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { SYSTEM_MESSAGES, getSystemMessage } from '../../constants/messages';
+import {
+  detectLiveDishConflicts,
+  getAllergenFullLabel,
+  getAllergenShortLabel,
+  normalizeMealTypeNumber,
+} from '../../constants/allergens';
 import { GeometricModal } from '../../components/common/GeometricModal';
-import { downloadCsv } from '../../utils/csv';
+import { DishLibraryModal } from '../../components/lunch/DishLibraryModal';
+import { WeeklyMenuTemplateModal } from '../../components/lunch/WeeklyMenuTemplateModal';
 import { formatViTime } from '../../utils/date';
 import { asApiError } from '../../utils/apiError';
 
@@ -43,34 +59,21 @@ const COURSE_SLOTS = [
   { role: 'Tráng miệng • Vitamin', emoji: '🍌', bg: '#FFFDF5', accent: '#EA580C' },
 ];
 
-const DEFAULT_WEEKDAY_MENUS = [
-  'Cơm trắng, Thịt gà kho nấm, Canh bí đỏ nấu tôm, Chuối tiêu',
-  'Cơm trắng, Cá basa sốt cà chua, Rau cải xào tỏi, Canh cua mồng tơi, Sữa chua',
-  'Cơm trắng, Thịt lợn rim tiêu, Đậu phụ nhồi thịt, Canh rau ngót thịt băm, Dưa hấu',
-  'Cơm trắng, Trứng đúc thịt, Su su xào cà rốt, Canh sườn nấu củ quả, Cam tươi',
-  'Cơm trắng, Bò hầm khoai tây cà rốt, Bắp cải luộc, Canh chua cá, Bánh flan',
-];
-
-const MENU_SUGGESTIONS = [
-  'Cơm trắng',
-  'Gà kho nấm',
-  'Thịt kho trứng cút',
-  'Sườn xào chua ngọt',
-  'Cá phi lê sốt cà',
-  'Canh bí đỏ nấu tôm',
-  'Canh cua mồng tơi',
-  'Chuối tiêu tráng miệng',
-  'Sữa chua',
-];
-
 const MEAL_TYPE_TEXT: Record<string, string> = {
-  StandardLunch: 'Tiêu chuẩn',
-  VegetarianLunch: 'Ăn chay',
-  SpecialDiet: 'Đặc biệt',
-  '1': 'Tiêu chuẩn',
-  '2': 'Ăn chay',
-  '3': 'Đặc biệt',
+  StandardLunch: '🍱 Tiêu chuẩn',
+  VegetarianLunch: '🥗 Ăn chay',
+  SpecialDiet: '⚕️ Đặc biệt',
+  '1': '🍱 Tiêu chuẩn',
+  '2': '🥗 Ăn chay',
+  '3': '⚕️ Đặc biệt',
 };
+
+function getMealTypeBadgeClass(mealType: string | number): string {
+  const num = normalizeMealTypeNumber(mealType);
+  if (num === 2) return 'badge--amber';
+  if (num === 3) return 'badge--pink';
+  return 'badge--mint';
+}
 
 function formatCleanRemark(remarks?: string | null): string {
   const raw = (remarks || '').trim();
@@ -82,10 +85,29 @@ function formatCleanRemark(remarks?: string | null): string {
   return raw;
 }
 
-// ponytail: derive concrete dish list for each student based on daily menu + mealType + allergy remarks
+function getDistinctKitchenRemark(item: StudentMealOperationItem): string {
+  const cleanRegRemark = formatCleanRemark(item.remarks);
+  if (!cleanRegRemark) return '';
+  const profileNotes = (item.studentAllergyNotes || '').trim();
+  if (profileNotes && cleanRegRemark.toLowerCase() === profileNotes.toLowerCase()) {
+    return '';
+  }
+  return cleanRegRemark;
+}
+
+function hasStudentAllergyInfo(item: StudentMealOperationItem): boolean {
+  return (
+    (item.studentAllergenTags?.length ?? 0) > 0 ||
+    Boolean(item.studentAllergyNotes?.trim()) ||
+    Boolean(item.allergyWarning?.trim()) ||
+    (item.allergyConflicts?.length ?? 0) > 0
+  );
+}
+
 function getStudentDishes(
   mealType: string | number,
-  dailyMenu?: string | null,
+  dailyMenus?: DailyMenusByMealType | null,
+  dailyMenuRemarks?: string | null,
   studentRemarks?: string | null
 ): string[] {
   const rawRemarks = (studentRemarks || '').trim();
@@ -97,7 +119,23 @@ function getStudentDishes(
     }
   }
 
-  const cleanMenu = (dailyMenu || '')
+  const mtNum = normalizeMealTypeNumber(mealType);
+  if (dailyMenus) {
+    const structured =
+      mtNum === 2
+        ? dailyMenus.vegetarian
+        : mtNum === 3
+          ? dailyMenus.special
+          : dailyMenus.standard;
+    if (structured && structured.length > 0) {
+      return structured.map((d) => d.name);
+    }
+    if (dailyMenus.standard && dailyMenus.standard.length > 0) {
+      return dailyMenus.standard.map((d) => d.name);
+    }
+  }
+
+  const cleanMenu = (dailyMenuRemarks || '')
     .replace(/^Thực đơn:\s*/i, '')
     .replace(/^Thực đơn Tân Lập A:\s*/i, '')
     .trim();
@@ -105,37 +143,46 @@ function getStudentDishes(
     .split(',')
     .map((d) => d.trim())
     .filter(Boolean);
-  const baseDishes =
-    parsed.length >= 2 && !cleanMenu.toLowerCase().includes('phục vụ bán trú bình thường')
-      ? parsed
-      : ['Cơm trắng dẻo', 'Thịt gà kho nấm hương', 'Rau cải ngọt xào tỏi', 'Canh bí đỏ nấu tôm tươi', 'Chuối tiêu tráng miệng'];
-
-  if (mealType === 'VegetarianLunch' || mealType === 2 || mealType === '2') {
-    return ['Cơm trắng dẻo', 'Đậu phụ sốt cà chua', 'Nấm đùi gà kho xì dầu', 'Rau củ luộc', 'Canh nấm hạt sen', 'Trái cây tráng miệng'];
+  if (parsed.length >= 2 && !cleanMenu.toLowerCase().includes('phục vụ bán trú bình thường')) {
+    return parsed;
   }
-  if (mealType === 'SpecialDiet' || mealType === 3 || mealType === '3') {
-    return ['Cơm mềm / Cháo dinh dưỡng', 'Thịt nạc thăn hấp mềm', 'Rau củ hấp tươi', 'Canh rau ngót thịt băm', 'Sữa chua men sống'];
-  }
-  return baseDishes;
+  return [];
 }
 
-function getWeekdaysOfDate(isoDate: string): string[] {
-  const d = new Date(isoDate);
-  const day = d.getDay(); // 0 CN, 1 T2 ...
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  const monday = new Date(d);
-  monday.setDate(d.getDate() + diffToMonday);
+function getIsoDayOfWeek(isoDate: string): number {
+  const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number);
+  const jsDay = new Date(y, m - 1, d).getDay();
+  return jsDay === 0 ? 7 : jsDay;
+}
+
+function getWeekMonToSatOfDate(isoDate: string): string[] {
+  const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number);
+  const base = new Date(y, m - 1, d);
+  const jsDay = base.getDay();
+  const diffToMonday = jsDay === 0 ? -6 : 1 - jsDay;
+  const monday = new Date(y, m - 1, d + diffToMonday);
 
   const days: string[] = [];
-  for (let i = 0; i < 5; i++) {
-    const cur = new Date(monday);
-    cur.setDate(monday.getDate() + i);
-    const yyyy = cur.getFullYear();
-    const mm = String(cur.getMonth() + 1).padStart(2, '0');
-    const dd = String(cur.getDate()).padStart(2, '0');
-    days.push(`${yyyy}-${mm}-${dd}`);
+  for (let i = 0; i < 6; i++) {
+    const cur = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    days.push(
+      `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
+    );
   }
   return days;
+}
+
+function previewTemplateForDate(tpl: WeeklyMenuTemplate, isoDate: string) {
+  const dow = getIsoDayOfWeek(isoDate);
+  let dayItems = tpl.items.filter((i) => i.dayOfWeek === dow);
+  if (dayItems.length === 0 && dow >= 6) {
+    dayItems = tpl.items.filter((i) => i.dayOfWeek === 1);
+  }
+  return {
+    standard: dayItems.filter((i) => normalizeMealTypeNumber(i.mealType) === 1).map((i) => i.dishName),
+    vegetarian: dayItems.filter((i) => normalizeMealTypeNumber(i.mealType) === 2).map((i) => i.dishName),
+    special: dayItems.filter((i) => normalizeMealTypeNumber(i.mealType) === 3).map((i) => i.dishName),
+  };
 }
 
 export default function MealHeadcountPage() {
@@ -157,6 +204,7 @@ export default function MealHeadcountPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'CANCELLED'>('ACTIVE');
+  const [dietFilter, setDietFilter] = useState<'ALL' | 'SPECIAL_ALLERGY' | 'CONFLICT_ONLY'>('ALL');
 
   // Phân trang (Pagination) chuẩn theo phong cách Hồ sơ học sinh
   const [pageIndex, setPageIndex] = useState<number>(1);
@@ -176,17 +224,141 @@ export default function MealHeadcountPage() {
     `Đã kiểm tra đối chiếu danh sách điểm danh và đơn nghỉ lúc ${LUNCH_CUTOFF_LABEL}`
   );
 
-  // Modal UC-32: Cấu hình ngày phục vụ, hạn đăng ký/hủy & thực đơn
+  // Modal UC-32: Cấu hình ngày phục vụ, hạn đăng ký/hủy & chọn Thực đơn tuần
   const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
+  const [showDishLibrary, setShowDishLibrary] = useState<boolean>(false);
+  const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
+  const [menuTemplates, setMenuTemplates] = useState<WeeklyMenuTemplate[]>([]);
   const [cfgIsServing, setCfgIsServing] = useState<boolean>(true);
   const [cfgCutoffTime, setCfgCutoffTime] = useState<string>(LUNCH_CUTOFF_DEFAULT_TIME);
+  const [cfgSelectedTemplateId, setCfgSelectedTemplateId] = useState<number | ''>('');
   const [cfgRemarks, setCfgRemarks] = useState<string>('');
   const [cfgApplyFullWeek, setCfgApplyFullWeek] = useState<boolean>(false);
-  const [cfgWeeklyMenus, setCfgWeeklyMenus] = useState<Record<string, string>>({});
 
-  // Modal Xem chi tiết khẩu phần từng lớp
+  // Modal Xem chi tiết khẩu phần từng lớp & phân bổ khẩu phần đặc thù (Tổ Bán trú)
   const [detailClass, setDetailClass] = useState<ClassMealSummary | null>(null);
   const [selectedStudentTray, setSelectedStudentTray] = useState<StudentMealOperationItem | null>(null);
+  const [trayMealType, setTrayMealType] = useState<number>(1);
+  const [trayRemarks, setTrayRemarks] = useState<string>('');
+  const [trayApplyDefault, setTrayApplyDefault] = useState<boolean>(false);
+  const [savingTrayDiet, setSavingTrayDiet] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (selectedStudentTray) {
+      setTrayMealType(normalizeMealTypeNumber(selectedStudentTray.mealType));
+      setTrayRemarks(getDistinctKitchenRemark(selectedStudentTray));
+      setTrayApplyDefault(false);
+    }
+  }, [selectedStudentTray]);
+
+  const evaluateTrayConflicts = (studentItem: StudentMealOperationItem, mealTypeNum: number) => {
+    const isPreviewingNewDiet = mealTypeNum !== normalizeMealTypeNumber(studentItem.mealType);
+    const dishes = getStudentDishes(
+      mealTypeNum,
+      board?.menus,
+      board?.serviceRemarks,
+      isPreviewingNewDiet ? undefined : studentItem.remarks
+    ).filter((d) => !d.startsWith('(Lưu ý'));
+
+    const structuredDishes: DishSummary[] = board?.menus
+      ? ((mealTypeNum === 2
+          ? board.menus.vegetarian
+          : mealTypeNum === 3
+            ? board.menus.special
+            : board.menus.standard) ?? [])
+      : [];
+    const effectiveStructured =
+      structuredDishes.length > 0 ? structuredDishes : (board?.menus?.standard ?? []);
+
+    const dishObjectsForCheck =
+      !isPreviewingNewDiet && (studentItem.remarks || '').includes('|')
+        ? dishes.map((name) => {
+            const matched = effectiveStructured.find((sd) => sd.name.toLowerCase() === name.toLowerCase());
+            return matched ?? { name, allergenTags: [] };
+          })
+        : effectiveStructured.length > 0
+          ? effectiveStructured
+          : dishes.map((name) => ({ name, allergenTags: [] }));
+
+    const { conflicts: liveConflicts, conflictingDishNames } = detectLiveDishConflicts(
+      studentItem.studentAllergenTags,
+      studentItem.studentAllergyNotes,
+      dishObjectsForCheck,
+      studentItem.allergyWarning || studentItem.remarks
+    );
+
+    const hasDedicatedSpecialMenu = (board?.menus?.special?.length ?? 0) > 0;
+    const requiresKitchenNote =
+      mealTypeNum === 3 && (!hasDedicatedSpecialMenu || liveConflicts.length > 0);
+
+    return {
+      isPreviewingNewDiet,
+      dishes,
+      liveConflicts,
+      conflictingDishNames,
+      hasStudentAllergyProfile: hasStudentAllergyInfo(studentItem),
+      hasDedicatedSpecialMenu,
+      requiresKitchenNote,
+    };
+  };
+
+  const handleSaveStudentDiet = async () => {
+    if (!selectedStudentTray) return;
+    const { liveConflicts, requiresKitchenNote, hasDedicatedSpecialMenu } = evaluateTrayConflicts(
+      selectedStudentTray,
+      trayMealType
+    );
+    if (liveConflicts.length > 0 && trayMealType !== 3) {
+      toast.error(
+        `Khẩu phần đang chọn vẫn còn món trùng dị ứng (${liveConflicts.join('; ')}). Vui lòng chọn Chế độ đặc biệt để tránh trùng dị ứng cho học sinh.`
+      );
+      return;
+    }
+    if (requiresKitchenNote && !trayRemarks.trim()) {
+      toast.error(
+        hasDedicatedSpecialMenu && liveConflicts.length > 0
+          ? `Thực đơn Đặc biệt vẫn còn món trùng dị ứng (${liveConflicts.join('; ')}). Vui lòng nhập ghi chú bỏ/đổi món cho bếp.`
+          : 'Ngày này chưa cấu hình sẵn thực đơn Đặc biệt — vui lòng nhập ghi chú món cần nấu cho bếp.'
+      );
+      return;
+    }
+    if (trayRemarks.trim().length > 250) {
+      toast.error('Ghi chú khẩu phần tối đa 250 ký tự.');
+      return;
+    }
+    try {
+      setSavingTrayDiet(true);
+      await lunchApi.updateRegistrationMealType({
+        studentId: selectedStudentTray.studentId,
+        date: selectedDate,
+        mealType: trayMealType,
+        remarks: trayRemarks.trim() || undefined,
+      });
+
+      if (trayApplyDefault) {
+        const currentProfile = await lunchApi.getStudentMealProfile(selectedStudentTray.studentId);
+        await lunchApi.upsertStudentMealProfile(selectedStudentTray.studentId, {
+          defaultMealType: trayMealType,
+          allergenTags: currentProfile.allergenTags ?? [],
+          // Giữ nguyên ghi chú dị ứng gốc của phụ huynh, không lấy ghi chú bếp ghi đè lên hồ sơ dị ứng
+          allergyNotes: currentProfile.allergyNotes ?? undefined,
+        });
+      }
+
+      toast.success(
+        trayApplyDefault
+          ? 'Đã phân bổ khẩu phần hôm nay và lưu làm chế độ mặc định cho học sinh.'
+          : 'Đã cập nhật phân bổ khẩu phần cho học sinh.'
+      );
+      setSelectedStudentTray(null);
+      await fetchBoard(selectedDate);
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Cập nhật phân bổ khẩu phần thất bại.');
+    } finally {
+      setSavingTrayDiet(false);
+    }
+  };
 
   // Tab 4: Báo cáo thống kê kỳ / tháng (Lunch Report)
   const [reportFrom, setReportFrom] = useState<string>(() => {
@@ -237,25 +409,21 @@ export default function MealHeadcountPage() {
     }
   }, [activeTab, reportFrom, reportTo]);
 
-  useEffect(() => {
-    if (showConfigModal && cfgApplyFullWeek) {
-      const weekdays = getWeekdaysOfDate(selectedDate);
-      lunchApi.getServiceDays(weekdays[0], weekdays[weekdays.length - 1]).then((list) => {
-        const map: Record<string, string> = {};
-        weekdays.forEach((d, idx) => {
-          const found = list.find((x) => x.date.slice(0, 10) === d);
-          map[d] = found?.remarks || DEFAULT_WEEKDAY_MENUS[idx] || cfgRemarks;
-        });
-        setCfgWeeklyMenus(map);
-      }).catch(() => {
-        const map: Record<string, string> = {};
-        weekdays.forEach((d, idx) => {
-          map[d] = DEFAULT_WEEKDAY_MENUS[idx] || cfgRemarks;
-        });
-        setCfgWeeklyMenus(map);
-      });
+  const loadMenuTemplates = async () => {
+    try {
+      const list = await lunchApi.getMenuTemplates(false);
+      setMenuTemplates(list);
+    } catch {
+      // ignore if user role has no template access
     }
-  }, [showConfigModal, cfgApplyFullWeek, selectedDate]);
+  };
+
+  useEffect(() => {
+    if (showConfigModal) {
+      setCfgSelectedTemplateId('');
+      loadMenuTemplates();
+    }
+  }, [showConfigModal]);
 
   const fetchBoard = async (date: string) => {
     try {
@@ -282,6 +450,19 @@ export default function MealHeadcountPage() {
     return board.cutoffTime.replace(':', 'h');
   }, [board?.cutoffTime]);
 
+  const mealBreakdownStats = useMemo(() => {
+    const active = (board?.studentMeals ?? []).filter((s) => s.isActive);
+    return {
+      standard: active.filter((s) => normalizeMealTypeNumber(s.mealType) === 1).length,
+      vegetarian: active.filter((s) => normalizeMealTypeNumber(s.mealType) === 2).length,
+      special: active.filter((s) => normalizeMealTypeNumber(s.mealType) === 3).length,
+      unresolvedConflicts: active.filter((s) => (s.allergyConflicts?.length ?? 0) > 0).length,
+      specialOrAllergy: active.filter(
+        (s) => normalizeMealTypeNumber(s.mealType) !== 1 || hasStudentAllergyInfo(s)
+      ).length,
+    };
+  }, [board?.studentMeals]);
+
   // Lọc danh sách học sinh
   const filteredStudentMeals = useMemo(() => {
     const list = board?.studentMeals ?? [];
@@ -291,6 +472,14 @@ export default function MealHeadcountPage() {
       }
       if (statusFilter === 'ACTIVE' && !item.isActive) return false;
       if (statusFilter === 'CANCELLED' && item.isActive) return false;
+
+      if (dietFilter === 'CONFLICT_ONLY') {
+        if (!item.isActive || (item.allergyConflicts?.length ?? 0) === 0) return false;
+      } else if (dietFilter === 'SPECIAL_ALLERGY') {
+        const isSpecialOrAllergy =
+          normalizeMealTypeNumber(item.mealType) !== 1 || hasStudentAllergyInfo(item);
+        if (!item.isActive || !isSpecialOrAllergy) return false;
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -302,12 +491,12 @@ export default function MealHeadcountPage() {
 
       return true;
     });
-  }, [board?.studentMeals, selectedClassFilter, statusFilter, searchQuery]);
+  }, [board?.studentMeals, selectedClassFilter, statusFilter, dietFilter, searchQuery]);
 
   // Reset trang về 1 khi đổi bộ lọc
   useEffect(() => {
     setPageIndex(1);
-  }, [selectedClassFilter, statusFilter, searchQuery, selectedDate, pageSize]);
+  }, [selectedClassFilter, statusFilter, dietFilter, searchQuery, selectedDate, pageSize]);
 
   // Phân trang dữ liệu học sinh
   const totalCount = filteredStudentMeals.length;
@@ -349,51 +538,71 @@ export default function MealHeadcountPage() {
     setSearchParams({ tab });
   };
 
-  const handleAddDish = (dish: string) => {
-    if (!cfgRemarks.trim()) {
-      setCfgRemarks(dish);
-    } else if (!cfgRemarks.includes(dish)) {
-      setCfgRemarks(`${cfgRemarks.trim()}, ${dish}`);
-    }
-  };
+  const selectedConfigTemplate = useMemo(
+    () => (cfgSelectedTemplateId !== '' ? menuTemplates.find((t) => t.id === Number(cfgSelectedTemplateId)) ?? null : null),
+    [cfgSelectedTemplateId, menuTemplates]
+  );
 
   const handleSaveConfig = async () => {
     if (!cfgCutoffTime || cfgCutoffTime < '06:00' || cfgCutoffTime > '11:00') {
       toast.error('Giờ chốt suất ăn phải nằm trong khoảng 06:00 đến 11:00 (trước giờ ăn trưa).');
       return;
     }
-    if (!cfgApplyFullWeek && cfgRemarks.trim().length > 250) {
-      toast.error('Ghi chú / thực đơn không được vượt quá 250 ký tự.');
+    if (cfgRemarks.trim().length > 250) {
+      toast.error('Ghi chú không được vượt quá 250 ký tự.');
       return;
     }
-    if (cfgApplyFullWeek) {
-      const weekdaysCheck = getWeekdaysOfDate(selectedDate);
-      const tooLongDay = weekdaysCheck.find((d) => (cfgWeeklyMenus[d] ?? cfgRemarks).trim().length > 250);
-      if (tooLongDay) {
-        toast.error(`Thực đơn ngày ${formatDateDDMMYYYY(tooLongDay)} vượt quá 250 ký tự.`);
-        return;
-      }
-    }
+
     try {
       setActionLoading(true);
       if (cfgApplyFullWeek) {
-        const weekdays = getWeekdaysOfDate(selectedDate);
-        for (const d of weekdays) {
+        const weekDates = getWeekMonToSatOfDate(selectedDate);
+        const monday = weekDates[0];
+        const saturday = weekDates[5];
+
+        if (cfgIsServing && cfgSelectedTemplateId !== '') {
+          const applyRes = await lunchApi.applyMenuTemplate(Number(cfgSelectedTemplateId), {
+            fromDate: monday,
+            toDate: saturday,
+            cutoffTime: cfgCutoffTime,
+            overwriteExistingMenus: true,
+          });
+          const r = applyRes.data;
+          const summaryParts = [`Đã áp dụng thực đơn tuần cho ${r.appliedDates.length} ngày học`];
+          if (r.skippedLockedDates.length > 0) {
+            summaryParts.push(`bỏ qua ${r.skippedLockedDates.length} ngày đã khóa`);
+          }
+          const summaryText = summaryParts.join(' • ');
+          toast.success(summaryText);
+          setMessage({ text: summaryText, type: 'success' });
+        } else {
+          const existingWeek = await lunchApi.getServiceDays(monday, saturday);
+          const targetDates = existingWeek
+            .filter((d) => !d.isLocked && (cfgIsServing ? d.isServing : getIsoDayOfWeek(d.date) <= 5 || d.isServing))
+            .map((d) => d.date.slice(0, 10));
+
+          if (targetDates.length === 0) {
+            toast.error('Không có ngày chưa khóa nào trong tuần để cập nhật.');
+            return;
+          }
+
           await lunchApi.upsertServiceDays({
-            dates: [d],
+            dates: targetDates,
             isServing: cfgIsServing,
             cutoffTime: cfgCutoffTime,
-            remarks: (cfgWeeklyMenus[d] ?? cfgRemarks).trim() || undefined,
+            remarks: cfgIsServing ? undefined : (cfgRemarks.trim() || undefined),
           });
+          toast.success(`Đã cập nhật cấu hình cho ${targetDates.length} ngày trong tuần!`);
+          setMessage({ text: `Đã cập nhật cấu hình cho ${targetDates.length} ngày trong tuần.`, type: 'success' });
         }
-        toast.success(`Đã lưu cấu hình thực đơn riêng cho ${weekdays.length} ngày trong tuần!`);
-        setMessage({ text: `Đã cập nhật thực đơn cụ thể cho từng ngày Thứ 2 – Thứ 6.`, type: 'success' });
       } else {
+        const useNewTemplate = cfgIsServing && cfgSelectedTemplateId !== '';
         const res = await lunchApi.upsertServiceDays({
           dates: [selectedDate],
           isServing: cfgIsServing,
           cutoffTime: cfgCutoffTime,
-          remarks: cfgRemarks.trim() || undefined,
+          remarks: useNewTemplate ? undefined : (cfgRemarks.trim() || undefined),
+          menuTemplateId: useNewTemplate ? Number(cfgSelectedTemplateId) : undefined,
         });
         const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG44.content;
         toast.success(msg);
@@ -459,58 +668,6 @@ export default function MealHeadcountPage() {
     } finally {
       setActionLoading(false);
     }
-  };
-
-  const handleExportCsv = () => {
-    if (!board) return;
-    const rows: string[][] = [
-      ['STT', 'Ma hoc sinh', 'Ho va ten', 'Lop', 'Khoi', 'Loai suat an', 'Trang thai', 'Ghi chu / Ly do huy'],
-    ];
-
-    filteredStudentMeals.forEach((s, idx) => {
-      rows.push([
-        String(idx + 1),
-        s.studentCode,
-        s.studentName,
-        s.className,
-        String(s.grade),
-        MEAL_TYPE_TEXT[String(s.mealType)] ?? 'Tiêu chuẩn',
-        s.isActive ? 'Còn hiệu lực (Thực ăn)' : 'Đã hủy',
-        (s.isActive ? s.remarks : s.cancellationReason) || '',
-      ]);
-    });
-
-    downloadCsv(`Danh_sach_ban_tru_${selectedDate}.csv`, rows);
-    toast.success('Đã xuất danh sách vận hành bán trú (.csv) thành công.');
-  };
-
-  const handleExportClassSummaryCsv = () => {
-    if (!board?.classBreakdowns) return;
-    const rows: string[][] = [
-      ['STT', 'Lop', 'Khoi', 'Dang ky', 'Da huy', 'Thuc an', 'Suat man', 'Suat chay', 'Dac biet'],
-    ];
-    board.classBreakdowns.forEach((cls, idx) => {
-      const classActiveMeals = (board.studentMeals ?? []).filter(
-        (s) => s.classId === cls.classId && s.isActive
-      );
-      const stdCnt = cls.standardCount ?? classActiveMeals.filter((s) => s.mealType === 'StandardLunch' || s.mealType === 1).length;
-      const vegCnt = cls.vegetarianCount ?? classActiveMeals.filter((s) => s.mealType === 'VegetarianLunch' || s.mealType === 2).length;
-      const spcCnt = cls.specialDietCount ?? classActiveMeals.filter((s) => s.mealType === 'SpecialDiet' || s.mealType === 3).length;
-      rows.push([
-        String(idx + 1),
-        cls.className,
-        String(cls.grade),
-        String(cls.initialRegistered),
-        String(cls.cancelledCount),
-        String(cls.actualCount),
-        String(stdCnt),
-        String(vegCnt),
-        String(spcCnt),
-      ]);
-    });
-
-    downloadCsv(`Tong_hop_suat_an_theo_lop_${selectedDate}.csv`, rows);
-    toast.success('Đã xuất bảng tổng hợp suất ăn theo lớp (.csv) thành công.');
   };
 
   return (
@@ -599,31 +756,83 @@ export default function MealHeadcountPage() {
             </button>
 
             {board?.canManage && (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowConfigModal(true)}
-                title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  borderRadius: 'var(--radius-full)',
-                  border: '2px solid var(--color-fg)',
-                  boxShadow: '3px 3px 0 0 var(--color-fg)',
-                  background: '#FEF9C3',
-                  color: 'var(--color-fg)',
-                  fontWeight: 800,
-                  fontSize: 'var(--fs-sm)',
-                  padding: '0 18px',
-                  height: 42,
-                  boxSizing: 'border-box',
-                  cursor: 'pointer',
-                }}
-              >
-                <Settings size={15} />
-                Cấu hình ngày
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowDishLibrary(true)}
+                  title="Quản lý Thư viện món ăn & Nhãn dị ứng"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    background: '#FFFFFF',
+                    color: 'var(--color-fg)',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '0 16px',
+                    height: 42,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <BookOpen size={15} />
+                  Thư viện món
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowTemplateModal(true)}
+                  title="Thiết kế & Áp dụng Thực đơn tuần"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    background: '#EDE9FE',
+                    color: 'var(--color-fg)',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '0 16px',
+                    height: 42,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Sparkles size={15} />
+                  Thực đơn tuần
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowConfigModal(true)}
+                  title="Cấu hình mở/đóng phục vụ & thực đơn ngày"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    background: '#FEF9C3',
+                    color: 'var(--color-fg)',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '0 18px',
+                    height: 42,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Settings size={15} />
+                  Cấu hình ngày
+                </button>
+              </>
             )}
 
             {board?.canManage && board.isServing && !board.isLocked ? (
@@ -1072,9 +1281,17 @@ export default function MealHeadcountPage() {
                   <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: '#047857' }}>khẩu phần</span>
                 </div>
 
-                <p style={{ margin: 0, fontSize: 'var(--fs-xs)', color: '#047857', fontWeight: 700 }}>
-                  ✓ Số lượng thực tế giao bếp thực hiện
-                </p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
+                    🍱 {mealBreakdownStats.standard} Tiêu chuẩn
+                  </span>
+                  <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
+                    🥗 {mealBreakdownStats.vegetarian} Chay
+                  </span>
+                  <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
+                    ⚕️ {mealBreakdownStats.special} Đặc biệt
+                  </span>
+                </div>
               </div>
 
               {/* Card 4: Anomalies */}
@@ -1129,6 +1346,57 @@ export default function MealHeadcountPage() {
             </div>
           )}
 
+          {/* Banner cảnh báo học sinh đang trùng món dị ứng chưa xử lý */}
+          {board && mealBreakdownStats.unresolvedConflicts > 0 && (
+            <div
+              style={{
+                marginBottom: 22,
+                padding: '14px 18px',
+                borderRadius: 'var(--radius-lg)',
+                border: '2.5px solid #DC2626',
+                background: '#FEF2F2',
+                boxShadow: '3px 3px 0 0 #991B1B',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertTriangle size={22} color="#DC2626" style={{ flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 900, color: '#991B1B', fontSize: 'var(--fs-sm)' }}>
+                    Phát hiện {mealBreakdownStats.unresolvedConflicts} học sinh có món ăn hôm nay trùng dị ứng thực phẩm!
+                  </div>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: '#7F1D1D', marginTop: 2, fontWeight: 600 }}>
+                    Vui lòng kiểm tra khay ăn và chuyển các bé sang <strong>Chế độ đặc biệt</strong> trước khi chốt sổ nấu.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={() => {
+                  setSelectedClassFilter('ALL');
+                  setStatusFilter('ACTIVE');
+                  setDietFilter('CONFLICT_ONLY');
+                  handleTabChange('students');
+                }}
+                style={{
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  border: '2px solid var(--color-fg)',
+                  borderRadius: 'var(--radius-full)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                }}
+              >
+                Xem &amp; xử lý ngay ({mealBreakdownStats.unresolvedConflicts})
+              </button>
+            </div>
+          )}
+
           {/* Class Breakdown Table */}
           <div
             className="card"
@@ -1147,29 +1415,13 @@ export default function MealHeadcountPage() {
                   Tổng Hợp Khẩu Phần Theo Lớp Học
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                  Bấm vào hàng của một lớp để chuyển nhanh sang danh sách học sinh của lớp đó.
+                  Bấm vào hàng của một lớp để xem chi tiết danh sách học sinh và khay ăn riêng của lớp đó.
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', padding: '5px 12px', fontWeight: 700 }}>
                   {board?.classBreakdowns?.length || 0} lớp học • {board?.totalActiveToCook || 0} suất
                 </span>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={handleExportClassSummaryCsv}
-                  title="Xuất bảng tổng hợp suất ăn theo lớp (.csv)"
-                  style={{
-                    borderRadius: 'var(--radius-full)',
-                    border: '2px solid var(--color-fg)',
-                    boxShadow: '2px 2px 0 0 var(--color-fg)',
-                    fontWeight: 700,
-                    padding: '5px 14px',
-                  }}
-                >
-                  <Download size={14} />
-                  Xuất tổng hợp lớp (.csv)
-                </button>
               </div>
             </div>
 
@@ -1319,7 +1571,7 @@ export default function MealHeadcountPage() {
             padding: '24px',
           }}
         >
-          {/* Header & Filter Controls */}
+          {/* Header & Quick Kitchen Filters */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1327,28 +1579,54 @@ export default function MealHeadcountPage() {
                 Danh Sách Học Sinh Nhận Suất Ăn
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                Phục vụ nhân viên bán trú và giáo viên chủ nhiệm đối chiếu phát khay ăn theo từng lớp.
+                Phục vụ nhân viên bán trú chuẩn bị khay riêng (Chay / Đặc biệt) và đối chiếu phát khay ăn theo từng lớp.
               </p>
             </div>
 
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={handleExportCsv}
-                title="Xuất danh sách học sinh ra file CSV/Excel"
+                className={dietFilter === 'ALL' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+                onClick={() => setDietFilter('ALL')}
+                style={{ borderRadius: 'var(--radius-full)', fontWeight: 800 }}
+              >
+                Tất cả khẩu phần
+              </button>
+              <button
+                type="button"
+                className={dietFilter === 'SPECIAL_ALLERGY' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+                onClick={() => {
+                  setStatusFilter('ACTIVE');
+                  setDietFilter((prev) => (prev === 'SPECIAL_ALLERGY' ? 'ALL' : 'SPECIAL_ALLERGY'));
+                }}
                 style={{
                   borderRadius: 'var(--radius-full)',
-                  border: '2px solid var(--color-fg)',
-                  boxShadow: '2px 2px 0 0 var(--color-fg)',
-                  fontWeight: 700,
-                  padding: '6px 14px',
+                  fontWeight: 800,
+                  background: dietFilter === 'SPECIAL_ALLERGY' ? 'var(--color-accent)' : '#FCE7F3',
+                  color: dietFilter === 'SPECIAL_ALLERGY' ? '#FFFFFF' : '#9D174D',
                 }}
               >
-                <Download size={14} />
-                Xuất CSV
+                ⚕️ Khay riêng &amp; Dị ứng ({mealBreakdownStats.specialOrAllergy})
               </button>
+              {mealBreakdownStats.unresolvedConflicts > 0 && (
+                <button
+                  type="button"
+                  className="btn btn--sm"
+                  onClick={() => {
+                    setStatusFilter('ACTIVE');
+                    setDietFilter((prev) => (prev === 'CONFLICT_ONLY' ? 'ALL' : 'CONFLICT_ONLY'));
+                  }}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid #DC2626',
+                    fontWeight: 800,
+                    background: dietFilter === 'CONFLICT_ONLY' ? '#DC2626' : '#FEE2E2',
+                    color: dietFilter === 'CONFLICT_ONLY' ? '#FFFFFF' : '#991B1B',
+                  }}
+                >
+                  ⚠️ Trùng món dị ứng ({mealBreakdownStats.unresolvedConflicts})
+                </button>
+              )}
             </div>
           </div>
 
@@ -1502,8 +1780,8 @@ export default function MealHeadcountPage() {
                       <td style={{ padding: '10px 14px', fontWeight: 700 }}>{item.studentName}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>{formatClassLabel(item.className, item.classId)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)' }}>
-                          {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
+                        <span className={`badge ${getMealTypeBadgeClass(item.mealType)}`} style={{ border: '1px solid var(--color-fg)', fontWeight: 800 }}>
+                          {MEAL_TYPE_TEXT[String(item.mealType)] ?? '🍱 Tiêu chuẩn'}
                         </span>
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
@@ -1555,7 +1833,55 @@ export default function MealHeadcountPage() {
                         )}
                       </td>
                       <td style={{ padding: '10px 14px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
-                        {(item.isActive ? formatCleanRemark(item.remarks) : item.cancellationReason) || '—'}
+                        {item.isActive && (item.allergyConflicts?.length ?? 0) > 0 && (
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '2px 8px',
+                              borderRadius: 8,
+                              background: '#FEE2E2',
+                              border: '1px solid #DC2626',
+                              color: '#991B1B',
+                              fontWeight: 800,
+                              marginBottom: 4,
+                            }}
+                          >
+                            <AlertTriangle size={12} /> Xung đột dị ứng: {item.allergyConflicts!.join('; ')}
+                          </div>
+                        )}
+                        {item.isActive && ((item.studentAllergenTags?.length ?? 0) > 0 || item.studentAllergyNotes) && (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginBottom: 3 }}>
+                            {(item.studentAllergenTags ?? []).map((tag) => (
+                              <span
+                                key={tag}
+                                style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: 800,
+                                  padding: '1px 6px',
+                                  borderRadius: 999,
+                                  background: '#FFF1F2',
+                                  border: '1px solid #FB7185',
+                                  color: '#9F1239',
+                                }}
+                              >
+                                ⚠️ {getAllergenShortLabel(tag)}
+                              </span>
+                            ))}
+                            {item.studentAllergyNotes && (
+                              <span style={{ color: '#9F1239', fontWeight: 700 }}>
+                                Ghi chú dị ứng: {item.studentAllergyNotes}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <div>
+                          {(item.isActive
+                            ? (getDistinctKitchenRemark(item) || (!(item.studentAllergenTags?.length || item.studentAllergyNotes) ? item.allergyWarning : '') || '')
+                            : item.cancellationReason) ||
+                            (!(item.allergyConflicts?.length || item.studentAllergenTags?.length || item.studentAllergyNotes) ? '—' : '')}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1947,33 +2273,6 @@ export default function MealHeadcountPage() {
                 <RefreshCw size={14} className={loadingReport ? 'spin' : ''} /> Tải báo cáo
               </button>
 
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                onClick={() => {
-                  if (!periodReport) return;
-                  const rows: string[][] = [
-                    ['Lop', 'Khoi', 'Tong Dang Ky', 'Da Huy', 'Thuc An', 'Suat Tieu Chuan (Man)', 'Suat An Chay', 'Che Do Dac Biet'],
-                  ];
-                  periodReport.classSummaries.forEach((c) => {
-                    rows.push([
-                      c.className,
-                      String(c.grade),
-                      String(c.initialRegistered),
-                      String(c.cancelledCount),
-                      String(c.actualCount),
-                      String(c.standardCount ?? 0),
-                      String(c.vegetarianCount ?? 0),
-                      String(c.specialDietCount ?? 0),
-                    ]);
-                  });
-                  downloadCsv(`Bao_cao_ban_tru_${reportFrom}_${reportTo}.csv`, rows);
-                  toast.success('Đã xuất báo cáo thống kê bán trú (.csv)!');
-                }}
-                style={{ borderRadius: 'var(--radius-full)', border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', fontWeight: 800 }}
-              >
-                <Download size={14} /> Xuất Báo Cáo CSV
-              </button>
             </div>
           </div>
 
@@ -2101,8 +2400,8 @@ export default function MealHeadcountPage() {
                               <td style={{ padding: '8px 12px', fontWeight: 800, color: 'var(--color-accent)' }}>{s.studentCode}</td>
                               <td style={{ padding: '8px 12px', fontWeight: 700 }}>{s.studentName}</td>
                               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)' }}>
-                                  {MEAL_TYPE_TEXT[String(s.mealType)] ?? 'Tiêu chuẩn'}
+                                <span className={`badge ${getMealTypeBadgeClass(s.mealType)}`} style={{ border: '1px solid var(--color-fg)', fontWeight: 800 }}>
+                                  {MEAL_TYPE_TEXT[String(s.mealType)] ?? '🍱 Tiêu chuẩn'}
                                 </span>
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
@@ -2141,7 +2440,9 @@ export default function MealHeadcountPage() {
                                 )}
                               </td>
                               <td style={{ padding: '8px 12px', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                                {(s.isActive ? formatCleanRemark(s.remarks) : s.cancellationReason) || '—'}
+                                {s.isActive
+                                  ? (getDistinctKitchenRemark(s) || s.allergyWarning || '—')
+                                  : (s.cancellationReason || '—')}
                               </td>
                             </tr>
                           );
@@ -2165,17 +2466,81 @@ export default function MealHeadcountPage() {
         onClose={() => setSelectedStudentTray(null)}
         title={`Khay Ăn Bán Trú • ${selectedStudentTray?.studentName ?? ''}`}
         subtitle={`${selectedStudentTray ? formatClassLabel(selectedStudentTray.className, selectedStudentTray.classId) : ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${formatDateDDMMYYYY(selectedDate)}`}
-        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn') : ''}
-        badgeColor="mint"
+        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(trayMealType)] ?? '🍱 Tiêu chuẩn') : ''}
+        badgeColor={trayMealType === 3 ? 'pink' : trayMealType === 2 ? 'amber' : 'mint'}
         icon={<Soup size={22} color="var(--color-fg)" strokeWidth={2.5} />}
         iconBg="var(--color-tertiary)"
         maxWidth="md"
       >
         {selectedStudentTray && (() => {
-          const dishes = getStudentDishes(selectedStudentTray.mealType, board?.serviceRemarks, selectedStudentTray.remarks)
-            .filter((d) => !d.startsWith('(Lưu ý'));
+          const {
+            isPreviewingNewDiet,
+            dishes,
+            liveConflicts,
+            conflictingDishNames,
+            hasStudentAllergyProfile,
+            requiresKitchenNote,
+          } = evaluateTrayConflicts(selectedStudentTray, trayMealType);
+          const conflictingSet = new Set(conflictingDishNames);
+          const declaredTags = selectedStudentTray.studentAllergenTags ?? [];
+          const declaredAllergyNotes = (selectedStudentTray.studentAllergyNotes ?? '').trim();
+          const kitchenRemarkDisplay = getDistinctKitchenRemark(selectedStudentTray);
+          const fallbackLegacyAllergy =
+            declaredTags.length === 0 && !declaredAllergyNotes
+              ? (selectedStudentTray.allergyWarning || '')
+              : '';
+          const showSafeBanner =
+            dishes.length > 0 &&
+            liveConflicts.length === 0 &&
+            hasStudentAllergyProfile &&
+            (isPreviewingNewDiet || trayMealType === 3 || (selectedStudentTray.allergyConflicts?.length ?? 0) > 0);
+
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {liveConflicts.length > 0 ? (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '2px solid #DC2626',
+                    background: '#FEF2F2',
+                    color: '#991B1B',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                  }}
+                >
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div>Cảnh báo trùng thành phần dị ứng trong khay ăn đang chọn:</div>
+                    <div style={{ fontWeight: 700, marginTop: 2 }}>{liveConflicts.join(' • ')}</div>
+                  </div>
+                </div>
+              ) : showSafeBanner ? (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '2px solid #059669',
+                    background: '#ECFDF5',
+                    color: '#065F46',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <CheckCircle2 size={16} color="#059669" style={{ flexShrink: 0 }} />
+                  <div>
+                    {isPreviewingNewDiet
+                      ? <>Khẩu phần đang chọn đã loại bỏ món gây dị ứng — bấm <strong>Lưu phân bổ khẩu phần</strong> bên dưới để áp dụng.</>
+                      : 'Khẩu phần đang phân bổ không chứa thành phần gây dị ứng đã khai báo.'}
+                  </div>
+                </div>
+              ) : null}
               <div
                 style={{
                   background: '#FFFDF5',
@@ -2185,7 +2550,7 @@ export default function MealHeadcountPage() {
                   padding: '16px',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
                   <span
                     style={{
                       fontFamily: 'var(--font-heading)',
@@ -2202,73 +2567,200 @@ export default function MealHeadcountPage() {
                     <UtensilsCrossed size={15} color="var(--color-accent)" strokeWidth={2.5} />
                     Các món trong khay ({dishes.length} món)
                   </span>
-                  <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: '11px' }}>
-                    {MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn'}
+                  <span className={`badge ${getMealTypeBadgeClass(trayMealType)}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: '11px' }}>
+                    {isPreviewingNewDiet ? 'Xem trước: ' : ''}{MEAL_TYPE_TEXT[String(trayMealType)] ?? '🍱 Tiêu chuẩn'}
                   </span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
-                  {dishes.map((dish, idx) => {
-                    const slot = COURSE_SLOTS[idx % COURSE_SLOTS.length];
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '10px 12px',
-                          background: '#FFFFFF',
-                          border: '2px solid var(--color-fg)',
-                          borderRadius: 'var(--radius-md)',
-                          boxShadow: '3px 3px 0 0 var(--color-fg)',
-                        }}
-                      >
+                  {dishes.length === 0 ? (
+                    <div style={{ gridColumn: '1 / -1', padding: '14px 12px', textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                      Ngày này chưa cấu hình thực đơn chi tiết cho chế độ ăn này. Bấm <strong>Cấu hình ngày</strong> hoặc áp dụng <strong>Thực đơn tuần</strong> để thiết lập món.
+                    </div>
+                  ) : (
+                    dishes.map((dish, idx) => {
+                      const slot = COURSE_SLOTS[idx % COURSE_SLOTS.length];
+                      const isDishAllergic = conflictingSet.has(dish.toLowerCase());
+                      return (
                         <div
+                          key={idx}
                           style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: '50%',
-                            background: slot.bg,
-                            border: '2px solid var(--color-fg)',
-                            display: 'grid',
-                            placeItems: 'center',
-                            fontSize: 18,
-                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '10px 12px',
+                            background: isDishAllergic ? '#FEF2F2' : '#FFFFFF',
+                            border: isDishAllergic ? '2px solid #DC2626' : '2px solid var(--color-fg)',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: isDishAllergic ? '3px 3px 0 0 #DC2626' : '3px 3px 0 0 var(--color-fg)',
                           }}
                         >
-                          {slot.emoji}
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: slot.accent }}>
-                            {slot.role}
+                          <div
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: '50%',
+                              background: isDishAllergic ? '#FEE2E2' : slot.bg,
+                              border: isDishAllergic ? '2px solid #DC2626' : '2px solid var(--color-fg)',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: 18,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isDishAllergic ? '⚠️' : slot.emoji}
                           </div>
-                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)', marginTop: 2 }}>
-                            {dish}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: isDishAllergic ? '#DC2626' : slot.accent }}>
+                              {isDishAllergic ? 'TRÙNG DỊ ỨNG' : slot.role}
+                            </div>
+                            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'var(--fs-sm)', color: isDishAllergic ? '#991B1B' : 'var(--color-fg)', marginTop: 2 }}>
+                              {dish}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
               <div
                 style={{
-                  padding: '10px 14px',
+                  padding: '12px 14px',
                   borderRadius: 'var(--radius-md)',
-                  border: '2px dashed var(--color-fg)',
-                  background: formatCleanRemark(selectedStudentTray.remarks) ? '#FFF1F2' : '#F8FAFC',
+                  border: (declaredTags.length > 0 || declaredAllergyNotes || fallbackLegacyAllergy) ? '2px solid #FB7185' : '2px dashed var(--color-fg)',
+                  background: (declaredTags.length > 0 || declaredAllergyNotes || fallbackLegacyAllergy) ? '#FFF1F2' : '#F8FAFC',
                   fontSize: 'var(--fs-xs)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
                 }}
               >
-                <strong style={{ color: formatCleanRemark(selectedStudentTray.remarks) ? '#BE123C' : 'var(--color-fg)' }}>
-                  📝 Ghi chú bếp / dị ứng:{' '}
-                </strong>
-                <span style={{ fontWeight: 600, color: formatCleanRemark(selectedStudentTray.remarks) ? '#9F1239' : 'var(--color-muted-fg)' }}>
-                  {formatCleanRemark(selectedStudentTray.remarks) || 'Không có ghi chú dị ứng đặc biệt.'}
-                </span>
+                <div style={{ fontWeight: 800, color: (declaredTags.length > 0 || declaredAllergyNotes || fallbackLegacyAllergy) ? '#BE123C' : 'var(--color-fg)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldAlert size={14} /> Hồ sơ dị ứng phụ huynh khai báo:
+                </div>
+
+                {declaredTags.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {declaredTags.map((tag) => (
+                      <span
+                        key={tag}
+                        style={{
+                          padding: '3px 9px',
+                          borderRadius: '999px',
+                          border: '1.5px solid #DC2626',
+                          background: '#FEE2E2',
+                          color: '#991B1B',
+                          fontWeight: 800,
+                          fontSize: '11px',
+                        }}
+                      >
+                        ⚠️ {getAllergenFullLabel(tag)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {declaredAllergyNotes && (
+                  <div style={{ fontWeight: 700, color: '#9F1239' }}>
+                    Ghi chú dị ứng tự do: <span style={{ fontWeight: 600 }}>{declaredAllergyNotes}</span>
+                  </div>
+                )}
+
+                {fallbackLegacyAllergy && (
+                  <div style={{ fontWeight: 700, color: '#9F1239' }}>
+                    {fallbackLegacyAllergy}
+                  </div>
+                )}
+
+                {declaredTags.length === 0 && !declaredAllergyNotes && !fallbackLegacyAllergy && (
+                  <div style={{ fontWeight: 600, color: 'var(--color-muted-fg)' }}>
+                    Phụ huynh không khai báo dị ứng thực phẩm nào cho học sinh.
+                  </div>
+                )}
+
+                {kitchenRemarkDisplay && (
+                  <div style={{ marginTop: 2, paddingTop: 6, borderTop: '1px dashed #FDA4AF', color: '#475569', fontWeight: 700 }}>
+                    📝 Ghi chú chế biến bếp hiện tại: <span style={{ fontWeight: 600 }}>{kitchenRemarkDisplay}</span>
+                  </div>
+                )}
               </div>
+
+              {board?.canManage && !board.isLocked && selectedStudentTray.isActive && (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '2px solid var(--color-fg)',
+                    background: '#F5F3FF',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-accent)' }}>
+                    ⚙️ Phân bổ chế độ khẩu phần (Tổ Bán trú)
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
+                    <div>
+                      <label className="label" style={{ fontSize: 11 }}>LOẠI KHẨU PHẦN</label>
+                      <select
+                        className="input"
+                        value={trayMealType}
+                        onChange={(e) => setTrayMealType(Number(e.target.value))}
+                        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}
+                      >
+                        <option value={1}>🍱 Suất tiêu chuẩn</option>
+                        <option value={2}>🥗 Suất ăn chay</option>
+                        <option value={3}>⚕️ Đặc biệt (Kiêng dị ứng / Cháo ốm)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label" style={{ fontSize: 11 }}>
+                        {requiresKitchenNote
+                          ? 'GHI CHÚ CHẾ BIẾN BẾP *'
+                          : trayMealType === 3
+                            ? 'GHI CHÚ CHẾ BIẾN BẾP (TÙY CHỌN)'
+                            : 'GHI CHÚ KHẨU PHẦN (TÙY CHỌN)'}
+                      </label>
+                      <input
+                        type="text"
+                        className="input"
+                        maxLength={250}
+                        placeholder={
+                          requiresKitchenNote
+                            ? 'VD: Đổi món trùng dị ứng sang thịt nạc hấp / nấu cháo...'
+                            : 'Không bắt buộc (nhập thêm dặn dò riêng cho bếp nếu cần)...'
+                        }
+                        value={trayRemarks}
+                        onChange={(e) => setTrayRemarks(e.target.value)}
+                        style={{ fontSize: 'var(--fs-xs)' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-xs)', fontWeight: 700, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={trayApplyDefault}
+                        onChange={(e) => setTrayApplyDefault(e.target.checked)}
+                      />
+                      Lưu làm chế độ mặc định cho các ngày đăng ký sau của bé
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--sm"
+                      onClick={handleSaveStudentDiet}
+                      disabled={savingTrayDiet}
+                    >
+                      {savingTrayDiet ? 'Đang lưu...' : 'Lưu phân bổ khẩu phần'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
@@ -2453,77 +2945,135 @@ export default function MealHeadcountPage() {
             </div>
           </div>
 
-          {/* 3. Thực đơn & Ghi chú (Menu Builder) */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <label className="label" htmlFor="cfg-remarks" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <UtensilsCrossed size={14} color="var(--color-secondary)" /> 3. THỰC ĐƠN TRƯA HOẶC GHI CHÚ
+          {/* 3. Chọn Thực đơn tuần (thay vì chọn từng món ăn lẻ) */}
+          {cfgIsServing ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                <label className="label" htmlFor="cfg-template-select" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <UtensilsCrossed size={14} color="var(--color-secondary)" /> 3. CHỌN BỘ THỰC ĐƠN TUẦN ÁP DỤNG
+                </label>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => {
+                    setShowConfigModal(false);
+                    setShowTemplateModal(true);
+                  }}
+                >
+                  <Sparkles size={12} /> Thiết kế Thực đơn tuần
+                </button>
+              </div>
+
+              <select
+                id="cfg-template-select"
+                className="input"
+                value={cfgSelectedTemplateId}
+                onChange={(e) => setCfgSelectedTemplateId(e.target.value ? Number(e.target.value) : '')}
+                style={{ fontWeight: 700, marginBottom: 10 }}
+              >
+                <option value="">-- Giữ nguyên thực đơn hiện tại --</option>
+                {menuTemplates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    🍱 {tpl.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Khung xem trước trực quan */}
+              <div
+                style={{
+                  border: '1.5px solid var(--color-fg)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  background: '#FFFDF5',
+                  fontSize: 'var(--fs-xs)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                {selectedConfigTemplate ? (
+                  cfgApplyFullWeek ? (
+                    <>
+                      <div style={{ fontWeight: 800, color: 'var(--color-accent)' }}>
+                        📋 Xem trước cả tuần sẽ áp dụng từ &ldquo;{selectedConfigTemplate.name}&rdquo;:
+                      </div>
+                      {[1, 2, 3, 4, 5].map((dow) => {
+                        const stdNames = selectedConfigTemplate.items
+                          .filter((i) => i.dayOfWeek === dow && normalizeMealTypeNumber(i.mealType) === 1)
+                          .map((i) => i.dishName);
+                        return (
+                          <div key={dow} style={{ lineHeight: 1.4 }}>
+                            <strong>Thứ {dow + 1}:</strong> {stdNames.join(', ') || 'Chưa cấu hình món'}
+                          </div>
+                        );
+                      })}
+                      <div style={{ color: 'var(--color-muted-fg)', fontWeight: 600, marginTop: 2 }}>
+                        ✓ Tự động đi kèm đầy đủ thực đơn <strong>Ăn chay</strong> và <strong>Chế độ đặc biệt</strong>.
+                      </div>
+                    </>
+                  ) : (
+                    (() => {
+                      const preview = previewTemplateForDate(selectedConfigTemplate, selectedDate);
+                      return (
+                        <>
+                          <div style={{ fontWeight: 800, color: 'var(--color-accent)' }}>
+                            📋 Xem trước món ngày {formatDateDDMMYYYY(selectedDate)} theo &ldquo;{selectedConfigTemplate.name}&rdquo;:
+                          </div>
+                          <div>
+                            <strong>🍱 Tiêu chuẩn:</strong> {preview.standard.join(', ') || 'Chưa có món'}
+                          </div>
+                          <div>
+                            <strong>🥗 Ăn chay:</strong> {preview.vegetarian.join(', ') || 'Chưa có món'}
+                          </div>
+                          <div>
+                            <strong>⚕️ Đặc biệt:</strong> {preview.special.join(', ') || 'Chưa có món'}
+                          </div>
+                        </>
+                      );
+                    })()
+                  )
+                ) : board?.menus ? (
+                  <>
+                    <div style={{ fontWeight: 800, color: '#059669' }}>
+                      ✓ Thực đơn đang áp dụng cho ngày {formatDateDDMMYYYY(selectedDate)}:
+                    </div>
+                    <div>
+                      <strong>🍱 Tiêu chuẩn:</strong> {board.menus.standard.map((d) => d.name).join(', ') || '—'}
+                    </div>
+                    <div>
+                      <strong>🥗 Ăn chay:</strong> {board.menus.vegetarian.map((d) => d.name).join(', ') || '—'}
+                    </div>
+                    <div>
+                      <strong>⚕️ Đặc biệt:</strong> {board.menus.special.map((d) => d.name).join(', ') || '—'}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                    {board?.serviceRemarks
+                      ? `Thực đơn hiện tại: ${board.serviceRemarks}`
+                      : 'Chưa chọn bộ Thực đơn tuần. Hãy chọn một Thực đơn tuần ở trên để tự động áp dụng đủ 3 chế độ ăn.'}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="label" htmlFor="cfg-remarks" style={{ fontSize: 'var(--fs-xs)' }}>
+                3. LÝ DO NGHỈ PHỤC VỤ BÁN TRÚ (GỬI THÔNG BÁO PHỤ HUYNH)
               </label>
-              {cfgRemarks.trim() && (
-                <button
-                  type="button"
-                  onClick={() => setCfgRemarks('')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#E11D48',
-                    fontSize: 'var(--fs-xs)',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                  }}
-                >
-                  Xóa thực đơn
-                </button>
-              )}
+              <textarea
+                id="cfg-remarks"
+                className="input"
+                rows={2}
+                maxLength={250}
+                placeholder="VD: Nhà trường tổ chức hoạt động ngoại khóa cả ngày..."
+                value={cfgRemarks}
+                onChange={(e) => setCfgRemarks(e.target.value)}
+                style={{ resize: 'vertical', minHeight: 60, width: '100%', boxSizing: 'border-box' }}
+              />
             </div>
-
-            {/* Quick dish chips */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-              {MENU_SUGGESTIONS.map((dish) => (
-                <button
-                  key={dish}
-                  type="button"
-                  onClick={() => handleAddDish(dish)}
-                  style={{
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1.5px dashed var(--color-border)',
-                    background: '#FFFDF5',
-                    fontSize: 'var(--fs-xs)',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    color: 'var(--color-fg)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    transition: 'all 0.12s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--color-fg)';
-                    e.currentTarget.style.background = 'var(--color-tertiary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--color-border)';
-                    e.currentTarget.style.background = '#FFFDF5';
-                  }}
-                >
-                  <Plus size={11} strokeWidth={3} /> {dish}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              id="cfg-remarks"
-              className="input"
-              rows={3}
-              placeholder="VD: Cơm trắng, Thịt gà kho nấm, Canh bí đỏ nấu tôm, Chuối tiêu..."
-              maxLength={250}
-              value={cfgRemarks}
-              onChange={(e) => setCfgRemarks(e.target.value)}
-              style={{ resize: 'vertical', minHeight: 76, width: '100%', boxSizing: 'border-box' }}
-            />
-          </div>
+          )}
 
           {/* 4. Áp dụng cả tuần (Playful Sticker Card) */}
           <div
@@ -2559,10 +3109,10 @@ export default function MealHeadcountPage() {
 
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
-                Cấu hình thực đơn cụ thể từng ngày trong tuần (Thứ 2 – Thứ 6)
+                Áp dụng cho toàn bộ tuần học đang chọn
               </div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 2 }}>
-                Tự động mở bảng nhập thực đơn riêng cho từng ngày học trong tuần đang chọn
+                Tự động áp Thực đơn tuần & giờ chốt cho các ngày học chưa khóa trong tuần (tự bỏ qua ngày nghỉ lễ)
               </div>
             </div>
 
@@ -2579,46 +3129,6 @@ export default function MealHeadcountPage() {
               }}
             />
           </div>
-
-          {cfgApplyFullWeek && (
-            <div
-              className="card"
-              style={{
-                background: '#FFFDF5',
-                border: '2px solid var(--color-fg)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px 14px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                maxHeight: 240,
-                overflowY: 'auto',
-              }}
-            >
-              <div className="label" style={{ fontWeight: 800, marginBottom: 2 }}>
-                THỰC ĐƠN CỤ THỂ TỪNG NGÀY TRONG TUẦN:
-              </div>
-              {getWeekdaysOfDate(selectedDate).map((d, idx) => {
-                const dayNames = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6'];
-                return (
-                  <div key={d} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <label style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-accent)' }}>
-                      {dayNames[idx]} ({formatDateDDMMYYYY(d)}):
-                    </label>
-                    <input
-                      type="text"
-                      className="input"
-                      maxLength={250}
-                      value={cfgWeeklyMenus[d] ?? ''}
-                      onChange={(e) => setCfgWeeklyMenus((prev) => ({ ...prev, [d]: e.target.value }))}
-                      placeholder={`Nhập thực đơn ${dayNames[idx]}...`}
-                      style={{ padding: '6px 12px', fontSize: 'var(--fs-xs)', border: '1.5px solid var(--color-fg)' }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* 5. Candy Action Buttons */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 10, borderTop: '1.5px dashed var(--color-border)' }}>
@@ -2807,6 +3317,25 @@ export default function MealHeadcountPage() {
           </div>
         </div>
       </GeometricModal>
+
+      <DishLibraryModal
+        open={showDishLibrary}
+        onClose={() => setShowDishLibrary(false)}
+        onChanged={() => {
+          loadMenuTemplates();
+          fetchBoard(selectedDate);
+        }}
+      />
+
+      <WeeklyMenuTemplateModal
+        open={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        defaultDate={selectedDate}
+        onApplied={() => {
+          loadMenuTemplates();
+          fetchBoard(selectedDate);
+        }}
+      />
     </div>
   );
 }

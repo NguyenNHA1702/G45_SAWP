@@ -81,6 +81,7 @@ builder.Services.AddScoped<IGuardianService, GuardianService>();
 builder.Services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 builder.Services.AddScoped<IAttendanceService, AttendanceService>();
 builder.Services.AddScoped<ILunchService, LunchService>();
+builder.Services.AddScoped<ILunchMenuService, LunchMenuService>();
 builder.Services.AddScoped<IRequestWorkflowEngine, RequestWorkflowEngine>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAuditService, AuditService>();

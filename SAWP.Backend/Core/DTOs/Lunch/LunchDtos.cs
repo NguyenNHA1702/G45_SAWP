@@ -82,7 +82,10 @@ public class StudentMealOperationItemDto
     public MealType MealType { get; set; }
     public bool IsActive { get; set; }
     public string? Remarks { get; set; }
+    public List<string> StudentAllergenTags { get; set; } = new();
+    public string? StudentAllergyNotes { get; set; }
     public string? AllergyWarning { get; set; }
+    public List<string> AllergyConflicts { get; set; } = new();
     public LunchCancellationSource? CancellationSource { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
@@ -97,6 +100,7 @@ public class DailyMealBoardDto
     public string? LockedByName { get; set; }
     public string CutoffTime { get; set; } = "08:15";
     public string? ServiceRemarks { get; set; }
+    public DailyMenusByMealTypeDto? Menus { get; set; }
     public bool CanManage { get; set; }
     public int TotalInitialRegistered { get; set; }
     public int TotalAutoCancelled { get; set; }
@@ -128,6 +132,7 @@ public class LunchServiceDayConfigDto
     public bool IsLocked { get; set; }
     public DateTime? LockedAt { get; set; }
     public string? Remarks { get; set; }
+    public DailyMenusByMealTypeDto? Menus { get; set; }
 }
 
 public class UpsertLunchServiceDaysRequestDto
@@ -136,6 +141,8 @@ public class UpsertLunchServiceDaysRequestDto
     public bool IsServing { get; set; } = true;
     public string CutoffTime { get; set; } = "08:15";
     public string? Remarks { get; set; }
+    public int? MenuTemplateId { get; set; }
+    public Dictionary<MealType, List<int>>? MenusByMealType { get; set; }
 }
 
 // ---- UC-31: Phụ huynh xem lịch và trạng thái đăng ký bán trú của con ----
@@ -148,10 +155,12 @@ public class StudentLunchDayDto
     public bool IsCutoffPassed { get; set; }
     public bool HasApprovedLeave { get; set; }
     public string? ServiceRemarks { get; set; }
+    public DailyMenusByMealTypeDto? Menus { get; set; }
     public int? RegistrationId { get; set; }
     public bool IsRegistered { get; set; }
     public MealType? MealType { get; set; }
     public string? StudentRemarks { get; set; }
+    public List<string> AllergyConflicts { get; set; } = new();
     public LunchCancellationSource? CancellationSource { get; set; }
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
@@ -167,6 +176,7 @@ public class StudentLunchScheduleDto
     public int TotalServingDays { get; set; }
     public int TotalRegisteredDays { get; set; }
     public int TotalCancelledDays { get; set; }
+    public StudentMealProfileDto? MealProfile { get; set; }
     public List<StudentLunchDayDto> Days { get; set; } = new();
 }
 

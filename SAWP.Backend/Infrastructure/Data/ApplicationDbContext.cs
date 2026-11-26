@@ -30,6 +30,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<LunchServiceDay> LunchServiceDays => Set<LunchServiceDay>();
     public DbSet<LunchRegistration> LunchRegistrations => Set<LunchRegistration>();
     public DbSet<LunchMonthlyQuota> LunchMonthlyQuotas => Set<LunchMonthlyQuota>();
+    public DbSet<Dish> Dishes => Set<Dish>();
+    public DbSet<WeeklyMenuTemplate> WeeklyMenuTemplates => Set<WeeklyMenuTemplate>();
+    public DbSet<WeeklyMenuTemplateItem> WeeklyMenuTemplateItems => Set<WeeklyMenuTemplateItem>();
+    public DbSet<LunchServiceDayDish> LunchServiceDayDishes => Set<LunchServiceDayDish>();
+    public DbSet<StudentMealProfile> StudentMealProfiles => Set<StudentMealProfile>();
     public DbSet<BoardingIncident> BoardingIncidents => Set<BoardingIncident>();
     public DbSet<AdministrativeRequest> AdministrativeRequests => Set<AdministrativeRequest>();
     public DbSet<ClassTransferDetail> ClassTransferDetails => Set<ClassTransferDetail>();
