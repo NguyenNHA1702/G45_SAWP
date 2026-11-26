@@ -156,6 +156,17 @@ export default function ChildDashboardPage() {
                         <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, fontFamily: 'var(--font-heading)', color: 'var(--color-accent)' }}>
                           Lớp {child.currentClassName}
                         </div>
+                        {child.homeroomTeacherName && (
+                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-fg)', marginTop: 4, fontWeight: 600 }}>
+                            GVCN: <strong>{child.homeroomTeacherName}</strong>
+                            {child.homeroomTeacherPhone && (
+                              <>
+                                {' '}
+                                (<a href={`tel:${child.homeroomTeacherPhone}`} style={{ color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 700 }}>{child.homeroomTeacherPhone}</a>)
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

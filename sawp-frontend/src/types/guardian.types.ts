@@ -10,6 +10,8 @@ export interface LinkedChildSummaryDto {
   currentClassName?: string | null;
   grade?: number | null;
   isPlacementPublished: boolean;
+  homeroomTeacherName?: string | null;
+  homeroomTeacherPhone?: string | null;
   relationshipName: string;
   isPrimaryContact: boolean;
 }

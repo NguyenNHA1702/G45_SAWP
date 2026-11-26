@@ -156,15 +156,15 @@ export default function EContactBookPage() {
         parentFeedback: feedback || undefined,
       });
       if (res.success) {
-        toast.success(getSystemMessage('MSG53')?.content || 'Đã ký nhận phiếu nhận xét thành công.');
+        toast.success(getSystemMessage('MSG53')?.content || 'Đã xác nhận phiếu nhận xét thành công.');
         if (activeChild?.studentId) {
           loadEvaluations(activeChild.studentId);
         }
       } else {
-        toast.error(res.message || 'Lỗi khi ký nhận');
+        toast.error(res.message || 'Lỗi khi xác nhận');
       }
     } catch {
-      toast.error('Lỗi khi ký nhận');
+      toast.error('Lỗi khi xác nhận');
     } finally {
       setAcknowledgingId(null);
     }
@@ -296,8 +296,8 @@ export default function EContactBookPage() {
                   </div>
 
                   {/* Post Title & Content */}
-                  <h3 style={{ margin: '8px 0 10px', fontSize: '1.25rem' }}>{post.title}</h3>
-                  <p style={{ whiteSpace: 'pre-line', lineHeight: 1.6, color: '#334155', margin: '0 0 16px' }}>
+                  <h3 style={{ margin: '8px 0 10px', fontSize: '1.25rem', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{post.title}</h3>
+                  <p style={{ whiteSpace: 'pre-line', lineHeight: 1.6, color: '#334155', margin: '0 0 16px', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                     {post.content}
                   </p>
 
@@ -451,7 +451,7 @@ export default function EContactBookPage() {
                             fontSize: '0.8rem',
                           }}
                         >
-                          <CheckCircle2 size={14} /> Đã ký nhận
+                          <CheckCircle2 size={14} /> Đã xác nhận
                         </span>
                       ) : (
                         <span
@@ -467,7 +467,7 @@ export default function EContactBookPage() {
                             fontSize: '0.8rem',
                           }}
                         >
-                          <Clock size={14} /> Chờ phụ huynh ký nhận
+                          <Clock size={14} /> Chờ phụ huynh xác nhận
                         </span>
                       )}
                     </div>
@@ -552,19 +552,19 @@ export default function EContactBookPage() {
                     {ev.isAcknowledged ? (
                       <div style={{ background: '#F0FDF4', padding: 14, borderRadius: 12, border: '1px solid #BBF7D0' }}>
                         <div style={{ fontWeight: 700, color: '#166534', fontSize: '0.9rem' }}>
-                          ✍️ Đã ký nhận bởi {ev.acknowledgedByGuardianName || 'Phụ huynh'} lúc{' '}
+                          ✓ Đã xác nhận bởi {ev.acknowledgedByGuardianName || 'Phụ huynh'} lúc{' '}
                           {ev.acknowledgedAt ? new Date(ev.acknowledgedAt).toLocaleString('vi-VN') : ''}
                         </div>
                         {ev.parentFeedback && (
-                          <p style={{ margin: '6px 0 0', fontStyle: 'italic', color: '#14532D' }}>
-                            " {ev.parentFeedback} "
+                          <p style={{ margin: '6px 0 0', fontStyle: 'italic', color: '#14532D', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                            &quot; {ev.parentFeedback} &quot;
                           </p>
                         )}
                       </div>
                     ) : (
                       <div>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8 }}>
-                          ✍️ Ký nhận điện tử của Phụ huynh:
+                          ✓ Xác nhận của Phụ huynh:
                         </div>
                         <input
                           type="text"
@@ -580,7 +580,7 @@ export default function EContactBookPage() {
                           disabled={acknowledgingId === ev.id}
                           onClick={() => handleAcknowledge(ev.id)}
                         >
-                          <CheckCircle2 size={16} /> Ký xác nhận "Đã đọc" và gửi phản hồi
+                          <CheckCircle2 size={16} /> Xác nhận &quot;Đã đọc&quot; và gửi phản hồi
                         </button>
                       </div>
                     )}

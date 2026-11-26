@@ -248,7 +248,13 @@ public class StudentRepository : Repository<Student>, IStudentRepository
                         ca.ClassId,
                         ca.Class.ClassName,
                         ca.Class.Grade,
-                        ca.Class.IsPlacementPublished
+                        ca.Class.IsPlacementPublished,
+                        HomeroomTeacherName = ca.Class.HomeroomTeacher != null && ca.Class.HomeroomTeacher.User != null
+                            ? ca.Class.HomeroomTeacher.User.FullName
+                            : null,
+                        HomeroomTeacherPhone = ca.Class.HomeroomTeacher != null && ca.Class.HomeroomTeacher.User != null
+                            ? ca.Class.HomeroomTeacher.User.PhoneNumber
+                            : null
                     })
                     .FirstOrDefault()
             })
@@ -267,6 +273,8 @@ public class StudentRepository : Repository<Student>, IStudentRepository
             CurrentClassName = r.ActiveClass?.ClassName,
             Grade = r.ActiveClass?.Grade,
             IsPlacementPublished = r.ActiveClass?.IsPlacementPublished ?? false,
+            HomeroomTeacherName = r.ActiveClass?.HomeroomTeacherName,
+            HomeroomTeacherPhone = r.ActiveClass?.HomeroomTeacherPhone,
             RelationshipName = r.Relationship.ToVietnamese(),
             IsPrimaryContact = r.IsPrimaryContact
         }).ToList();

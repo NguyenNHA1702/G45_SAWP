@@ -39,6 +39,8 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   padding: var(--space-5);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .card--featured { box-shadow: var(--shadow-card-featured); }
 .card--hover { transition: transform var(--dur) var(--ease-bounce); }

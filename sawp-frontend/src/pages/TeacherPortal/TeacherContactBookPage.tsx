@@ -699,7 +699,7 @@ export default function TeacherContactBookPage() {
                       <th style={{ padding: '12px 16px' }}>Học sinh</th>
                       <th style={{ padding: '12px 16px' }}>Đánh giá nề nếp</th>
                       <th style={{ padding: '12px 16px' }}>Huy hiệu</th>
-                      <th style={{ padding: '12px 16px' }}>Ký nhận PH</th>
+                      <th style={{ padding: '12px 16px' }}>Xác nhận PH</th>
                       <th style={{ padding: '12px 16px', textAlign: 'right' }}>Thao tác</th>
                     </tr>
                   </thead>
@@ -746,10 +746,10 @@ export default function TeacherContactBookPage() {
                         <td style={{ padding: '12px 16px' }}>
                           {item.evaluation?.isAcknowledged ? (
                             <span style={{ color: '#15803D', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <CheckCircle2 size={14} /> Đã ký nhận
+                              <CheckCircle2 size={14} /> Đã xác nhận
                             </span>
                           ) : item.evaluation ? (
-                            <span style={{ color: '#B45309', fontSize: '0.8rem' }}>Chờ phụ huynh ký</span>
+                            <span style={{ color: '#B45309', fontSize: '0.8rem' }}>Chờ phụ huynh xác nhận</span>
                           ) : (
                             <span style={{ color: 'var(--color-muted-fg)', fontSize: '0.8rem' }}>--</span>
                           )}
@@ -806,10 +806,10 @@ export default function TeacherContactBookPage() {
                         )}
                         {item.evaluation?.isAcknowledged ? (
                           <span style={{ color: '#15803D', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <CheckCircle2 size={14} /> Đã ký nhận
+                            <CheckCircle2 size={14} /> Đã xác nhận
                           </span>
                         ) : item.evaluation ? (
-                          <span style={{ color: '#B45309', fontWeight: 600 }}>Chờ phụ huynh ký</span>
+                          <span style={{ color: '#B45309', fontWeight: 600 }}>Chờ phụ huynh xác nhận</span>
                         ) : null}
                       </div>
                       <button
@@ -989,13 +989,13 @@ export default function TeacherContactBookPage() {
               {selectedStudent.evaluation?.isAcknowledged && (
                 <div style={{ background: '#F0FDF4', padding: 14, borderRadius: 12, border: '1.5px solid #86EFAC' }}>
                   <div style={{ fontWeight: 800, color: '#166534', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <CheckCircle2 size={16} /> Đã được phụ huynh ký nhận lúc{' '}
+                    <CheckCircle2 size={16} /> Đã được phụ huynh xác nhận lúc{' '}
                     {selectedStudent.evaluation?.acknowledgedAt
                       ? new Date(selectedStudent.evaluation.acknowledgedAt).toLocaleString('vi-VN')
                       : ''}
                   </div>
                   <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#15803D' }}>
-                    🔒 Theo BR-59, phiếu đánh giá đã khóa (Read-only). Không thể chỉnh sửa sau khi phụ huynh đã ký nhận.
+                    🔒 Theo BR-59, phiếu đánh giá đã khóa (Read-only). Không thể chỉnh sửa sau khi phụ huynh đã xác nhận.
                   </div>
                 </div>
               )}

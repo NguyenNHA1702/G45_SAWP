@@ -9,7 +9,7 @@ import { useParentChild } from '../../contexts/ParentChildContext';
 import { StudentAttendanceDetailView } from '../../components/attendance/StudentAttendanceDetailView';
 
 export default function ChildAttendancePage() {
-  const { activeChildId } = useParentChild();
+  const { activeChild, activeChildId } = useParentChild();
   const [params, setParams] = useSearchParams();
   const queryStudentId = Number(params.get('studentId'));
   const studentId = activeChildId || queryStudentId || 1;
@@ -40,6 +40,11 @@ export default function ChildAttendancePage() {
         {data && (
           <p style={{ color: 'var(--color-muted-fg)', marginTop: 4, fontSize: 'var(--fs-base)' }}>
             Học sinh: <strong style={{ color: 'var(--color-fg)' }}>{data.fullName}</strong> — Lớp: <strong style={{ color: 'var(--color-fg)' }}>{data.className}</strong>
+            {activeChild?.homeroomTeacherName && (
+              <>
+                {' '}— GVCN: <strong style={{ color: 'var(--color-fg)' }}>{activeChild.homeroomTeacherName}</strong>
+              </>
+            )}
           </p>
         )}
       </div>
