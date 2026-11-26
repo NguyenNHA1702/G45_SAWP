@@ -1687,9 +1687,14 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú / Lý do quyết định không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
-        // NEW FLOW: School Board returns the request to Office Staff for revision / correction
+        // NEW FLOW: School Board returns the request to Office Staff for revision / correction (Document & Other only)
         if (request.ReturnToStaff)
         {
+            if (req.RequestType == RequestTypes.ClassTransfer)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đơn xin chuyển lớp chỉ hỗ trợ Phê duyệt (có thể điều chỉnh ngày hiệu lực trực tiếp) hoặc Từ chối, không áp dụng trả về Giáo vụ trình lại." });
+            }
+
             if (string.IsNullOrWhiteSpace(request.DecisionNotes) || request.DecisionNotes.Trim().Length < 5)
             {
                 return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập nội dung yêu cầu Giáo vụ chỉnh sửa / gửi lại (tối thiểu 5 ký tự)." });
