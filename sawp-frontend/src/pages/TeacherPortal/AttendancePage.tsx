@@ -57,8 +57,9 @@ export default function AttendancePage() {
   const [roles] = useState(() => currentRoles());
   const hasRole = (...targets: string[]) =>
     roles.some((r) => targets.some((t) => t.toLowerCase() === r.toLowerCase()));
-  // OVR-01 (UC-23 A2): only Office Staff send absence notices; the API checks the role too.
+  // OVR-01 (UC-23 A2): Office Staff and Teacher can send absence notices; the API checks the role too.
   const isOfficeStaff = hasRole('OfficeStaff');
+  const canSendAbsenceNotice = isOfficeStaff || hasRole('Teacher');
   const isOfficeOrAdmin = isOfficeStaff || hasRole('Admin');
   const isTeacherOnly = hasRole('Teacher') && !isOfficeOrAdmin;
   const isSchoolBoardOnly = hasRole('SchoolBoard') && !hasRole('Teacher') && !isOfficeOrAdmin;
@@ -320,7 +321,7 @@ export default function AttendancePage() {
           Điểm Danh <span className="squiggle">Hằng Ngày</span>
         </h1>
         <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)', maxWidth: '68ch' }}>
-          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng có phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Thông báo vắng mặt cho phụ huynh do Phòng Giáo vụ gửi.
+          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng có phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Giáo viên hoặc Phòng Giáo vụ có thể gửi thông báo vắng mặt không phép tới phụ huynh.
         </p>
 
         {/* ATT-14: Chuyển đổi giữa Điểm danh theo ngày & Tổng hợp chuyên cần lớp */}
@@ -846,7 +847,7 @@ export default function AttendancePage() {
               onStatusChange={vm.setStatus}
               onRemarksChange={vm.setRemarks}
               onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
-              onSendAbsenceNotice={isOfficeStaff ? setNoticeEntry : undefined}
+              onSendAbsenceNotice={canSendAbsenceNotice ? setNoticeEntry : undefined}
               absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
               canSendNoticeForDate={date === todayStr}
             />
