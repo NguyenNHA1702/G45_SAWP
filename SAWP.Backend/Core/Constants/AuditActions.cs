@@ -17,11 +17,10 @@ public static class AuditActions
     public const string UserActivationLinkSent = "USER_ACTIVATION_LINK_SENT";
     public const string SchoolCalendarDayConfigure = "SCHOOL_CALENDAR_DAY_CONFIGURE";
 
-    // School years, classes and placement
+    // School years and classes
     public const string SchoolYearCreate = "SCHOOL_YEAR_CREATE";
     public const string SchoolYearActivate = "SCHOOL_YEAR_ACTIVATE";
     public const string SchoolYearDelete = "SCHOOL_YEAR_DELETE";
-    public const string SchoolYearPublishPlacements = "SCHOOL_YEAR_PUBLISH_PLACEMENTS";
     public const string ClassCreate = "CLASS_CREATE";
     public const string ClassInitializeBatch = "CLASS_INITIALIZE_BATCH";
     public const string ClassUpdate = "CLASS_UPDATE";
@@ -30,13 +29,8 @@ public static class AuditActions
     public const string ClassAssignStudents = "CLASS_ASSIGN_STUDENTS";
     public const string ClassRemoveStudent = "CLASS_REMOVE_STUDENT";
     public const string ClassDelete = "CLASS_DELETE";
-    public const string ClassPublishPlacement = "CLASS_PUBLISH_PLACEMENT";
-    public const string PlacementPlanGenerateDraft = "PLACEMENT_PLAN_GENERATE_DRAFT";
-    public const string PlacementPlanMoveStudent = "PLACEMENT_PLAN_MOVE_STUDENT";
-    public const string PlacementPlanSwapStudents = "PLACEMENT_PLAN_SWAP_STUDENTS";
-    public const string PlacementPlanSubmit = "PLACEMENT_PLAN_SUBMIT";
-    public const string PlacementPlanApprove = "PLACEMENT_PLAN_APPROVE";
-    public const string PlacementPlanReject = "PLACEMENT_PLAN_REJECT";
+    public const string ClassImportAssignments = "CLASS_IMPORT_ASSIGNMENTS";
+    public const string ClassMarkReviewed = "CLASS_MARK_REVIEWED";
 
     // Students
     public const string StudentCreate = "STUDENT_CREATE";

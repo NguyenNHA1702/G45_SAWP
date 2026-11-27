@@ -19,7 +19,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
             .Include(c => c.SchoolYear)
             .Include(c => c.HomeroomTeacher)
                 .ThenInclude(t => t!.User)
-            .Include(c => c.ClassAssignments.Where(ca => ca.IsActive))
+            .Include(c => c.ClassAssignments.Where(ca => ca.IsActive || ca.IsDraft))
                 .ThenInclude(ca => ca.Student)
                     .ThenInclude(s => s.StudentGuardians)
                         .ThenInclude(sg => sg.Guardian)
@@ -34,7 +34,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
             .Include(c => c.SchoolYear)
             .Include(c => c.HomeroomTeacher)
                 .ThenInclude(t => t!.User)
-            .Include(c => c.ClassAssignments.Where(ca => ca.IsActive))
+            .Include(c => c.ClassAssignments.Where(ca => ca.IsActive || ca.IsDraft))
             .AsSplitQuery()
             .Where(c => c.SchoolYearId == schoolYearId);
 
@@ -132,7 +132,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
     {
         var assignedStudentIds = _context.ClassAssignments
             .AsNoTracking()
-            .Where(ca => ca.IsActive && ca.Class.SchoolYearId == schoolYearId)
+            .Where(ca => (ca.IsActive || ca.IsDraft) && ca.Class.SchoolYearId == schoolYearId)
             .Select(ca => ca.StudentId);
 
         var query = _context.Students
@@ -161,6 +161,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
                 StartDate = sy.StartDate,
                 EndDate = sy.EndDate,
                 IsActive = sy.IsActive,
+                Status = sy.Status,
                 ClassCount = sy.Classes.Count
             })
             .ToListAsync(cancellationToken);
@@ -178,6 +179,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
                 StartDate = sy.StartDate,
                 EndDate = sy.EndDate,
                 IsActive = sy.IsActive,
+                Status = sy.Status,
                 ClassCount = sy.Classes.Count
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -211,12 +213,13 @@ public class ClassRepository : Repository<Class>, IClassRepository
                 Grade = c.Grade,
                 RoomNumber = c.RoomNumber,
                 Capacity = c.Capacity,
-                EnrolledCount = c.ClassAssignments.Count(ca => ca.IsActive),
+                EnrolledCount = c.ClassAssignments.Count(ca => ca.IsActive || ca.IsDraft),
                 Status = c.Status,
-                IsPlacementPublished = c.IsPlacementPublished,
                 HomeroomTeacherId = c.HomeroomTeacherId,
                 HomeroomTeacherName = c.HomeroomTeacher != null && c.HomeroomTeacher.User != null ? c.HomeroomTeacher.User.FullName : null,
-                HomeroomTeacherStaffCode = c.HomeroomTeacher != null ? c.HomeroomTeacher.StaffCode : null
+                HomeroomTeacherStaffCode = c.HomeroomTeacher != null ? c.HomeroomTeacher.StaffCode : null,
+                IsReviewed = c.IsReviewed,
+                ReviewedAt = c.ReviewedAt
             })
             .ToListAsync(cancellationToken);
     }
@@ -278,7 +281,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
         var query = _context.Students
             .AsNoTracking()
             .Where(s => s.Status == "Active"
-                && !_context.ClassAssignments.Any(ca => ca.IsActive && ca.Class.SchoolYearId == schoolYearId && ca.StudentId == s.Id));
+                && !_context.ClassAssignments.Any(ca => (ca.IsActive || ca.IsDraft) && ca.Class.SchoolYearId == schoolYearId && ca.StudentId == s.Id));
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -360,7 +363,6 @@ public class ClassRepository : Repository<Class>, IClassRepository
                 AcademicYear = c.SchoolYear != null ? c.SchoolYear.YearName : string.Empty,
                 c.RoomNumber,
                 c.Capacity,
-                c.IsPlacementPublished,
                 HomeroomTeacherUserId = c.HomeroomTeacher != null ? (int?)c.HomeroomTeacher.UserId : null,
                 HomeroomTeacherName = c.HomeroomTeacher != null && c.HomeroomTeacher.User != null ? c.HomeroomTeacher.User.FullName : null,
                 HomeroomTeacherPhone = c.HomeroomTeacher != null && c.HomeroomTeacher.User != null ? c.HomeroomTeacher.User.PhoneNumber : null,
@@ -372,7 +374,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
 
         var students = await _context.ClassAssignments
             .AsNoTracking()
-            .Where(ca => ca.ClassId == classId && ca.IsActive)
+            .Where(ca => ca.ClassId == classId && (ca.IsActive || ca.IsDraft))
             .OrderBy(ca => ca.Student.FullName)
             .Select(ca => new RosterStudentItemDto
             {
@@ -418,7 +420,6 @@ public class ClassRepository : Repository<Class>, IClassRepository
             RoomNumber = header.RoomNumber,
             Capacity = header.Capacity,
             TotalEnrolled = students.Count,
-            IsPlacementPublished = header.IsPlacementPublished,
             HomeroomTeacherName = header.HomeroomTeacherName,
             HomeroomTeacherPhone = header.HomeroomTeacherPhone,
             HomeroomTeacherEmail = header.HomeroomTeacherEmail,

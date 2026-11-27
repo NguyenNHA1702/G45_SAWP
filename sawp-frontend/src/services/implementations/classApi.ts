@@ -8,12 +8,17 @@ import type {
   CreateClassDto,
   CreateSchoolYearDto,
   InitializeBatchClassesDto,
-  PublishPlacementResultDto,
   RosterStudentItemDto,
   SchoolYearDto,
   TeacherOptionDto,
   UpdateClassDto,
 } from '../../types/class.types';
+import type {
+  ClassImportMode,
+  ClassImportPreviewDto,
+  ClassImportResultDto,
+  ClassImportRowsDto,
+} from '../../types/classImport.types';
 
 export const classApi = {
   // Academic Years
@@ -39,6 +44,48 @@ export const classApi = {
 
   async deleteSchoolYear(id: number): Promise<ApiResponse<boolean>> {
     const res = await apiClient.delete<ApiResponse<boolean>>(`/classes/school-years/${id}`);
+    return res.data;
+  },
+
+  // UC-69 Import Class Assignments into a Draft school year
+  async previewClassImport(schoolYearId: number, file: File, mode: ClassImportMode): Promise<ApiResponse<ClassImportPreviewDto>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('mode', mode);
+    const res = await apiClient.post<ApiResponse<ClassImportPreviewDto>>(
+      `/classes/school-years/${schoolYearId}/import/preview`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 },
+    );
+    return res.data;
+  },
+
+  async previewClassImportRows(schoolYearId: number, rows: ClassImportRowsDto): Promise<ApiResponse<ClassImportPreviewDto>> {
+    const res = await apiClient.post<ApiResponse<ClassImportPreviewDto>>(
+      `/classes/school-years/${schoolYearId}/import/preview-rows`,
+      rows,
+      { timeout: 300000 },
+    );
+    return res.data;
+  },
+
+  async confirmClassImport(schoolYearId: number, rows: ClassImportRowsDto): Promise<ApiResponse<ClassImportResultDto>> {
+    const res = await apiClient.post<ApiResponse<ClassImportResultDto>>(
+      `/classes/school-years/${schoolYearId}/import/confirm`,
+      rows,
+      { timeout: 300000 },
+    );
+    return res.data;
+  },
+
+  async downloadClassImportTemplate(): Promise<Blob> {
+    const res = await apiClient.get('/classes/import/template', { responseType: 'blob' });
+    return res.data;
+  },
+
+  // UC-14 A2: mark a class of a Draft school year as Reviewed
+  async markClassReviewed(classId: number): Promise<ApiResponse<ClassSummaryDto>> {
+    const res = await apiClient.post<ApiResponse<ClassSummaryDto>>(`/classes/${classId}/mark-reviewed`);
     return res.data;
   },
 
@@ -101,7 +148,7 @@ export const classApi = {
     return res.data;
   },
 
-  // Student Placement
+  // Student class assignment (UC-16)
   async getEligibleStudents(classId: number): Promise<ApiResponse<RosterStudentItemDto[]>> {
     const res = await apiClient.get<ApiResponse<RosterStudentItemDto[]>>(`/classes/${classId}/eligible-students`);
     return res.data;
@@ -133,21 +180,6 @@ export const classApi = {
 
   async removeStudentsBatch(classId: number, studentIds: number[]): Promise<ApiResponse<boolean>> {
     const res = await apiClient.post<ApiResponse<boolean>>(`/classes/${classId}/remove-students-batch`, { studentIds });
-    return res.data;
-  },
-
-  // Publishing
-  async publishPlacement(classId: number): Promise<ApiResponse<PublishPlacementResultDto>> {
-    const res = await apiClient.post<ApiResponse<PublishPlacementResultDto>>(`/classes/${classId}/publish-placement`);
-    return res.data;
-  },
-
-  async publishAllPlacements(schoolYearId: number): Promise<ApiResponse<PublishPlacementResultDto[]>> {
-    const res = await apiClient.post<ApiResponse<PublishPlacementResultDto[]>>(
-      '/classes/publish-all-placements',
-      null,
-      { params: { schoolYearId } },
-    );
     return res.data;
   },
 

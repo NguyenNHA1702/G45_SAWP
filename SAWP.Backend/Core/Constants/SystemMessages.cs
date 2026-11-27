@@ -1,7 +1,7 @@
 namespace Core.Constants;
 
 /// <summary>
-/// Standard System Messages defined in SRS (MSG01 to MSG61).
+/// Standard System Messages defined in SRS (MSG01 to MSG63).
 /// </summary>
 public static class SystemMessages
 {
@@ -249,6 +249,14 @@ public static class SystemMessages
     public static readonly SystemMessage MSG61 = new("MSG61", "Toast (Success)", "Account request reviewed", "Đã xử lý yêu cầu tạo tài khoản.");
     public static readonly SystemMessage MSG61_AccountRequestReviewed = MSG61;
 
+    /// <summary>[Toast / Summary (Error)] School year not in Draft: Chỉ có thể nhập dữ liệu xếp lớp cho năm học ở trạng thái Bản nháp.</summary>
+    public static readonly SystemMessage MSG62 = new("MSG62", "Toast / Summary (Error)", "School year not in Draft", "Chỉ có thể nhập dữ liệu xếp lớp cho năm học ở trạng thái Bản nháp.");
+    public static readonly SystemMessage MSG62_SchoolYearNotDraft = MSG62;
+
+    /// <summary>[Toast (Error)] School year cannot be activated: Không thể kích hoạt năm học: năm học phải ở trạng thái Bản nháp và tất cả các lớp phải được đánh dấu Đã rà soát.</summary>
+    public static readonly SystemMessage MSG63 = new("MSG63", "Toast (Error)", "School year cannot be activated", "Không thể kích hoạt năm học: năm học phải ở trạng thái Bản nháp và tất cả các lớp phải được đánh dấu Đã rà soát.");
+    public static readonly SystemMessage MSG63_SchoolYearCannotBeActivated = MSG63;
+
     /// <summary>Map of all system messages by code</summary>
     public static readonly IReadOnlyDictionary<string, SystemMessage> All = new Dictionary<string, SystemMessage>(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -313,6 +321,8 @@ public static class SystemMessages
         { "MSG59", MSG59 },
         { "MSG60", MSG60 },
         { "MSG61", MSG61 },
+        { "MSG62", MSG62 },
+        { "MSG63", MSG63 },
     };
 
     /// <summary>Lookup a message by code (e.g. MSG01)</summary>

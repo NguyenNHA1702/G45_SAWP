@@ -76,22 +76,14 @@ public class ClassService : IClassService
             return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { $"Năm học '{request.YearName.Trim()}' đã tồn tại trong hệ thống." });
         }
 
-        // BR-14: Exactly one school year may be designated as the current active school year at a time
-        if (request.IsActive && existingYears != null)
-        {
-            foreach (var sy in existingYears.Where(y => y.IsActive))
-            {
-                sy.IsActive = false;
-                await _unitOfWork.Repository<SchoolYear>().UpdateAsync(sy, cancellationToken);
-            }
-        }
-
+        // UC-13 step 2, BR-72: a new school year is saved in Draft state; it does not affect the active year (BR-14)
         var schoolYear = new SchoolYear
         {
             YearName = request.YearName.Trim(),
             StartDate = request.StartDate,
             EndDate = request.EndDate,
-            IsActive = request.IsActive
+            IsActive = false,
+            Status = SchoolYearStatuses.Draft
         };
 
         await _unitOfWork.Repository<SchoolYear>().AddAsync(schoolYear, cancellationToken);
@@ -103,7 +95,7 @@ public class ClassService : IClassService
             nameof(SchoolYear),
             schoolYear.Id.ToString(),
             null,
-            new { schoolYear.YearName, schoolYear.StartDate, schoolYear.EndDate, schoolYear.IsActive },
+            new { schoolYear.YearName, schoolYear.StartDate, schoolYear.EndDate, schoolYear.Status },
             null, // TODO: pass the client IP address; it is not recorded yet.
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -115,6 +107,7 @@ public class ClassService : IClassService
             StartDate = schoolYear.StartDate,
             EndDate = schoolYear.EndDate,
             IsActive = schoolYear.IsActive,
+            Status = schoolYear.Status,
             ClassCount = 0
         }, SystemMessages.MSG08);
     }
@@ -135,6 +128,7 @@ public class ClassService : IClassService
             StartDate = y.StartDate,
             EndDate = y.EndDate,
             IsActive = y.IsActive,
+            Status = y.Status,
             ClassCount = y.Classes.Count
         }).ToList();
 
@@ -162,6 +156,7 @@ public class ClassService : IClassService
             StartDate = activeYear.StartDate,
             EndDate = activeYear.EndDate,
             IsActive = activeYear.IsActive,
+            Status = activeYear.Status,
             ClassCount = activeYear.Classes.Count
         });
     }
@@ -174,25 +169,88 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy năm học." });
         }
 
-        var allYears = await _unitOfWork.Classes.GetAllSchoolYearsAsync(cancellationToken);
-        foreach (var sy in allYears)
+        // UC-13 step 4 / E2, BR-72: only a Draft school year all of whose classes are Reviewed can be activated
+        var targetClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(schoolYearId, null, null, cancellationToken)
+                            ?? new List<Class>();
+        if (target.Status != SchoolYearStatuses.Draft)
         {
-            sy.IsActive = (sy.Id == schoolYearId);
-            await _unitOfWork.Repository<SchoolYear>().UpdateAsync(sy, cancellationToken);
+            return ApiResponse<bool>.Fail(SystemMessages.MSG63, new List<string> { $"Năm học {target.YearName} không ở trạng thái Bản nháp." });
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var notReviewed = targetClasses.Where(c => !c.IsReviewed).Select(c => c.ClassName).ToList();
+        if (notReviewed.Count > 0)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG63, new List<string> { $"Các lớp chưa được rà soát: {string.Join(", ", notReviewed)}." });
+        }
 
-        await _auditService.LogActionAsync(
-            actorUserId,
-            AuditActions.SchoolYearActivate,
-            nameof(SchoolYear),
-            schoolYearId.ToString(),
-            null,
-            new { target.YearName, IsActive = true },
-            null, // TODO: pass the client IP address; it is not recorded yet.
-            cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var targetClassIds = targetClasses.Select(c => c.Id).ToList();
+        var now = DateTime.UtcNow;
+        var allYears = await _unitOfWork.Classes.GetAllSchoolYearsAsync(cancellationToken);
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // BR-14: the previously active year ends
+            foreach (var sy in allYears.Where(y => y.Id != schoolYearId && y.IsActive))
+            {
+                sy.IsActive = false;
+                sy.Status = SchoolYearStatuses.Archived;
+                await _unitOfWork.Repository<SchoolYear>().UpdateAsync(sy, cancellationToken);
+            }
+
+            // BR-17, BR-18: current assignments outside the new year end, so each student keeps one current class;
+            // the records stay as history (BR-55)
+            var endedAssignments = await _unitOfWork.Repository<ClassAssignment>()
+                .FindAsync(ca => ca.IsActive && !targetClassIds.Contains(ca.ClassId), cancellationToken);
+            foreach (var ca in endedAssignments)
+            {
+                ca.IsActive = false;
+                ca.EndDate = now;
+                await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(ca, cancellationToken);
+            }
+
+            // The Draft class assignments become each student's current class
+            var draftAssignments = await _unitOfWork.Repository<ClassAssignment>()
+                .FindAsync(ca => ca.IsDraft && targetClassIds.Contains(ca.ClassId), cancellationToken);
+            foreach (var ca in draftAssignments)
+            {
+                ca.IsDraft = false;
+                ca.IsActive = true;
+                await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(ca, cancellationToken);
+            }
+
+            target.IsActive = true;
+            target.Status = SchoolYearStatuses.Active;
+            await _unitOfWork.Repository<SchoolYear>().UpdateAsync(target, cancellationToken);
+
+            // UC-15 step 5: homeroom teachers of a Draft year are notified at activation
+            foreach (var cls in targetClasses.Where(c => c.HomeroomTeacherId.HasValue))
+            {
+                var teacher = cls.HomeroomTeacher
+                              ?? await _unitOfWork.Repository<StaffProfile>().GetByIdAsync(cls.HomeroomTeacherId!.Value, cancellationToken);
+                if (teacher == null) continue;
+                await _unitOfWork.Repository<Notification>().AddAsync(BuildHomeroomNotification(teacher.UserId, cls, target.YearName), cancellationToken);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            await _auditService.LogActionAsync(
+                actorUserId,
+                AuditActions.SchoolYearActivate,
+                nameof(SchoolYear),
+                schoolYearId.ToString(),
+                new { target.YearName, Status = SchoolYearStatuses.Draft },
+                new { target.YearName, target.Status, ClassCount = targetClasses.Count, ActivatedAssignments = draftAssignments.Count(), EndedAssignments = endedAssignments.Count() },
+                null, // TODO: pass the client IP address; it is not recorded yet.
+                cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
@@ -210,13 +268,13 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học đang hoạt động (Active). Vui lòng chuyển trạng thái hoạt động sang năm học khác trước khi xóa." });
         }
 
-        var classesInYear = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(schoolYearId, null, null, cancellationToken);
-
-        // Check if any class has published placement
-        if (classesInYear.Any(c => c.IsPlacementPublished))
+        // UC-13 A2, BR-52: only a Draft school year can be discarded; an archived year stays for history
+        if (schoolYear.Status != SchoolYearStatuses.Draft)
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đã có lớp học được công bố phân lớp (Published)." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể xóa năm học ở trạng thái Bản nháp. Năm học đã lưu trữ được giữ lại để tra cứu." });
         }
+
+        var classesInYear = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(schoolYearId, null, null, cancellationToken);
 
         // Check if any class has enrolled students
         if (classesInYear.Any(c => c.ClassAssignments != null && c.ClassAssignments.Any(ca => ca.IsActive)))
@@ -232,15 +290,9 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đã có dữ liệu điểm danh phát sinh." });
         }
 
-        // Safe to delete: remove plan items, assignments, schedules, classes, and then the school year
+        // Safe to delete: remove assignments, schedules, classes, and then the school year
         foreach (var cls in classesInYear)
         {
-            var planItems = await _unitOfWork.Repository<PlacementPlanItem>().FindAsync(p => p.ClassId == cls.Id, cancellationToken);
-            foreach (var pi in planItems)
-            {
-                await _unitOfWork.Repository<PlacementPlanItem>().DeleteAsync(pi, cancellationToken);
-            }
-
             var assignments = await _unitOfWork.Repository<ClassAssignment>().FindAsync(ca => ca.ClassId == cls.Id, cancellationToken);
             foreach (var ca in assignments)
             {
@@ -261,10 +313,10 @@ public class ClassService : IClassService
 
         await _auditService.LogActionAsync(
             actorUserId,
-            AuditActions.ClassDelete,
+            AuditActions.SchoolYearDelete,
             nameof(SchoolYear),
             schoolYearId.ToString(),
-            new { schoolYear.YearName, DeletedClassCount = classesInYear.Count },
+            new { schoolYear.YearName, schoolYear.Status, DeletedClassCount = classesInYear.Count },
             null,
             null,
             cancellationToken);
@@ -323,7 +375,6 @@ public class ClassService : IClassService
             RoomNumber = request.RoomNumber?.Trim(),
             Capacity = request.Capacity,
             Status = "Active",
-            IsPlacementPublished = false
         };
 
         await _unitOfWork.Classes.AddAsync(newClass, cancellationToken);
@@ -351,7 +402,6 @@ public class ClassService : IClassService
             Capacity = newClass.Capacity,
             EnrolledCount = 0,
             Status = newClass.Status,
-            IsPlacementPublished = newClass.IsPlacementPublished
         }, SystemMessages.MSG08);
     }
 
@@ -441,7 +491,7 @@ public class ClassService : IClassService
                         Grade = existingClass.Grade,
                         RoomNumber = existingClass.RoomNumber,
                         Capacity = existingClass.Capacity,
-                        EnrolledCount = existingClass.ClassAssignments?.Count(a => a.IsActive) ?? 0,
+                        EnrolledCount = existingClass.ClassAssignments?.Count(IsMember) ?? 0,
                         Status = existingClass.Status,
                         HomeroomTeacherId = existingClass.HomeroomTeacherId,
                         HomeroomTeacherName = existingClass.HomeroomTeacher?.User?.FullName,
@@ -459,7 +509,6 @@ public class ClassService : IClassService
                         RoomNumber = $"Phòng {grade}0{suffix}",
                         Capacity = capacity,
                         Status = "Active",
-                        IsPlacementPublished = false
                     };
 
                     await _unitOfWork.Classes.AddAsync(newClass, cancellationToken);
@@ -477,7 +526,6 @@ public class ClassService : IClassService
                         Capacity = newClass.Capacity,
                         EnrolledCount = 0,
                         Status = newClass.Status,
-                        IsPlacementPublished = newClass.IsPlacementPublished
                     });
                 }
             }
@@ -558,12 +606,13 @@ public class ClassService : IClassService
             Grade = c.Grade,
             RoomNumber = c.RoomNumber,
             Capacity = c.Capacity,
-            EnrolledCount = c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0,
+            EnrolledCount = c.ClassAssignments?.Count(IsMember) ?? 0,
             Status = c.Status,
-            IsPlacementPublished = c.IsPlacementPublished,
             HomeroomTeacherId = c.HomeroomTeacherId,
             HomeroomTeacherName = c.HomeroomTeacher?.User?.FullName,
-            HomeroomTeacherStaffCode = c.HomeroomTeacher?.StaffCode
+            HomeroomTeacherStaffCode = c.HomeroomTeacher?.StaffCode,
+            IsReviewed = c.IsReviewed,
+            ReviewedAt = c.ReviewedAt
         }).ToList();
 
         return ApiResponse<List<ClassSummaryDto>>.Ok(result);
@@ -586,12 +635,13 @@ public class ClassService : IClassService
             Grade = c.Grade,
             RoomNumber = c.RoomNumber,
             Capacity = c.Capacity,
-            EnrolledCount = c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0,
+            EnrolledCount = c.ClassAssignments?.Count(IsMember) ?? 0,
             Status = c.Status,
-            IsPlacementPublished = c.IsPlacementPublished,
             HomeroomTeacherId = c.HomeroomTeacherId,
             HomeroomTeacherName = c.HomeroomTeacher?.User?.FullName,
-            HomeroomTeacherStaffCode = c.HomeroomTeacher?.StaffCode
+            HomeroomTeacherStaffCode = c.HomeroomTeacher?.StaffCode,
+            IsReviewed = c.IsReviewed,
+            ReviewedAt = c.ReviewedAt
         };
 
         return ApiResponse<ClassSummaryDto>.Ok(dto);
@@ -622,7 +672,7 @@ public class ClassService : IClassService
         }
 
         var normalizedName = request.ClassName.Trim().ToUpperInvariant();
-        var enrolledCount = c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0;
+        var enrolledCount = c.ClassAssignments?.Count(IsMember) ?? 0;
         if (request.Capacity < enrolledCount)
         {
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG15, new List<string> { $"Không thể giảm sĩ số tối đa ({request.Capacity}) nhỏ hơn số học sinh hiện tại đang có ({enrolledCount})." });
@@ -630,11 +680,18 @@ public class ClassService : IClassService
 
         var oldValues = new { c.ClassName, c.Grade, c.RoomNumber, c.Capacity, c.Status };
 
+        var changed = c.ClassName != normalizedName || c.Grade != request.Grade || c.RoomNumber != request.RoomNumber?.Trim()
+                      || c.Capacity != request.Capacity || c.Status != request.Status;
+
         c.ClassName = normalizedName;
         c.Grade = request.Grade;
         c.RoomNumber = request.RoomNumber?.Trim();
         c.Capacity = request.Capacity;
         c.Status = request.Status;
+        if (changed)
+        {
+            ResetReview(c);
+        }
 
         await _unitOfWork.Classes.UpdateAsync(c, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -661,10 +718,11 @@ public class ClassService : IClassService
             Capacity = c.Capacity,
             EnrolledCount = enrolledCount,
             Status = c.Status,
-            IsPlacementPublished = c.IsPlacementPublished,
             HomeroomTeacherId = c.HomeroomTeacherId,
             HomeroomTeacherName = c.HomeroomTeacher?.User?.FullName,
-            HomeroomTeacherStaffCode = c.HomeroomTeacher?.StaffCode
+            HomeroomTeacherStaffCode = c.HomeroomTeacher?.StaffCode,
+            IsReviewed = c.IsReviewed,
+            ReviewedAt = c.ReviewedAt
         }, SystemMessages.MSG08);
     }
 
@@ -676,7 +734,7 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Lớp học không tồn tại." });
         }
 
-        var activeEnrolledCount = targetClass.ClassAssignments?.Count(ca => ca.IsActive) ?? 0;
+        var activeEnrolledCount = targetClass.ClassAssignments?.Count(IsMember) ?? 0;
         if (activeEnrolledCount > 0)
         {
             return ApiResponse<bool>.Fail(
@@ -705,13 +763,6 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(
                 SystemMessages.MSG09,
                 new List<string> { "Không thể xóa lớp học vì lớp đã có thời khóa biểu." });
-        }
-
-        // Dọn dẹp dữ liệu xếp lớp nháp hoặc phân công cũ nếu có
-        var planItems = await _unitOfWork.Repository<PlacementPlanItem>().FindAsync(p => p.ClassId == classId, cancellationToken);
-        foreach (var item in planItems)
-        {
-            await _unitOfWork.Repository<PlacementPlanItem>().DeleteAsync(item, cancellationToken);
         }
 
         var pastAssignments = await _unitOfWork.Repository<ClassAssignment>().FindAsync(ca => ca.ClassId == classId, cancellationToken);
@@ -829,6 +880,10 @@ public class ClassService : IClassService
         }
 
         var priorTeacherId = targetClass.HomeroomTeacherId;
+        if (priorTeacherId != targetStaffProfileId)
+        {
+            ResetReview(targetClass);
+        }
         targetClass.HomeroomTeacherId = targetStaffProfileId;
         teacherProfile.IsHomeroomTeacher = true;
 
@@ -836,18 +891,13 @@ public class ClassService : IClassService
         await _unitOfWork.Repository<StaffProfile>().UpdateAsync(teacherProfile, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Notify teacher of homeroom assignment (BR-42)
-        var notification = new Notification
+        // Notify teacher of homeroom assignment (BR-42); for a Draft school year at activation (UC-15 step 5)
+        if (!IsDraftYear(targetClass.SchoolYear))
         {
-            UserId = teacherProfile.UserId,
-            Title = "Phân công giáo viên chủ nhiệm",
-            Content = $"Bạn đã được phân công làm giáo viên chủ nhiệm lớp {targetClass.ClassName} năm học {targetClass.SchoolYear?.YearName}.",
-            LinkUrl = $"/teacher/classes/{targetClass.Id}",
-            CreatedAt = DateTime.UtcNow,
-            IsRead = false
-        };
-        await _unitOfWork.Repository<Notification>().AddAsync(notification, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+            var notification = BuildHomeroomNotification(teacherProfile.UserId, targetClass, targetClass.SchoolYear?.YearName);
+            await _unitOfWork.Repository<Notification>().AddAsync(notification, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         await _auditService.LogActionAsync(
             actorUserId,
@@ -880,6 +930,7 @@ public class ClassService : IClassService
         var teacherProfile = await _unitOfWork.Repository<StaffProfile>().GetByIdAsync(priorTeacherId, cancellationToken);
 
         targetClass.HomeroomTeacherId = null;
+        ResetReview(targetClass);
         if (teacherProfile != null)
         {
             // Check if teacher is assigned to any other classes in the school year
@@ -912,7 +963,7 @@ public class ClassService : IClassService
 
     #endregion
 
-    #region Student Placement / Class Assignment (UC-16)
+    #region Student Class Assignment (UC-16)
 
     public async Task<ApiResponse<List<RosterStudentItemDto>>> GetEligibleStudentsForAssignmentAsync(int classId, CancellationToken cancellationToken = default)
     {
@@ -1022,7 +1073,7 @@ public class ClassService : IClassService
         }
 
         // BR-15 & BR-17: Check capacity
-        var currentEnrolled = targetClass.ClassAssignments.Count(ca => ca.IsActive);
+        var currentEnrolled = targetClass.ClassAssignments.Count(IsMember);
         if (currentEnrolled + request.StudentIds.Count > targetClass.Capacity)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG15, new List<string> { $"Lớp {targetClass.ClassName} đã đạt hoặc vượt quá sĩ số tối đa ({targetClass.Capacity}). Hiện có {currentEnrolled} học sinh." });
@@ -1030,7 +1081,7 @@ public class ClassService : IClassService
 
         // Check if any student already has an active class assignment for this school year (BR-17)
         var activeAssignmentsInYear = await _unitOfWork.Repository<ClassAssignment>()
-            .FindAsync(ca => ca.IsActive && ca.Class.SchoolYearId == targetClass.SchoolYearId && request.StudentIds.Contains(ca.StudentId), cancellationToken);
+            .FindAsync(ca => (ca.IsActive || ca.IsDraft) && ca.Class.SchoolYearId == targetClass.SchoolYearId && request.StudentIds.Contains(ca.StudentId), cancellationToken);
 
         if (activeAssignmentsInYear.Any())
         {
@@ -1063,6 +1114,8 @@ public class ClassService : IClassService
         }
 
         var academicYearName = targetClass.SchoolYear?.YearName ?? DateTime.UtcNow.Year.ToString();
+        // UC-16 A1, BR-72: in a Draft school year the assignment does not change the student's current class
+        var isDraftYear = IsDraftYear(targetClass.SchoolYear);
 
         foreach (var studentId in distinctStudentIds)
         {
@@ -1071,10 +1124,17 @@ public class ClassService : IClassService
                 ClassId = classId,
                 StudentId = studentId,
                 AcademicYear = academicYearName,
-                StartDate = DateTime.UtcNow.Date,
-                IsActive = true
+                StartDate = isDraftYear ? targetClass.SchoolYear!.StartDate.Date : DateTime.UtcNow.Date,
+                IsActive = !isDraftYear,
+                IsDraft = isDraftYear
             };
             await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
+        }
+
+        if (isDraftYear)
+        {
+            ResetReview(targetClass);
+            await _unitOfWork.Classes.UpdateAsync(targetClass, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -1096,7 +1156,7 @@ public class ClassService : IClassService
     public async Task<ApiResponse<bool>> RemoveStudentFromClassAsync(int classId, int studentId, int? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var assignment = (await _unitOfWork.Repository<ClassAssignment>()
-            .FindAsync(ca => ca.ClassId == classId && ca.StudentId == studentId && ca.IsActive, cancellationToken))
+            .FindAsync(ca => ca.ClassId == classId && ca.StudentId == studentId && (ca.IsActive || ca.IsDraft), cancellationToken))
             .FirstOrDefault();
 
         if (assignment == null)
@@ -1104,11 +1164,8 @@ public class ClassService : IClassService
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Học sinh không có trong danh sách lớp này." });
         }
 
-        // BR-18: Class reassignment/transfer must preserve prior class-assignment history
-        assignment.IsActive = false;
-        assignment.EndDate = DateTime.UtcNow;
-
-        await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(assignment, cancellationToken);
+        await EndOrDeleteAssignmentAsync(assignment, DateTime.UtcNow, cancellationToken);
+        await ResetReviewIfDraftAsync(classId, assignment.IsDraft, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogActionAsync(
@@ -1134,7 +1191,7 @@ public class ClassService : IClassService
 
         var distinctIds = studentIds.Distinct().ToList();
         var assignments = await _unitOfWork.Repository<ClassAssignment>()
-            .FindAsync(ca => ca.ClassId == classId && distinctIds.Contains(ca.StudentId) && ca.IsActive, cancellationToken);
+            .FindAsync(ca => ca.ClassId == classId && distinctIds.Contains(ca.StudentId) && (ca.IsActive || ca.IsDraft), cancellationToken);
 
         var list = assignments.ToList();
         if (!list.Any())
@@ -1145,10 +1202,9 @@ public class ClassService : IClassService
         var now = DateTime.UtcNow;
         foreach (var assignment in list)
         {
-            assignment.IsActive = false;
-            assignment.EndDate = now;
-            await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(assignment, cancellationToken);
+            await EndOrDeleteAssignmentAsync(assignment, now, cancellationToken);
         }
+        await ResetReviewIfDraftAsync(classId, list.Any(a => a.IsDraft), cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -1165,137 +1221,6 @@ public class ClassService : IClassService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, $"Đã gỡ thành công {list.Count} học sinh khỏi lớp học.");
-    }
-
-    #endregion
-
-    #region Placement Publishing
-
-    public async Task<ApiResponse<PublishPlacementResultDto>> PublishPlacementAsync(int classId, int? actorUserId = null, CancellationToken cancellationToken = default)
-    {
-        var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(classId, cancellationToken);
-        if (targetClass == null)
-        {
-            return ApiResponse<PublishPlacementResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
-        }
-
-        var enrolledCount = targetClass.ClassAssignments.Count(ca => ca.IsActive);
-        if (enrolledCount == 0)
-        {
-            return ApiResponse<PublishPlacementResultDto>.Fail(
-                SystemMessages.MSG01,
-                new List<string> { $"Lớp {targetClass.ClassName} chưa có học sinh nào. Vui lòng lập và duyệt phương án xếp lớp trước khi công bố." }
-            );
-        }
-
-        targetClass.IsPlacementPublished = true;
-        targetClass.Status = "Active";
-
-        await _unitOfWork.Classes.UpdateAsync(targetClass, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        // Notify homeroom teacher if designated (BR-42)
-        if (targetClass.HomeroomTeacher != null)
-        {
-            var notif = new Notification
-            {
-                UserId = targetClass.HomeroomTeacher.UserId,
-                Title = "Danh sách phân lớp đã được công bố",
-                Content = $"Danh sách học sinh lớp {targetClass.ClassName} ({enrolledCount} học sinh) đã được Giáo vụ công bố chính thức. Thầy/Cô có thể vào xem danh sách lớp.",
-                LinkUrl = $"/teacher/classes/{targetClass.Id}/roster",
-                CreatedAt = DateTime.UtcNow,
-                IsRead = false
-            };
-            await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-
-        await _auditService.LogActionAsync(
-            actorUserId,
-            AuditActions.ClassPublishPlacement,
-            nameof(Class),
-            targetClass.Id.ToString(),
-            null,
-            new { targetClass.ClassName, EnrolledCount = enrolledCount },
-            null, // TODO: pass the client IP address; it is not recorded yet.
-            cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        var result = new PublishPlacementResultDto
-        {
-            ClassId = targetClass.Id,
-            ClassName = targetClass.ClassName,
-            EnrolledCount = enrolledCount,
-            HomeroomTeacherName = targetClass.HomeroomTeacher?.User?.FullName,
-            PublishedAt = DateTime.UtcNow,
-            Message = $"Đã công bố danh sách phân lớp thành công cho lớp {targetClass.ClassName} ({enrolledCount} học sinh)."
-        };
-
-        return ApiResponse<PublishPlacementResultDto>.Ok(result, SystemMessages.MSG08);
-    }
-
-    public async Task<ApiResponse<List<PublishPlacementResultDto>>> PublishAllPlacementsAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default)
-    {
-        var classes = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(schoolYearId, null, null, cancellationToken);
-        var eligibleClasses = classes.Where(c => (c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0) > 0).ToList();
-
-        if (!eligibleClasses.Any())
-        {
-            return ApiResponse<List<PublishPlacementResultDto>>.Fail(
-                SystemMessages.MSG01,
-                new List<string> { "Chưa có lớp nào có học sinh để công bố. Vui lòng lập và duyệt phương án xếp lớp trước khi công bố toàn trường." }
-            );
-        }
-
-        var results = new List<PublishPlacementResultDto>();
-
-        foreach (var c in eligibleClasses)
-        {
-            c.IsPlacementPublished = true;
-            c.Status = "Active";
-            await _unitOfWork.Classes.UpdateAsync(c, cancellationToken);
-
-            var count = c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0;
-
-            if (c.HomeroomTeacher != null)
-            {
-                var notif = new Notification
-                {
-                    UserId = c.HomeroomTeacher.UserId,
-                    Title = "Công bố danh sách lớp học",
-                    Content = $"Danh sách học sinh lớp {c.ClassName} năm học {c.SchoolYear?.YearName} đã được công bố.",
-                    LinkUrl = $"/teacher/classes/{c.Id}/roster",
-                    CreatedAt = DateTime.UtcNow,
-                    IsRead = false
-                };
-                await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
-            }
-
-            results.Add(new PublishPlacementResultDto
-            {
-                ClassId = c.Id,
-                ClassName = c.ClassName,
-                EnrolledCount = count,
-                HomeroomTeacherName = c.HomeroomTeacher?.User?.FullName,
-                PublishedAt = DateTime.UtcNow,
-                Message = $"Đã công bố lớp {c.ClassName}"
-            });
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditService.LogActionAsync(
-            actorUserId,
-            AuditActions.SchoolYearPublishPlacements,
-            nameof(SchoolYear),
-            schoolYearId.ToString(),
-            null,
-            new { ClassCount = results.Count, Classes = results.Select(r => r.ClassName).ToList() },
-            null, // TODO: pass the client IP address; it is not recorded yet.
-            cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return ApiResponse<List<PublishPlacementResultDto>>.Ok(results, SystemMessages.MSG08);
     }
 
     #endregion
@@ -1333,7 +1258,7 @@ public class ClassService : IClassService
             }
         }
 
-        var activeAssignments = targetClass.ClassAssignments.Where(ca => ca.IsActive).ToList();
+        var activeAssignments = targetClass.ClassAssignments.Where(IsMember).ToList();
 
         var roster = new ClassRosterDto
         {
@@ -1346,7 +1271,6 @@ public class ClassService : IClassService
             RoomNumber = targetClass.RoomNumber,
             Capacity = targetClass.Capacity,
             TotalEnrolled = activeAssignments.Count,
-            IsPlacementPublished = targetClass.IsPlacementPublished,
             HomeroomTeacherName = targetClass.HomeroomTeacher?.User?.FullName,
             HomeroomTeacherPhone = targetClass.HomeroomTeacher?.User?.PhoneNumber,
             HomeroomTeacherEmail = targetClass.HomeroomTeacher?.User?.Email,
@@ -1394,6 +1318,111 @@ public class ClassService : IClassService
 
         return await GetClassRosterAsync(homeroomClass.Id, teacherUserId, UserRoles.Teacher.ToString(), cancellationToken);
     }
+
+    #region Draft School Year Review (UC-14 A2, BR-72)
+
+    public async Task<ApiResponse<ClassSummaryDto>> MarkClassReviewedAsync(int classId, int? actorUserId = null, CancellationToken cancellationToken = default)
+    {
+        var targetClass = await _unitOfWork.Classes.GetClassWithDetailsAsync(classId, cancellationToken);
+        if (targetClass == null)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
+        }
+
+        if (!IsDraftYear(targetClass.SchoolYear))
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Chỉ rà soát lớp của năm học ở trạng thái Bản nháp." });
+        }
+
+        if (!targetClass.IsReviewed)
+        {
+            targetClass.IsReviewed = true;
+            targetClass.ReviewedAt = DateTime.UtcNow;
+            targetClass.ReviewedByUserId = actorUserId;
+            await _unitOfWork.Classes.UpdateAsync(targetClass, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            await _auditService.LogActionAsync(
+                actorUserId,
+                AuditActions.ClassMarkReviewed,
+                nameof(Class),
+                targetClass.Id.ToString(),
+                new { IsReviewed = false },
+                new { targetClass.ClassName, targetClass.IsReviewed, targetClass.ReviewedAt, EnrolledCount = targetClass.ClassAssignments?.Count(IsMember) ?? 0 },
+                null, // TODO: pass the client IP address; it is not recorded yet.
+                cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        return ApiResponse<ClassSummaryDto>.Ok(new ClassSummaryDto
+        {
+            Id = targetClass.Id,
+            SchoolYearId = targetClass.SchoolYearId,
+            SchoolYearName = targetClass.SchoolYear?.YearName ?? string.Empty,
+            ClassName = targetClass.ClassName,
+            Grade = targetClass.Grade,
+            RoomNumber = targetClass.RoomNumber,
+            Capacity = targetClass.Capacity,
+            EnrolledCount = targetClass.ClassAssignments?.Count(IsMember) ?? 0,
+            Status = targetClass.Status,
+            HomeroomTeacherId = targetClass.HomeroomTeacherId,
+            HomeroomTeacherName = targetClass.HomeroomTeacher?.User?.FullName,
+            HomeroomTeacherStaffCode = targetClass.HomeroomTeacher?.StaffCode,
+            IsReviewed = targetClass.IsReviewed,
+            ReviewedAt = targetClass.ReviewedAt
+        }, SystemMessages.MSG08);
+    }
+
+    #endregion
+
+    /// <summary>A Draft assignment counts as a member of its (Draft) class (BR-72).</summary>
+    private static bool IsMember(ClassAssignment ca) => ca.IsActive || ca.IsDraft;
+
+    private static bool IsDraftYear(SchoolYear? year) => year?.Status == SchoolYearStatuses.Draft;
+
+    /// <summary>BR-72: any change to a Reviewed class resets it to Not reviewed.</summary>
+    internal static void ResetReview(Class c)
+    {
+        c.IsReviewed = false;
+        c.ReviewedAt = null;
+        c.ReviewedByUserId = null;
+    }
+
+    private async Task ResetReviewIfDraftAsync(int classId, bool changedDraftAssignment, CancellationToken cancellationToken)
+    {
+        if (!changedDraftAssignment) return;
+        var cls = await _unitOfWork.Repository<Class>().GetByIdAsync(classId, cancellationToken);
+        if (cls == null || !cls.IsReviewed) return;
+        ResetReview(cls);
+        await _unitOfWork.Classes.UpdateAsync(cls, cancellationToken);
+    }
+
+    /// <summary>
+    /// BR-18: a current assignment is ended and kept as history; a Draft assignment is deleted, since it was never
+    /// anyone's current class.
+    /// </summary>
+    private async Task EndOrDeleteAssignmentAsync(ClassAssignment assignment, DateTime endDate, CancellationToken cancellationToken)
+    {
+        if (assignment.IsDraft)
+        {
+            await _unitOfWork.Repository<ClassAssignment>().DeleteAsync(assignment, cancellationToken);
+            return;
+        }
+
+        assignment.IsActive = false;
+        assignment.EndDate = endDate;
+        await _unitOfWork.Repository<ClassAssignment>().UpdateAsync(assignment, cancellationToken);
+    }
+
+    private static Notification BuildHomeroomNotification(int teacherUserId, Class cls, string? yearName) => new()
+    {
+        UserId = teacherUserId,
+        Title = "Phân công giáo viên chủ nhiệm",
+        Content = $"Bạn đã được phân công làm giáo viên chủ nhiệm lớp {cls.ClassName} năm học {yearName}.",
+        LinkUrl = $"/teacher/classes/{cls.Id}",
+        CreatedAt = DateTime.UtcNow,
+        IsRead = false
+    };
 
     private async Task<bool> AnyRecordAsync<T>(System.Linq.Expressions.Expression<Func<T, bool>> predicate, CancellationToken cancellationToken) where T : class
     {

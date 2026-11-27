@@ -1,4 +1,4 @@
-// Standard System Messages defined in SRS (MSG01 to MSG61)
+// Standard System Messages defined in SRS (MSG01 to MSG63)
 
 export interface SystemMessage {
   code: string;
@@ -373,6 +373,18 @@ export const SYSTEM_MESSAGES = {
     messageType: "Toast (Success)",
     context: "Account request reviewed",
     content: "Đã xử lý yêu cầu tạo tài khoản.",
+  },
+  MSG62: {
+    code: "MSG62",
+    messageType: "Toast / Summary (Error)",
+    context: "School year not in Draft",
+    content: "Chỉ có thể nhập dữ liệu xếp lớp cho năm học ở trạng thái Bản nháp.",
+  },
+  MSG63: {
+    code: "MSG63",
+    messageType: "Toast (Error)",
+    context: "School year cannot be activated",
+    content: "Không thể kích hoạt năm học: năm học phải ở trạng thái Bản nháp và tất cả các lớp phải được đánh dấu Đã rà soát.",
   },
 } as const;
 

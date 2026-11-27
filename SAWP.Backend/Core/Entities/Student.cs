@@ -20,5 +20,4 @@ public class Student
     public virtual ICollection<AttendanceRecord> AttendanceRecords { get; set; } = new List<AttendanceRecord>();
     public virtual ICollection<LunchRegistration> LunchRegistrations { get; set; } = new List<LunchRegistration>();
     public virtual ICollection<AdministrativeRequest> AdministrativeRequests { get; set; } = new List<AdministrativeRequest>();
-    public virtual ICollection<PlacementPlanItem> PlacementPlanItems { get; set; } = new List<PlacementPlanItem>();
 }

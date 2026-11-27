@@ -344,8 +344,7 @@ public static class DbInitializer
                 Grade = 1,
                 RoomNumber = "P102",
                 Capacity = 35,
-                Status = "Active",
-                IsPlacementPublished = true
+                Status = "Active"
             };
             context.Classes.Add(class1B);
             await context.SaveChangesAsync();
@@ -362,17 +361,12 @@ public static class DbInitializer
                 Grade = 1,
                 RoomNumber = "P103",
                 Capacity = 35,
-                Status = "Active",
-                IsPlacementPublished = true
+                Status = "Active"
             };
             context.Classes.Add(class1C);
             await context.SaveChangesAsync();
         }
 
-        class1A.IsPlacementPublished = true;
-        class1B.IsPlacementPublished = true;
-        class1C.IsPlacementPublished = true;
-        await context.SaveChangesAsync();
 
         // ====================================================================
         // 5. CLASS SCHEDULES (Phân công thời khóa biểu tiết 1 cho teacher1)

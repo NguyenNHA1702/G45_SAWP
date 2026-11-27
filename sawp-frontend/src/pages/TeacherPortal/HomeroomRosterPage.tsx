@@ -3,7 +3,6 @@ import { Link } from 'react-router';
 import {
   Calendar,
   CalendarCheck2,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -236,45 +235,6 @@ export default function HomeroomRosterPage() {
                 </div>
                 <div style={{ fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: '#047857', fontWeight: 800, marginTop: 2 }}>
                   ✓ {maleCount} Nam • {femaleCount} Nữ
-                </div>
-              </div>
-            </div>
-
-            {/* Card 3: Trạng thái xếp lớp */}
-            <div
-              className="card"
-              style={{
-                background: '#FFFDF5',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '4px 4px 0 0 var(--color-fg)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '20px 22px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-              }}
-            >
-              <div
-                style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: '50%',
-                  background: '#FEF3C7',
-                  border: '2px solid var(--color-fg)',
-                  boxShadow: '2px 2px 0 0 var(--color-fg)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <CheckCircle2 size={24} color="#B45309" strokeWidth={2.5} />
-              </div>
-              <div>
-                <div style={{ fontSize: 'var(--fs-base)', fontFamily: 'var(--font-heading)', fontWeight: 800, color: 'var(--color-fg)' }}>
-                  {roster.isPlacementPublished ? 'Đã công bố chính thức' : 'Chưa công bố chính thức'}
-                </div>
-                <div style={{ fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-muted-fg)', fontWeight: 700, marginTop: 2 }}>
-                  Trạng thái danh sách lớp
                 </div>
               </div>
             </div>

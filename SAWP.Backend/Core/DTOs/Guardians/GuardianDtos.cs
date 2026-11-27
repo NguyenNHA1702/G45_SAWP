@@ -54,7 +54,6 @@ public class LinkedChildSummaryDto
     public string? CurrentClassName { get; set; }
     public string? ClassName { get => CurrentClassName; set => CurrentClassName = value; }
     public int? Grade { get; set; }
-    public bool IsPlacementPublished { get; set; }
     public string? HomeroomTeacherName { get; set; }
     public string? HomeroomTeacherPhone { get; set; }
     public string RelationshipName { get; set; } = string.Empty;
