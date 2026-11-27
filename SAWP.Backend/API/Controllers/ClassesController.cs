@@ -12,11 +12,15 @@ namespace API.Controllers;
 [Route("api/[controller]")]
 public class ClassesController : ControllerBase
 {
-    private readonly IClassService _classService;
+    private const long MaxImportFileBytes = 5 * 1024 * 1024;
 
-    public ClassesController(IClassService classService)
+    private readonly IClassService _classService;
+    private readonly IClassImporter _classImporter;
+
+    public ClassesController(IClassService classService, IClassImporter classImporter)
     {
         _classService = classService;
+        _classImporter = classImporter;
     }
 
     #region Academic Year (UC-13)
@@ -51,7 +55,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpPut("school-years/{id}/activate")]
-    [Authorize(Roles = "OfficeStaff,Admin,SchoolBoard")]
+    [Authorize(Roles = "OfficeStaff,Admin")] // BR-72: Office Staff activate a Draft school year
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ActivateSchoolYear(int id, CancellationToken cancellationToken)
@@ -73,6 +77,63 @@ public class ClassesController : ControllerBase
             return NotFound(result);
         return BadRequest(result);
     }
+
+    #endregion
+
+    #region Import Class Assignments (UC-69)
+
+    /// <summary>Reads the uploaded .xlsx file and previews the import into the Draft school year (steps 1-3).</summary>
+    [HttpPost("school-years/{id}/import/preview")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> PreviewClassImport(int id, IFormFile? file, [FromForm] string? mode, CancellationToken cancellationToken)
+    {
+        if (file == null || file.Length == 0 || file.Length > MaxImportFileBytes
+            || !string.Equals(Path.GetExtension(file.FileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(ApiResponse<ClassImportPreviewDto>.Fail(SystemMessages.MSG41, new List<string> { "Chỉ hỗ trợ tệp Excel (.xlsx) không quá 5 MB." }));
+        }
+
+        using var stream = file.OpenReadStream();
+        var parsed = _classImporter.ParseWorkbook(stream);
+        if (!parsed.Success || parsed.Data == null)
+        {
+            return BadRequest(ApiResponse<ClassImportPreviewDto>.Fail(SystemMessages.MSG41, parsed.Errors));
+        }
+
+        parsed.Data.Mode = mode ?? ClassImportModes.Merge;
+        var result = await _classImporter.PreviewAsync(id, parsed.Data, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Previews already parsed rows again, e.g. after choosing Replace or Merge (A2).</summary>
+    [HttpPost("school-years/{id}/import/preview-rows")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> PreviewClassImportRows(int id, [FromBody] ClassImportRowsDto request, CancellationToken cancellationToken)
+    {
+        var result = await _classImporter.PreviewAsync(id, request, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Imports the valid rows (steps 4-6); the rows are validated again.</summary>
+    [HttpPost("school-years/{id}/import/confirm")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<ClassImportResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ClassImportResultDto>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmClassImport(int id, [FromBody] ClassImportRowsDto request, CancellationToken cancellationToken)
+    {
+        var result = await _classImporter.ImportAsync(id, request, User.GetUserId(), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("import/template")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+    public IActionResult DownloadClassImportTemplate()
+        => File(_classImporter.GenerateTemplate(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Mau_Xep_Lop_SAWP.xlsx");
 
     #endregion
 
@@ -131,6 +192,17 @@ public class ClassesController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    /// <summary>Marks a class of a Draft school year as Reviewed (UC-14 A2, BR-72).</summary>
+    [HttpPost("{id}/mark-reviewed")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> MarkClassReviewed(int id, CancellationToken cancellationToken)
+    {
+        var result = await _classService.MarkClassReviewedAsync(id, User.GetUserId(), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpDelete("{id}")]
     [Authorize(Roles = "OfficeStaff,Admin")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
@@ -180,7 +252,7 @@ public class ClassesController : ControllerBase
 
     #endregion
 
-    #region Student Placement & Class Assignment (UC-16)
+    #region Student Class Assignment (UC-16)
 
     [HttpGet("{id}/eligible-students")]
     [Authorize(Roles = "OfficeStaff,Admin")]
@@ -233,29 +305,6 @@ public class ClassesController : ControllerBase
     {
         var result = await _classService.RemoveStudentsBatchFromClassAsync(id, request.StudentIds, User.GetUserId(), cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    #endregion
-
-    #region Placement Publishing (Workflow Step 6)
-
-    [HttpPost("{id}/publish-placement")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
-    [ProducesResponseType(typeof(ApiResponse<PublishPlacementResultDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<PublishPlacementResultDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> PublishPlacement(int id, CancellationToken cancellationToken)
-    {
-        var result = await _classService.PublishPlacementAsync(id, User.GetUserId(), cancellationToken);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
-    [HttpPost("publish-all-placements")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
-    [ProducesResponseType(typeof(ApiResponse<List<PublishPlacementResultDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> PublishAllPlacements([FromQuery] int schoolYearId, CancellationToken cancellationToken)
-    {
-        var result = await _classService.PublishAllPlacementsAsync(schoolYearId, User.GetUserId(), cancellationToken);
-        return Ok(result);
     }
 
     #endregion

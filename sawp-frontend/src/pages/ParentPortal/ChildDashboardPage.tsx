@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import {
   CalendarCheck2,
-  CheckCircle2,
   Clock,
   GraduationCap,
   HeartHandshake,
@@ -130,7 +129,7 @@ export default function ChildDashboardPage() {
                 </div>
               </div>
 
-              {/* Placement & Class Box */}
+              {/* Current class box */}
               <div
                 style={{
                   background: 'var(--color-bg)',
@@ -139,12 +138,9 @@ export default function ChildDashboardPage() {
                   border: '1px solid var(--color-border)',
                 }}
               >
-                {child.isPlacementPublished && child.currentClassName ? (
+                {child.currentClassName ? (
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span className="badge badge--mint">
-                        <CheckCircle2 size={12} /> Đã công bố kết quả xếp lớp
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 8 }}>
                       <span className="badge badge--violet">Khối {child.grade}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
@@ -173,10 +169,10 @@ export default function ChildDashboardPage() {
                 ) : (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-tertiary)', fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
-                      <Clock size={16} /> Đang hoàn thiện danh sách lớp
+                      <Clock size={16} /> Chưa có lớp trong năm học hiện tại
                     </div>
                     <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
-                      Ban Giáo vụ đang tiến hành xếp lớp cho năm học mới. Kết quả chính thức sẽ được công bố tại đây khi hoàn tất.
+                      Lớp của học sinh sẽ hiển thị tại đây khi nhà trường kích hoạt năm học có kết quả xếp lớp.
                     </p>
                   </div>
                 )}

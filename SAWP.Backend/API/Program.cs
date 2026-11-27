@@ -88,8 +88,8 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<ISchoolCalendarService, SchoolCalendarService>();
 builder.Services.AddScoped<IStudentImporter, StudentImporter>();
+builder.Services.AddScoped<IClassImporter, ClassImporter>();
 builder.Services.AddScoped<IStaffImporter, StaffImporter>();
-builder.Services.AddScoped<IPlacementPlanService, PlacementPlanService>();
 builder.Services.AddScoped<IEContactBookService, EContactBookService>();
 
 // 4. External Services (Infrastructure ExternalServices -> Interfaces)

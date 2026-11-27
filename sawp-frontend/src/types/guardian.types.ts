@@ -9,7 +9,6 @@ export interface LinkedChildSummaryDto {
   currentClassId?: number | null;
   currentClassName?: string | null;
   grade?: number | null;
-  isPlacementPublished: boolean;
   homeroomTeacherName?: string | null;
   homeroomTeacherPhone?: string | null;
   relationshipName: string;
@@ -26,7 +25,6 @@ export interface ChildDashboardDto {
   classId?: number;
   className?: string;
   grade?: number;
-  isPlacementPublished: boolean;
   homeroomTeacherName?: string;
   homeroomTeacherEmail?: string;
   homeroomTeacherPhone?: string;

@@ -47,7 +47,6 @@ public class GuardianService : IGuardianService
                 CurrentClassId = activeAssignment?.ClassId,
                 CurrentClassName = activeAssignment?.Class?.ClassName,
                 Grade = activeAssignment?.Class?.Grade,
-                IsPlacementPublished = activeAssignment?.Class?.IsPlacementPublished ?? false,
                 RelationshipName = myLink?.Relationship.ToVietnamese() ?? "Phụ huynh",
                 IsPrimaryContact = myLink?.IsPrimaryContact ?? false
             };
@@ -100,7 +99,6 @@ public class GuardianService : IGuardianService
                 RoomNumber = activeClass.RoomNumber,
                 Capacity = activeClass.Capacity,
                 Status = activeClass.Status,
-                IsPlacementPublished = activeClass.IsPlacementPublished,
                 HomeroomTeacherId = activeClass.HomeroomTeacherId,
                 HomeroomTeacherName = activeClass.HomeroomTeacher?.User?.FullName,
                 HomeroomTeacherStaffCode = activeClass.HomeroomTeacher?.StaffCode

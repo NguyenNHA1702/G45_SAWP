@@ -41,8 +41,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<DocumentRequestDetail> DocumentRequestDetails => Set<DocumentRequestDetail>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-    public DbSet<PlacementPlan> PlacementPlans => Set<PlacementPlan>();
-    public DbSet<PlacementPlanItem> PlacementPlanItems => Set<PlacementPlanItem>();
 
     // Contact Book (Sổ liên lạc điện tử)
     public DbSet<ClassPost> ClassPosts => Set<ClassPost>();

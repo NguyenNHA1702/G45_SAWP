@@ -5,7 +5,6 @@ public class CreateSchoolYearDto
     public string YearName { get; set; } = string.Empty;
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
-    public bool IsActive { get; set; } = true;
 }
 
 public class SchoolYearDto
@@ -15,6 +14,9 @@ public class SchoolYearDto
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public bool IsActive { get; set; }
+
+    /// <summary>Draft, Active or Archived (UC-13, BR-72).</summary>
+    public string Status { get; set; } = Core.Constants.SchoolYearStatuses.Active;
     public int ClassCount { get; set; }
 }
 
@@ -47,10 +49,13 @@ public class ClassSummaryDto
     public int Capacity { get; set; }
     public int EnrolledCount { get; set; }
     public string Status { get; set; } = "Active";
-    public bool IsPlacementPublished { get; set; }
     public int? HomeroomTeacherId { get; set; }
     public string? HomeroomTeacherName { get; set; }
     public string? HomeroomTeacherStaffCode { get; set; }
+
+    /// <summary>Review mark of a class of a Draft school year (UC-14 A2, BR-72).</summary>
+    public bool IsReviewed { get; set; }
+    public DateTime? ReviewedAt { get; set; }
 }
 
 public class InitializeBatchClassesDto
@@ -122,19 +127,9 @@ public class ClassRosterDto
     public string? RoomNumber { get; set; }
     public int Capacity { get; set; }
     public int TotalEnrolled { get; set; }
-    public bool IsPlacementPublished { get; set; }
     public string? HomeroomTeacherName { get; set; }
     public string? HomeroomTeacherPhone { get; set; }
     public string? HomeroomTeacherEmail { get; set; }
     public List<RosterStudentItemDto> Students { get; set; } = new();
 }
 
-public class PublishPlacementResultDto
-{
-    public int ClassId { get; set; }
-    public string ClassName { get; set; } = string.Empty;
-    public int EnrolledCount { get; set; }
-    public string? HomeroomTeacherName { get; set; }
-    public DateTime PublishedAt { get; set; }
-    public string Message { get; set; } = string.Empty;
-}

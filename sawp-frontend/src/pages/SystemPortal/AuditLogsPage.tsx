@@ -78,6 +78,8 @@ const ACTION_LABELS: Record<string, string> = {
   CLASSREMOVESTUDENT: 'Rút học sinh khỏi lớp',
   CLASSDELETE: 'Xóa lớp học',
   CLASSPUBLISHPLACEMENT: 'Công bố danh sách lớp',
+  CLASSIMPORTASSIGNMENTS: 'Nhập xếp lớp từ tệp',
+  CLASSMARKREVIEWED: 'Đánh dấu lớp đã rà soát',
   PLACEMENTPLANGENERATEDRAFT: 'Tạo phương án xếp lớp nháp',
   PLACEMENTPLANMOVESTUDENT: 'Chuyển học sinh trong phương án',
   PLACEMENTPLANSWAPSTUDENTS: 'Hoán đổi học sinh giữa 2 lớp',

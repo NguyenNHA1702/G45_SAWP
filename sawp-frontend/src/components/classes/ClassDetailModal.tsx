@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  CheckCircle2,
   GraduationCap,
-  Megaphone,
   Trash2,
   UserCheck,
   UserPlus,
@@ -34,7 +32,6 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
 }) => {
   const [roster, setRoster] = useState<ClassRosterDto | null>(null);
   const [loading, setLoading] = useState(false);
-  const [publishing, setPublishing] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [removingBatch, setRemovingBatch] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -59,25 +56,6 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
       toast.error('Lỗi khi tải danh sách học sinh của lớp.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePublishPlacement = async () => {
-    if (!targetClass) return;
-    setPublishing(true);
-    try {
-      const res = await classApi.publishPlacement(targetClass.id);
-      if (res.success) {
-        toast.success(`Đã công bố danh sách xếp lớp ${targetClass.className} tới Phụ huynh & GV!`);
-        loadRoster();
-        onRosterUpdated();
-      } else {
-        toast.error(res.message || 'Công bố thất bại.');
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi khi công bố xếp lớp.');
-    } finally {
-      setPublishing(false);
     }
   };
 
@@ -230,7 +208,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Sĩ số & Trạng thái công bố */}
+          {/* Class size */}
           <div>
             <div style={{ fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-muted-fg)', fontWeight: 700 }}>
               Sĩ số hiện tại
@@ -239,13 +217,6 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
               <span className="badge badge--mint">
                 {roster?.students?.length ?? targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0} / {targetClass.capacity} học sinh
               </span>
-              {roster?.isPlacementPublished ? (
-                <span className="badge badge--violet">
-                  <CheckCircle2 size={12} /> Đã công bố
-                </span>
-              ) : (
-                <span className="badge badge--amber">Chưa công bố</span>
-              )}
             </div>
           </div>
         </div>
@@ -278,17 +249,6 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
               >
                 <Trash2 size={15} />
                 {removingBatch ? 'Đang gỡ...' : `Gỡ ${selectedStudentIds.length} học sinh đã chọn`}
-              </button>
-            )}
-            {!roster?.isPlacementPublished && (
-              <button
-                type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={handlePublishPlacement}
-                disabled={publishing || (roster?.students.length ?? 0) === 0}
-              >
-                <Megaphone size={16} color="var(--color-secondary)" />
-                {publishing ? 'Đang công bố...' : 'Công bố kết quả xếp lớp'}
               </button>
             )}
           </div>

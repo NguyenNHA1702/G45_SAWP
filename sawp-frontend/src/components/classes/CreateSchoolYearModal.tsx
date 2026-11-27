@@ -22,7 +22,6 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
   const [yearName, setYearName] = useState(`${nextYear}-${nextYear + 1}`);
   const [startDate, setStartDate] = useState(`${nextYear}-09-01`);
   const [endDate, setEndDate] = useState(`${nextYear + 1}-05-31`);
-  const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -89,7 +88,6 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
         yearName: trimmedName,
         startDate,
         endDate,
-        isActive,
       });
 
       if (res.success && res.data) {
@@ -202,40 +200,20 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
           </div>
         </div>
 
-        {/* Checkbox đặt làm năm học hiện tại */}
+        {/* UC-13 step 2, BR-72: a new school year is always created as a Draft */}
         <div
           style={{
             backgroundColor: '#F8FAFC',
             border: '2px solid #E2E8F0',
             borderRadius: 14,
             padding: '12px 14px',
+            fontSize: '0.8rem',
+            color: 'var(--color-muted-fg)',
+            fontWeight: 500,
           }}
         >
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 10,
-              cursor: 'pointer',
-              fontSize: 'var(--fs-sm)',
-              fontWeight: 600,
-              color: 'var(--color-ink)',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              style={{ width: 18, height: 18, marginTop: 2, accentColor: 'var(--color-tertiary)' }}
-            />
-            <div>
-              <div style={{ fontWeight: 700 }}>Đặt làm Năm học hiện tại (Active)</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--color-muted-fg)', fontWeight: 500 }}>
-                Hệ thống quy định chỉ có duy nhất 1 năm học được kích hoạt tại một thời điểm.
-                Nếu chọn, năm học cũ sẽ tự động chuyển về trạng thái lưu trữ.
-              </div>
-            </div>
-          </label>
+          Năm học mới được tạo ở trạng thái <strong>Bản nháp</strong>. Sau khi nhập dữ liệu xếp lớp và rà soát từng lớp,
+          Giáo vụ kích hoạt năm học để thay thế năm học hiện tại.
         </div>
 
         {/* Actions */}

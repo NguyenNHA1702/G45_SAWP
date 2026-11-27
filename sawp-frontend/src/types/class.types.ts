@@ -4,14 +4,17 @@ export interface SchoolYearDto {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  /** Draft, Active or Archived (UC-13, BR-72). */
+  status: SchoolYearStatus;
   totalClasses: number;
 }
+
+export type SchoolYearStatus = 'Draft' | 'Active' | 'Archived';
 
 export interface CreateSchoolYearDto {
   yearName: string;
   startDate: string;
   endDate: string;
-  isActive?: boolean;
 }
 
 export interface ClassSummaryDto {
@@ -24,7 +27,6 @@ export interface ClassSummaryDto {
   availableCapacity: number;
   roomNumber?: string;
   status: string;
-  isPlacementPublished: boolean;
   schoolYearId: number;
   schoolYearName: string;
   homeroomTeacherStaffId?: number;
@@ -32,6 +34,10 @@ export interface ClassSummaryDto {
   homeroomTeacherName?: string;
   homeroomTeacherEmail?: string;
   homeroomTeacherPhone?: string;
+  homeroomTeacherStaffCode?: string;
+  /** Review mark of a class of a Draft school year (UC-14 A2, BR-72). */
+  isReviewed?: boolean;
+  reviewedAt?: string;
 }
 
 export interface CreateClassDto {
@@ -109,17 +115,9 @@ export interface ClassRosterDto {
   roomNumber?: string;
   totalEnrolled?: number;
   totalStudents?: number;
-  isPlacementPublished: boolean;
   homeroomTeacherName?: string;
   homeroomTeacherPhone?: string;
   homeroomTeacherEmail?: string;
   students: RosterStudentItemDto[];
 }
 
-export interface PublishPlacementResultDto {
-  classId: number;
-  className: string;
-  isPlacementPublished: boolean;
-  publishedStudentsCount: number;
-  message: string;
-}

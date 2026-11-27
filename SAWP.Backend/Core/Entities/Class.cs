@@ -14,9 +14,12 @@ public class Class
     public string? RoomNumber { get; set; }
     public int Capacity { get; set; } = 35;
     public string Status { get; set; } = "Active";
-    public bool IsPlacementPublished { get; set; } = false;
+
+    /// <summary>Review mark of a class of a Draft school year (UC-14 A2, BR-72); any later change resets it.</summary>
+    public bool IsReviewed { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public int? ReviewedByUserId { get; set; }
 
     public virtual ICollection<ClassAssignment> ClassAssignments { get; set; } = new List<ClassAssignment>();
     public virtual ICollection<AttendanceRecord> AttendanceRecords { get; set; } = new List<AttendanceRecord>();
-    public virtual ICollection<PlacementPlanItem> PlacementPlanItems { get; set; } = new List<PlacementPlanItem>();
 }

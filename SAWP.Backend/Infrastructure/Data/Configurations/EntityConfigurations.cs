@@ -1,3 +1,4 @@
+using Core.Constants;
 using Core.Enums;
 using Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -201,6 +202,7 @@ public class SchoolYearConfiguration : IEntityTypeConfiguration<SchoolYear>
     {
         builder.HasKey(sy => sy.Id);
         builder.Property(sy => sy.YearName).HasMaxLength(50).IsRequired();
+        builder.Property(sy => sy.Status).HasMaxLength(20).IsRequired().HasDefaultValue(SchoolYearStatuses.Active);
         builder.HasIndex(sy => new { sy.IsActive, sy.StartDate });
     }
 }
@@ -540,57 +542,6 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
                .WithMany(u => u.AuditLogs)
                .HasForeignKey(al => al.UserId)
                .OnDelete(DeleteBehavior.SetNull);
-    }
-}
-
-public class PlacementPlanConfiguration : IEntityTypeConfiguration<PlacementPlan>
-{
-    public void Configure(EntityTypeBuilder<PlacementPlan> builder)
-    {
-        builder.HasKey(p => p.Id);
-        builder.Property(p => p.PlanName).HasMaxLength(150).IsRequired();
-        builder.Property(p => p.Status).HasMaxLength(50).IsRequired();
-        builder.Property(p => p.ReviewNotes).HasMaxLength(1000);
-        builder.HasIndex(p => new { p.SchoolYearId, p.Grade, p.CreatedAt });
-
-        builder.HasOne(p => p.SchoolYear)
-               .WithMany()
-               .HasForeignKey(p => p.SchoolYearId)
-               .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(p => p.CreatedByUser)
-               .WithMany()
-               .HasForeignKey(p => p.CreatedByUserId)
-               .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(p => p.ReviewedByUser)
-               .WithMany()
-               .HasForeignKey(p => p.ReviewedByUserId)
-               .OnDelete(DeleteBehavior.SetNull);
-    }
-}
-
-public class PlacementPlanItemConfiguration : IEntityTypeConfiguration<PlacementPlanItem>
-{
-    public void Configure(EntityTypeBuilder<PlacementPlanItem> builder)
-    {
-        builder.HasKey(pi => pi.Id);
-        builder.Property(pi => pi.Notes).HasMaxLength(250);
-
-        builder.HasOne(pi => pi.PlacementPlan)
-               .WithMany(p => p.Items)
-               .HasForeignKey(pi => pi.PlacementPlanId)
-               .OnDelete(DeleteBehavior.Cascade);
-
-        builder.HasOne(pi => pi.Class)
-               .WithMany(c => c.PlacementPlanItems)
-               .HasForeignKey(pi => pi.ClassId)
-               .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(pi => pi.Student)
-               .WithMany(s => s.PlacementPlanItems)
-               .HasForeignKey(pi => pi.StudentId)
-               .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

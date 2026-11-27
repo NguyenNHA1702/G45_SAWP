@@ -388,8 +388,14 @@ namespace Infrastructure.Data.Migrations
                     b.Property<int?>("HomeroomTeacherId")
                         .HasColumnType("int");
 
-                    b.Property<bool>("IsPlacementPublished")
+                    b.Property<bool>("IsReviewed")
                         .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("int");
 
                     b.Property<string>("RoomNumber")
                         .HasMaxLength(50)
@@ -432,6 +438,9 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDraft")
                         .HasColumnType("bit");
 
                     b.Property<DateTime>("StartDate")
@@ -1001,104 +1010,6 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("Notifications");
                 });
 
-            modelBuilder.Entity("Core.Entities.PlacementPlan", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("CreatedByUserId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Grade")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PlanName")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
-
-                    b.Property<string>("ReviewNotes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("ReviewedByUserId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SchoolYearId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("TargetCapacity")
-                        .HasColumnType("int");
-
-                    b.Property<int>("TargetClassCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("ReviewedByUserId");
-
-                    b.HasIndex("SchoolYearId", "Grade", "CreatedAt");
-
-                    b.ToTable("PlacementPlans");
-                });
-
-            modelBuilder.Entity("Core.Entities.PlacementPlanItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ClassId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsManualOverride")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<int>("PlacementPlanId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("StudentId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClassId");
-
-                    b.HasIndex("PlacementPlanId");
-
-                    b.HasIndex("StudentId");
-
-                    b.ToTable("PlacementPlanItems");
-                });
-
             modelBuilder.Entity("Core.Entities.PostAttachment", b =>
                 {
                     b.Property<int>("Id")
@@ -1271,6 +1182,13 @@ namespace Infrastructure.Data.Migrations
 
                     b.Property<DateTime>("StartDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Active");
 
                     b.Property<string>("YearName")
                         .IsRequired()
@@ -2083,59 +2001,6 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Core.Entities.PlacementPlan", b =>
-                {
-                    b.HasOne("Core.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Core.Entities.User", "ReviewedByUser")
-                        .WithMany()
-                        .HasForeignKey("ReviewedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Core.Entities.SchoolYear", "SchoolYear")
-                        .WithMany()
-                        .HasForeignKey("SchoolYearId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("ReviewedByUser");
-
-                    b.Navigation("SchoolYear");
-                });
-
-            modelBuilder.Entity("Core.Entities.PlacementPlanItem", b =>
-                {
-                    b.HasOne("Core.Entities.Class", "Class")
-                        .WithMany("PlacementPlanItems")
-                        .HasForeignKey("ClassId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Core.Entities.PlacementPlan", "PlacementPlan")
-                        .WithMany("Items")
-                        .HasForeignKey("PlacementPlanId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Core.Entities.Student", "Student")
-                        .WithMany("PlacementPlanItems")
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Class");
-
-                    b.Navigation("PlacementPlan");
-
-                    b.Navigation("Student");
-                });
-
             modelBuilder.Entity("Core.Entities.PostAttachment", b =>
                 {
                     b.HasOne("Core.Entities.ClassPost", "Post")
@@ -2356,8 +2221,6 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("AttendanceRecords");
 
                     b.Navigation("ClassAssignments");
-
-                    b.Navigation("PlacementPlanItems");
                 });
 
             modelBuilder.Entity("Core.Entities.ClassPost", b =>
@@ -2386,11 +2249,6 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("Dishes");
                 });
 
-            modelBuilder.Entity("Core.Entities.PlacementPlan", b =>
-                {
-                    b.Navigation("Items");
-                });
-
             modelBuilder.Entity("Core.Entities.Role", b =>
                 {
                     b.Navigation("UserRoles");
@@ -2417,8 +2275,6 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("ClassAssignments");
 
                     b.Navigation("LunchRegistrations");
-
-                    b.Navigation("PlacementPlanItems");
 
                     b.Navigation("StudentGuardians");
                 });

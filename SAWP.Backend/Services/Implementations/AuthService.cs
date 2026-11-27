@@ -452,7 +452,6 @@ public class AuthService : IAuthService
                             CurrentClassId = activeClass?.Id,
                             CurrentClassName = activeClass?.ClassName,
                             Grade = activeClass?.Grade,
-                            IsPlacementPublished = activeClass?.IsPlacementPublished ?? false,
                             Relationship = sg.Relationship.ToVietnamese(),
                             IsPrimaryContact = sg.IsPrimaryContact
                         };

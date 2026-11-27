@@ -248,7 +248,6 @@ public class StudentRepository : Repository<Student>, IStudentRepository
                         ca.ClassId,
                         ca.Class.ClassName,
                         ca.Class.Grade,
-                        ca.Class.IsPlacementPublished,
                         HomeroomTeacherName = ca.Class.HomeroomTeacher != null && ca.Class.HomeroomTeacher.User != null
                             ? ca.Class.HomeroomTeacher.User.FullName
                             : null,
@@ -272,7 +271,6 @@ public class StudentRepository : Repository<Student>, IStudentRepository
             CurrentClassId = r.ActiveClass?.ClassId,
             CurrentClassName = r.ActiveClass?.ClassName,
             Grade = r.ActiveClass?.Grade,
-            IsPlacementPublished = r.ActiveClass?.IsPlacementPublished ?? false,
             HomeroomTeacherName = r.ActiveClass?.HomeroomTeacherName,
             HomeroomTeacherPhone = r.ActiveClass?.HomeroomTeacherPhone,
             RelationshipName = r.Relationship.ToVietnamese(),

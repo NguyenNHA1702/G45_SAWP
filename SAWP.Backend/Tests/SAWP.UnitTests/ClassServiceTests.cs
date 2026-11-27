@@ -39,8 +39,7 @@ public class ClassServiceTests : TestBase
         {
             YearName = "2026-2027",
             StartDate = new DateTime(2026, 9, 5),
-            EndDate = new DateTime(2027, 5, 31),
-            IsActive = false
+            EndDate = new DateTime(2027, 5, 31)
         };
 
         // Act
@@ -52,10 +51,11 @@ public class ClassServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG08.Code);
         result.Data!.YearName.Should().Be("2026-2027");
         result.Data.IsActive.Should().BeFalse();
+        result.Data.Status.Should().Be(SchoolYearStatuses.Draft);
     }
 
     [Fact]
-    public async Task UTCID02_CreateSchoolYear_Success_WithActive_DeactivatesPrevious()
+    public async Task UTCID02_CreateSchoolYear_Success_IsDraft_KeepsActiveYear()
     {
         // Arrange
         var prevActive = new SchoolYear { Id = 1, YearName = "2025-2026", IsActive = true };
@@ -68,18 +68,18 @@ public class ClassServiceTests : TestBase
         {
             YearName = "2026-2027",
             StartDate = new DateTime(2026, 9, 5),
-            EndDate = new DateTime(2027, 5, 31),
-            IsActive = true
+            EndDate = new DateTime(2027, 5, 31)
         };
 
         // Act
         var result = await _service.CreateSchoolYearAsync(request, 10);
 
-        // Assert
+        // Assert: UC-13 step 2, BR-14, BR-72 – a new year is a Draft and the active year stays active
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
-        result.Data!.IsActive.Should().BeTrue();
-        prevActive.IsActive.Should().BeFalse();
+        result.Data!.IsActive.Should().BeFalse();
+        result.Data.Status.Should().Be(SchoolYearStatuses.Draft);
+        prevActive.IsActive.Should().BeTrue();
     }
 
     [Fact]
@@ -378,11 +378,12 @@ public class ClassServiceTests : TestBase
     public async Task UTCID01_ActivateSchoolYear_Success()
     {
         // Arrange
-        var targetYear = new SchoolYear { Id = 2, YearName = "2026-2027", IsActive = false };
+        var targetYear = new SchoolYear { Id = 2, YearName = "2026-2027", IsActive = false, Status = SchoolYearStatuses.Draft };
         var oldYear = new SchoolYear { Id = 1, YearName = "2025-2026", IsActive = true };
         var allYears = new List<SchoolYear> { oldYear, targetYear };
 
         SetupRepository(allYears);
+        SetupRepository(new List<ClassAssignment>());
         ClassRepoMock.Setup(r => r.GetAllSchoolYearsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(allYears);
 
@@ -393,7 +394,9 @@ public class ClassServiceTests : TestBase
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
         targetYear.IsActive.Should().BeTrue();
+        targetYear.Status.Should().Be(SchoolYearStatuses.Active);
         oldYear.IsActive.Should().BeFalse();
+        oldYear.Status.Should().Be(SchoolYearStatuses.Archived);
     }
 
     [Fact]
@@ -1206,114 +1209,6 @@ public class ClassServiceTests : TestBase
 
     #endregion
 
-    #region Method 24: PublishPlacementAsync (UTCID01 - UTCID03)
-
-    [Fact]
-    public async Task UTCID01_PublishPlacement_Success()
-    {
-        // Arrange
-        var cls = new Class
-        {
-            Id = 1,
-            ClassName = "1A",
-            Capacity = 35,
-            HomeroomTeacher = new StaffProfile { User = new User { FullName = "Co Mai" } },
-            ClassAssignments = new List<ClassAssignment> { new() { IsActive = true, Student = new Student { FullName = "Em A" } } }
-        };
-        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cls);
-
-        // Act
-        var result = await _service.PublishPlacementAsync(1, 10);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        cls.IsPlacementPublished.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task UTCID02_PublishPlacement_ClassNotFound()
-    {
-        // Arrange
-        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(999, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Class?)null);
-
-        // Act
-        var result = await _service.PublishPlacementAsync(999, 10);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG01.Code);
-    }
-
-    [Fact]
-    public async Task UTCID03_PublishPlacement_ZeroStudents_Fails()
-    {
-        // Arrange
-        var cls = new Class
-        {
-            Id = 1,
-            ClassName = "1A",
-            ClassAssignments = new List<ClassAssignment>()
-        };
-        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cls);
-
-        // Act
-        var result = await _service.PublishPlacementAsync(1, 10);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG01.Code);
-    }
-
-    #endregion
-
-    #region Method 25: PublishAllPlacementsAsync (UTCID01 - UTCID02)
-
-    [Fact]
-    public async Task UTCID01_PublishAllPlacements_Success()
-    {
-        // Arrange
-        var cls = new Class
-        {
-            Id = 1,
-            ClassName = "1A",
-            ClassAssignments = new List<ClassAssignment> { new() { IsActive = true } }
-        };
-        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(1, null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Class> { cls });
-
-        // Act
-        var result = await _service.PublishAllPlacementsAsync(1, 10);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        result.Data.Should().HaveCount(1);
-    }
-
-    [Fact]
-    public async Task UTCID02_PublishAllPlacements_NoClasses_Fails()
-    {
-        // Arrange
-        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(1, null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Class>());
-
-        // Act
-        var result = await _service.PublishAllPlacementsAsync(1, 10);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG01.Code);
-    }
-
-    #endregion
-
     #region Method 26: GetClassRosterAsync (UTCID01 - UTCID04)
 
     [Fact]
@@ -1498,7 +1393,6 @@ public class ClassServiceTests : TestBase
             .ReturnsAsync(targetClass);
         SetupRepository(new List<AttendanceRecord>());
         SetupRepository(new List<ClassSchedule>());
-        SetupRepository(new List<PlacementPlanItem>());
         SetupRepository(new List<ClassAssignment>());
 
         // Act
@@ -1539,6 +1433,201 @@ public class ClassServiceTests : TestBase
 
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    #endregion
+
+    #region Method 28: Draft school year and class review (UC-13, UC-14 A2, UC-16 A1, BR-72)
+
+    private static SchoolYear DraftYear(int id = 2) => new()
+    {
+        Id = id,
+        YearName = "2027-2028",
+        StartDate = new DateTime(2027, 9, 1),
+        EndDate = new DateTime(2028, 5, 31),
+        IsActive = false,
+        Status = SchoolYearStatuses.Draft
+    };
+
+    [Fact]
+    public async Task UTCID01_ActivateSchoolYear_NotDraft_ReturnsMSG63()
+    {
+        // Arrange
+        var archived = new SchoolYear { Id = 3, YearName = "2024-2025", IsActive = false, Status = SchoolYearStatuses.Archived };
+        SetupRepository(new List<SchoolYear> { archived });
+
+        // Act
+        var result = await _service.ActivateSchoolYearAsync(3, 10);
+
+        // Assert: UC-13 E2
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG63.Code);
+        archived.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID02_ActivateSchoolYear_ClassNotReviewed_ReturnsMSG63()
+    {
+        // Arrange
+        var draft = DraftYear();
+        SetupRepository(new List<SchoolYear> { draft });
+        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(2, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Class>
+            {
+                new() { Id = 1, ClassName = "1A", SchoolYearId = 2, IsReviewed = true },
+                new() { Id = 2, ClassName = "1B", SchoolYearId = 2, IsReviewed = false }
+            });
+
+        // Act
+        var result = await _service.ActivateSchoolYearAsync(2, 10);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG63.Code);
+        result.Errors.Should().ContainSingle(e => e.Contains("1B"));
+        draft.Status.Should().Be(SchoolYearStatuses.Draft);
+    }
+
+    [Fact]
+    public async Task UTCID03_ActivateSchoolYear_AllReviewed_DraftAssignmentsBecomeCurrent()
+    {
+        // Arrange: student 1 is in 1A of the active year and placed in 2A of the Draft year
+        var oldYear = new SchoolYear { Id = 1, YearName = "2026-2027", IsActive = true, Status = SchoolYearStatuses.Active };
+        var draft = DraftYear();
+        var years = new List<SchoolYear> { oldYear, draft };
+        SetupRepository(years);
+        ClassRepoMock.Setup(r => r.GetAllSchoolYearsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(years);
+
+        var teacher = new StaffProfile { Id = 7, UserId = 70 };
+        var c2A = new Class { Id = 20, ClassName = "2A", SchoolYearId = 2, IsReviewed = true, HomeroomTeacherId = 7, HomeroomTeacher = teacher };
+        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(2, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Class> { c2A });
+
+        var current = new ClassAssignment { Id = 1, ClassId = 10, StudentId = 1, IsActive = true };
+        var placed = new ClassAssignment { Id = 2, ClassId = 20, StudentId = 1, IsActive = false, IsDraft = true };
+        SetupRepository(new List<ClassAssignment> { current, placed });
+        var notifications = new List<Notification>();
+        SetupRepository(notifications);
+
+        // Act
+        var result = await _service.ActivateSchoolYearAsync(2, 10);
+
+        // Assert: UC-13 step 4, BR-14, BR-17, UC-15 step 5
+        result.Success.Should().BeTrue();
+        draft.IsActive.Should().BeTrue();
+        draft.Status.Should().Be(SchoolYearStatuses.Active);
+        oldYear.IsActive.Should().BeFalse();
+        oldYear.Status.Should().Be(SchoolYearStatuses.Archived);
+        current.IsActive.Should().BeFalse();
+        current.EndDate.Should().NotBeNull();
+        placed.IsActive.Should().BeTrue();
+        placed.IsDraft.Should().BeFalse();
+        notifications.Should().ContainSingle(n => n.UserId == 70 && n.Content.Contains("2A"));
+        UnitOfWorkMock.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID04_MarkClassReviewed_DraftClass_RecordsReviewer()
+    {
+        // Arrange
+        var cls = new Class { Id = 1, ClassName = "1A", SchoolYearId = 2, SchoolYear = DraftYear() };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(cls);
+
+        // Act
+        var result = await _service.MarkClassReviewedAsync(1, 10);
+
+        // Assert: UC-14 A2
+        result.Success.Should().BeTrue();
+        result.Data!.IsReviewed.Should().BeTrue();
+        cls.ReviewedByUserId.Should().Be(10);
+        cls.ReviewedAt.Should().NotBeNull();
+        AuditServiceMock.Verify(a => a.LogActionAsync(10, AuditActions.ClassMarkReviewed, nameof(Class), "1",
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID05_MarkClassReviewed_ActiveYear_Fails()
+    {
+        // Arrange
+        var cls = new Class { Id = 1, ClassName = "1A", SchoolYear = new SchoolYear { Status = SchoolYearStatuses.Active, IsActive = true } };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(cls);
+
+        // Act
+        var result = await _service.MarkClassReviewedAsync(1, 10);
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        cls.IsReviewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID06_AssignStudents_DraftYear_CreatesDraftAssignment_ResetsReview()
+    {
+        // Arrange
+        var year = DraftYear();
+        var cls = new Class { Id = 1, Capacity = 35, SchoolYearId = 2, SchoolYear = year, IsReviewed = true, ReviewedAt = DateTime.UtcNow, ClassAssignments = new List<ClassAssignment>() };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(cls);
+        var assignments = new List<ClassAssignment>();
+        SetupRepository(assignments);
+
+        // Act
+        var result = await _service.AssignStudentsToClassAsync(1, new AssignStudentsDto { StudentIds = new List<int> { 5 } }, 10);
+
+        // Assert: UC-16 A1, BR-72 – no student's current class changes
+        result.Success.Should().BeTrue();
+        assignments.Should().ContainSingle(a => a.StudentId == 5 && a.IsDraft && !a.IsActive && a.StartDate == year.StartDate);
+        cls.IsReviewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID07_RemoveStudent_DraftAssignment_IsDeleted_ResetsReview()
+    {
+        // Arrange
+        var cls = new Class { Id = 1, SchoolYearId = 2, IsReviewed = true };
+        SetupRepository(new List<Class> { cls });
+        var draftAssignment = new ClassAssignment { Id = 1, ClassId = 1, StudentId = 10, IsActive = false, IsDraft = true };
+        var assignments = new List<ClassAssignment> { draftAssignment };
+        SetupRepository(assignments);
+
+        // Act
+        var result = await _service.RemoveStudentFromClassAsync(1, 10, 10);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        assignments.Should().BeEmpty();
+        cls.IsReviewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID08_UpdateClass_ReviewedDraftClass_ResetsReview()
+    {
+        // Arrange
+        var cls = new Class { Id = 1, ClassName = "1A", Grade = 1, Capacity = 35, Status = "Active", SchoolYear = DraftYear(), IsReviewed = true, ClassAssignments = new List<ClassAssignment>() };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(cls);
+
+        // Act
+        var result = await _service.UpdateClassAsync(1, new UpdateClassDto { ClassName = "1A", Grade = 1, Capacity = 30, Status = "Active" }, 10);
+
+        // Assert: BR-72
+        result.Success.Should().BeTrue();
+        cls.IsReviewed.Should().BeFalse();
+        result.Data!.IsReviewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UTCID09_DeleteSchoolYear_Archived_Refused()
+    {
+        // Arrange
+        var archived = new SchoolYear { Id = 3, YearName = "2024-2025", IsActive = false, Status = SchoolYearStatuses.Archived };
+        SetupRepository(new List<SchoolYear> { archived });
+
+        // Act
+        var result = await _service.DeleteSchoolYearAsync(3, 10);
+
+        // Assert: UC-13 A2 – only a Draft year is discarded (BR-52)
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
     }
 
     #endregion
