@@ -21,6 +21,8 @@ import {
   BookOpen,
   Sparkles,
   AlertTriangle,
+  Bell,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
@@ -185,6 +187,14 @@ function previewTemplateForDate(tpl: WeeklyMenuTemplate, isoDate: string) {
   };
 }
 
+const KITCHEN_SUBSTITUTION_OPTIONS = [
+  'Bỏ món trùng dị ứng, thay bằng thịt nạc hấp & canh rau củ',
+  'Bỏ món trùng dị ứng, thay bằng cháo thịt bằm / cháo rau củ',
+  'Bỏ món hải sản, thay bằng thịt lợn rim nhạt & canh rau ngót',
+  'Bỏ món trứng / sữa, thay bằng thịt gà xé & hoa quả tươi',
+  'Bỏ món đậu phụ / đậu nành, thay bằng nấm xào & canh bí',
+];
+
 export default function MealHeadcountPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get('tab') as 'summary' | 'students' | 'logs' | 'report') || 'summary';
@@ -235,29 +245,165 @@ export default function MealHeadcountPage() {
   const [cfgRemarks, setCfgRemarks] = useState<string>('');
   const [cfgApplyFullWeek, setCfgApplyFullWeek] = useState<boolean>(false);
 
-  // Modal Xem chi tiết khẩu phần từng lớp & phân bổ khẩu phần đặc thù (Tổ Bán trú)
+  // Modal Xem chi tiết khẩu phần từng lớp & khay ăn học sinh (chỉ chọn phương án đổi món của bếp — không chọn chế độ ăn từng em)
   const [detailClass, setDetailClass] = useState<ClassMealSummary | null>(null);
   const [selectedStudentTray, setSelectedStudentTray] = useState<StudentMealOperationItem | null>(null);
-  const [trayMealType, setTrayMealType] = useState<number>(1);
-  const [trayRemarks, setTrayRemarks] = useState<string>('');
-  const [trayApplyDefault, setTrayApplyDefault] = useState<boolean>(false);
-  const [savingTrayDiet, setSavingTrayDiet] = useState<boolean>(false);
+  const [kitchenNotePreset, setKitchenNotePreset] = useState<string>('');
+  const [kitchenNote, setKitchenNote] = useState<string>('');
+  const [savingKitchenNote, setSavingKitchenNote] = useState<boolean>(false);
 
   useEffect(() => {
     if (selectedStudentTray) {
-      setTrayMealType(normalizeMealTypeNumber(selectedStudentTray.mealType));
-      setTrayRemarks(getDistinctKitchenRemark(selectedStudentTray));
-      setTrayApplyDefault(false);
+      const existing = getDistinctKitchenRemark(selectedStudentTray).replace(/^\[Bếp đổi món\]\s*/i, '').trim();
+      if (!existing) {
+        setKitchenNotePreset('');
+        setKitchenNote('');
+      } else if (KITCHEN_SUBSTITUTION_OPTIONS.includes(existing)) {
+        setKitchenNotePreset(existing);
+        setKitchenNote(existing);
+      } else {
+        setKitchenNotePreset('__CUSTOM__');
+        setKitchenNote(existing);
+      }
     }
   }, [selectedStudentTray]);
 
-  const evaluateTrayConflicts = (studentItem: StudentMealOperationItem, mealTypeNum: number) => {
-    const isPreviewingNewDiet = mealTypeNum !== normalizeMealTypeNumber(studentItem.mealType);
+  const handleSaveKitchenNote = async () => {
+    if (!selectedStudentTray) return;
+    const rawValue = kitchenNotePreset === '__CUSTOM__' ? kitchenNote.trim() : kitchenNotePreset.trim();
+    const formatted = rawValue ? `[Bếp đổi món] ${rawValue}` : undefined;
+    if (formatted && formatted.length > 250) {
+      toast.error('Ghi chú đổi món của bếp tối đa 235 ký tự.');
+      return;
+    }
+    try {
+      setSavingKitchenNote(true);
+      await lunchApi.updateRegistrationMealType({
+        studentId: selectedStudentTray.studentId,
+        date: selectedDate,
+        mealType: normalizeMealTypeNumber(selectedStudentTray.mealType),
+        remarks: formatted,
+      });
+      toast.success(
+        formatted
+          ? 'Đã lưu ghi chú đổi món của Nhà bếp (hiển thị cho GVCN & Phụ huynh).'
+          : 'Đã xóa ghi chú đổi món của Nhà bếp.'
+      );
+      setSelectedStudentTray(null);
+      await fetchBoard(selectedDate);
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Lưu ghi chú đổi món thất bại.');
+    } finally {
+      setSavingKitchenNote(false);
+    }
+  };
+
+  // Modal Gửi thông báo mở kỳ đăng ký bán trú (25–28 cuối tháng) tới toàn bộ Phụ huynh
+  const [showNotifyWindowModal, setShowNotifyWindowModal] = useState<boolean>(false);
+  const [notifyTargetMonth, setNotifyTargetMonth] = useState<string>(() => {
+    const d = new Date();
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [notifyCustomMessage, setNotifyCustomMessage] = useState<string>('');
+  const [sendingWindowNotify, setSendingWindowNotify] = useState<boolean>(false);
+
+  const handleSendRegistrationWindowNotice = async () => {
+    if (!notifyTargetMonth || !/^\d{4}-\d{2}$/.test(notifyTargetMonth)) {
+      toast.error('Vui lòng chọn tháng áp dụng hợp lệ (YYYY-MM).');
+      return;
+    }
+    if (notifyCustomMessage.trim().length > 300) {
+      toast.error('Ghi chú bổ sung tối đa 300 ký tự.');
+      return;
+    }
+    try {
+      setSendingWindowNotify(true);
+      const res = await lunchApi.notifyRegistrationWindow({
+        targetMonth: notifyTargetMonth,
+        customMessage: notifyCustomMessage.trim() || undefined,
+      });
+      toast.success(res.message || `Đã gửi thông báo đăng ký bán trú tới ${res.data.notifiedParentCount} phụ huynh.`);
+      setShowNotifyWindowModal(false);
+      setNotifyCustomMessage('');
+    } catch (err: unknown) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message || 'Gửi thông báo đăng ký bán trú thất bại.');
+    } finally {
+      setSendingWindowNotify(false);
+    }
+  };
+
+  const escapeCsvCell = (val: string | number | null | undefined): string => {
+    const s = String(val ?? '');
+    if (/[",\r\n]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  const handleExportPeriodReportCsv = () => {
+    if (!periodReport) {
+      toast.error('Chưa có dữ liệu báo cáo để xuất CSV.');
+      return;
+    }
+    const fromDisplay = formatDateDDMMYYYY(reportFrom);
+    const toDisplay = formatDateDDMMYYYY(reportTo);
+    const rows: (string | number)[][] = [
+      ['BÁO CÁO THỐNG KÊ SUẤT ĂN BÁN TRÚ THEO KỲ'],
+      ['Khoảng thời gian', `Từ ${fromDisplay} đến ${toDisplay}`],
+      ['Số ngày phục vụ', periodReport.totalServiceDays],
+      ['Tổng suất đăng ký', periodReport.totalInitialRegistered],
+      ['Tổng đã hủy hợp lệ', periodReport.totalCancelled],
+      ['Tổng suất thực nấu', periodReport.totalActualMeals],
+      ['Tiêu chuẩn (Mặn)', periodReport.totalStandard],
+      ['Ăn chay', periodReport.totalVegetarian],
+      ['Đặc biệt', periodReport.totalSpecialDiet],
+      [],
+      ['Lớp', 'Khối', 'Tổng đăng ký', 'Đã hủy', 'Thực nấu', 'Tiêu chuẩn (Mặn)', 'Ăn chay', 'Đặc biệt'],
+      ...periodReport.classSummaries.map((c) => [
+        formatClassLabel(c.className, c.classId),
+        c.grade > 0 ? `Khối ${c.grade}` : '—',
+        c.initialRegistered,
+        c.cancelledCount,
+        c.actualCount,
+        c.standardCount ?? 0,
+        c.vegetarianCount ?? 0,
+        c.specialDietCount ?? 0,
+      ]),
+      [
+        'TỔNG CỘNG',
+        '',
+        periodReport.totalInitialRegistered,
+        periodReport.totalCancelled,
+        periodReport.totalActualMeals,
+        periodReport.totalStandard,
+        periodReport.totalVegetarian,
+        periodReport.totalSpecialDiet,
+      ],
+    ];
+
+    const csvContent = '\uFEFF' + rows.map((r) => r.map(escapeCsvCell).join(',')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bao-cao-thong-ke-suat-an_${reportFrom}_den_${reportTo}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Đã xuất file CSV báo cáo thống kê suất ăn.');
+  };
+
+  const evaluateTrayConflicts = (studentItem: StudentMealOperationItem) => {
+    const mealTypeNum = normalizeMealTypeNumber(studentItem.mealType);
     const dishes = getStudentDishes(
       mealTypeNum,
       board?.menus,
       board?.serviceRemarks,
-      isPreviewingNewDiet ? undefined : studentItem.remarks
+      studentItem.remarks
     ).filter((d) => !d.startsWith('(Lưu ý'));
 
     const structuredDishes: DishSummary[] = board?.menus
@@ -271,7 +417,7 @@ export default function MealHeadcountPage() {
       structuredDishes.length > 0 ? structuredDishes : (board?.menus?.standard ?? []);
 
     const dishObjectsForCheck =
-      !isPreviewingNewDiet && (studentItem.remarks || '').includes('|')
+      (studentItem.remarks || '').includes('|')
         ? dishes.map((name) => {
             const matched = effectiveStructured.find((sd) => sd.name.toLowerCase() === name.toLowerCase());
             return matched ?? { name, allergenTags: [] };
@@ -287,77 +433,13 @@ export default function MealHeadcountPage() {
       studentItem.allergyWarning || studentItem.remarks
     );
 
-    const hasDedicatedSpecialMenu = (board?.menus?.special?.length ?? 0) > 0;
-    const requiresKitchenNote =
-      mealTypeNum === 3 && (!hasDedicatedSpecialMenu || liveConflicts.length > 0);
-
     return {
-      isPreviewingNewDiet,
+      mealTypeNum,
       dishes,
       liveConflicts,
       conflictingDishNames,
       hasStudentAllergyProfile: hasStudentAllergyInfo(studentItem),
-      hasDedicatedSpecialMenu,
-      requiresKitchenNote,
     };
-  };
-
-  const handleSaveStudentDiet = async () => {
-    if (!selectedStudentTray) return;
-    const { liveConflicts, requiresKitchenNote, hasDedicatedSpecialMenu } = evaluateTrayConflicts(
-      selectedStudentTray,
-      trayMealType
-    );
-    if (liveConflicts.length > 0 && trayMealType !== 3) {
-      toast.error(
-        `Khẩu phần đang chọn vẫn còn món trùng dị ứng (${liveConflicts.join('; ')}). Vui lòng chọn Chế độ đặc biệt để tránh trùng dị ứng cho học sinh.`
-      );
-      return;
-    }
-    if (requiresKitchenNote && !trayRemarks.trim()) {
-      toast.error(
-        hasDedicatedSpecialMenu && liveConflicts.length > 0
-          ? `Thực đơn Đặc biệt vẫn còn món trùng dị ứng (${liveConflicts.join('; ')}). Vui lòng nhập ghi chú bỏ/đổi món cho bếp.`
-          : 'Ngày này chưa cấu hình sẵn thực đơn Đặc biệt — vui lòng nhập ghi chú món cần nấu cho bếp.'
-      );
-      return;
-    }
-    if (trayRemarks.trim().length > 250) {
-      toast.error('Ghi chú khẩu phần tối đa 250 ký tự.');
-      return;
-    }
-    try {
-      setSavingTrayDiet(true);
-      await lunchApi.updateRegistrationMealType({
-        studentId: selectedStudentTray.studentId,
-        date: selectedDate,
-        mealType: trayMealType,
-        remarks: trayRemarks.trim() || undefined,
-      });
-
-      if (trayApplyDefault) {
-        const currentProfile = await lunchApi.getStudentMealProfile(selectedStudentTray.studentId);
-        await lunchApi.upsertStudentMealProfile(selectedStudentTray.studentId, {
-          defaultMealType: trayMealType,
-          allergenTags: currentProfile.allergenTags ?? [],
-          // Giữ nguyên ghi chú dị ứng gốc của phụ huynh, không lấy ghi chú bếp ghi đè lên hồ sơ dị ứng
-          allergyNotes: currentProfile.allergyNotes ?? undefined,
-        });
-      }
-
-      toast.success(
-        trayApplyDefault
-          ? 'Đã phân bổ khẩu phần hôm nay và lưu làm chế độ mặc định cho học sinh.'
-          : 'Đã cập nhật phân bổ khẩu phần cho học sinh.'
-      );
-      setSelectedStudentTray(null);
-      await fetchBoard(selectedDate);
-    } catch (err: unknown) {
-      const apiErr = asApiError(err);
-      toast.error(apiErr.errors?.[0] || apiErr.message || 'Cập nhật phân bổ khẩu phần thất bại.');
-    } finally {
-      setSavingTrayDiet(false);
-    }
   };
 
   // Tab 4: Báo cáo thống kê kỳ / tháng (Lunch Report)
@@ -450,13 +532,21 @@ export default function MealHeadcountPage() {
     return board.cutoffTime.replace(':', 'h');
   }, [board?.cutoffTime]);
 
+  const hasKitchenResolution = (remarks?: string | null): boolean =>
+    Boolean(remarks && /^\[Bếp đổi món\]/i.test(remarks.trim()));
+
+  const getCleanKitchenResolutionText = (remarks?: string | null): string =>
+    (remarks || '').trim().replace(/^\[Bếp đổi món\]\s*/i, '');
+
   const mealBreakdownStats = useMemo(() => {
     const active = (board?.studentMeals ?? []).filter((s) => s.isActive);
     return {
       standard: active.filter((s) => normalizeMealTypeNumber(s.mealType) === 1).length,
       vegetarian: active.filter((s) => normalizeMealTypeNumber(s.mealType) === 2).length,
       special: active.filter((s) => normalizeMealTypeNumber(s.mealType) === 3).length,
-      unresolvedConflicts: active.filter((s) => (s.allergyConflicts?.length ?? 0) > 0).length,
+      unresolvedConflicts: active.filter(
+        (s) => (s.allergyConflicts?.length ?? 0) > 0 && !hasKitchenResolution(s.remarks)
+      ).length,
       specialOrAllergy: active.filter(
         (s) => normalizeMealTypeNumber(s.mealType) !== 1 || hasStudentAllergyInfo(s)
       ).length,
@@ -474,7 +564,7 @@ export default function MealHeadcountPage() {
       if (statusFilter === 'CANCELLED' && item.isActive) return false;
 
       if (dietFilter === 'CONFLICT_ONLY') {
-        if (!item.isActive || (item.allergyConflicts?.length ?? 0) === 0) return false;
+        if (!item.isActive || (item.allergyConflicts?.length ?? 0) === 0 || hasKitchenResolution(item.remarks)) return false;
       } else if (dietFilter === 'SPECIAL_ALLERGY') {
         const isSpecialOrAllergy =
           normalizeMealTypeNumber(item.mealType) !== 1 || hasStudentAllergyInfo(item);
@@ -730,6 +820,31 @@ export default function MealHeadcountPage() {
 
             {board?.canManage && (
               <>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowNotifyWindowModal(true)}
+                  title="Gửi thông báo kỳ đăng ký bán trú 25–28 cuối tháng tới toàn bộ Phụ huynh"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid var(--color-fg)',
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    background: '#FEF3C7',
+                    color: 'var(--color-fg)',
+                    fontWeight: 800,
+                    fontSize: 'var(--fs-sm)',
+                    padding: '0 16px',
+                    height: 42,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Bell size={15} />
+                  Thông báo ĐK tháng (25–28)
+                </button>
                 <button
                   type="button"
                   className="btn"
@@ -1348,7 +1463,7 @@ export default function MealHeadcountPage() {
                     Phát hiện {mealBreakdownStats.unresolvedConflicts} học sinh có món ăn hôm nay trùng dị ứng thực phẩm!
                   </div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: '#7F1D1D', marginTop: 2, fontWeight: 600 }}>
-                    Vui lòng kiểm tra khay ăn và chuyển các bé sang <strong>Chế độ đặc biệt</strong> trước khi chốt sổ nấu.
+                    Vui lòng kiểm tra khay ăn và lưu ý tránh món trùng dị ứng khi chế biến/chia suất cho các bé trước khi chốt sổ nấu.
                   </div>
                 </div>
               </div>
@@ -1813,22 +1928,41 @@ export default function MealHeadcountPage() {
                       </td>
                       <td style={{ padding: '10px 14px', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
                         {item.isActive && (item.allergyConflicts?.length ?? 0) > 0 && (
-                          <div
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              padding: '2px 8px',
-                              borderRadius: 8,
-                              background: '#FEE2E2',
-                              border: '1px solid #DC2626',
-                              color: '#991B1B',
-                              fontWeight: 800,
-                              marginBottom: 4,
-                            }}
-                          >
-                            <AlertTriangle size={12} /> Xung đột dị ứng: {item.allergyConflicts!.join('; ')}
-                          </div>
+                          hasKitchenResolution(item.remarks) ? (
+                            <div
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                borderRadius: 8,
+                                background: '#ECFDF5',
+                                border: '1px solid #059669',
+                                color: '#065F46',
+                                fontWeight: 800,
+                                marginBottom: 4,
+                              }}
+                            >
+                              <CheckCircle2 size={12} /> Bếp đã đổi món: {getCleanKitchenResolutionText(item.remarks)}
+                            </div>
+                          ) : (
+                            <div
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                borderRadius: 8,
+                                background: '#FEE2E2',
+                                border: '1px solid #DC2626',
+                                color: '#991B1B',
+                                fontWeight: 800,
+                                marginBottom: 4,
+                              }}
+                            >
+                              <AlertTriangle size={12} /> Xung đột dị ứng: {item.allergyConflicts!.join('; ')}
+                            </div>
+                          )
                         )}
                         {item.isActive && ((item.studentAllergenTags?.length ?? 0) > 0 || item.studentAllergyNotes) && (
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginBottom: 3 }}>
@@ -2422,6 +2556,24 @@ export default function MealHeadcountPage() {
                 <RefreshCw size={14} className={loadingReport ? 'spin' : ''} /> Tải báo cáo
               </button>
 
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={handleExportPeriodReportCsv}
+                disabled={loadingReport || !periodReport}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '2px 2px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Download size={14} /> Xuất CSV
+              </button>
+
             </div>
           </div>
 
@@ -2623,21 +2775,26 @@ export default function MealHeadcountPage() {
         onClose={() => setSelectedStudentTray(null)}
         title={`Khay Ăn Bán Trú • ${selectedStudentTray?.studentName ?? ''}`}
         subtitle={`${selectedStudentTray ? formatClassLabel(selectedStudentTray.className, selectedStudentTray.classId) : ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${formatDateDDMMYYYY(selectedDate)}`}
-        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(trayMealType)] ?? 'Tiêu chuẩn') : ''}
-        badgeColor={trayMealType === 3 ? 'pink' : trayMealType === 2 ? 'amber' : 'mint'}
+        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(selectedStudentTray.mealType)] ?? 'Tiêu chuẩn') : ''}
+        badgeColor={
+          selectedStudentTray && normalizeMealTypeNumber(selectedStudentTray.mealType) === 3
+            ? 'pink'
+            : selectedStudentTray && normalizeMealTypeNumber(selectedStudentTray.mealType) === 2
+              ? 'amber'
+              : 'mint'
+        }
         icon={<Soup size={22} color="var(--color-fg)" strokeWidth={2.5} />}
         iconBg="var(--color-tertiary)"
         maxWidth="md"
       >
         {selectedStudentTray && (() => {
           const {
-            isPreviewingNewDiet,
+            mealTypeNum,
             dishes,
             liveConflicts,
             conflictingDishNames,
             hasStudentAllergyProfile,
-            requiresKitchenNote,
-          } = evaluateTrayConflicts(selectedStudentTray, trayMealType);
+          } = evaluateTrayConflicts(selectedStudentTray);
           const conflictingSet = new Set(conflictingDishNames);
           const declaredTags = selectedStudentTray.studentAllergenTags ?? [];
           const declaredAllergyNotes = (selectedStudentTray.studentAllergyNotes ?? '').trim();
@@ -2650,11 +2807,37 @@ export default function MealHeadcountPage() {
             dishes.length > 0 &&
             liveConflicts.length === 0 &&
             hasStudentAllergyProfile &&
-            (isPreviewingNewDiet || trayMealType === 3 || (selectedStudentTray.allergyConflicts?.length ?? 0) > 0);
+            (mealTypeNum === 3 || (selectedStudentTray.allergyConflicts?.length ?? 0) > 0);
+
+          const isResolvedByKitchen = hasKitchenResolution(selectedStudentTray.remarks);
+          const kitchenResolutionText = getCleanKitchenResolutionText(selectedStudentTray.remarks);
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {liveConflicts.length > 0 ? (
+              {liveConflicts.length > 0 && isResolvedByKitchen ? (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '2px solid #059669',
+                    background: '#ECFDF5',
+                    color: '#065F46',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                  }}
+                >
+                  <CheckCircle2 size={16} color="#059669" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div>Nhà bếp đã xử lý đổi món tránh dị ứng: {kitchenResolutionText}</div>
+                    <div style={{ fontWeight: 600, marginTop: 2, color: '#047857' }}>
+                      Các món gốc cần loại bỏ/thay thế: {liveConflicts.join(' • ')}
+                    </div>
+                  </div>
+                </div>
+              ) : liveConflicts.length > 0 ? (
                 <div
                   style={{
                     padding: '10px 14px',
@@ -2692,9 +2875,7 @@ export default function MealHeadcountPage() {
                 >
                   <CheckCircle2 size={16} color="#059669" style={{ flexShrink: 0 }} />
                   <div>
-                    {isPreviewingNewDiet
-                      ? <>Khẩu phần đang chọn đã loại bỏ món gây dị ứng — bấm <strong>Lưu phân bổ khẩu phần</strong> bên dưới để áp dụng.</>
-                      : 'Khẩu phần đang phân bổ không chứa thành phần gây dị ứng đã khai báo.'}
+                    Khẩu phần đã đăng ký không chứa thành phần gây dị ứng đã khai báo.
                   </div>
                 </div>
               ) : null}
@@ -2724,8 +2905,8 @@ export default function MealHeadcountPage() {
                     <UtensilsCrossed size={15} color="var(--color-accent)" strokeWidth={2.5} />
                     Các món trong khay ({dishes.length} món)
                   </span>
-                  <span className={`badge ${getMealTypeBadgeClass(trayMealType)}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: '11px' }}>
-                    {isPreviewingNewDiet ? 'Xem trước: ' : ''}{MEAL_TYPE_TEXT[String(trayMealType)] ?? 'Tiêu chuẩn'}
+                  <span className={`badge ${getMealTypeBadgeClass(mealTypeNum)}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: '11px' }}>
+                    {MEAL_TYPE_TEXT[String(mealTypeNum)] ?? 'Tiêu chuẩn'}
                   </span>
                 </div>
 
@@ -2738,6 +2919,7 @@ export default function MealHeadcountPage() {
                     dishes.map((dish, idx) => {
                       const slot = COURSE_SLOTS[idx % COURSE_SLOTS.length];
                       const isDishAllergic = conflictingSet.has(dish.toLowerCase());
+                      const isDishResolved = isDishAllergic && isResolvedByKitchen;
                       return (
                         <div
                           key={idx}
@@ -2746,10 +2928,18 @@ export default function MealHeadcountPage() {
                             alignItems: 'center',
                             gap: 10,
                             padding: '10px 12px',
-                            background: isDishAllergic ? '#FEF2F2' : '#FFFFFF',
-                            border: isDishAllergic ? '2px solid #DC2626' : '2px solid var(--color-fg)',
+                            background: isDishResolved ? '#ECFDF5' : isDishAllergic ? '#FEF2F2' : '#FFFFFF',
+                            border: isDishResolved
+                              ? '2px solid #059669'
+                              : isDishAllergic
+                                ? '2px solid #DC2626'
+                                : '2px solid var(--color-fg)',
                             borderRadius: 'var(--radius-md)',
-                            boxShadow: isDishAllergic ? '3px 3px 0 0 #DC2626' : '3px 3px 0 0 var(--color-fg)',
+                            boxShadow: isDishResolved
+                              ? '3px 3px 0 0 #059669'
+                              : isDishAllergic
+                                ? '3px 3px 0 0 #DC2626'
+                                : '3px 3px 0 0 var(--color-fg)',
                           }}
                         >
                           <div
@@ -2757,21 +2947,41 @@ export default function MealHeadcountPage() {
                               width: 38,
                               height: 38,
                               borderRadius: '50%',
-                              background: isDishAllergic ? '#FEE2E2' : slot.bg,
-                              border: isDishAllergic ? '2px solid #DC2626' : '2px solid var(--color-fg)',
+                              background: isDishResolved ? '#D1FAE5' : isDishAllergic ? '#FEE2E2' : slot.bg,
+                              border: isDishResolved
+                                ? '2px solid #059669'
+                                : isDishAllergic
+                                  ? '2px solid #DC2626'
+                                  : '2px solid var(--color-fg)',
                               display: 'grid',
                               placeItems: 'center',
                               fontSize: 18,
                               flexShrink: 0,
                             }}
                           >
-                            {isDishAllergic ? '⚠️' : slot.emoji}
+                            {isDishResolved ? '✓' : isDishAllergic ? '⚠️' : slot.emoji}
                           </div>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', color: isDishAllergic ? '#DC2626' : slot.accent }}>
-                              {isDishAllergic ? 'TRÙNG DỊ ỨNG' : slot.role}
+                            <div
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                color: isDishResolved ? '#059669' : isDishAllergic ? '#DC2626' : slot.accent,
+                              }}
+                            >
+                              {isDishResolved ? 'ĐÃ XỬ LÝ ĐỔI MÓN' : isDishAllergic ? 'TRÙNG DỊ ỨNG' : slot.role}
                             </div>
-                            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'var(--fs-sm)', color: isDishAllergic ? '#991B1B' : 'var(--color-fg)', marginTop: 2 }}>
+                            <div
+                              style={{
+                                fontFamily: 'var(--font-heading)',
+                                fontWeight: 800,
+                                fontSize: 'var(--fs-sm)',
+                                color: isDishResolved ? '#065F46' : isDishAllergic ? '#991B1B' : 'var(--color-fg)',
+                                textDecoration: isDishResolved ? 'line-through' : 'none',
+                                marginTop: 2,
+                              }}
+                            >
                               {dish}
                             </div>
                           </div>
@@ -2844,76 +3054,67 @@ export default function MealHeadcountPage() {
                 )}
               </div>
 
-              {board?.canManage && !board.isLocked && selectedStudentTray.isActive && (
+              {board?.canManage && !board.isLocked && selectedStudentTray.isActive && (liveConflicts.length > 0 || isResolvedByKitchen) && (
                 <div
                   style={{
                     padding: '12px 14px',
                     borderRadius: 'var(--radius-md)',
                     border: '2px solid var(--color-fg)',
-                    background: '#F5F3FF',
+                    background: '#ECFDF5',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 10,
                   }}
                 >
-                  <div style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-accent)' }}>
-                    Phân bổ chế độ khẩu phần (Tổ Bán trú)
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: '#065F46' }}>
+                      Phương án đổi món / xử lý dị ứng của Nhà bếp
+                    </span>
                   </div>
-
-                  <div className="responsive-grid-2">
-                    <div>
-                      <label className="label" style={{ fontSize: 11 }}>LOẠI KHẨU PHẦN</label>
-                      <select
-                        className="select"
-                        value={trayMealType}
-                        onChange={(e) => setTrayMealType(Number(e.target.value))}
-                        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, border: '2px solid var(--color-fg)' }}
-                      >
-                        <option value={1}>Suất tiêu chuẩn</option>
-                        <option value={2}>Suất ăn chay</option>
-                        <option value={3}>Đặc biệt (Kiêng dị ứng / Cháo ốm)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label" style={{ fontSize: 11 }}>
-                        {requiresKitchenNote
-                          ? 'GHI CHÚ CHẾ BIẾN BẾP *'
-                          : trayMealType === 3
-                            ? 'GHI CHÚ CHẾ BIẾN BẾP (TÙY CHỌN)'
-                            : 'GHI CHÚ KHẨU PHẦN (TÙY CHỌN)'}
-                      </label>
-                      <input
-                        type="text"
-                        className="input"
-                        maxLength={250}
-                        placeholder={
-                          requiresKitchenNote
-                            ? 'VD: Đổi món trùng dị ứng sang thịt nạc hấp / nấu cháo...'
-                            : 'Không bắt buộc (nhập thêm dặn dò riêng cho bếp nếu cần)...'
-                        }
-                        value={trayRemarks}
-                        onChange={(e) => setTrayRemarks(e.target.value)}
-                        style={{ fontSize: 'var(--fs-xs)' }}
-                      />
-                    </div>
-                  </div>
-
+                  <select
+                    className="select"
+                    value={kitchenNotePreset}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setKitchenNotePreset(val);
+                      if (val !== '__CUSTOM__') {
+                        setKitchenNote(val);
+                      } else {
+                        setKitchenNote('');
+                      }
+                    }}
+                    style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, border: '2px solid var(--color-fg)', background: '#FFFFFF' }}
+                  >
+                    <option value="">-- Chọn phương án xử lý nhanh (hoặc để trống để bỏ ghi chú) --</option>
+                    {KITCHEN_SUBSTITUTION_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                    <option value="__CUSTOM__">Khác (tự nhập ghi chú...)</option>
+                  </select>
+                  {kitchenNotePreset === '__CUSTOM__' && (
+                    <input
+                      type="text"
+                      className="input"
+                      maxLength={235}
+                      placeholder="Nhập phương án đổi món cụ thể cho bếp..."
+                      value={kitchenNote}
+                      onChange={(e) => setKitchenNote(e.target.value)}
+                      style={{ fontSize: 'var(--fs-xs)', border: '2px solid var(--color-fg)', background: '#FFFFFF' }}
+                    />
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-xs)', fontWeight: 700, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={trayApplyDefault}
-                        onChange={(e) => setTrayApplyDefault(e.target.checked)}
-                      />
-                      Lưu làm chế độ mặc định cho các ngày đăng ký sau của bé
-                    </label>
+                    <span style={{ fontSize: 11, color: '#065F46', fontWeight: 600 }}>
+                      Phương án này sẽ hiển thị công khai trên lịch bán trú của Phụ huynh &amp; danh sách lớp của GVCN.
+                    </span>
                     <button
                       type="button"
                       className="btn btn--primary btn--sm"
-                      onClick={handleSaveStudentDiet}
-                      disabled={savingTrayDiet}
+                      onClick={handleSaveKitchenNote}
+                      disabled={savingKitchenNote}
                     >
-                      {savingTrayDiet ? 'Đang lưu...' : 'Lưu phân bổ khẩu phần'}
+                      {savingKitchenNote ? 'Đang lưu...' : 'Lưu phương án bếp'}
                     </button>
                   </div>
                 </div>
@@ -3501,6 +3702,98 @@ export default function MealHeadcountPage() {
           fetchBoard(selectedDate);
         }}
       />
+
+      {/* MODAL GỬI THÔNG BÁO MỞ KỲ ĐĂNG KÝ BÁN TRÚ (25–28 CUỐI THÁNG) */}
+      <GeometricModal
+        open={showNotifyWindowModal}
+        onClose={() => setShowNotifyWindowModal(false)}
+        title="Thông báo Mở Kỳ Đăng Ký Bán Trú (25–28)"
+        subtitle="Gửi chuông thông báo tới toàn bộ Phụ huynh — khi bấm vào sẽ hiển thị trong Sổ liên lạc điện tử kèm nút chuyển sang form đăng ký"
+        badgeText="Chuông thông báo → Sổ liên lạc"
+        badgeColor="amber"
+        icon={<Bell size={22} color="var(--color-fg)" />}
+        iconBg="#FEF3C7"
+        maxWidth="md"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="field">
+            <label className="label" htmlFor="notify-target-month" style={{ fontWeight: 800 }}>
+              THÁNG ĐĂNG KÝ BÁN TRÚ ÁP DỤNG
+            </label>
+            <input
+              id="notify-target-month"
+              type="month"
+              className="input"
+              value={notifyTargetMonth}
+              onChange={(e) => setNotifyTargetMonth(e.target.value)}
+              style={{ border: '2px solid var(--color-fg)', fontWeight: 700 }}
+            />
+          </div>
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '2px solid var(--color-fg)',
+              background: '#FFFBEB',
+              fontSize: 'var(--fs-xs)',
+              lineHeight: 1.55,
+            }}
+          >
+            <div style={{ fontWeight: 800, marginBottom: 4, color: 'var(--color-fg)' }}>
+              Nội dung mặc định sẽ gửi tới Phụ huynh:
+            </div>
+            <div>
+              Kính gửi Quý Phụ huynh, kỳ đăng ký suất ăn bán trú tháng{' '}
+              <strong>
+                {notifyTargetMonth ? `${notifyTargetMonth.slice(5, 7)}/${notifyTargetMonth.slice(0, 4)}` : 'kế tiếp'}
+              </strong>{' '}
+              diễn ra từ ngày <strong>25 đến ngày 28 cuối tháng</strong>. Phụ huynh vui lòng mở Sổ liên lạc điện tử để chuyển sang đơn đăng ký chọn ngày ăn, chế độ ăn và khai báo dị ứng (nếu có). Lưu ý: Mốc{' '}
+              <strong>{LUNCH_CUTOFF_LABEL}</strong> là hạn cuối để thay đổi hoặc hủy suất ăn ngày hôm đó.
+            </div>
+          </div>
+
+          <div className="field">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="label" htmlFor="notify-custom-msg" style={{ fontWeight: 800 }}>
+                GHI CHÚ BỔ SUNG (TÙY CHỌN)
+              </label>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                {notifyCustomMessage.length}/300
+              </span>
+            </div>
+            <textarea
+              id="notify-custom-msg"
+              className="input"
+              rows={3}
+              maxLength={300}
+              placeholder="VD: Đề nghị phụ huynh hoàn tất đăng ký trước 17h00 ngày 28 để nhà trường chốt danh sách..."
+              value={notifyCustomMessage}
+              onChange={(e) => setNotifyCustomMessage(e.target.value)}
+              style={{ width: '100%', border: '2px solid var(--color-fg)' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setShowNotifyWindowModal(false)}
+              disabled={sendingWindowNotify}
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleSendRegistrationWindowNotice}
+              disabled={sendingWindowNotify}
+            >
+              {sendingWindowNotify ? 'Đang gửi...' : 'Gửi thông báo tới Phụ huynh'}
+            </button>
+          </div>
+        </div>
+      </GeometricModal>
     </div>
   );
 }

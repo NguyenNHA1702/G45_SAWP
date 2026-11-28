@@ -19,6 +19,12 @@ public class SchoolOptions
     /// <summary>Giới hạn tối đa khoảng ngày lịch từ StartDate đến EndDate trong một đơn xin nghỉ.</summary>
     public int MaxLeaveCalendarSpanDays { get; set; } = 60;
 
+    /// <summary>Ngày bắt đầu kỳ đăng ký bán trú định kỳ hàng tháng (mặc định ngày 25).</summary>
+    public int LunchMonthlyWindowStartDay { get; set; } = 25;
+
+    /// <summary>Ngày kết thúc kỳ đăng ký bán trú định kỳ hàng tháng (mặc định ngày 28).</summary>
+    public int LunchMonthlyWindowEndDay { get; set; } = 28;
+
     public TimeSpan LunchCutoff => TimeSpan.TryParse(LunchCutoffTime, out var t) ? t : new TimeSpan(8, 15, 0);
     public TimeSpan AfternoonCutoff => TimeSpan.TryParse(AfternoonCutoffTime, out var t) ? t : new TimeSpan(13, 30, 0);
 }

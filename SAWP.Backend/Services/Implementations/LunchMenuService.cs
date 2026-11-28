@@ -841,21 +841,22 @@ public class LunchMenuService : ILunchMenuService
             return ApiResponse<StudentMealProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú dị ứng tối đa 250 ký tự." });
         }
 
-        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
         var profileRepo = _unitOfWork.Repository<StudentMealProfile>();
         var existing = await profileRepo.Query().FirstOrDefaultAsync(p => p.StudentId == studentId, cancellationToken);
 
-        // Phụ huynh chỉ được khai báo dị ứng thực phẩm & ghi chú sức khỏe; chỉ Tổ Bán trú / Admin mới có quyền phân bổ DefaultMealType
-        var effectiveDefaultMealType = isStaffOrAdmin
-            ? request.DefaultMealType
-            : (existing?.DefaultMealType ?? MealType.StandardLunch);
+        if (!Enum.IsDefined(typeof(MealType), request.DefaultMealType))
+        {
+            return ApiResponse<StudentMealProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Chế độ ăn không hợp lệ." });
+        }
+
+        var effectiveDefaultMealType = request.DefaultMealType;
 
         var normalizedTags = AllergenCatalog.NormalizeTagsCsv(request.AllergenTags);
         if (effectiveDefaultMealType == MealType.SpecialDiet && string.IsNullOrEmpty(normalizedTags) && string.IsNullOrEmpty(notes))
         {
             return ApiResponse<StudentMealProfileDto>.Fail(
                 SystemMessages.MSG01,
-                new List<string> { "Khi phân bổ chế độ ăn mặc định là Đặc biệt, vui lòng chọn ít nhất 1 nhóm dị ứng hoặc nhập ghi chú chi tiết." });
+                new List<string> { "Khi chọn chế độ ăn Đặc biệt, vui lòng chọn ít nhất 1 nhóm dị ứng hoặc nhập ghi chú chi tiết." });
         }
 
         var oldVal = existing == null
@@ -897,9 +898,7 @@ public class LunchMenuService : ILunchMenuService
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var msg = isStaffOrAdmin
-            ? "Đã lưu phân bổ chế độ khẩu phần và thông tin dị ứng của học sinh."
-            : "Đã lưu khai báo dị ứng thực phẩm của học sinh.";
+        var msg = "Đã lưu chế độ ăn và khai báo dị ứng thực phẩm của học sinh.";
         return ApiResponse<StudentMealProfileDto>.Ok(BuildProfileDto(student, existing), msg);
     }
 }

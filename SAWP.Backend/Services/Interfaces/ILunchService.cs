@@ -79,4 +79,9 @@ public interface ILunchService
         int? userId = null,
         IReadOnlyList<UserRoles>? roles = null,
         CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<NotifyLunchRegistrationWindowResultDto>> NotifyRegistrationWindowAsync(
+        int userId,
+        NotifyLunchRegistrationWindowRequestDto request,
+        CancellationToken cancellationToken = default);
 }

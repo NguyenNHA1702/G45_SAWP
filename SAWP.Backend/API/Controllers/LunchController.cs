@@ -87,10 +87,10 @@ public class LunchController : BaseApiController
     }
 
     /// <summary>
-    /// Nhân viên bán trú / Quản trị viên phân bổ chế độ khẩu phần (Tiêu chuẩn / Ăn chay / Đặc biệt) cho học sinh trước khi khóa sổ
+    /// UC-29 A1 / UC-34: Phụ huynh đổi chế độ ăn từng ngày trước hạn chốt (08h15) hoặc Nhân viên bán trú cập nhật phương án xử lý bếp trước khi khóa sổ
     /// </summary>
     [HttpPut("registration")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "Parent,ServiceStaff,Admin")]
     public async Task<IActionResult> UpdateRegistrationMealType([FromBody] UpdateLunchRegistrationMealTypeDto request, CancellationToken ct)
     {
         var userId = User.GetRequiredUserId();
@@ -173,6 +173,18 @@ public class LunchController : BaseApiController
     {
         var userId = User.GetRequiredUserId();
         var result = await _lunchService.UnlockDailyMealAsync(userId, request, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Tổ Bán trú / Admin gửi thông báo mở kỳ đăng ký bán trú (25–28 cuối tháng) & nhắc mốc chốt 08h15 tới toàn bộ Phụ huynh
+    /// </summary>
+    [HttpPost("notify-registration-window")]
+    [Authorize(Roles = "ServiceStaff,Admin")]
+    public async Task<IActionResult> NotifyRegistrationWindow([FromBody] NotifyLunchRegistrationWindowRequestDto request, CancellationToken cancellationToken)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _lunchService.NotifyRegistrationWindowAsync(userId, request, cancellationToken);
         return ToActionResult(result);
     }
 

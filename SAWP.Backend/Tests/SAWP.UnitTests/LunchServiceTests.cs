@@ -1693,7 +1693,7 @@ public class LunchServiceTests : TestBase
         {
             StudentId = 1,
             Dates = new List<DateTime> { targetDate },
-            MealType = MealType.StandardLunch,
+            MealType = MealType.SpecialDiet,
             Remarks = null
         });
 
@@ -2177,5 +2177,194 @@ public class LunchServiceTests : TestBase
 
         res.Success.Should().BeTrue();
         res.Data!.CanManage.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RegisterLunchBatch_Parent_SelectsMealType_SavesSelectedMealTypeAndNotifiesHomeroomTeacher()
+    {
+        var targetDate = new DateTime(2026, 10, 29);
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 10, 29, 7, 30, 0));
+
+        var homeroomClass = new Class
+        {
+            Id = 10,
+            ClassName = "3A",
+            SchoolYear = new SchoolYear { Id = 1, IsActive = true },
+            HomeroomTeacher = new StaffProfile { Id = 5, UserId = 88 }
+        };
+        var student = new Student
+        {
+            Id = 1,
+            FullName = "Nguyễn An",
+            ClassAssignments = new List<ClassAssignment>
+            {
+                new() { Id = 1, StudentId = 1, ClassId = 10, Class = homeroomClass, IsActive = true, StartDate = new DateTime(2026, 9, 1) }
+            }
+        };
+        SetupRepository(new List<Student> { student });
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+        SetupRepository(new List<LunchServiceDay>());
+        var regs = new List<LunchRegistration>();
+        SetupRepository(regs);
+        var notifications = new List<Notification>();
+        SetupRepository(notifications);
+
+        var res = await _service.RegisterLunchBatchAsync(20, new[] { UserRoles.Parent }, new BatchLunchRegistrationRequestDto
+        {
+            StudentId = 1,
+            Dates = new List<DateTime> { targetDate },
+            MealType = MealType.VegetarianLunch
+        });
+
+        res.Success.Should().BeTrue();
+        regs.Should().ContainSingle(r => r.MealType == MealType.VegetarianLunch && r.IsActive);
+        notifications.Should().Contain(n => n.UserId == 20 && n.Content.Contains("08h15"));
+        notifications.Should().Contain(n => n.UserId == 88 && n.LinkUrl!.Contains("/teacher/boarding?date=2026-10-29"));
+    }
+
+    [Fact]
+    public async Task NotifyRegistrationWindow_SendsDeduplicatedNotificationsToActiveParentsWithContactBookLink()
+    {
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 10, 26, 9, 0, 0));
+        var activeYear = new SchoolYear { Id = 1, IsActive = true };
+        var activeClass = new Class { Id = 1, ClassName = "1A", SchoolYearId = 1, SchoolYear = activeYear };
+        var parentA = new Guardian { Id = 1, UserId = 101 };
+        var parentB = new Guardian { Id = 2, UserId = 102 };
+        var inactiveParent = new Guardian { Id = 3, UserId = 103 };
+
+        SetupRepository(new List<Student>
+        {
+            new()
+            {
+                Id = 1, Status = "Active", FullName = "Em 1",
+                ClassAssignments = new List<ClassAssignment> { new() { Id = 1, ClassId = 1, Class = activeClass, IsActive = true } },
+                StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1, Guardian = parentA } }
+            },
+            new()
+            {
+                Id = 2, Status = "Active", FullName = "Em 2 (cùng PH A)",
+                ClassAssignments = new List<ClassAssignment> { new() { Id = 2, ClassId = 1, Class = activeClass, IsActive = true } },
+                StudentGuardians = new List<StudentGuardian>
+                {
+                    new() { StudentId = 2, GuardianId = 1, Guardian = parentA },
+                    new() { StudentId = 2, GuardianId = 2, Guardian = parentB }
+                }
+            },
+            new()
+            {
+                Id = 3, Status = "Inactive", FullName = "Em nghỉ học",
+                StudentGuardians = new List<StudentGuardian> { new() { StudentId = 3, GuardianId = 3, Guardian = inactiveParent } }
+            }
+        });
+        var notifications = new List<Notification>();
+        SetupRepository(notifications);
+
+        var res = await _service.NotifyRegistrationWindowAsync(15, new NotifyLunchRegistrationWindowRequestDto
+        {
+            TargetMonth = "2026-11",
+            CustomMessage = "Hoàn tất trước 17h ngày 28."
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.TargetMonth.Should().Be("2026-11");
+        res.Data.NotifiedParentCount.Should().Be(2);
+        notifications.Should().HaveCount(2);
+        notifications.Select(n => n.UserId).Should().BeEquivalentTo(new[] { 101, 102 });
+        notifications.Should().OnlyContain(n =>
+            n.LinkUrl == "/parent/contact-book?lunchRegistrationMonth=2026-11" &&
+            n.Content.Contains("25") &&
+            n.Content.Contains("28") &&
+            n.Content.Contains("08h15"));
+    }
+
+    [Theory]
+    [InlineData(25, true)]
+    [InlineData(28, true)]
+    [InlineData(24, false)]
+    [InlineData(29, false)]
+    public async Task GetStudentSchedule_SetsMonthlyRegistrationWindowFlag(int dayOfMonth, bool expectedInWindow)
+    {
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 10, dayOfMonth, 9, 0, 0));
+        _clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 10, dayOfMonth));
+        SetupRepository(new List<Student> { new() { Id = 1, StudentCode = "HS01", FullName = "Em A" } });
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<LunchRegistration>());
+        SetupRepository(new List<SchoolCalendarDay>());
+
+        var res = await _service.GetStudentScheduleAsync(1, "2026-11", 20, new[] { UserRoles.Parent });
+
+        res.Success.Should().BeTrue();
+        res.Data!.MonthlyWindowStartDay.Should().Be(25);
+        res.Data.MonthlyWindowEndDay.Should().Be(28);
+        res.Data.IsInMonthlyRegistrationWindow.Should().Be(expectedInWindow);
+    }
+
+    [Fact]
+    public async Task UpdateRegistrationMealType_ParentBeforeCutoff_Succeeds_AndAfterCutoff_FailsWithMSG27()
+    {
+        var day = new DateTime(2026, 11, 30);
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+        var regs = new List<LunchRegistration>
+        {
+            new() { Id = 10, StudentId = 1, Date = day, MealType = MealType.StandardLunch, IsActive = true }
+        };
+        SetupRepository(regs);
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+
+        // Trước hạn chốt 08:15 -> thành công
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 30, 7, 45, 0));
+        var beforeRes = await _service.UpdateRegistrationMealTypeAsync(20, new[] { UserRoles.Parent }, new UpdateLunchRegistrationMealTypeDto
+        {
+            StudentId = 1,
+            Date = day,
+            MealType = MealType.VegetarianLunch
+        });
+
+        beforeRes.Success.Should().BeTrue();
+        regs[0].MealType.Should().Be(MealType.VegetarianLunch);
+
+        // Sau hạn chốt 08:15 -> bị chặn MSG27
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 30, 8, 20, 0));
+        var afterRes = await _service.UpdateRegistrationMealTypeAsync(20, new[] { UserRoles.Parent }, new UpdateLunchRegistrationMealTypeDto
+        {
+            StudentId = 1,
+            Date = day,
+            MealType = MealType.StandardLunch
+        });
+
+        afterRes.Success.Should().BeFalse();
+        afterRes.Code.Should().Be(SystemMessages.MSG27.Code);
+    }
+
+    [Fact]
+    public async Task UpdateRegistrationMealType_UnlinkedParent_FailsWithMSG10()
+    {
+        var day = new DateTime(2026, 11, 30);
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 30, 7, 30, 0));
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+
+        var res = await _service.UpdateRegistrationMealTypeAsync(99, new[] { UserRoles.Parent }, new UpdateLunchRegistrationMealTypeDto
+        {
+            StudentId = 1,
+            Date = day,
+            MealType = MealType.VegetarianLunch
+        });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG10.Code);
     }
 }

@@ -252,7 +252,7 @@ public class LunchMenuServiceTests : TestBase
 
         saveRes.Success.Should().BeTrue();
         saveRes.Data!.AllergenTags.Should().ContainSingle("seafood");
-        saveRes.Data.DefaultMealType.Should().Be(MealType.StandardLunch); // Phụ huynh không được tự ý đổi DefaultMealType
+        saveRes.Data.DefaultMealType.Should().Be(MealType.SpecialDiet); // Phụ huynh được khai báo chế độ ăn & dị ứng trong đơn đăng ký bán trú
 
         // Setup board với món có hải sản trong thực đơn StandardLunch ngày 2026-11-02
         var serviceDay = new LunchServiceDay { Id = 7, Date = targetDate, IsServing = true, CutoffTime = new TimeSpan(8, 15, 0) };
@@ -393,7 +393,7 @@ public class LunchMenuServiceTests : TestBase
         SetupRepository(regs);
         SetupRepository(new List<Notification>());
 
-        // Phụ huynh cố gửi MealType = VegetarianLunch trong payload đăng ký
+        // Phụ huynh chọn MealType = VegetarianLunch trong đơn đăng ký bán trú -> hệ thống lưu đúng chế độ ăn đã chọn
         var regRes = await _lunchService.RegisterLunchBatchAsync(
             50,
             new[] { UserRoles.Parent },
@@ -406,11 +406,24 @@ public class LunchMenuServiceTests : TestBase
 
         regRes.Success.Should().BeTrue();
         regs.Should().ContainSingle();
-        regs[0].MealType.Should().Be(MealType.StandardLunch);
+        regs[0].MealType.Should().Be(MealType.VegetarianLunch);
 
-        // Phụ huynh cố gọi API đổi chế độ ăn -> bị chặn MSG10
+        // Phụ huynh đổi chế độ ăn ngày chưa qua hạn chốt (UC-29 A1) -> thành công; phụ huynh không liên kết -> bị chặn MSG10
         var updRes = await _lunchService.UpdateRegistrationMealTypeAsync(
             50,
+            new[] { UserRoles.Parent },
+            new UpdateLunchRegistrationMealTypeDto
+            {
+                StudentId = 1,
+                Date = tomorrow,
+                MealType = MealType.StandardLunch
+            });
+
+        updRes.Success.Should().BeTrue();
+        regs[0].MealType.Should().Be(MealType.StandardLunch);
+
+        var unlinkedRes = await _lunchService.UpdateRegistrationMealTypeAsync(
+            999,
             new[] { UserRoles.Parent },
             new UpdateLunchRegistrationMealTypeDto
             {
@@ -419,8 +432,8 @@ public class LunchMenuServiceTests : TestBase
                 MealType = MealType.VegetarianLunch
             });
 
-        updRes.Success.Should().BeFalse();
-        updRes.Code.Should().Be(SystemMessages.MSG10.Code);
+        unlinkedRes.Success.Should().BeFalse();
+        unlinkedRes.Code.Should().Be(SystemMessages.MSG10.Code);
     }
 
     [Fact]

@@ -12,6 +12,8 @@ import type {
   LunchPeriodReport,
   LunchServiceDayConfig,
   MealHeadcount,
+  NotifyLunchRegistrationWindowPayload,
+  NotifyLunchRegistrationWindowResult,
   RestoreMealPayload,
   StudentLunchSchedule,
   StudentMealProfile,
@@ -122,6 +124,16 @@ export const lunchApi = {
     if (classId) params.classId = classId;
     const res = await apiClient.get<{ success: boolean; data: LunchPeriodReport }>('/lunch/report', { params });
     return res.data.data;
+  },
+
+  notifyRegistrationWindow: async (
+    payload: NotifyLunchRegistrationWindowPayload
+  ): Promise<{ success: boolean; message: string; data: NotifyLunchRegistrationWindowResult }> => {
+    const res = await apiClient.post<{ success: boolean; message: string; data: NotifyLunchRegistrationWindowResult }>(
+      '/lunch/notify-registration-window',
+      payload
+    );
+    return res.data;
   },
 
   // ---- Thư viện món ăn ----

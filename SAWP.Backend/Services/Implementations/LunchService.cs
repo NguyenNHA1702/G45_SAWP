@@ -652,6 +652,7 @@ public class LunchService : ILunchService
                 IsLocked = resolved.IsLocked,
                 IsCutoffPassed = cutoffPassed,
                 HasApprovedLeave = hasApprovedLeave,
+                IsMakeupSchoolDay = isCalSchoolDay == true && !SchoolCalendarHelper.IsDefaultSchoolDay(cur),
                 ServiceRemarks = resolved.Remarks,
                 Menus = menusDto,
                 RegistrationId = reg?.Id,
@@ -671,6 +672,10 @@ public class LunchService : ILunchService
             .ThenByDescending(ca => ca.Id)
             .FirstOrDefault()?.Class?.ClassName ?? "Chưa phân lớp";
 
+        var todayDay = _clock.Now.Day;
+        var windowStart = Math.Clamp(_options.LunchMonthlyWindowStartDay, 1, 31);
+        var windowEnd = Math.Clamp(_options.LunchMonthlyWindowEndDay, windowStart, 31);
+
         var schedule = new StudentLunchScheduleDto
         {
             StudentId = student.Id,
@@ -681,6 +686,9 @@ public class LunchService : ILunchService
             TotalServingDays = days.Count(d => d.IsServing),
             TotalRegisteredDays = days.Count(d => d.IsRegistered),
             TotalCancelledDays = days.Count(d => !d.IsRegistered && d.CancellationSource != null),
+            MonthlyWindowStartDay = windowStart,
+            MonthlyWindowEndDay = windowEnd,
+            IsInMonthlyRegistrationWindow = todayDay >= windowStart && todayDay <= windowEnd,
             MealProfile = studentProfileDto,
             Days = days
         };
@@ -706,10 +714,14 @@ public class LunchService : ILunchService
         var profileMap = await GetStudentMealProfileMapAsync(new[] { request.StudentId }, cancellationToken);
         profileMap.TryGetValue(request.StudentId, out var mealProfile);
 
-        // Phụ huynh chỉ được đăng ký bữa ăn theo chế độ nhà trường phân bổ (mặc định StandardLunch); không được tự chọn loại suất riêng từng bữa
-        var effectiveMealType = isStaffOrAdmin
-            ? request.MealType
-            : (mealProfile?.DefaultMealType ?? MealType.StandardLunch);
+        if (!Enum.IsDefined(typeof(MealType), request.MealType))
+        {
+            return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Chế độ ăn không hợp lệ." });
+        }
+
+        var effectiveMealType = request.MealType;
 
         // D-B: Chế độ ăn đặc biệt bắt buộc có mô tả dị ứng / kiêng khem cụ thể (fallback từ StudentMealProfile).
         // Suất thường không tự chép AllergyNotes vào Remarks để tách bạch hồ sơ dị ứng phụ huynh với ghi chú chế biến bếp từng ngày.
@@ -750,6 +762,12 @@ public class LunchService : ILunchService
 
         var student = await _unitOfWork.Repository<Student>()
             .Query()
+            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
+                .ThenInclude(ca => ca.Class)
+                    .ThenInclude(c => c.SchoolYear)
+            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
+                .ThenInclude(ca => ca.Class)
+                    .ThenInclude(c => c.HomeroomTeacher)
             .FirstOrDefaultAsync(s => s.Id == request.StudentId, cancellationToken);
 
         if (student == null)
@@ -887,21 +905,52 @@ public class LunchService : ILunchService
             }
         }
 
-        // Gửi thông báo xác nhận (UC-29)
-        if (userId > 0 && registeredDates.Count > 0)
+        // Gửi thông báo xác nhận (UC-29) & thông báo cho GVCN nắm danh sách lớp
+        if (registeredDates.Count > 0)
         {
             var dateListStr = string.Join(", ", registeredDates.Take(5).Select(d => d.ToString("dd/MM/yyyy"))) +
                               (registeredDates.Count > 5 ? $" (+{registeredDates.Count - 5} ngày)" : "");
-            var notif = new Notification
+            var cutoffLabel = $"{_options.LunchCutoff.Hours:D2}h{_options.LunchCutoff.Minutes:D2}";
+            var notifRepo = _unitOfWork.Repository<Notification>();
+
+            if (userId > 0 && notifRepo != null)
             {
-                UserId = userId,
-                Title = "Xác nhận đăng ký bán trú",
-                Content = $"Đã đăng ký thành công {registeredDates.Count} ngày ăn bán trú ({dateListStr}) cho học sinh {student.FullName}.",
-                LinkUrl = $"/parent/lunch?studentId={student.Id}&month={registeredDates[0]:yyyy-MM}",
-                CreatedAt = DateTime.UtcNow,
-                IsRead = false
-            };
-            await _unitOfWork.Repository<Notification>().AddAsync(notif, cancellationToken);
+                var notif = new Notification
+                {
+                    UserId = userId,
+                    Title = "Xác nhận đăng ký bán trú",
+                    Content = $"Đã đăng ký thành công {registeredDates.Count} ngày ăn bán trú ({dateListStr}) cho học sinh {student.FullName}. Lưu ý: Mốc {cutoffLabel} là hạn cuối để thay đổi hoặc hủy suất ăn ngày hôm đó.",
+                    LinkUrl = $"/parent/lunch?studentId={student.Id}&month={registeredDates[0]:yyyy-MM}",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                };
+                await notifRepo.AddAsync(notif, cancellationToken);
+            }
+
+            if (!isStaffOrAdmin && notifRepo != null)
+            {
+                var activeClassAssignment = student.ClassAssignments?
+                    .Where(ca => ca.IsActive && ca.Class != null && (ca.Class.SchoolYear == null || ca.Class.SchoolYear.IsActive))
+                    .OrderByDescending(ca => ca.StartDate)
+                    .ThenByDescending(ca => ca.Id)
+                    .FirstOrDefault();
+
+                var homeroomUserId = activeClassAssignment?.Class?.HomeroomTeacher?.UserId;
+                if (homeroomUserId.HasValue && homeroomUserId.Value > 0 && homeroomUserId.Value != userId)
+                {
+                    var className = activeClassAssignment!.Class!.ClassName;
+                    var teacherNotif = new Notification
+                    {
+                        UserId = homeroomUserId.Value,
+                        Title = "Phụ huynh đăng ký bán trú cho học sinh",
+                        Content = $"Phụ huynh học sinh {student.FullName} (lớp {className}) vừa đăng ký {registeredDates.Count} ngày ăn bán trú ({dateListStr}). Vui lòng kiểm tra danh sách lớp và sắp xếp chỗ ngủ.",
+                        LinkUrl = $"/teacher/boarding?date={registeredDates[0]:yyyy-MM-dd}",
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    };
+                    await notifRepo.AddAsync(teacherNotif, cancellationToken);
+                }
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -1645,16 +1694,26 @@ public class LunchService : ILunchService
         CancellationToken cancellationToken = default)
     {
         var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
-        if (!isStaffOrAdmin)
+        var isParent = roles.Contains(UserRoles.Parent);
+        if (!isStaffOrAdmin && !isParent)
         {
             return ApiResponse<bool>.Fail(
                 SystemMessages.MSG10,
-                new List<string> { "Phụ huynh không có quyền tự thay đổi loại suất ăn từng bữa; vui lòng khai báo dị ứng để Tổ Bán trú bố trí khẩu phần phù hợp." });
+                new List<string> { "Bạn không có quyền thay đổi chế độ khẩu phần của học sinh." });
         }
 
-        if (request.StudentId <= 0)
+        if (request.StudentId <= 0 || !Enum.IsDefined(typeof(MealType), request.MealType))
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01);
+        }
+
+        if (!isStaffOrAdmin && userId > 0)
+        {
+            var isLinked = await IsParentLinkedToStudentAsync(userId, request.StudentId, cancellationToken);
+            if (!isLinked)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+            }
         }
 
         // D-C: Ghi chú không vượt quá 250 ký tự
@@ -1667,6 +1726,31 @@ public class LunchService : ILunchService
         }
 
         var targetDate = request.Date.Date;
+
+        // Phụ huynh chọn Chế độ đặc biệt (1-click) có thể fallback từ hồ sơ dị ứng đã khai báo
+        if (!isStaffOrAdmin && request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
+        {
+            var profileMap = await GetStudentMealProfileMapAsync(new[] { request.StudentId }, cancellationToken);
+            profileMap.TryGetValue(request.StudentId, out var mealProfile);
+            if (mealProfile != null)
+            {
+                if (!string.IsNullOrWhiteSpace(mealProfile.AllergyNotes))
+                {
+                    trimmedRemarks = mealProfile.AllergyNotes.Trim();
+                }
+                else
+                {
+                    var tagLabels = AllergenCatalog.ParseTags(mealProfile.AllergenTags)
+                        .Select(AllergenCatalog.GetLabel)
+                        .Where(l => !string.IsNullOrWhiteSpace(l))
+                        .ToList();
+                    if (tagLabels.Count > 0)
+                    {
+                        trimmedRemarks = $"Dị ứng: {string.Join(", ", tagLabels)}";
+                    }
+                }
+            }
+        }
 
         // D-B: Nếu phân bổ Chế độ đặc biệt, chỉ bắt buộc nhập ghi chú chế biến bếp khi:
         // (1) ngày đó chưa cấu hình thực đơn Đặc biệt riêng, HOẶC (2) thực đơn Đặc biệt vẫn còn món trùng dị ứng của học sinh.
@@ -1683,7 +1767,7 @@ public class LunchService : ILunchService
             {
                 return ApiResponse<bool>.Fail(
                     SystemMessages.MSG01,
-                    new List<string> { "Khi chọn chế độ ăn đặc biệt mà ngày này chưa cấu hình thực đơn Đặc biệt riêng, vui lòng nhập mô tả món / kiêng khem để nhà bếp chuẩn bị." });
+                    new List<string> { "Khi chọn chế độ ăn đặc biệt mà ngày này chưa cấu hình thực đơn Đặc biệt riêng, vui lòng khai báo dị ứng hoặc nhập ghi chú để nhà bếp chuẩn bị." });
             }
 
             var profileMap = await GetStudentMealProfileMapAsync(new[] { request.StudentId }, cancellationToken);
@@ -1719,9 +1803,19 @@ public class LunchService : ILunchService
                 new List<string> { "Ngày bán trú đã khóa sổ nấu, vui lòng mở khóa trước khi điều chỉnh chế độ khẩu phần." });
         }
 
+        if (!isStaffOrAdmin && IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG27,
+                new List<string> { $"Đã quá thời hạn thay đổi suất ăn ({resolved.Cutoff:hh\\:mm}) cho ngày {targetDate:dd/MM/yyyy}." });
+        }
+
         var oldVal = new { reg.MealType, reg.Remarks };
         reg.MealType = request.MealType;
-        reg.Remarks = request.Remarks?.Trim();
+        if (isStaffOrAdmin || request.Remarks != null || (request.MealType == MealType.SpecialDiet && trimmedRemarks != null))
+        {
+            reg.Remarks = trimmedRemarks;
+        }
 
         await _auditService.LogActionAsync(
             userId,
@@ -1883,5 +1977,115 @@ public class LunchService : ILunchService
             TotalSpecialDiet = scopedRegs.Count(r => r.IsActive && r.MealType == MealType.SpecialDiet),
             ClassSummaries = summaries
         });
+    }
+
+    public async Task<ApiResponse<NotifyLunchRegistrationWindowResultDto>> NotifyRegistrationWindowAsync(
+        int userId,
+        NotifyLunchRegistrationWindowRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var defaultNextMonth = _clock.Now.Date.AddMonths(1);
+        int year = defaultNextMonth.Year;
+        int month = defaultNextMonth.Month;
+
+        if (!string.IsNullOrWhiteSpace(request.TargetMonth))
+        {
+            var parts = request.TargetMonth.Trim().Split('-');
+            if (parts.Length != 2
+                || !int.TryParse(parts[0], out var py)
+                || !int.TryParse(parts[1], out var pm)
+                || py < 2000 || py > 2100
+                || pm < 1 || pm > 12)
+            {
+                return ApiResponse<NotifyLunchRegistrationWindowResultDto>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { "Tháng đăng ký không hợp lệ (định dạng YYYY-MM)." });
+            }
+
+            year = py;
+            month = pm;
+        }
+
+        var customMsg = string.IsNullOrWhiteSpace(request.CustomMessage) ? null : request.CustomMessage.Trim();
+        if (customMsg != null && customMsg.Length > 300)
+        {
+            return ApiResponse<NotifyLunchRegistrationWindowResultDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Ghi chú bổ sung tối đa 300 ký tự." });
+        }
+
+        var targetMonthIso = $"{year:D4}-{month:D2}";
+        var targetMonthDisplay = $"{month:D2}/{year:D4}";
+        var windowStart = Math.Clamp(_options.LunchMonthlyWindowStartDay, 1, 31);
+        var windowEnd = Math.Clamp(_options.LunchMonthlyWindowEndDay, windowStart, 31);
+        var cutoffLabel = $"{_options.LunchCutoff.Hours:D2}h{_options.LunchCutoff.Minutes:D2}";
+
+        var students = await _unitOfWork.Repository<Student>()
+            .Query()
+            .Include(s => s.StudentGuardians)
+                .ThenInclude(sg => sg.Guardian)
+            .Include(s => s.ClassAssignments.Where(ca => ca.IsActive))
+                .ThenInclude(ca => ca.Class)
+                    .ThenInclude(c => c.SchoolYear)
+            .Where(s => s.Status == "Active")
+            .ToListAsync(cancellationToken);
+
+        var parentUserIds = students
+            .Where(s => s.ClassAssignments == null
+                        || s.ClassAssignments.Count == 0
+                        || s.ClassAssignments.Any(ca => ca.IsActive && (ca.Class == null || ca.Class.SchoolYear == null || ca.Class.SchoolYear.IsActive)))
+            .SelectMany(s => s.StudentGuardians ?? Enumerable.Empty<StudentGuardian>())
+            .Where(sg => sg.Guardian != null && sg.Guardian.UserId.HasValue && sg.Guardian.UserId.Value > 0)
+            .Select(sg => sg.Guardian!.UserId!.Value)
+            .Distinct()
+            .ToList();
+
+        var title = $"Thông báo đăng ký suất ăn bán trú tháng {targetMonthDisplay} (từ ngày {windowStart}–{windowEnd})";
+        var content = $"Kính gửi Quý Phụ huynh, kỳ đăng ký suất ăn bán trú tháng {targetMonthDisplay} diễn ra từ ngày {windowStart} đến ngày {windowEnd} cuối tháng. Phụ huynh vui lòng mở Sổ liên lạc điện tử để chuyển sang đơn đăng ký chọn ngày ăn, chế độ ăn và khai báo dị ứng (nếu có). Lưu ý: Mốc {cutoffLabel} là hạn cuối để thay đổi hoặc hủy suất ăn ngày hôm đó.";
+        if (customMsg != null)
+        {
+            content = $"{content} Ghi chú: {customMsg}";
+        }
+
+        var linkUrl = $"/parent/contact-book?lunchRegistrationMonth={targetMonthIso}";
+        var notifRepo = _unitOfWork.Repository<Notification>();
+        var nowUtc = DateTime.UtcNow;
+
+        if (notifRepo != null)
+        {
+            foreach (var parentUserId in parentUserIds)
+            {
+                await notifRepo.AddAsync(new Notification
+                {
+                    UserId = parentUserId,
+                    Title = title,
+                    Content = content,
+                    LinkUrl = linkUrl,
+                    CreatedAt = nowUtc,
+                    IsRead = false
+                }, cancellationToken);
+            }
+        }
+
+        await _auditService.LogActionAsync(
+            userId > 0 ? userId : null,
+            "NotifyLunchRegistrationWindow",
+            nameof(LunchRegistration),
+            targetMonthIso,
+            null,
+            new { TargetMonth = targetMonthIso, NotifiedParentCount = parentUserIds.Count, Title = title },
+            null,
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<NotifyLunchRegistrationWindowResultDto>.Ok(
+            new NotifyLunchRegistrationWindowResultDto
+            {
+                TargetMonth = targetMonthIso,
+                NotifiedParentCount = parentUserIds.Count,
+                NotificationTitle = title
+            },
+            $"Đã gửi thông báo đăng ký bán trú tháng {targetMonthDisplay} tới {parentUserIds.Count} phụ huynh.");
     }
 }

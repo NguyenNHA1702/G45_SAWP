@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
+  ArrowRight,
   Award,
+  Bell,
   CalendarCheck2,
   CheckCircle2,
   Clock,
@@ -18,9 +21,12 @@ import toast from 'react-hot-toast';
 import { useParentChild } from '../../contexts/ParentChildContext';
 import { contactBookApi } from '../../services/implementations/contactBookApi';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
+import { notificationApi } from '../../services/implementations/notificationApi';
 import { PostAttachmentsRenderer } from '../../components/contactBook/PostAttachmentsRenderer';
 import type { ClassPostDto, StudentEvaluationDto } from '../../types/contactBook.types';
 import type { AttendanceDay } from '../../types/attendance.types';
+import type { AppNotification } from '../../types/notification.types';
+import { LUNCH_CUTOFF_LABEL } from '../../constants/lunch';
 import { getSystemMessage } from '../../constants/messages';
 import { formatDDMMYYYY, formatViFullDateTime, formatViTime } from '../../utils/date';
 
@@ -28,7 +34,43 @@ type TabKey = 'feed' | 'evaluation' | 'overview';
 
 export default function EContactBookPage() {
   const { activeChild, loading: childLoading } = useParentChild();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabKey>('feed');
+
+  // Thông báo kỳ đăng ký suất ăn bán trú (25–28 cuối tháng) từ chuông thông báo
+  const queryLunchMonth = searchParams.get('lunchRegistrationMonth');
+  const [lunchWindowNotice, setLunchWindowNotice] = useState<AppNotification | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    notificationApi
+      .getPaged(1, 15)
+      .then((res) => {
+        if (cancelled) return;
+        const found = (res.items || []).find(
+          (n) => typeof n.linkUrl === 'string' && n.linkUrl.includes('lunchRegistrationMonth=')
+        );
+        if (found) setLunchWindowNotice(found);
+      })
+      .catch(() => {
+        // silent
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [queryLunchMonth]);
+
+  const resolvedLunchMonth = (() => {
+    if (queryLunchMonth && /^\d{4}-\d{2}$/.test(queryLunchMonth)) return queryLunchMonth;
+    const match = lunchWindowNotice?.linkUrl?.match(/lunchRegistrationMonth=(\d{4}-\d{2})/);
+    if (match) return match[1];
+    return null;
+  })();
+
+  const formattedLunchMonthLabel = resolvedLunchMonth
+    ? `${resolvedLunchMonth.slice(5, 7)}/${resolvedLunchMonth.slice(0, 4)}`
+    : null;
 
   // Tab 1: Class Feed
   const [posts, setPosts] = useState<ClassPostDto[]>([]);
@@ -215,6 +257,89 @@ export default function EContactBookPage() {
           </div>
         </div>
       </header>
+
+      {/* Thông báo đăng ký suất ăn bán trú (25–28 cuối tháng) từ chuông thông báo */}
+      {(resolvedLunchMonth || lunchWindowNotice) && (
+        <div
+          className="card pop-in"
+          style={{
+            marginBottom: 20,
+            padding: '16px 20px',
+            border: '2.5px solid var(--color-fg)',
+            boxShadow: '4px 4px 0 0 var(--color-fg)',
+            borderRadius: 'var(--radius-lg)',
+            background: '#FFFBEB',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 16,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: '1 1 320px' }}>
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 'var(--radius-md)',
+                border: '2px solid var(--color-fg)',
+                background: '#FDE68A',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Bell size={20} color="var(--color-fg)" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                  Kỳ đăng ký 25–28 cuối tháng
+                </span>
+                <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                  Hạn cuối thay đổi trong ngày: {LUNCH_CUTOFF_LABEL}
+                </span>
+              </div>
+              <div style={{ fontWeight: 900, fontSize: 'var(--fs-md)', color: 'var(--color-fg)', marginBottom: 4 }}>
+                {lunchWindowNotice?.title ||
+                  `Thông báo đăng ký suất ăn bán trú${formattedLunchMonthLabel ? ` tháng ${formattedLunchMonthLabel}` : ''} (25–28 cuối tháng)`}
+              </div>
+              <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)', lineHeight: 1.5 }}>
+                {lunchWindowNotice?.content ||
+                  `Kính gửi Quý Phụ huynh, kỳ đăng ký suất ăn bán trú${formattedLunchMonthLabel ? ` tháng ${formattedLunchMonthLabel}` : ''} diễn ra từ ngày 25 đến ngày 28 cuối tháng. Phụ huynh vui lòng chuyển sang đơn đăng ký để chọn ngày ăn, chế độ ăn và khai báo dị ứng (nếu có). Lưu ý: Mốc ${LUNCH_CUTOFF_LABEL} là hạn cuối để thay đổi hoặc hủy suất ăn ngày hôm đó.`}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => {
+              const target = new URLSearchParams();
+              if (activeChild?.studentId) target.set('studentId', String(activeChild.studentId));
+              if (resolvedLunchMonth) target.set('month', resolvedLunchMonth);
+              target.set('openRegister', '1');
+              navigate(`/parent/lunch?${target.toString()}`);
+            }}
+            style={{
+              borderRadius: 'var(--radius-full)',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '3px 3px 0 0 var(--color-fg)',
+              fontWeight: 800,
+              padding: '10px 20px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'var(--color-accent)',
+              color: '#FFFFFF',
+              flexShrink: 0,
+            }}
+          >
+            <UtensilsCrossed size={16} /> Mở form đăng ký bán trú <ArrowRight size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, borderBottom: '2px solid var(--color-border)', paddingBottom: 8, flexWrap: 'wrap' }}>
