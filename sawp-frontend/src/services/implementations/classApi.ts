@@ -7,7 +7,6 @@ import type {
   ClassSummaryDto,
   CreateClassDto,
   CreateSchoolYearDto,
-  InitializeBatchClassesDto,
   RosterStudentItemDto,
   SchoolYearDto,
   TeacherOptionDto,
@@ -108,11 +107,6 @@ export const classApi = {
 
   async createClass(payload: CreateClassDto): Promise<ApiResponse<ClassSummaryDto>> {
     const res = await apiClient.post<ApiResponse<ClassSummaryDto>>('/classes', payload);
-    return res.data;
-  },
-
-  async initializeBatch(payload: InitializeBatchClassesDto): Promise<ApiResponse<ClassSummaryDto[]>> {
-    const res = await apiClient.post<ApiResponse<ClassSummaryDto[]>>('/classes/initialize-batch', payload);
     return res.data;
   },
 

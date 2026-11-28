@@ -186,7 +186,7 @@ export default function DashboardPage() {
               </div>
               <h3>Lớp học & Phân công</h3>
               <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-                Khởi tạo lớp hàng loạt, phân công giáo viên chủ nhiệm và xếp lớp học sinh.
+                Quản lý lớp học, phân công giáo viên chủ nhiệm và xếp lớp học sinh.
               </p>
               <span className="badge badge--mint">Quản lý lớp học →</span>
             </Link>

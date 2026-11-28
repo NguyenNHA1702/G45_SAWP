@@ -58,17 +58,6 @@ public class ClassSummaryDto
     public DateTime? ReviewedAt { get; set; }
 }
 
-public class InitializeBatchClassesDto
-{
-    public int SchoolYearId { get; set; }
-    public int? TargetGrade { get; set; }
-    public List<int>? Grades { get; set; }
-    public List<string>? SectionNames { get; set; }
-    public List<string>? SectionSuffixes { get; set; }
-    public int? CapacityPerClass { get; set; }
-    public int DefaultCapacity { get; set; } = 35;
-}
-
 public class AssignTeacherDto
 {
     public int StaffProfileId { get; set; }

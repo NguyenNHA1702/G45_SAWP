@@ -149,16 +149,6 @@ public class ClassesController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
-    [HttpPost("initialize-batch")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
-    [ProducesResponseType(typeof(ApiResponse<List<ClassSummaryDto>>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<List<ClassSummaryDto>>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> InitializeBatchClasses([FromBody] InitializeBatchClassesDto request, CancellationToken cancellationToken)
-    {
-        var result = await _classService.InitializeBatchClassesAsync(request, User.GetUserId(), cancellationToken);
-        return result.Success ? Ok(result) : BadRequest(result);
-    }
-
     [HttpGet]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<List<ClassSummaryDto>>), StatusCodes.Status200OK)]
