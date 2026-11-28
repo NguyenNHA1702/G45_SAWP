@@ -220,6 +220,7 @@ export interface StudentLunchDay {
   isLocked: boolean;
   isCutoffPassed: boolean;
   hasApprovedLeave?: boolean;
+  isMakeupSchoolDay?: boolean;
   serviceRemarks?: string | null;
   menus?: DailyMenusByMealType | null;
   registrationId?: number | null;
@@ -241,8 +242,22 @@ export interface StudentLunchSchedule {
   totalServingDays: number;
   totalRegisteredDays: number;
   totalCancelledDays: number;
+  monthlyWindowStartDay?: number;
+  monthlyWindowEndDay?: number;
+  isInMonthlyRegistrationWindow?: boolean;
   mealProfile?: StudentMealProfile | null;
   days: StudentLunchDay[];
+}
+
+export interface NotifyLunchRegistrationWindowPayload {
+  targetMonth?: string;
+  customMessage?: string;
+}
+
+export interface NotifyLunchRegistrationWindowResult {
+  targetMonth: string;
+  notifiedParentCount: number;
+  notificationTitle: string;
 }
 
 // ---- UC-29: Phụ huynh đăng ký suất ăn cho 1 hoặc nhiều ngày phục vụ ----

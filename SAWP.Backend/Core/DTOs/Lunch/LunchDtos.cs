@@ -154,6 +154,7 @@ public class StudentLunchDayDto
     public bool IsLocked { get; set; }
     public bool IsCutoffPassed { get; set; }
     public bool HasApprovedLeave { get; set; }
+    public bool IsMakeupSchoolDay { get; set; }
     public string? ServiceRemarks { get; set; }
     public DailyMenusByMealTypeDto? Menus { get; set; }
     public int? RegistrationId { get; set; }
@@ -176,8 +177,27 @@ public class StudentLunchScheduleDto
     public int TotalServingDays { get; set; }
     public int TotalRegisteredDays { get; set; }
     public int TotalCancelledDays { get; set; }
+    public int MonthlyWindowStartDay { get; set; } = 25;
+    public int MonthlyWindowEndDay { get; set; } = 28;
+    public bool IsInMonthlyRegistrationWindow { get; set; }
     public StudentMealProfileDto? MealProfile { get; set; }
     public List<StudentLunchDayDto> Days { get; set; } = new();
+}
+
+public class NotifyLunchRegistrationWindowRequestDto
+{
+    /// <summary>Tháng mục tiêu đăng ký bán trú (YYYY-MM). Nếu bỏ trống, mặc định là tháng kế tiếp.</summary>
+    public string? TargetMonth { get; set; }
+
+    /// <summary>Ghi chú bổ sung tùy chọn (tối đa 300 ký tự).</summary>
+    public string? CustomMessage { get; set; }
+}
+
+public class NotifyLunchRegistrationWindowResultDto
+{
+    public string TargetMonth { get; set; } = string.Empty;
+    public int NotifiedParentCount { get; set; }
+    public string NotificationTitle { get; set; } = string.Empty;
 }
 
 // ---- UC-29: Phụ huynh đăng ký suất ăn cho 1 hoặc nhiều ngày phục vụ ----

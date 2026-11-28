@@ -17,7 +17,6 @@ import {
   UtensilsCrossed,
   XCircle,
   AlertTriangle,
-  Edit3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { lunchApi } from '../../services/implementations/lunchApi';
@@ -83,9 +82,11 @@ export default function ParentLunchPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
 
-  // Modal UC-29: Đăng ký suất ăn
+  // Modal UC-29: Đăng ký suất ăn (tích hợp chọn chế độ ăn + khai báo dị ứng duy nhất tại đây)
   const [showRegisterModal, setShowRegisterModal] = useState<boolean>(false);
-  const [studentRemarks, setStudentRemarks] = useState<string>('');
+  const [registerMealType, setRegisterMealType] = useState<number>(1);
+  const [registerAllergenTags, setRegisterAllergenTags] = useState<string[]>([]);
+  const [registerAllergyNotes, setRegisterAllergyNotes] = useState<string>('');
   const [submittingRegister, setSubmittingRegister] = useState<boolean>(false);
 
   // Modal UC-30: Hủy suất ăn
@@ -95,37 +96,27 @@ export default function ParentLunchPage() {
 
   // Modal Chi tiết ngày / thực đơn
   const [detailDay, setDetailDay] = useState<StudentLunchDay | null>(null);
+  const [updatingDayMealKey, setUpdatingDayMealKey] = useState<string | null>(null);
 
-  // Modal Khai báo dị ứng thực phẩm & lưu ý sức khỏe của con
-  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
-  const [profileTags, setProfileTags] = useState<string[]>([]);
-  const [profileNotes, setProfileNotes] = useState<string>('');
-  const [savingProfile, setSavingProfile] = useState<boolean>(false);
-
-  const openProfileModal = () => {
-    const p = schedule?.mealProfile;
-    setProfileTags(p?.allergenTags ?? []);
-    setProfileNotes(p?.allergyNotes ?? '');
-    setShowProfileModal(true);
-  };
-
-  const handleSaveProfile = async () => {
+  const handleInlineMealTypeChange = async (day: StudentLunchDay, newMealType: number) => {
     if (!studentId) return;
+    const dKey = toDateKey(day.date);
     try {
-      setSavingProfile(true);
-      const res = await lunchApi.upsertStudentMealProfile(studentId, {
-        defaultMealType: normalizeMealTypeNumber(schedule?.mealProfile?.defaultMealType),
-        allergenTags: profileTags,
-        allergyNotes: profileNotes.trim() || undefined,
+      setUpdatingDayMealKey(dKey);
+      const res = await lunchApi.updateRegistrationMealType({
+        studentId,
+        date: dKey,
+        mealType: newMealType,
       });
-      toast.success(res.message || 'Đã lưu khai báo dị ứng thực phẩm của con.');
-      setShowProfileModal(false);
+      toast.success(res.message || `Đã đổi sang ${MEAL_TYPE_LABELS[String(newMealType)] ?? 'chế độ mới'} cho ngày ${formatDateDDMMYYYY(dKey)}.`);
+      setDetailDay((prev) => (prev && toDateKey(prev.date) === dKey ? { ...prev, mealType: newMealType as StudentLunchDay['mealType'] } : prev));
       await fetchSchedule();
     } catch (err: unknown) {
-      const apiErr = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
-      toast.error(apiErr?.errors?.[0] || apiErr?.message || 'Lưu khai báo dị ứng thất bại.');
+      const apiErr = (err as { response?: { data?: { code?: string; message?: string; errors?: string[] } } })?.response?.data;
+      const sysMsg = apiErr?.code ? getSystemMessage(apiErr.code) : undefined;
+      toast.error(apiErr?.errors?.[0] || sysMsg?.content || apiErr?.message || 'Không thể đổi chế độ ăn cho ngày này.');
     } finally {
-      setSavingProfile(false);
+      setUpdatingDayMealKey(null);
     }
   };
 
@@ -176,14 +167,28 @@ export default function ParentLunchPage() {
       .map((d) => toDateKey(d.date));
   }, [schedule]);
 
-  // Mở modal đăng ký mới (giữ trống ô dặn dò theo ngày để tách bạch với hồ sơ dị ứng đã khai báo)
+  // Mở modal đăng ký mới (khởi tạo chế độ ăn & dị ứng từ hồ sơ hiện tại của con)
   const openRegisterModal = (overrideDates?: string[]) => {
     if (overrideDates) {
       setSelectedDates(overrideDates);
     }
-    setStudentRemarks('');
+    const p = schedule?.mealProfile;
+    setRegisterMealType(normalizeMealTypeNumber(p?.defaultMealType));
+    setRegisterAllergenTags(p?.allergenTags ?? []);
+    setRegisterAllergyNotes(p?.allergyNotes ?? '');
     setShowRegisterModal(true);
   };
+
+  // Tự động mở form đăng ký cả tháng khi phụ huynh bấm từ thông báo trong Sổ liên lạc điện tử (?openRegister=1)
+  useEffect(() => {
+    if (params.get('openRegister') !== '1' || loading || !schedule || schedule.month !== month) return;
+    const nextParams = new URLSearchParams(params);
+    nextParams.delete('openRegister');
+    setParams(nextParams, { replace: true });
+    if (openSelectableDates.length > 0) {
+      openRegisterModal(openSelectableDates);
+    }
+  }, [loading, schedule, month, openSelectableDates, params]);
 
   const toggleSelectDate = (day: StudentLunchDay) => {
     const key = toDateKey(day.date);
@@ -194,12 +199,7 @@ export default function ParentLunchPage() {
     }
 
     if (day.isRegistered) {
-      if (day.isCutoffPassed) {
-        toast.error(SYSTEM_MESSAGES.MSG27.content);
-        return;
-      }
-      setCancelTargetDay(day);
-      setCancelReason('');
+      setDetailDay(day);
       return;
     }
 
@@ -235,25 +235,51 @@ export default function ParentLunchPage() {
       toast.error(SYSTEM_MESSAGES.MSG01.content);
       return;
     }
-    if (studentRemarks.trim().length > 250) {
-      toast.error('Ghi chú suất ăn không được vượt quá 250 ký tự.');
+    if (registerAllergyNotes.trim().length > 250) {
+      toast.error('Ghi chú dị ứng không được vượt quá 250 ký tự.');
+      return;
+    }
+    if (
+      registerMealType === 3 &&
+      registerAllergenTags.length === 0 &&
+      !registerAllergyNotes.trim()
+    ) {
+      toast.error('Khi chọn Chế độ đặc biệt, vui lòng chọn ít nhất 1 nhóm dị ứng hoặc nhập ghi chú chi tiết để nhà bếp chuẩn bị.');
       return;
     }
 
     try {
       setSubmittingRegister(true);
+
+      // Đồng bộ hồ sơ chế độ ăn & khai báo dị ứng của con ngay khi nộp đơn đăng ký
+      const currentProfile = schedule?.mealProfile;
+      const prevMealType = normalizeMealTypeNumber(currentProfile?.defaultMealType);
+      const prevTags = [...(currentProfile?.allergenTags ?? [])].sort().join(',');
+      const nextTags = [...registerAllergenTags].sort().join(',');
+      const prevNotes = (currentProfile?.allergyNotes ?? '').trim();
+      const effectiveNextNotes = registerAllergyNotes.trim();
+      const profileChanged =
+        prevMealType !== registerMealType || prevTags !== nextTags || prevNotes !== effectiveNextNotes;
+
+      if (profileChanged) {
+        await lunchApi.upsertStudentMealProfile(studentId, {
+          defaultMealType: registerMealType,
+          allergenTags: registerAllergenTags,
+          allergyNotes: effectiveNextNotes || undefined,
+        });
+      }
+
       const res = await lunchApi.registerBatch({
         studentId,
         dates: selectedDates,
-        mealType: normalizeMealTypeNumber(schedule?.mealProfile?.defaultMealType),
-        remarks: studentRemarks.trim() || undefined,
+        mealType: registerMealType,
+        remarks: registerMealType === 3 ? (effectiveNextNotes || undefined) : undefined,
       });
 
       const msg = (res.code && getSystemMessage(res.code)?.content) || res.message || SYSTEM_MESSAGES.MSG25.content;
       toast.success(`${msg} (${res.data.registeredCount} ngày)`);
       setShowRegisterModal(false);
       setSelectedDates([]);
-      setStudentRemarks('');
       await fetchSchedule();
     } catch (err: unknown) {
       const apiErr = (err as { response?: { data?: { code?: string; message?: string; errors?: string[] } } })?.response?.data;
@@ -496,11 +522,23 @@ export default function ParentLunchPage() {
                   padding: '3px 10px',
                 }}
               >
-                Mốc chốt: {todayCutoffLabel} (theo cấu hình từng ngày)
+                Hạn cuối thay đổi trong ngày: {todayCutoffLabel}
+              </span>
+              <span
+                className={`badge ${schedule?.isInMonthlyRegistrationWindow ? 'badge--mint' : 'badge--violet'}`}
+                style={{
+                  border: '1.5px solid var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '3px 10px',
+                }}
+              >
+                Kỳ ĐK tháng: {schedule?.monthlyWindowStartDay ?? 25}–{schedule?.monthlyWindowEndDay ?? 28} cuối tháng
+                {schedule?.isInMonthlyRegistrationWindow ? ' • Đang mở kỳ' : ''}
               </span>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              • Đăng ký mới hoặc hủy trực tiếp cần thực hiện trước <strong>giờ chốt của ngày phục vụ</strong> (mặc định {LUNCH_CUTOFF_LABEL}, có thể thay đổi theo từng ngày).<br />
+              • <strong>Kỳ đăng ký định kỳ:</strong> Từ ngày <strong>{schedule?.monthlyWindowStartDay ?? 25}–{schedule?.monthlyWindowEndDay ?? 28} cuối tháng</strong> (nhận thông báo qua Sổ liên lạc điện tử).<br />
+              • <strong>Mốc {LUNCH_CUTOFF_LABEL} là hạn cuối</strong> để đăng ký, thay đổi hoặc hủy (báo cắt cơm) suất ăn ngày hôm đó.<br />
               • <strong>Tích hợp Đơn xin nghỉ (WFL 1.2.3)</strong>: Đơn nghỉ có bữa trưa được duyệt trước giờ chốt ngày áp dụng (không tích &ldquo;Vẫn giữ suất ăn&rdquo;) sẽ tự động hủy suất ăn ngày đó.
             </p>
           </div>
@@ -602,33 +640,10 @@ export default function ParentLunchPage() {
               Mã HS: <strong>{schedule.studentCode}</strong> — Lớp: <strong>{schedule.className}</strong>
             </p>
             <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--color-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
-                  Khẩu phần trường xếp:{' '}
-                  <strong style={{ color: 'var(--color-accent)' }}>
-                    {MEAL_TYPE_LABELS[String(schedule.mealProfile?.defaultMealType ?? 1)] ?? 'Suất tiêu chuẩn'}
-                  </strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={openProfileModal}
-                  style={{
-                    border: '1.5px solid var(--color-fg)',
-                    background: '#FEF9C3',
-                    borderRadius: 'var(--radius-full)',
-                    padding: '3px 10px',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                >
-                  <Edit3 size={11} /> Khai báo dị ứng
-                </button>
-              </div>
-              {((schedule.mealProfile?.allergenTags?.length ?? 0) > 0 || schedule.mealProfile?.allergyNotes) && (
+              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--color-muted-fg)' }}>
+                Dị ứng đã khai báo:
+              </span>
+              {((schedule.mealProfile?.allergenTags?.length ?? 0) > 0 || schedule.mealProfile?.allergyNotes) ? (
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                   {schedule.mealProfile?.allergenTags?.map((tag) => (
                     <span
@@ -652,6 +667,10 @@ export default function ParentLunchPage() {
                     </span>
                   )}
                 </div>
+              ) : (
+                <span style={{ fontSize: 11, color: 'var(--color-muted-fg)' }}>
+                  Không có (khai báo trong đơn đăng ký bán trú)
+                </span>
               )}
             </div>
           </div>
@@ -1001,18 +1020,36 @@ export default function ParentLunchPage() {
                   position: 'relative',
                 }}
               >
-                {/* Top row: Date number + Cutoff badge */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span
-                    style={{
-                      fontWeight: 900,
-                      fontSize: 'var(--fs-base)',
-                      fontFamily: 'var(--font-heading)',
-                      color: !day.isServing ? 'var(--color-muted-fg)' : 'var(--color-fg)',
-                    }}
-                  >
-                    {dayNum}
-                  </span>
+                {/* Top row: Date number + Makeup badge + Cutoff badge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span
+                      style={{
+                        fontWeight: 900,
+                        fontSize: 'var(--fs-base)',
+                        fontFamily: 'var(--font-heading)',
+                        color: !day.isServing ? 'var(--color-muted-fg)' : 'var(--color-fg)',
+                      }}
+                    >
+                      {dayNum}
+                    </span>
+                    {day.isMakeupSchoolDay && (
+                      <span
+                        style={{
+                          fontSize: '9.5px',
+                          fontWeight: 800,
+                          padding: '1px 5px',
+                          borderRadius: 'var(--radius-full)',
+                          background: '#EDE9FE',
+                          border: '1px solid #7C3AED',
+                          color: '#5B21B6',
+                        }}
+                        title="Ngày học bù theo lịch nhà trường"
+                      >
+                        Học bù
+                      </span>
+                    )}
+                  </div>
 
                   {day.isServing && (
                     <span
@@ -1259,6 +1296,24 @@ export default function ParentLunchPage() {
                   const dKey = toDateKey(day.date);
                   const canCancel = day.isRegistered && !day.isCutoffPassed;
                   const cleanedRemarks = cleanText(day.serviceRemarks);
+                  const mtNum = normalizeMealTypeNumber(day.mealType ?? schedule?.mealProfile?.defaultMealType);
+                  const menuDishesForStudent = day.menus
+                    ? (mtNum === 2
+                        ? day.menus.vegetarian
+                        : mtNum === 3
+                          ? day.menus.special
+                          : day.menus.standard)
+                    : [];
+                  const effectiveMenuText =
+                    menuDishesForStudent && menuDishesForStudent.length > 0
+                      ? menuDishesForStudent.map((d) => d.name).join(', ')
+                      : cleanedRemarks || 'Thực đơn tiêu chuẩn nhà bếp';
+                  const isKitchenSubstitutionNote = Boolean(
+                    day.studentRemarks && /^\[Bếp đổi món\]/i.test(day.studentRemarks.trim())
+                  );
+                  const cleanedKitchenNote = day.studentRemarks
+                    ? day.studentRemarks.trim().replace(/^\[Bếp đổi món\]\s*/i, '')
+                    : '';
 
                   return (
                     <tr key={dKey} style={{ borderBottom: '1px solid var(--color-border)' }}>
@@ -1266,20 +1321,44 @@ export default function ParentLunchPage() {
                         {formatWeekdayDateDDMMYYYY(day.date)}
                       </td>
                       <td style={{ padding: '14px' }}>
-                        <span
-                          className="badge"
-                          style={{
-                            border: '1.5px solid var(--color-fg)',
-                            fontWeight: 700,
-                            background: '#F1F5F9',
-                          }}
-                        >
-                          {day.mealType ? MEAL_TYPE_LABELS[String(day.mealType)] ?? 'Suất tiêu chuẩn' : 'Suất tiêu chuẩn'}
-                        </span>
+                        {canCancel ? (
+                          <select
+                            className="select"
+                            aria-label={`Đổi chế độ ăn ngày ${formatDateDDMMYYYY(dKey)}`}
+                            value={mtNum}
+                            disabled={updatingDayMealKey === dKey}
+                            onChange={(e) => handleInlineMealTypeChange(day, Number(e.target.value))}
+                            style={{
+                              fontSize: 'var(--fs-xs)',
+                              fontWeight: 800,
+                              padding: '4px 10px',
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid var(--color-fg)',
+                              background: '#FFFDF5',
+                              minWidth: 142,
+                              cursor: updatingDayMealKey === dKey ? 'wait' : 'pointer',
+                            }}
+                          >
+                            <option value={1}>Suất tiêu chuẩn</option>
+                            <option value={2}>Suất ăn chay</option>
+                            <option value={3}>Chế độ đặc biệt</option>
+                          </select>
+                        ) : (
+                          <span
+                            className="badge"
+                            style={{
+                              border: '1.5px solid var(--color-fg)',
+                              fontWeight: 700,
+                              background: '#F1F5F9',
+                            }}
+                          >
+                            {day.mealType ? MEAL_TYPE_LABELS[String(day.mealType)] ?? 'Suất tiêu chuẩn' : 'Suất tiêu chuẩn'}
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '14px', color: 'var(--color-fg)', maxWidth: 360 }}>
-                        <div style={{ fontWeight: 600 }}>{cleanedRemarks || 'Thực đơn tiêu chuẩn nhà bếp'}</div>
-                        {(day.allergyConflicts?.length ?? 0) > 0 && (
+                        <div style={{ fontWeight: 600 }}>{effectiveMenuText}</div>
+                        {(day.allergyConflicts?.length ?? 0) > 0 && !isKitchenSubstitutionNote && (
                           <div
                             style={{
                               marginTop: 6,
@@ -1303,11 +1382,34 @@ export default function ParentLunchPage() {
                             </span>
                           </div>
                         )}
-                        {day.studentRemarks && (
-                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-accent)', marginTop: 4, fontWeight: 700 }}>
-                            Ghi chú PH: {day.studentRemarks}
+                        {day.studentRemarks && isKitchenSubstitutionNote ? (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              padding: '6px 9px',
+                              borderRadius: 8,
+                              background: '#ECFDF5',
+                              border: '1.5px solid #059669',
+                              color: '#065F46',
+                              fontSize: 'var(--fs-xs)',
+                              fontWeight: 800,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2,
+                            }}
+                          >
+                            <span>✓ Nhà bếp đã xử lý đổi món: <span style={{ fontWeight: 700 }}>{cleanedKitchenNote}</span></span>
+                            {(day.allergyConflicts?.length ?? 0) > 0 && (
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#047857' }}>
+                                Đã loại trừ cảnh báo dị ứng: {day.allergyConflicts!.join(' • ')}
+                              </span>
+                            )}
                           </div>
-                        )}
+                        ) : day.studentRemarks ? (
+                          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-accent)', marginTop: 4, fontWeight: 700 }}>
+                            Ghi chú suất ăn: {day.studentRemarks}
+                          </div>
+                        ) : null}
                         {day.cancellationReason && (
                           <div style={{ fontSize: 'var(--fs-xs)', color: '#E11D48', marginTop: 4, fontWeight: 700 }}>
                             Lý do hủy: {day.cancellationReason}
@@ -1454,9 +1556,86 @@ export default function ParentLunchPage() {
             ))}
           </div>
 
+          <div className="field" style={{ marginBottom: 14 }}>
+            <label className="label" htmlFor="register-meal-type" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+              CHỌN CHẾ ĐỘ ĂN
+            </label>
+            <select
+              id="register-meal-type"
+              className="select"
+              value={registerMealType}
+              onChange={(e) => setRegisterMealType(Number(e.target.value))}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                fontWeight: 700,
+                padding: '8px 16px',
+              }}
+            >
+              <option value={1}>Suất tiêu chuẩn (Thực đơn chung của trường)</option>
+              <option value={2}>Suất ăn chay</option>
+              <option value={3}>Chế độ đặc biệt (Kiêng dị ứng / bệnh lý)</option>
+            </select>
+          </div>
+
+          <div className="field" style={{ marginBottom: 14 }}>
+            <label className="label" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+              KHAI BÁO NHÓM THỰC PHẨM DỊ ỨNG (NẾU CÓ)
+            </label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {ALLERGEN_OPTIONS.map((al) => {
+                const active = registerAllergenTags.includes(al.code);
+                return (
+                  <button
+                    key={al.code}
+                    type="button"
+                    onClick={() =>
+                      setRegisterAllergenTags((prev) =>
+                        prev.includes(al.code) ? prev.filter((x) => x !== al.code) : [...prev, al.code]
+                      )
+                    }
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: 'var(--radius-full)',
+                      border: active ? '2px solid #DC2626' : '1.5px solid var(--color-border)',
+                      background: active ? '#FEE2E2' : '#FFFFFF',
+                      color: active ? '#991B1B' : 'var(--color-fg)',
+                      fontWeight: 700,
+                      fontSize: 'var(--fs-xs)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {active ? '• ' : '+ '}
+                    {al.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--color-muted-fg)' }}>
+                Ghi chú dị ứng / dặn dò nhà bếp (nếu có)
+              </span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{registerAllergyNotes.length}/250</span>
+            </div>
+            <input
+              type="text"
+              className="input"
+              maxLength={250}
+              placeholder="VD: Dị ứng tôm cua, sữa bò hoặc mới khỏi ốm, nhờ cô lưu ý..."
+              value={registerAllergyNotes}
+              onChange={(e) => setRegisterAllergyNotes(e.target.value)}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                fontWeight: 600,
+                padding: '8px 16px',
+              }}
+            />
+          </div>
+
           <div
             style={{
-              marginBottom: 14,
+              marginBottom: 18,
               padding: '10px 14px',
               borderRadius: 'var(--radius-md)',
               border: '1.5px solid var(--color-fg)',
@@ -1466,33 +1645,7 @@ export default function ParentLunchPage() {
               color: '#065F46',
             }}
           >
-            <strong>Thực đơn thống nhất của nhà trường:</strong> Khẩu phần ăn áp dụng theo lịch thực đơn tuần chung của trường{' '}
-            (chế độ hiện tại của bé:{' '}
-            <strong>{MEAL_TYPE_LABELS[String(schedule?.mealProfile?.defaultMealType ?? 1)] ?? 'Suất tiêu chuẩn'}</strong>). Nếu bé có dị ứng thực phẩm, Tổ Bán trú sẽ chủ động bố trí khẩu phần phù hợp.
-          </div>
-
-          <div className="field" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label className="label" htmlFor="register-remarks" style={{ fontWeight: 800, letterSpacing: '0.04em' }}>
-                GHI CHÚ SỨC KHỎE / DẶN DÒ BỘ PHẬN BÁN TRÚ (NẾU CÓ)
-              </label>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>{studentRemarks.length}/250</span>
-            </div>
-            <input
-              id="register-remarks"
-              type="text"
-              className="input"
-              maxLength={250}
-              placeholder="VD: Bé dị ứng tôm/đậu phộng hoặc mới khỏi ốm, nhờ cô lưu ý..."
-              value={studentRemarks}
-              onChange={(e) => setStudentRemarks(e.target.value)}
-              style={{
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                fontWeight: 700,
-                padding: '8px 16px',
-              }}
-            />
+            <strong>Lưu ý mốc thay đổi suất ăn:</strong> Mốc <strong>{LUNCH_CUTOFF_LABEL}</strong> là hạn cuối để thay đổi hoặc hủy suất ăn ngày hôm đó. Hệ thống sẽ đồng bộ thông tin chế độ ăn và dị ứng tới GVCN &amp; Tổ Bán trú.
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -1698,9 +1851,72 @@ export default function ParentLunchPage() {
                   </div>
                 )}
               </div>
+
+              {detailDay.isRegistered && !detailDay.isCutoffPassed && (
+                <div
+                  style={{
+                    borderTop: '1.5px dashed var(--color-border)',
+                    paddingTop: 12,
+                    marginTop: 12,
+                  }}
+                >
+                  <label className="label" htmlFor="detail-day-meal-type" style={{ fontWeight: 800, fontSize: 'var(--fs-xs)' }}>
+                    ĐỔI CHẾ ĐỘ ĂN CHO NGÀY NÀY (TRƯỚC {detailDay.cutoffTime})
+                  </label>
+                  <select
+                    id="detail-day-meal-type"
+                    className="select"
+                    value={normalizeMealTypeNumber(detailDay.mealType ?? schedule?.mealProfile?.defaultMealType)}
+                    disabled={updatingDayMealKey === toDateKey(detailDay.date)}
+                    onChange={(e) => handleInlineMealTypeChange(detailDay, Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      borderRadius: 'var(--radius-full)',
+                      border: '2px solid var(--color-fg)',
+                      background: '#FFFFFF',
+                      fontWeight: 800,
+                      fontSize: 'var(--fs-xs)',
+                      padding: '8px 14px',
+                      cursor: updatingDayMealKey === toDateKey(detailDay.date) ? 'wait' : 'pointer',
+                    }}
+                  >
+                    <option value={1}>Suất tiêu chuẩn</option>
+                    <option value={2}>Suất ăn chay</option>
+                    <option value={3}>Chế độ đặc biệt (Kiêng dị ứng / bệnh lý)</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              {detailDay.isRegistered && !detailDay.isCutoffPassed ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    const target = detailDay;
+                    setDetailDay(null);
+                    setCancelTargetDay(target);
+                    setCancelReason('');
+                  }}
+                  style={{
+                    borderRadius: 'var(--radius-full)',
+                    border: '2px solid #E11D48',
+                    background: '#FFF1F2',
+                    color: '#E11D48',
+                    fontWeight: 800,
+                    padding: '8px 16px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={14} /> Hủy suất ăn
+                </button>
+              ) : (
+                <span />
+              )}
               <button
                 type="button"
                 className="btn btn--secondary"
@@ -1718,94 +1934,6 @@ export default function ParentLunchPage() {
             </div>
           </div>
         )}
-      </GeometricModal>
-
-      {/* MODAL Khai báo Dị ứng Thực phẩm & Lưu ý Sức khỏe của con */}
-      <GeometricModal
-        open={showProfileModal}
-        onClose={() => setShowProfileModal(false)}
-        title={`Khai báo Dị ứng Thực phẩm • ${schedule?.studentName ?? ''}`}
-        subtitle="Cung cấp thông tin dị ứng / bệnh lý dinh dưỡng để Tổ Bán trú & Y tế nhà trường bố trí khẩu phần phù hợp"
-        badgeText="Thông tin sức khỏe"
-        badgeColor="mint"
-        icon={<ShieldAlert size={22} color="var(--color-fg)" />}
-        iconBg="#DCFCE7"
-        maxWidth="md"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--radius-sm)',
-              background: '#F8FAFC',
-              border: '1.5px solid var(--color-border)',
-              fontSize: 'var(--fs-xs)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <span style={{ fontWeight: 700, color: 'var(--color-muted-fg)' }}>Khẩu phần nhà trường đang phân bổ:</span>
-            <strong style={{ color: 'var(--color-accent)' }}>
-              {MEAL_TYPE_LABELS[String(schedule?.mealProfile?.defaultMealType ?? 1)] ?? 'Suất tiêu chuẩn'}
-            </strong>
-          </div>
-
-          <div>
-            <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>NHÓM THỰC PHẨM BÉ BỊ DỊ ỨNG</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {ALLERGEN_OPTIONS.map((al) => {
-                const active = profileTags.includes(al.code);
-                return (
-                  <button
-                    key={al.code}
-                    type="button"
-                    onClick={() =>
-                      setProfileTags((prev) =>
-                        prev.includes(al.code) ? prev.filter((x) => x !== al.code) : [...prev, al.code]
-                      )
-                    }
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: 'var(--radius-full)',
-                      border: active ? '2px solid #DC2626' : '1.5px solid var(--color-border)',
-                      background: active ? '#FEE2E2' : '#FFFFFF',
-                      color: active ? '#991B1B' : 'var(--color-fg)',
-                      fontWeight: 700,
-                      fontSize: 'var(--fs-xs)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {active ? '• ' : '+ '}
-                    {al.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>GHI CHÚ DỊ ỨNG / DẶN DÒ NHÀ BẾP</label>
-            <textarea
-              className="input"
-              rows={3}
-              maxLength={250}
-              value={profileNotes}
-              onChange={(e) => setProfileNotes(e.target.value)}
-              placeholder="VD: Cháu dị ứng nặng tôm cua, uống sữa không đường hoặc cháo mềm khi ốm..."
-              style={{ width: '100%' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            <button type="button" className="btn btn--secondary" onClick={() => setShowProfileModal(false)} disabled={savingProfile}>
-              Hủy
-            </button>
-            <button type="button" className="btn btn--primary" onClick={handleSaveProfile} disabled={savingProfile}>
-              {savingProfile ? 'Đang lưu...' : 'Lưu khai báo dị ứng'}
-            </button>
-          </div>
-        </div>
       </GeometricModal>
     </div>
   );
