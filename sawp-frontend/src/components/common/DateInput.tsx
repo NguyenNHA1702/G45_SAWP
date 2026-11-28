@@ -3,6 +3,7 @@ import { Calendar } from 'lucide-react';
 import { formatDateDDMMYYYY, parseDDMMYYYYToIso } from '../../utils/date';
 
 interface DateInputProps {
+  id?: string;
   value: string; // yyyy-MM-dd
   onChange: (isoDate: string) => void;
   min?: string;
@@ -10,6 +11,7 @@ interface DateInputProps {
   disabled?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  inputStyle?: React.CSSProperties;
   placeholder?: string;
   ariaLabel?: string;
 }
@@ -19,6 +21,7 @@ interface DateInputProps {
  * kèm nút lịch mở bộ chọn ngày chuẩn bất kể locale trình duyệt.
  */
 export function DateInput({
+  id,
   value,
   onChange,
   min,
@@ -26,6 +29,7 @@ export function DateInput({
   disabled,
   className = 'input',
   style,
+  inputStyle,
   placeholder = 'dd-mm-yyyy',
   ariaLabel,
 }: DateInputProps) {
@@ -67,10 +71,11 @@ export function DateInput({
   return (
     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', ...style }}>
       <input
+        id={id}
         type="text"
         inputMode="numeric"
         className={className}
-        style={{ width: '100%', paddingRight: 34 }}
+        style={{ width: '100%', paddingRight: 34, ...inputStyle }}
         value={text}
         disabled={disabled}
         placeholder={placeholder}
@@ -82,7 +87,7 @@ export function DateInput({
       <div
         style={{
           position: 'absolute',
-          right: 8,
+          right: 10,
           top: '50%',
           transform: 'translateY(-50%)',
           width: 22,

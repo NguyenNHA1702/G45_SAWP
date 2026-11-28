@@ -1456,21 +1456,6 @@ export default function ParentLunchPage() {
                         <button
                           type="button"
                           className="btn btn--sm"
-                          onClick={() => openEditDietModal(day)}
-                          style={{
-                            flex: 1,
-                            border: '1.5px solid var(--color-fg)',
-                            boxShadow: '2px 2px 0 0 var(--color-fg)',
-                            background: '#FEF3C7',
-                            fontWeight: 800,
-                            fontSize: 'var(--fs-xs)',
-                          }}
-                        >
-                          Đổi chế độ ăn
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--sm"
                           onClick={() => {
                             setCancelTargetDay(day);
                             setCancelReason('');

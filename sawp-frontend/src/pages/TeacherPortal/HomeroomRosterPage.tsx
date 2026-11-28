@@ -493,10 +493,7 @@ export default function HomeroomRosterPage() {
 
             <div className="mobile-card-list" style={{ padding: 12 }}>
               {pagedStudents.length > 0 ? (
-                pagedStudents.map((s, idx) => {
-                  const mealInfo = mealMap[s.studentId];
-                  const badgeCfg = mealInfo ? MEAL_TYPE_BADGE[String(mealInfo.mealType)] : null;
-                  return (
+                pagedStudents.map((s, idx) => (
                     <div key={`m-${s.studentId}`} className="mobile-item-card">
                       <div className="mobile-item-card__head">
                         <div style={{ minWidth: 0 }}>
@@ -543,28 +540,7 @@ export default function HomeroomRosterPage() {
                         )}
                       </div>
 
-                      <div className="mobile-item-card__foot">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {mealInfo && mealInfo.isActive && badgeCfg ? (
-                            <>
-                              <span className={`badge ${badgeCfg.cls}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                                {badgeCfg.label}
-                              </span>
-                              <button
-                                type="button"
-                                className="btn btn--secondary btn--sm"
-                                style={{ padding: '4px 10px', fontSize: 12 }}
-                                onClick={() => setSelectedTrayStudent({ student: s, meal: mealInfo })}
-                              >
-                                <UtensilsCrossed size={12} /> Khay ăn
-                              </button>
-                            </>
-                          ) : mealInfo && !mealInfo.isActive ? (
-                            <span className="badge badge--muted">Đã hủy ăn</span>
-                          ) : (
-                            <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>Không ăn bán trú</span>
-                          )}
-                        </div>
+                      <div className="mobile-item-card__foot" style={{ justifyContent: 'flex-end' }}>
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
@@ -578,8 +554,7 @@ export default function HomeroomRosterPage() {
                         </button>
                       </div>
                     </div>
-                  );
-                })
+                ))
               ) : (
                 <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-muted-fg)' }}>
                   Không tìm thấy học sinh nào phù hợp với bộ lọc tìm kiếm.

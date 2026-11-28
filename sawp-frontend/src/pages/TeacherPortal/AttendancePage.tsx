@@ -26,6 +26,7 @@ import { ClassAttendanceMatrixTable } from '../../components/attendance/ClassAtt
 import { StudentAttendanceDetailView } from '../../components/attendance/StudentAttendanceDetailView';
 import { LockedBanner } from '../../components/attendance/LockedBanner';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
+import { DateInput } from '../../components/common/DateInput';
 import { GeometricModal } from '../../components/common/GeometricModal';
 
 const formatDashDate = (iso: string): string => {
@@ -449,24 +450,23 @@ export default function AttendancePage() {
 
         {activeTab === 'sheet' ? (
           <>
-            <div className="field" style={{ minWidth: 160 }}>
+            <div className="field" style={{ minWidth: 165 }}>
               <label className="label" htmlFor="attendance-date" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
                 NGÀY ĐIỂM DANH
               </label>
-              <input
+              <DateInput
                 id="attendance-date"
-                type="date"
-                className="input"
                 value={date}
                 max={todayIso()}
-                onChange={(e) => {
-                  if (e.target.value && guardDirty()) setDate(e.target.value);
+                ariaLabel="Ngày điểm danh"
+                onChange={(val) => {
+                  if (val && guardDirty()) setDate(val);
                 }}
-                style={{
+                inputStyle={{
                   borderRadius: 'var(--radius-full)',
                   border: '2px solid var(--color-fg)',
                   fontWeight: 700,
-                  padding: '8px 16px',
+                  padding: '8px 36px 8px 16px',
                 }}
               />
             </div>
@@ -522,43 +522,41 @@ export default function AttendancePage() {
           </>
         ) : (
           <>
-            <div className="field" style={{ minWidth: 160 }}>
+            <div className="field" style={{ minWidth: 165 }}>
               <label className="label" htmlFor="summary-from" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
                 TỪ NGÀY
               </label>
-              <input
+              <DateInput
                 id="summary-from"
-                type="date"
-                className="input"
                 value={summaryFrom}
                 max={summaryTo || todayIso()}
-                onChange={(e) => e.target.value && setSummaryFrom(e.target.value)}
-                style={{
+                ariaLabel="Từ ngày"
+                onChange={(val) => val && setSummaryFrom(val)}
+                inputStyle={{
                   borderRadius: 'var(--radius-full)',
                   border: '2px solid var(--color-fg)',
                   fontWeight: 700,
-                  padding: '8px 16px',
+                  padding: '8px 36px 8px 16px',
                 }}
               />
             </div>
 
-            <div className="field" style={{ minWidth: 160 }}>
+            <div className="field" style={{ minWidth: 165 }}>
               <label className="label" htmlFor="summary-to" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
                 ĐẾN NGÀY
               </label>
-              <input
+              <DateInput
                 id="summary-to"
-                type="date"
-                className="input"
                 value={summaryTo}
                 min={summaryFrom}
                 max={todayIso()}
-                onChange={(e) => e.target.value && setSummaryTo(e.target.value)}
-                style={{
+                ariaLabel="Đến ngày"
+                onChange={(val) => val && setSummaryTo(val)}
+                inputStyle={{
                   borderRadius: 'var(--radius-full)',
                   border: '2px solid var(--color-fg)',
                   fontWeight: 700,
-                  padding: '8px 16px',
+                  padding: '8px 36px 8px 16px',
                 }}
               />
             </div>
