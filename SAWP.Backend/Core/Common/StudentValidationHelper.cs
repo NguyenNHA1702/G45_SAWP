@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Mail;
 using System.Text.RegularExpressions;
 
 namespace Core.Common;
@@ -16,6 +17,7 @@ public static class StudentValidationHelper
     };
 
     private static readonly Regex StudentCodeRegex = new(@"^[A-Z0-9_-]{3,30}$", RegexOptions.Compiled);
+    private static readonly Regex UsernameRegex = new(@"^[A-Za-z0-9._-]{3,50}$", RegexOptions.Compiled);
     private static readonly Regex PhoneRegex = new(@"^0\d{9}$", RegexOptions.Compiled);
     private static readonly Regex IdentityCardRegex = new(@"^\d{9}(\d{3})?$", RegexOptions.Compiled);
     private static readonly Regex ValidPersonNameRegex = new(@"^[\p{L}\s'\-.]+$", RegexOptions.Compiled);
@@ -150,6 +152,36 @@ public static class StudentValidationHelper
         if (string.IsNullOrWhiteSpace(phone)) return true;
         return PhoneRegex.IsMatch(phone.Trim());
     }
+
+    public static string? ValidateUsername(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return "Tên đăng nhập là bắt buộc.";
+
+        var trimmed = username.Trim();
+        if (trimmed.Any(char.IsWhiteSpace))
+            return "Tên đăng nhập không được chứa khoảng trắng.";
+
+        if (ContainsHtmlTags(trimmed) || !UsernameRegex.IsMatch(trimmed))
+            return "Tên đăng nhập chỉ được gồm chữ cái không dấu, chữ số và ký tự '.', '_', '-' (từ 3 đến 50 ký tự).";
+
+        return null;
+    }
+
+    public static bool IsValidEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return false;
+        var trimmed = email.Trim();
+        if (trimmed.Length > 256 || trimmed.Any(char.IsWhiteSpace) || ContainsHtmlTags(trimmed))
+            return false;
+        if (!MailAddress.TryCreate(trimmed, out var parsed) || parsed.Address != trimmed)
+            return false;
+        var host = parsed.Host;
+        return host.Contains('.') && !host.StartsWith('.') && !host.EndsWith('.');
+    }
+
+    public static string NormalizeWhitespace(string value) =>
+        Regex.Replace(value.Trim(), @"\s+", " ");
 
     public static bool IsValidIdentityCard(string? cccd)
     {

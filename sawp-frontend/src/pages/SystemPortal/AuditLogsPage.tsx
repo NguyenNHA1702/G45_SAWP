@@ -17,6 +17,7 @@ import { systemApi } from '../../services/implementations/systemApi';
 import type { AuditLogDto } from '../../types/system.types';
 import { getSystemMessage } from '../../constants/messages';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { formatViFullDateTime } from '../../utils/date';
 
 const ENTITY_LABELS: Record<string, string> = {
   User: 'Tài khoản người dùng',
@@ -56,6 +57,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 const ACTION_LABELS: Record<string, string> = {
   USERCREATE: 'Tạo tài khoản mới',
+  USERDELETE: 'Xóa tài khoản chưa kích hoạt',
   USERUPDATEROLES: 'Cập nhật phân quyền',
   USERACTIVATE: 'Kích hoạt tài khoản',
   USERDEACTIVATE: 'Tạm khóa tài khoản',
@@ -425,7 +427,7 @@ export default function AuditLogsPage() {
                   {items.map((log) => (
                     <tr key={log.id}>
                       <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
-                        {new Date(log.timestamp).toLocaleString('vi-VN')}
+                        {formatViFullDateTime(log.timestamp)}
                       </td>
                       <td>
                         <div style={{ fontWeight: 700 }}>{log.userFullName || 'Hệ thống tự động'}</div>
@@ -469,7 +471,7 @@ export default function AuditLogsPage() {
                       </strong>
                       <div className="mobile-item-card__meta" style={{ marginTop: 4 }}>
                         <Clock size={12} />
-                        <span>{new Date(log.timestamp).toLocaleString('vi-VN')}</span>
+                        <span>{formatViFullDateTime(log.timestamp)}</span>
                       </div>
                     </div>
                     <span className={getActionBadgeClass(log.action)}>{translateAction(log.action)}</span>
@@ -582,7 +584,7 @@ export default function AuditLogsPage() {
         title={selectedLog ? translateAction(selectedLog.action) : 'Chi tiết hoạt động'}
         subtitle={
           selectedLog
-            ? `${translateEntity(selectedLog.entityName)}${selectedLog.entityId ? ` (Mã #${formatEntityId(selectedLog.entityId)})` : ''} • ${new Date(selectedLog.timestamp).toLocaleString('vi-VN')}`
+            ? `${translateEntity(selectedLog.entityName)}${selectedLog.entityId ? ` (Mã #${formatEntityId(selectedLog.entityId)})` : ''} • ${formatViFullDateTime(selectedLog.timestamp)}`
             : ''
         }
         badgeText="Chi tiết hoạt động"
@@ -614,7 +616,7 @@ export default function AuditLogsPage() {
                 <Clock size={16} color="var(--color-accent)" />
                 <div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700 }}>THỜI GIAN</div>
-                  <strong>{new Date(selectedLog.timestamp).toLocaleString('vi-VN')}</strong>
+                  <strong>{formatViFullDateTime(selectedLog.timestamp)}</strong>
                 </div>
               </div>
             </div>

@@ -35,7 +35,7 @@ public class AdminServiceTests : TestBase
 
     private static CreateUserRequestDto NewTeacher(string role = "Teacher") => new()
     {
-        Username = "gv01", Email = "gv01@school.vn", FullName = "Giáo viên 01", Roles = new List<string> { role }
+        Username = "gv01", Email = "gv01@school.vn", FullName = "Giáo viên Một", Roles = new List<string> { role }
     };
 
     private static User Account(int id, string role, AccountStatus status, string hash = "hash") => new()
@@ -232,5 +232,78 @@ public class AdminServiceTests : TestBase
         });
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Theory]
+    [InlineData("user 1", "Nguyen Van An", "gv01@school.vn", "0912345678")]
+    [InlineData("gv01", "Nguyen Van 123", "gv01@school.vn", "0912345678")]
+    [InlineData("gv01", "Nguyen <b>An</b>", "gv01@school.vn", "0912345678")]
+    [InlineData("gv01", "Nguyen Van An", "gv01@school.vn", "123")]
+    [InlineData("gv01", "Nguyen Van An", "invalid-email", "0912345678")]
+    public async Task UI04_CreateUser_InvalidFields_RefusedWithMSG01(string username, string fullName, string email, string phone)
+    {
+        var result = await _service.CreateUserAsync(1, new CreateUserRequestDto
+        {
+            Username = username,
+            FullName = fullName,
+            Email = email,
+            PhoneNumber = phone,
+            Roles = new List<string> { "Teacher" }
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        _users.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UI04_DeleteUser_PendingActivation_DeletesAndLogsAudit()
+    {
+        var user = Account(266, "Teacher", AccountStatus.PendingActivation, hash: "");
+        _users.Add(user);
+
+        var result = await _service.DeleteUserAsync(1, 266);
+
+        result.Success.Should().BeTrue();
+        _users.Should().BeEmpty();
+        AuditServiceMock.Verify(a => a.LogActionAsync(1, AuditActions.UserDelete, nameof(User), "266", It.IsAny<object?>(), null, null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UI04_DeleteUser_ActiveAccount_RefusedWithMSG09()
+    {
+        var user = Account(7, "Teacher", AccountStatus.Active, hash: "hash");
+        _users.Add(user);
+
+        var result = await _service.DeleteUserAsync(1, 7);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        _users.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task UI04_ResendActivationLink_PendingActivation_SendsLink()
+    {
+        var user = Account(266, "Teacher", AccountStatus.PendingActivation, hash: "");
+        _users.Add(user);
+
+        var result = await _service.ResendActivationLinkAsync(1, 266);
+
+        result.Success.Should().BeTrue();
+        _linksMock.Verify(l => l.SendActivationLinkAsync(user, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UI04_ResendActivationLink_ActiveAccount_RefusedWithMSG09()
+    {
+        var user = Account(7, "Teacher", AccountStatus.Active, hash: "hash");
+        _users.Add(user);
+
+        var result = await _service.ResendActivationLinkAsync(1, 7);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        _linksMock.Verify(l => l.SendActivationLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

@@ -12,6 +12,8 @@ public interface IAdminService
     Task<ApiResponse<AdminUserDto>> CreateUserAsync(int adminUserId, CreateUserRequestDto request, CancellationToken ct = default);
     Task<ApiResponse<AdminUserDto>> UpdateUserRolesAsync(int adminUserId, int targetUserId, UpdateUserRolesRequestDto request, CancellationToken ct = default);
     Task<ApiResponse<bool>> UpdateUserStatusAsync(int adminUserId, int targetUserId, bool isActive, CancellationToken ct = default);
+    Task<ApiResponse<bool>> DeleteUserAsync(int adminUserId, int targetUserId, CancellationToken ct = default);
+    Task<ApiResponse<bool>> ResendActivationLinkAsync(int adminUserId, int targetUserId, CancellationToken ct = default);
     Task<ApiResponse<bool>> ResetUserPasswordAsync(int adminUserId, int targetUserId, string newPassword, CancellationToken ct = default);
 
     Task<ApiResponse<List<SchoolCalendarDayDto>>> GetCalendarDaysAsync(int? schoolYearId, string? month, CancellationToken ct = default);

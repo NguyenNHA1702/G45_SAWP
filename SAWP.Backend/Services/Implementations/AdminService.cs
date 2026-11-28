@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Configuration;
 using Core.Enums;
 using Core.Constants;
@@ -90,6 +91,8 @@ public class AdminService : IAdminService
                 PhoneNumber = u.PhoneNumber,
                 IsActive = u.Status == AccountStatus.Active,
                 Status = u.Status.ToString(),
+                CanDelete = (u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)))
+                    && !u.UserRoles.Any(ur => ur.Role.Name == "Admin"),
                 CreatedAt = u.CreatedAt,
                 Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
                 StaffCode = u.StaffProfile != null ? u.StaffProfile.StaffCode : null,
@@ -97,6 +100,11 @@ public class AdminService : IAdminService
                 Department = u.StaffProfile != null ? u.StaffProfile.Department : null
             })
             .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            row.CreatedAt = UtcDateTimeHelper.Normalize(row.CreatedAt);
+        }
 
         var orderMap = pageIds
             .Select((id, idx) => new { id, idx })
@@ -174,6 +182,8 @@ public class AdminService : IAdminService
                 PhoneNumber = u.PhoneNumber,
                 IsActive = u.Status == AccountStatus.Active,
                 Status = u.Status.ToString(),
+                CanDelete = (u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)))
+                    && !u.UserRoles.Any(ur => ur.Role.Name == "Admin"),
                 CreatedAt = u.CreatedAt,
                 Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
                 StaffCode = u.StaffProfile != null ? u.StaffProfile.StaffCode : null,
@@ -187,6 +197,11 @@ public class AdminService : IAdminService
                     : null
             })
             .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            row.CreatedAt = UtcDateTimeHelper.Normalize(row.CreatedAt);
+        }
 
         var orderMap = pageIds
             .Select((id, idx) => new { id, idx })
@@ -217,11 +232,41 @@ public class AdminService : IAdminService
     {
         var username = request.Username?.Trim() ?? string.Empty;
         var email = request.Email?.Trim() ?? string.Empty;
-        var fullName = request.FullName?.Trim() ?? string.Empty;
+        var rawFullName = request.FullName?.Trim() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(fullName))
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(rawFullName))
         {
             return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập đầy đủ Tên đăng nhập, Email và Họ tên." });
+        }
+
+        var usernameErr = StudentValidationHelper.ValidateUsername(username);
+        if (usernameErr != null)
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { usernameErr });
+        }
+
+        var fullNameErr = StudentValidationHelper.ValidateFullName(rawFullName, "họ và tên");
+        if (fullNameErr != null)
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { fullNameErr });
+        }
+        var fullName = StudentValidationHelper.NormalizeWhitespace(rawFullName);
+
+        if (!StudentValidationHelper.IsValidEmail(email))
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Email không hợp lệ." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && !StudentValidationHelper.IsValidPhone(request.PhoneNumber))
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Số điện thoại không hợp lệ (cần gồm 10 chữ số và bắt đầu bằng số 0)." });
+        }
+
+        if (StudentValidationHelper.ContainsHtmlTags(request.StaffCode)
+            || StudentValidationHelper.ContainsHtmlTags(request.Position)
+            || StudentValidationHelper.ContainsHtmlTags(request.Department))
+        {
+            return ApiResponse<AdminUserDto>.Fail(SystemMessages.MSG01, new List<string> { "Thông tin nhân sự không được chứa thẻ HTML." });
         }
 
         // pub:UC-53 step 3: the Administrator selects one initial role
@@ -450,6 +495,122 @@ public class AdminService : IAdminService
         await _unitOfWork.SaveChangesAsync(ct);
 
         return ApiResponse<bool>.Ok(true, isActive ? SystemMessages.MSG08 : SystemMessages.MSG39);
+    }
+
+    public async Task<ApiResponse<bool>> DeleteUserAsync(int adminUserId, int targetUserId, CancellationToken ct = default)
+    {
+        var user = await _unitOfWork.Repository<User>()
+            .Query()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.StaffProfile)
+            .Include(u => u.VerificationTokens)
+            .FirstOrDefaultAsync(u => u.Id == targetUserId, ct);
+
+        if (user == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy tài khoản người dùng." });
+        }
+
+        if (user.Id == adminUserId)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa tài khoản đang đăng nhập." });
+        }
+
+        var isAdministrator = user.UserRoles.Any(ur => ur.Role != null && ur.Role.Name.Equals(UserRoles.Admin.ToString(), StringComparison.OrdinalIgnoreCase));
+        if (isAdministrator)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa tài khoản Quản trị viên hệ thống." });
+        }
+
+        var neverActivated = user.Status == AccountStatus.PendingActivation
+            || (user.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(user.PasswordHash));
+        if (!neverActivated)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể xóa tài khoản chưa từng được kích hoạt sử dụng." });
+        }
+
+        // Unlink any AccountRequestItem created for this account (Restrict FK)
+        var reqItemRepo = _unitOfWork.Repository<AccountRequestItem>();
+        if (reqItemRepo != null)
+        {
+            var linkedItems = await reqItemRepo.Query()
+                .Where(i => i.CreatedUserId == user.Id)
+                .ToListAsync(ct);
+            foreach (var item in linkedItems)
+            {
+                item.CreatedUserId = null;
+            }
+        }
+
+        var guardianRepo = _unitOfWork.Repository<Guardian>();
+        if (guardianRepo != null)
+        {
+            var linkedGuardians = await guardianRepo.Query()
+                .Where(g => g.UserId == user.Id)
+                .ToListAsync(ct);
+            foreach (var g in linkedGuardians)
+            {
+                g.UserId = null;
+            }
+        }
+
+        await _auditService.LogActionAsync(
+            adminUserId,
+            AuditActions.UserDelete,
+            nameof(User),
+            user.Id.ToString(),
+            new { user.Username, user.Email, user.FullName, Status = user.Status.ToString() },
+            null,
+            null,
+            ct);
+
+        await _unitOfWork.Repository<User>().DeleteAsync(user, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
+    }
+
+    public async Task<ApiResponse<bool>> ResendActivationLinkAsync(int adminUserId, int targetUserId, CancellationToken ct = default)
+    {
+        var user = await _unitOfWork.Repository<User>()
+            .Query()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .FirstOrDefaultAsync(u => u.Id == targetUserId, ct);
+
+        if (user == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy tài khoản người dùng." });
+        }
+
+        var isAdministrator = user.UserRoles.Any(ur => ur.Role != null && ur.Role.Name.Equals(UserRoles.Admin.ToString(), StringComparison.OrdinalIgnoreCase));
+        if (isAdministrator)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể gửi liên kết kích hoạt cho tài khoản Quản trị viên." });
+        }
+
+        if (user.Status != AccountStatus.PendingActivation)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể gửi lại liên kết kích hoạt cho tài khoản đang ở trạng thái chờ kích hoạt." });
+        }
+
+        var sent = await _accountLinks.SendActivationLinkAsync(user, ct);
+        if (!sent)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG59);
+        }
+
+        await _auditService.LogActionAsync(
+            adminUserId,
+            AuditActions.UserActivationLinkSent,
+            nameof(User),
+            user.Id.ToString(),
+            null,
+            new { user.Email, ResentByAdmin = true },
+            null,
+            ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
     public async Task<ApiResponse<bool>> ResetUserPasswordAsync(int adminUserId, int targetUserId, string newPassword, CancellationToken ct = default)
@@ -849,7 +1010,9 @@ public class AdminService : IAdminService
         PhoneNumber = u.PhoneNumber,
         IsActive = u.Status == AccountStatus.Active,
         Status = u.Status.ToString(),
-        CreatedAt = u.CreatedAt,
+        CanDelete = (u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)))
+            && !u.UserRoles.Any(ur => ur.Role != null && ur.Role.Name.Equals(UserRoles.Admin.ToString(), StringComparison.OrdinalIgnoreCase)),
+        CreatedAt = UtcDateTimeHelper.Normalize(u.CreatedAt),
         Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
         StaffCode = u.StaffProfile?.StaffCode,
         Position = u.StaffProfile?.Position,

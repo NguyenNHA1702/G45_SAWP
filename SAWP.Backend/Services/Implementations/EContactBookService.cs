@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.DTOs.ContactBook;
@@ -132,8 +133,8 @@ public class EContactBookService : IEContactBookService
                 Category = p.Category,
                 IsPinned = p.IsPinned,
                 AllowComments = p.AllowComments,
-                CreatedAt = p.CreatedAt,
-                UpdatedAt = p.UpdatedAt,
+                CreatedAt = UtcDateTimeHelper.Normalize(p.CreatedAt),
+                UpdatedAt = UtcDateTimeHelper.Normalize(p.UpdatedAt),
                 ReactionCount = p.Reactions.Count,
                 UserHasReacted = userReaction != null,
                 UserReactionType = userReaction?.ReactionType,
@@ -165,7 +166,7 @@ public class EContactBookService : IEContactBookService
                         AuthorName = c.User?.FullName ?? "Người dùng",
                         AuthorRoleLabel = roleLabel,
                         Content = c.Content,
-                        CreatedAt = c.CreatedAt,
+                        CreatedAt = UtcDateTimeHelper.Normalize(c.CreatedAt),
                         CanDelete = c.UserId == currentUserId || p.AuthorUserId == currentUserId
                     };
                 }).ToList()
@@ -353,7 +354,7 @@ public class EContactBookService : IEContactBookService
             Category = post.Category,
             IsPinned = post.IsPinned,
             AllowComments = post.AllowComments,
-            CreatedAt = post.CreatedAt,
+            CreatedAt = UtcDateTimeHelper.Normalize(post.CreatedAt),
             ReactionCount = 0,
             UserHasReacted = false,
             Attachments = post.Attachments.Select(a => new PostAttachmentDto
@@ -431,8 +432,8 @@ public class EContactBookService : IEContactBookService
             Category = post.Category,
             IsPinned = post.IsPinned,
             AllowComments = post.AllowComments,
-            CreatedAt = post.CreatedAt,
-            UpdatedAt = post.UpdatedAt,
+            CreatedAt = UtcDateTimeHelper.Normalize(post.CreatedAt),
+            UpdatedAt = UtcDateTimeHelper.Normalize(post.UpdatedAt),
             ReactionCount = post.Reactions.Count,
             Attachments = post.Attachments.Select(a => new PostAttachmentDto
             {
@@ -593,7 +594,7 @@ public class EContactBookService : IEContactBookService
             AuthorName = user?.FullName ?? "Người dùng",
             AuthorRoleLabel = roleLabel,
             Content = comment.Content,
-            CreatedAt = comment.CreatedAt,
+            CreatedAt = UtcDateTimeHelper.Normalize(comment.CreatedAt),
             CanDelete = true
         };
 
@@ -1066,17 +1067,17 @@ public class EContactBookService : IEContactBookService
             ClassName = className,
             TeacherUserId = e.TeacherUserId,
             TeacherName = e.TeacherUser?.FullName ?? "Giáo viên",
-            EvaluationDate = e.EvaluationDate,
+            EvaluationDate = UtcDateTimeHelper.Normalize(e.EvaluationDate),
             WeekNumber = e.WeekNumber,
             Rating = e.Rating,
             Badges = badges,
             TeacherNote = e.TeacherNote,
             PrivateRemind = e.PrivateRemind,
             IsAcknowledged = e.IsAcknowledged,
-            AcknowledgedAt = e.AcknowledgedAt,
+            AcknowledgedAt = UtcDateTimeHelper.Normalize(e.AcknowledgedAt),
             AcknowledgedByGuardianName = e.AcknowledgedByGuardian?.FullName,
             ParentFeedback = e.ParentFeedback,
-            CreatedAt = e.CreatedAt
+            CreatedAt = UtcDateTimeHelper.Normalize(e.CreatedAt)
         };
     }
 }

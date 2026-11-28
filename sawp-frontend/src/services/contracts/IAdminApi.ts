@@ -17,6 +17,8 @@ export interface IAdminApi {
   createUser(payload: CreateUserPayload): Promise<ApiResponse<AdminUserDto>>;
   updateUserRoles(userId: number, roles: string[]): Promise<ApiResponse<AdminUserDto>>;
   updateUserStatus(userId: number, isActive: boolean): Promise<ApiResponse<boolean>>;
+  deleteUser(userId: number): Promise<ApiResponse<boolean>>;
+  resendActivationLink(userId: number): Promise<ApiResponse<boolean>>;
   resetUserPassword(userId: number, newPassword: string): Promise<ApiResponse<boolean>>;
   importStaff(file: File): Promise<ApiResponse<number>>;
   getCalendarDays(month?: string, schoolYearId?: number): Promise<ApiResponse<SchoolCalendarDayDto[]>>;

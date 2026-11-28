@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyRound,
   Lock,
+  Mail,
   Plus,
   RefreshCw,
   Search,
   Shield,
+  Trash2,
   Unlock,
   Upload,
   UserCog,
@@ -15,6 +17,12 @@ import toast from 'react-hot-toast';
 import { adminApi } from '../../services/implementations/adminApi';
 import { UserRole, type AdminUserDto, type RoleOptionDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
+import {
+  validateEmailAddress,
+  validatePersonFullName,
+  validatePhoneNumber,
+  validateUsername,
+} from '../../utils/validation';
 
 /** Account state (BR-63): Pending Activation is neither active nor locked. */
 const STATUS_BADGE: Record<AdminUserDto['status'], { label: string; className: string }> = {
@@ -95,12 +103,22 @@ export default function UsersManagementPage() {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    const validationErr =
+      validateUsername(newUsername) ||
+      validatePersonFullName(newFullName) ||
+      validateEmailAddress(newEmail, true) ||
+      validatePhoneNumber(newPhone);
+    if (validationErr) {
+      toast.error(validationErr);
+      return;
+    }
+
     try {
       const res = await adminApi.createUser({
-        username: newUsername,
-        fullName: newFullName,
-        email: newEmail,
-        phoneNumber: newPhone || undefined,
+        username: newUsername.trim(),
+        fullName: newFullName.trim().replace(/\s+/g, ' '),
+        email: newEmail.trim(),
+        phoneNumber: newPhone.trim() || undefined,
         roles: [newRole],
       });
       if (res.success) {
@@ -141,15 +159,16 @@ export default function UsersManagementPage() {
   };
 
   const handleToggleStatus = async (user: AdminUserDto) => {
+    const targetIsActive = user.status === 'Deactivated';
     const confirmText = getSystemMessage('MSG45')?.content || 'Bạn có chắc chắn muốn thực hiện thao tác này?';
-    if (!window.confirm(`${confirmText}\n(${user.isActive ? 'Khóa' : 'Kích hoạt'} tài khoản ${user.username})`)) {
+    if (!window.confirm(`${confirmText}\n(${targetIsActive ? 'Mở khóa' : 'Khóa'} tài khoản ${user.username})`)) {
       return;
     }
     try {
-      const res = await adminApi.updateUserStatus(user.id, !user.isActive);
+      const res = await adminApi.updateUserStatus(user.id, targetIsActive);
       if (res.success) {
         toast.success(
-          !user.isActive
+          targetIsActive
             ? getSystemMessage('MSG08')?.content || 'Đã kích hoạt tài khoản.'
             : getSystemMessage('MSG39')?.content || 'Đã vô hiệu hóa tài khoản người dùng.'
         );
@@ -160,6 +179,39 @@ export default function UsersManagementPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
       toast.error(msg?.errors?.[0] || msg?.message || 'Không thể đổi trạng thái tài khoản.');
+    }
+  };
+
+  const handleResendActivation = async (user: AdminUserDto) => {
+    try {
+      const res = await adminApi.resendActivationLink(user.id);
+      if (res.success) {
+        toast.success(`Đã gửi lại liên kết kích hoạt tới ${user.email}.`);
+      } else {
+        showApiError(res.code, res.message, res.errors);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      toast.error(msg?.errors?.[0] || msg?.message || getSystemMessage('MSG59')?.content || 'Không gửi được email kích hoạt.');
+    }
+  };
+
+  const handleDeleteUser = async (user: AdminUserDto) => {
+    const confirmText = getSystemMessage('MSG45')?.content || 'Bạn có chắc chắn muốn thực hiện thao tác này?';
+    if (!window.confirm(`${confirmText}\n(Xóa vĩnh viễn tài khoản @${user.username})`)) {
+      return;
+    }
+    try {
+      const res = await adminApi.deleteUser(user.id);
+      if (res.success) {
+        toast.success(`Đã xóa tài khoản @${user.username}.`);
+        loadData();
+      } else {
+        showApiError(res.code, res.message, res.errors);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      toast.error(msg?.errors?.[0] || msg?.message || 'Không thể xóa tài khoản.');
     }
   };
 
@@ -356,20 +408,40 @@ export default function UsersManagementPage() {
                         >
                           <KeyRound size={14} /> MK
                         </button>
+                        {u.status === 'PendingActivation' && (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            title="Gửi lại liên kết kích hoạt qua email"
+                            onClick={() => handleResendActivation(u)}
+                          >
+                            <Mail size={14} /> Gửi lại link
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
                           title={
-                            u.status === 'PendingActivation'
-                              ? 'Tài khoản chờ người dùng kích hoạt qua email'
-                              : u.isActive ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'
+                            u.status === 'Deactivated'
+                              ? 'Mở khóa tài khoản'
+                              : 'Khóa tài khoản'
                           }
-                          disabled={u.status === 'PendingActivation'}
                           onClick={() => handleToggleStatus(u)}
                         >
-                          {u.isActive ? <Lock size={14} /> : <Unlock size={14} />}
-                          {u.isActive ? 'Khóa' : 'Mở'}
+                          {u.status === 'Deactivated' ? <Unlock size={14} /> : <Lock size={14} />}
+                          {u.status === 'Deactivated' ? 'Mở' : 'Khóa'}
                         </button>
+                        {(u.status === 'PendingActivation' || u.canDelete) && (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            style={{ color: '#DC2626', borderColor: '#FCA5A5' }}
+                            title="Xóa tài khoản chưa kích hoạt"
+                            onClick={() => handleDeleteUser(u)}
+                          >
+                            <Trash2 size={14} /> Xóa
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

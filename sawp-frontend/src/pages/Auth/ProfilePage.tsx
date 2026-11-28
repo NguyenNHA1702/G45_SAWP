@@ -26,6 +26,12 @@ import { SYSTEM_MESSAGES } from '../../constants/messages';
 import { asApiError } from '../../utils/apiError';
 import { formatRelationship } from '../../utils/formatters';
 import { formatDDMMYYYY } from '../../utils/date';
+import {
+  containsHtmlTags,
+  validateEmailAddress,
+  validatePersonFullName,
+  validatePhoneNumber,
+} from '../../utils/validation';
 import type { UserProfile } from '../../types/profile.types';
 
 export default function ProfilePage() {
@@ -66,15 +72,38 @@ export default function ProfilePage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim()) {
-      toast.error(SYSTEM_MESSAGES.MSG01.content);
+    const validationErr =
+      validatePersonFullName(fullName) ||
+      validatePhoneNumber(phoneNumber) ||
+      validateEmailAddress(email, false);
+    if (validationErr) {
+      toast.error(validationErr);
       return;
+    }
+
+    if (profile?.guardianProfile) {
+      if (containsHtmlTags(address)) {
+        toast.error("Địa chỉ không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+        return;
+      }
+      if (address.trim().length > 250) {
+        toast.error('Địa chỉ không được vượt quá 250 ký tự.');
+        return;
+      }
+      if (containsHtmlTags(occupation)) {
+        toast.error("Nghề nghiệp không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+        return;
+      }
+      if (occupation.trim().length > 100) {
+        toast.error('Nghề nghiệp không được vượt quá 100 ký tự.');
+        return;
+      }
     }
 
     setSaving(true);
     try {
       const updated = await profileApi.updateProfile({
-        fullName: fullName.trim(),
+        fullName: fullName.trim().replace(/\s+/g, ' '),
         phoneNumber: phoneNumber.trim() || undefined,
         email: email.trim() || undefined,
         address: profile?.guardianProfile ? address.trim() || undefined : undefined,
@@ -107,7 +136,8 @@ export default function ProfilePage() {
 
       toast.success(SYSTEM_MESSAGES.MSG47.content);
     } catch (err) {
-      toast.error(asApiError(err).message);
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
     } finally {
       setSaving(false);
     }

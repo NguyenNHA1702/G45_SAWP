@@ -7,6 +7,7 @@ public static class AuditActions
 {
     // Users and system settings (System Administrator)
     public const string UserCreate = "USER_CREATE";
+    public const string UserDelete = "USER_DELETE";
     public const string UserUpdateRoles = "USER_UPDATE_ROLES";
     public const string UserActivate = "USER_ACTIVATE";
     public const string UserDeactivate = "USER_DEACTIVATE";

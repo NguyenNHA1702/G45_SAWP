@@ -753,4 +753,44 @@ public class AuthServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG04.Code);
         user.MustChangePassword.Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("Nguyen 123 <b>", "0911223344", "123 Kim Ma")]
+    [InlineData("Nguyen Van A", "123", "123 Kim Ma")]
+    [InlineData("Nguyen Van A", "0911223344", "<script>alert(1)</script>")]
+    public async Task UI05_UpdateProfileAsync_InvalidNamePhoneOrHtmlAddress_ReturnsMSG01AndDoesNotSave(string fullName, string phone, string address)
+    {
+        var user = new User
+        {
+            Id = 7,
+            Username = "parent1",
+            FullName = "Phụ huynh Một",
+            Email = "parent1@school.edu.vn",
+            PhoneNumber = "0900000000",
+            Status = AccountStatus.Active,
+            Guardian = new Guardian
+            {
+                Id = 12,
+                FullName = "Phụ huynh Một",
+                PhoneNumber = "0900000000",
+                Address = "Hà Nội",
+                Occupation = "Kỹ sư"
+            }
+        };
+        SetupUsers(user);
+
+        var result = await _authService.UpdateProfileAsync(7, new UpdateProfileRequestDto
+        {
+            FullName = fullName,
+            PhoneNumber = phone,
+            Address = address
+        });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        user.FullName.Should().Be("Phụ huynh Một");
+        user.PhoneNumber.Should().Be("0900000000");
+        user.Guardian!.Address.Should().Be("Hà Nội");
+        UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

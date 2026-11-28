@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.DTOs;
 using Core.Interfaces;
 using Services.Interfaces;
@@ -36,7 +37,7 @@ public class NotificationService : INotificationService
                 LinkUrl = n.LinkUrl,
                 Type = n.Type,
                 ReferenceKey = n.ReferenceKey,
-                CreatedAt = n.CreatedAt
+                CreatedAt = UtcDateTimeHelper.Normalize(n.CreatedAt)
             }).ToList(),
             TotalCount = paged.TotalCount,
             PageIndex = paged.PageIndex,

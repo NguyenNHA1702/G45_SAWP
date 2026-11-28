@@ -24,7 +24,47 @@ export const formatViDate = (iso: string): string => {
   return `${d}/${m}/${y}`;
 };
 
-const ensureUtcSuffix = (iso: string): string => {
+/** "2026-10-19" -> "19-10-2026" */
+export const formatDateDDMMYYYY = (dateInput: string | Date | null | undefined): string => {
+  if (!dateInput) return '';
+  if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      const [y, m, d] = trimmed.slice(0, 10).split('-');
+      return `${d}-${m}-${y}`;
+    }
+    const ddmmyyyy = trimmed.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+    if (ddmmyyyy) {
+      return `${ddmmyyyy[1]}-${ddmmyyyy[2]}-${ddmmyyyy[3]}`;
+    }
+  }
+  const d = typeof dateInput === 'string' ? new Date(ensureUtcSuffix(dateInput)) : dateInput;
+  if (Number.isNaN(d.getTime())) return String(dateInput);
+  return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+};
+
+/** "28-11-2026" (hoặc "28/11/2026") -> "2026-11-28", trả về null nếu không hợp lệ */
+export const parseDDMMYYYYToIso = (input: string): string | null => {
+  const match = input.trim().match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== month - 1 ||
+    check.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${year}-${pad(month)}-${pad(day)}`;
+};
+
+export const ensureUtcSuffix = (iso: string): string => {
   const trimmed = iso.trim();
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(trimmed) && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(trimmed)) {
     return `${trimmed}Z`;
@@ -38,6 +78,16 @@ export const formatViDateTime = (iso: string): string =>
     dateStyle: 'short',
     timeStyle: 'short',
   });
+
+/** Hiển thị đầy đủ HH:mm:ss DD/MM/YYYY theo múi giờ Việt Nam (UTC+7) */
+export const formatViFullDateTime = (iso: string): string => {
+  if (!iso) return '';
+  const d = new Date(ensureUtcSuffix(iso));
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
+};
 
 /** Hiển thị HH:mm theo múi giờ Việt Nam (UTC+7) */
 export const formatViTime = (iso: string): string => {
@@ -77,7 +127,7 @@ export const formatDDMMYYYY = (dateInput: string | Date | null | undefined): str
         return trimmed;
       }
     }
-    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    const d = typeof dateInput === 'string' ? new Date(ensureUtcSuffix(dateInput)) : dateInput;
     if (isNaN(d.getTime())) {
       return String(dateInput);
     }
@@ -94,7 +144,7 @@ export const formatDDMMYYYY = (dateInput: string | Date | null | undefined): str
 export const formatDDMMYYYYHHMM = (dateInput: string | Date | null | undefined): string => {
   if (!dateInput) return 'N/A';
   try {
-    const d = typeof dateInput === 'string' ? new Date(dateInput.trim()) : dateInput;
+    const d = typeof dateInput === 'string' ? new Date(ensureUtcSuffix(dateInput.trim())) : dateInput;
     if (isNaN(d.getTime())) {
       return formatDDMMYYYY(dateInput);
     }

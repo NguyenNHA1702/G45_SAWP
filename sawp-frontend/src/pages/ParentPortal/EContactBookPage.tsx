@@ -22,7 +22,7 @@ import { PostAttachmentsRenderer } from '../../components/contactBook/PostAttach
 import type { ClassPostDto, StudentEvaluationDto } from '../../types/contactBook.types';
 import type { AttendanceDay } from '../../types/attendance.types';
 import { getSystemMessage } from '../../constants/messages';
-import { formatDDMMYYYY } from '../../utils/date';
+import { formatDDMMYYYY, formatViFullDateTime, formatViTime } from '../../utils/date';
 
 type TabKey = 'feed' | 'evaluation' | 'overview';
 
@@ -289,7 +289,7 @@ export default function EContactBookPage() {
                         {post.authorName}
                       </div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--color-muted-fg)' }}>
-                        {new Date(post.createdAt).toLocaleString('vi-VN')} · {post.className}
+                        {formatViFullDateTime(post.createdAt)} · {post.className}
                       </div>
                     </div>
                     <span className="badge badge--pink">{post.category}</span>
@@ -361,7 +361,7 @@ export default function EContactBookPage() {
                               </span>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--color-muted-fg)' }}>
-                              {new Date(cm.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                              {formatViTime(cm.createdAt)}
                             </div>
                           </div>
                           <div style={{ fontSize: '0.9rem', color: '#334155' }}>{cm.content}</div>
@@ -553,7 +553,7 @@ export default function EContactBookPage() {
                       <div style={{ background: '#F0FDF4', padding: 14, borderRadius: 12, border: '1px solid #BBF7D0' }}>
                         <div style={{ fontWeight: 700, color: '#166534', fontSize: '0.9rem' }}>
                           ✓ Đã xác nhận bởi {ev.acknowledgedByGuardianName || 'Phụ huynh'} lúc{' '}
-                          {ev.acknowledgedAt ? new Date(ev.acknowledgedAt).toLocaleString('vi-VN') : ''}
+                          {ev.acknowledgedAt ? formatViFullDateTime(ev.acknowledgedAt) : ''}
                         </div>
                         {ev.parentFeedback && (
                           <p style={{ margin: '6px 0 0', fontStyle: 'italic', color: '#14532D', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>

@@ -6,6 +6,8 @@ import { adminApi } from '../../services/implementations/adminApi';
 import { asApiError } from '../../utils/apiError';
 import type { LunchCutoffDayDto, SchoolCalendarDayDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
+import { DateInput } from '../../components/common/DateInput';
+import { formatDateDDMMYYYY } from '../../utils/date';
 
 export default function SystemConfigPage() {
   const isAdmin = (() => {
@@ -209,28 +211,25 @@ export default function SystemConfigPage() {
             <h3 style={{ margin: 0 }}>Cập nhật lịch ngày học / nghỉ</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
               <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-                Từ ngày
-                <input
-                  type="date"
-                  className="input"
+                Từ ngày (dd-mm-yyyy)
+                <DateInput
                   style={{ width: '100%', marginTop: 4 }}
                   value={calStartDate}
-                  onChange={(e) => {
-                    const val = e.target.value;
+                  ariaLabel="Từ ngày"
+                  onChange={(val) => {
                     setCalStartDate(val);
                     if (calEndDate < val) setCalEndDate(val);
                   }}
                 />
               </label>
               <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-                Đến ngày
-                <input
-                  type="date"
-                  className="input"
+                Đến ngày (dd-mm-yyyy)
+                <DateInput
                   style={{ width: '100%', marginTop: 4 }}
                   min={calStartDate}
                   value={calEndDate}
-                  onChange={(e) => setCalEndDate(e.target.value)}
+                  ariaLabel="Đến ngày"
+                  onChange={setCalEndDate}
                 />
               </label>
             </div>
@@ -281,7 +280,7 @@ export default function SystemConfigPage() {
                         setCalNote(d.note || '');
                       }}
                     >
-                      <td style={{ padding: '10px 14px', fontWeight: 700 }}>{new Date(d.date).toLocaleDateString('vi-VN')}</td>
+                      <td style={{ padding: '10px 14px', fontWeight: 700 }}>{formatDateDDMMYYYY(d.date)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                         <span className={d.isSchoolDay ? 'badge badge--mint' : 'badge badge--pink'}>
                           {d.isSchoolDay ? 'Ngày học' : 'Ngày nghỉ'}
@@ -301,28 +300,25 @@ export default function SystemConfigPage() {
             <h3 style={{ margin: 0 }}>Cập nhật giờ chốt bán trú</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
               <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-                Từ ngày
-                <input
-                  type="date"
-                  className="input"
+                Từ ngày (dd-mm-yyyy)
+                <DateInput
                   style={{ width: '100%', marginTop: 4 }}
                   value={lunchStartDate}
-                  onChange={(e) => {
-                    const val = e.target.value;
+                  ariaLabel="Từ ngày bán trú"
+                  onChange={(val) => {
                     setLunchStartDate(val);
                     if (lunchEndDate < val) setLunchEndDate(val);
                   }}
                 />
               </label>
               <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
-                Đến ngày
-                <input
-                  type="date"
-                  className="input"
+                Đến ngày (dd-mm-yyyy)
+                <DateInput
                   style={{ width: '100%', marginTop: 4 }}
                   min={lunchStartDate}
                   value={lunchEndDate}
-                  onChange={(e) => setLunchEndDate(e.target.value)}
+                  ariaLabel="Đến ngày bán trú"
+                  onChange={setLunchEndDate}
                 />
               </label>
             </div>
@@ -379,7 +375,7 @@ export default function SystemConfigPage() {
                         setLunchRemarks(d.remarks || '');
                       }}
                     >
-                      <td style={{ padding: '10px 14px', fontWeight: 700 }}>{new Date(d.date).toLocaleDateString('vi-VN')}</td>
+                      <td style={{ padding: '10px 14px', fontWeight: 700 }}>{formatDateDDMMYYYY(d.date)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                         <span className={d.isServing ? 'badge badge--mint' : 'badge badge--pink'}>
                           {d.isServing ? 'Có phục vụ' : 'Nghỉ phục vụ'}

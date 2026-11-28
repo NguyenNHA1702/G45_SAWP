@@ -34,6 +34,7 @@ import { notificationApi } from '../services/implementations/notificationApi';
 import { SYSTEM_MESSAGES } from '../constants/messages';
 import { ParentChildProvider } from '../contexts/ParentChildContext';
 import { ChildSelectorPill } from '../components/parent/ChildSelectorPill';
+import { ensureUtcSuffix } from '../utils/date';
 import type { AppNotification } from '../types/notification.types';
 import './MainLayout.css';
 
@@ -820,7 +821,8 @@ export function MainLayout() {
                                 marginTop: 2,
                               }}
                             >
-                              {new Date(n.createdAt).toLocaleTimeString('vi-VN', {
+                              {new Date(ensureUtcSuffix(n.createdAt)).toLocaleTimeString('vi-VN', {
+                                timeZone: 'Asia/Ho_Chi_Minh',
                                 hour: '2-digit',
                                 minute: '2-digit',
                                 day: '2-digit',

@@ -80,6 +80,20 @@ public class AuditServiceTests : TestBase
     }
 
     [Fact]
+    public async Task UI06_GetAuditLogDtos_NormalizesUnspecifiedTimestampToUtc()
+    {
+        SetupRepository(new List<AuditLog>
+        {
+            new() { Id = 1, Action = AuditActions.UserCreate, EntityName = nameof(User), Timestamp = new DateTime(2026, 11, 28, 4, 15, 0, DateTimeKind.Unspecified) }
+        });
+
+        var result = await _service.GetAuditLogDtosPagedAsync(new Core.DTOs.AuditLogFilterDto { PageIndex = 1, PageSize = 20 });
+
+        result.Success.Should().BeTrue();
+        result.Data!.Items.Should().ContainSingle().Which.Timestamp.Kind.Should().Be(DateTimeKind.Utc);
+    }
+
+    [Fact]
     public void SerializeValues_NullStaysNull()
     {
         AuditService.SerializeValues(null).Should().BeNull();

@@ -17,6 +17,7 @@ public class AdminUserDto
     public bool IsActive { get; set; }
     /// <summary>Account state: PendingActivation, Active or Deactivated (BR-63).</summary>
     public string Status { get; set; } = string.Empty;
+    public bool CanDelete { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<string> Roles { get; set; } = new();
     public string? StaffCode { get; set; }

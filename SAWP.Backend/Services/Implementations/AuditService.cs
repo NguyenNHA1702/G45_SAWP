@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Core.Common;
 using Core.DTOs;
 using Core.Entities;
 using Core.Interfaces;
@@ -67,6 +68,10 @@ public class AuditService : IAuditService
         var query = _unitOfWork.Repository<AuditLog>().Query().OrderByDescending(x => x.Timestamp);
         var total = await query.CountAsync(cancellationToken);
         var items = await query.Skip((page - 1) * size).Take(size).ToListAsync(cancellationToken);
+        foreach (var item in items)
+        {
+            item.Timestamp = UtcDateTimeHelper.Normalize(item.Timestamp);
+        }
 
         return ApiResponse<PaginatedResult<AuditLog>>.Ok(new PaginatedResult<AuditLog>
         {
@@ -134,6 +139,11 @@ public class AuditService : IAuditService
                 Timestamp = x.Timestamp
             })
             .ToListAsync(cancellationToken);
+
+        foreach (var item in items)
+        {
+            item.Timestamp = UtcDateTimeHelper.Normalize(item.Timestamp);
+        }
 
         return ApiResponse<PaginatedResult<AuditLogDto>>.Ok(new PaginatedResult<AuditLogDto>(items, total, page, size));
     }

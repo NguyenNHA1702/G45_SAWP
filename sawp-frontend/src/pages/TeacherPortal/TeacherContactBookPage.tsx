@@ -28,6 +28,7 @@ import type {
 } from '../../types/contactBook.types';
 import type { ClassRosterDto } from '../../types/class.types';
 import { getSystemMessage } from '../../constants/messages';
+import { formatViFullDateTime } from '../../utils/date';
 
 type TabKey = 'feed' | 'evaluations';
 
@@ -544,7 +545,7 @@ export default function TeacherContactBookPage() {
                       </div>
                       <h3 style={{ margin: '4px 0 2px' }}>{post.title}</h3>
                       <div style={{ fontSize: '0.8rem', color: 'var(--color-muted-fg)' }}>
-                        Đăng lúc: {new Date(post.createdAt).toLocaleString('vi-VN')}
+                        Đăng lúc: {formatViFullDateTime(post.createdAt)}
                       </div>
                     </div>
 
@@ -991,7 +992,7 @@ export default function TeacherContactBookPage() {
                   <div style={{ fontWeight: 800, color: '#166534', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CheckCircle2 size={16} /> Đã được phụ huynh xác nhận lúc{' '}
                     {selectedStudent.evaluation?.acknowledgedAt
-                      ? new Date(selectedStudent.evaluation.acknowledgedAt).toLocaleString('vi-VN')
+                      ? formatViFullDateTime(selectedStudent.evaluation.acknowledgedAt)
                       : ''}
                   </div>
                   <div style={{ marginTop: 6, fontSize: '0.75rem', color: '#15803D' }}>

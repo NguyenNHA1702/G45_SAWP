@@ -87,6 +87,26 @@ public class AdminController : BaseApiController
         return ToActionResult(result);
     }
 
+    [HttpDelete("users/{id:int}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteUser(int id, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.DeleteUserAsync(userId.Value, id, ct);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("users/{id:int}/resend-activation")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ResendActivationLink(int id, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.ResendActivationLinkAsync(userId.Value, id, ct);
+        return ToActionResult(result);
+    }
+
     [HttpPost("users/{id}/reset-password")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ResetUserPassword(int id, [FromBody] ResetUserPasswordRequestDto request, CancellationToken ct = default)

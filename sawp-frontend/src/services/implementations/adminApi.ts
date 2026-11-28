@@ -59,6 +59,16 @@ export const adminApi: IAdminApi = {
     return res.data;
   },
 
+  deleteUser: async (userId: number): Promise<ApiResponse<boolean>> => {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/admin/users/${userId}`);
+    return res.data;
+  },
+
+  resendActivationLink: async (userId: number): Promise<ApiResponse<boolean>> => {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/admin/users/${userId}/resend-activation`);
+    return res.data;
+  },
+
   resetUserPassword: async (userId: number, newPassword: string): Promise<ApiResponse<boolean>> => {
     const res = await apiClient.post<ApiResponse<boolean>>(`/admin/users/${userId}/reset-password`, { newPassword });
     return res.data;

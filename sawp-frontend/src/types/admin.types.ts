@@ -24,6 +24,7 @@ export interface AdminUserDto {
   isActive: boolean;
   /** Account state (BR-63); isActive is true only for 'Active'. */
   status: 'PendingActivation' | 'Active' | 'Deactivated';
+  canDelete?: boolean;
   createdAt: string;
   roles: string[];
   staffCode: string | null;

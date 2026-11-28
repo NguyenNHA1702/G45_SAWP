@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using BCrypt.Net;
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -411,7 +412,7 @@ public class AuthService : IAuthService
             Email = user.Email,
             PhoneNumber = user.PhoneNumber,
             IsActive = user.Status == AccountStatus.Active,
-            CreatedAt = user.CreatedAt,
+            CreatedAt = UtcDateTimeHelper.Normalize(user.CreatedAt),
             Roles = user.UserRoles.Where(ur => ur.Role != null).Select(ur => ur.Role.Name).ToList()
         };
 
@@ -469,6 +470,22 @@ public class AuthService : IAuthService
             return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01);
         }
 
+        var fullNameErr = StudentValidationHelper.ValidateFullName(request.FullName, "họ và tên");
+        if (fullNameErr != null)
+        {
+            return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { fullNameErr });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && !StudentValidationHelper.IsValidPhone(request.PhoneNumber))
+        {
+            return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Số điện thoại không hợp lệ (cần gồm 10 chữ số và bắt đầu bằng số 0)." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Email) && !StudentValidationHelper.IsValidEmail(request.Email))
+        {
+            return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Email không hợp lệ." });
+        }
+
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.Guardian)
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
@@ -478,7 +495,34 @@ public class AuthService : IAuthService
             return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG07);
         }
 
-        user.FullName = request.FullName.Trim();
+        if (user.Guardian != null)
+        {
+            if (request.Address != null)
+            {
+                if (StudentValidationHelper.ContainsHtmlTags(request.Address))
+                {
+                    return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Địa chỉ không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+                }
+                if (request.Address.Trim().Length > 250)
+                {
+                    return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Địa chỉ không được vượt quá 250 ký tự." });
+                }
+            }
+
+            if (request.Occupation != null)
+            {
+                if (StudentValidationHelper.ContainsHtmlTags(request.Occupation))
+                {
+                    return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Nghề nghiệp không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+                }
+                if (request.Occupation.Trim().Length > 100)
+                {
+                    return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Nghề nghiệp không được vượt quá 100 ký tự." });
+                }
+            }
+        }
+
+        user.FullName = StudentValidationHelper.NormalizeWhitespace(request.FullName);
         if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
         {
             user.PhoneNumber = request.PhoneNumber.Trim();
