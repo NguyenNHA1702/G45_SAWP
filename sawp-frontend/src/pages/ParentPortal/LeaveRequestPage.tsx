@@ -21,6 +21,7 @@ import { leaveRequestApi, type LeaveRequestItem } from '../../services/implement
 import { apiClient } from '../../services/apiClient';
 import { LUNCH_CUTOFF_LABEL, formatDateDDMMYYYY } from '../../constants/lunch';
 import { formatViDateTime } from '../../utils/date';
+import { validateFreeText } from '../../utils/textValidation';
 import { asApiError } from '../../utils/apiError';
 import { GeometricModal } from '../../components/common/GeometricModal';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
@@ -305,9 +306,9 @@ export default function LeaveRequestPage() {
       toast.error('Ngày bắt đầu nghỉ không được lớn hơn ngày kết thúc.');
       return;
     }
-    const trimmedReason = reason.trim();
-    if (trimmedReason.length < 5 || trimmedReason.length > 500) {
-      toast.error('Lý do xin nghỉ học phải từ 5 đến 500 ký tự.');
+    const reasonError = validateFreeText(reason, 'lý do xin nghỉ học', 5, 500);
+    if (reasonError) {
+      toast.error(reasonError);
       return;
     }
     if (requiresAttachmentForAmendment && attachments.filter((a) => a.uploadedUrl.trim()).length === 0) {

@@ -24,6 +24,7 @@ import { DirectFileUploader } from '../../components/common/DirectFileUploader';
 import { AttachmentViewer } from '../../components/common/AttachmentViewer';
 import { PaginationBar } from '../../components/common/PaginationBar';
 import { formatDDMMYYYY, formatDDMMYYYYHHMM, getNextMondayIso, todayIso } from '../../utils/date';
+import { containsUnsafeHtmlOrScript, normalizeWhitespace, validateFreeText } from '../../utils/textValidation';
 import type { AdministrativeRequestSummary } from '../../types/request.types';
 import type { ClassSummaryDto } from '../../types/class.types';
 
@@ -124,12 +125,9 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng chọn lớp muốn chuyển tới.');
       return;
     }
-    if (!transferReason.trim() || transferReason.trim().replace(/\s+/g, ' ').length < 5) {
-      toast.error('Vui lòng nhập lý do chuyển lớp (tối thiểu 5 ký tự).');
-      return;
-    }
-    if (/[<>]/.test(transferReason)) {
-      toast.error("Lý do xin chuyển lớp không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+    const transferReasonError = validateFreeText(transferReason, 'lý do xin chuyển lớp', 5, 1000);
+    if (transferReasonError) {
+      toast.error(transferReasonError);
       return;
     }
 
@@ -181,12 +179,13 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng chọn học sinh trước khi nộp đơn.');
       return;
     }
-    if (!documentPurpose.trim() || documentPurpose.trim().replace(/\s+/g, ' ').length < 5) {
-      toast.error('Vui lòng nhập mục đích xin cấp giấy tờ (tối thiểu 5 ký tự).');
+    if (containsUnsafeHtmlOrScript(documentType)) {
+      toast.error("Loại giấy tờ không được chứa thẻ HTML, ký tự '<', '>' hoặc mã kịch bản.");
       return;
     }
-    if (/[<>]/.test(documentType) || /[<>]/.test(documentPurpose)) {
-      toast.error("Thông tin đơn không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+    const purposeError = validateFreeText(documentPurpose, 'mục đích xin cấp giấy tờ', 5, 1000);
+    if (purposeError) {
+      toast.error(purposeError);
       return;
     }
     if (numberOfCopies < 1 || numberOfCopies > 10) {
@@ -235,22 +234,16 @@ export default function AdministrativeRequestsPage() {
       toast.error('Vui lòng chọn học sinh trước khi nộp đơn.');
       return;
     }
-    const cleanTitle = otherTitle.trim().replace(/\s+/g, ' ');
-    if (/[<>]/.test(cleanTitle)) {
-      toast.error("Tiêu đề loại đơn khác không được chứa thẻ HTML hoặc ký tự '<', '>'.");
+    const cleanTitle = normalizeWhitespace(otherTitle);
+    const titleError = validateFreeText(otherTitle, 'tiêu đề loại đơn khác', 5, 150);
+    if (titleError) {
+      toast.error(titleError);
       return;
     }
-    if (cleanTitle.length < 5 || cleanTitle.length > 150) {
-      toast.error('Vui lòng nhập tiêu đề loại đơn khác (từ 5 đến 150 ký tự).');
-      return;
-    }
-    const cleanContent = otherContent.trim().replace(/\s+/g, ' ');
-    if (/[<>]/.test(cleanContent)) {
-      toast.error("Nội dung chi tiết đơn không được chứa thẻ HTML hoặc ký tự '<', '>'.");
-      return;
-    }
-    if (cleanContent.length < 5 || cleanContent.length > 1000) {
-      toast.error('Vui lòng nhập nội dung chi tiết đơn (từ 5 đến 1000 ký tự).');
+    const cleanContent = normalizeWhitespace(otherContent);
+    const contentError = validateFreeText(otherContent, 'nội dung chi tiết đơn', 5, 1000);
+    if (contentError) {
+      toast.error(contentError);
       return;
     }
 
@@ -1368,14 +1361,14 @@ export default function AdministrativeRequestsPage() {
                   onChange={(e) => setDocumentType(e.target.value)}
                   required
                 >
-                  <optgroup label="Thủ tục Giáo vụ cấp phát hành trực tiếp (Cấp nhanh trong ngày)">
+                  <optgroup label="Thủ tục Giáo vụ tiếp nhận & phát hành trực tiếp">
                     <option value="Giấy xác nhận học sinh đang theo học">Giấy xác nhận học sinh đang theo học</option>
-                    <option value="Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)">Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)</option>
-                    <option value="Đơn xin cấp lại / trích lục hồ sơ học tập">Đơn xin cấp lại / trích lục hồ sơ học tập</option>
                     <option value="Bảng điểm rèn luyện & học tập">Bảng điểm rèn luyện & học tập</option>
-                    <option value="Giấy xác nhận hoàn thành chương trình">Giấy xác nhận hoàn thành chương trình</option>
                   </optgroup>
                   <optgroup label="Thủ tục Ban Giám Hiệu phê duyệt & ký số điện tử">
+                    <option value="Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)">Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)</option>
+                    <option value="Giấy xác nhận hoàn thành chương trình">Giấy xác nhận hoàn thành chương trình</option>
+                    <option value="Đơn xin cấp lại / trích lục hồ sơ học tập">Đơn xin cấp lại / trích lục hồ sơ học tập</option>
                     <option value="Đơn xin chuyển trường">Đơn xin chuyển trường (Chuyển đi tỉnh/trường khác)</option>
                     <option value="Đơn xin phúc khảo bài kiểm tra định kỳ">Đơn xin phúc khảo bài kiểm tra định kỳ</option>
                     <option value="Đơn xin miễn, giảm các khoản đóng góp / hỗ trợ chi phí học tập">Đơn xin miễn, giảm các khoản đóng góp / hỗ trợ chi phí học tập</option>

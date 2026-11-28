@@ -281,15 +281,10 @@ public class LeaveRequestService : ILeaveRequestService
             }
         }
 
-        if (string.IsNullOrWhiteSpace(reason))
+        var reasonError = TextValidationHelper.ValidateFreeText(reason, "lý do xin nghỉ học", MinReasonLength, MaxReasonLength);
+        if (reasonError != null)
         {
-            return (false, "Vui lòng nhập lý do xin nghỉ học.", SystemMessages.MSG01, new List<DateTime>());
-        }
-
-        var trimmedReasonLen = reason.Trim().Length;
-        if (trimmedReasonLen < MinReasonLength || trimmedReasonLen > MaxReasonLength)
-        {
-            return (false, $"Lý do xin nghỉ học phải từ {MinReasonLength} đến {MaxReasonLength} ký tự.", SystemMessages.MSG01, new List<DateTime>());
+            return (false, reasonError, SystemMessages.MSG01, new List<DateTime>());
         }
 
         // LV-02: Giới hạn tối đa 5 tệp đính kèm trên mỗi đơn xin nghỉ
