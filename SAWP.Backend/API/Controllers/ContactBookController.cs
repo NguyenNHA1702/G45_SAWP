@@ -1,4 +1,5 @@
 using API.Extensions;
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.DTOs.ContactBook;
@@ -50,29 +51,34 @@ public class ContactBookController : BaseApiController
             return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG01));
         }
 
-        // BR-50: Giới hạn kích thước tệp tối đa 5MB
-        if (file.Length > 5 * 1024 * 1024)
-        {
-            return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG41));
-        }
-
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
-        if (!allowedExtensions.Contains(ext))
+        using var stream = file.OpenReadStream();
+        var validationError = await UploadValidationHelper.ValidateFileStreamAsync(
+            stream,
+            file.FileName,
+            allowedExtensions,
+            5 * 1024 * 1024,
+            file.Length,
+            cancellationToken);
+        if (validationError != null)
         {
-            return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG41));
+            return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(
+                SystemMessages.MSG41,
+                new List<string> { validationError }));
         }
 
+        var sanitizedFileName = UploadValidationHelper.SanitizeFileName(file.FileName);
+        var ext = Path.GetExtension(sanitizedFileName).ToLowerInvariant();
         var isImg = ext is ".jpg" or ".jpeg" or ".png";
-        using var stream = file.OpenReadStream();
-        var relativePath = await fileStorageService.SaveFileAsync(stream, file.FileName, "contact-book", cancellationToken);
+
+        var relativePath = await fileStorageService.SaveFileAsync(stream, sanitizedFileName, "contact-book", cancellationToken);
         var normalizedPath = relativePath.Replace('\\', '/');
         var fileUrl = $"/api/contact-book/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
 
         return Ok(ApiResponse<ContactAttachmentUploadResultDto>.Ok(new ContactAttachmentUploadResultDto
         {
             Url = fileUrl,
-            FileName = file.FileName,
+            FileName = sanitizedFileName,
             FileType = isImg ? "Image" : "Document",
             FileSize = file.Length,
             SavedPath = normalizedPath
@@ -88,16 +94,38 @@ public class ContactBookController : BaseApiController
         [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
         CancellationToken cancellationToken)
     {
+        var userId = User.GetUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized();
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             return BadRequest();
         }
 
-        var cleanPath = path.Replace("..", "").TrimStart('/', '\\').Replace('\\', '/');
+        var decoded = Uri.UnescapeDataString(path).Replace('\\', '/').Trim();
+        if (decoded.Contains("..", StringComparison.Ordinal)
+            || decoded.Contains(':', StringComparison.Ordinal)
+            || Path.IsPathRooted(decoded))
+        {
+            return Forbid();
+        }
+
+        var cleanPath = decoded.TrimStart('/');
         if (!cleanPath.StartsWith("contact-book/", StringComparison.OrdinalIgnoreCase))
         {
             return Forbid();
         }
+
+        // BUG-08: Verify caller belongs to the class owning this attachment (or is privileged staff)
+        var canAccess = await _contactBookService.CanAccessAttachmentAsync(userId.Value, cleanPath, cancellationToken);
+        if (!canAccess)
+        {
+            return Forbid();
+        }
+
         var stream = await fileStorageService.GetFileAsync(cleanPath, cancellationToken);
         if (stream == null)
         {
@@ -118,6 +146,7 @@ public class ContactBookController : BaseApiController
             _ => "application/octet-stream"
         };
 
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
         return File(stream, contentType, Path.GetFileName(cleanPath));
     }
 

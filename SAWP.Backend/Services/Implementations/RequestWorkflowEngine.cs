@@ -1437,6 +1437,12 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
         }
 
         var effectiveDate = (req.ClassTransferDetail.EffectiveDate ?? SchoolToday).Date;
+        if (effectiveDate > SchoolToday)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG09,
+                new List<string> { $"Chưa đến ngày hiệu lực chuyển lớp ({effectiveDate:dd/MM/yyyy}). Không thể thực thi chuyển lớp trước ngày hiệu lực." });
+        }
 
         // 1. Deactivate ALL active assignments for this student to prevent duplicate active records (BUG2)
         var activeAssignments = await _unitOfWork.Repository<ClassAssignment>()

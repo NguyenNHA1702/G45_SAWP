@@ -91,8 +91,7 @@ public class AdminService : IAdminService
                 PhoneNumber = u.PhoneNumber,
                 IsActive = u.Status == AccountStatus.Active,
                 Status = u.Status.ToString(),
-                CanDelete = (u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)))
-                    && !u.UserRoles.Any(ur => ur.Role.Name == "Admin"),
+                CanDelete = u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)),
                 CreatedAt = u.CreatedAt,
                 Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
                 StaffCode = u.StaffProfile != null ? u.StaffProfile.StaffCode : null,
@@ -182,8 +181,7 @@ public class AdminService : IAdminService
                 PhoneNumber = u.PhoneNumber,
                 IsActive = u.Status == AccountStatus.Active,
                 Status = u.Status.ToString(),
-                CanDelete = (u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)))
-                    && !u.UserRoles.Any(ur => ur.Role.Name == "Admin"),
+                CanDelete = u.Status == AccountStatus.PendingActivation || (u.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(u.PasswordHash)),
                 CreatedAt = u.CreatedAt,
                 Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
                 StaffCode = u.StaffProfile != null ? u.StaffProfile.StaffCode : null,
@@ -516,12 +514,6 @@ public class AdminService : IAdminService
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa tài khoản đang đăng nhập." });
         }
 
-        var isAdministrator = user.UserRoles.Any(ur => ur.Role != null && ur.Role.Name.Equals(UserRoles.Admin.ToString(), StringComparison.OrdinalIgnoreCase));
-        if (isAdministrator)
-        {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa tài khoản Quản trị viên hệ thống." });
-        }
-
         var neverActivated = user.Status == AccountStatus.PendingActivation
             || (user.Status == AccountStatus.Deactivated && string.IsNullOrEmpty(user.PasswordHash));
         if (!neverActivated)
@@ -580,12 +572,6 @@ public class AdminService : IAdminService
         if (user == null)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy tài khoản người dùng." });
-        }
-
-        var isAdministrator = user.UserRoles.Any(ur => ur.Role != null && ur.Role.Name.Equals(UserRoles.Admin.ToString(), StringComparison.OrdinalIgnoreCase));
-        if (isAdministrator)
-        {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể gửi liên kết kích hoạt cho tài khoản Quản trị viên." });
         }
 
         if (user.Status != AccountStatus.PendingActivation)
@@ -803,6 +789,25 @@ public class AdminService : IAdminService
                 {
                     lunchDay.IsServing = false;
                 }
+
+                // Hủy các đăng ký bán trú đang hiệu lực vào ngày vừa đóng để số suất thống kê khớp lịch phục vụ
+                var lunchRegRepo = _unitOfWork.Repository<LunchRegistration>();
+                if (lunchRegRepo != null)
+                {
+                    var regsOnDate = await lunchRegRepo.Query()
+                        .Where(r => r.Date.Date == date && r.IsActive)
+                        .ToListAsync(ct);
+                    foreach (var reg in regsOnDate)
+                    {
+                        reg.IsActive = false;
+                        reg.CancellationSource = LunchCancellationSource.Staff;
+                        reg.CancelledAt = DateTime.UtcNow;
+                        reg.CancellationReason = string.IsNullOrWhiteSpace(request.Note)
+                            ? "Đóng bán trú theo lịch nghỉ của trường"
+                            : request.Note.Trim();
+                    }
+                }
+
                 await _unitOfWork.SaveChangesAsync(ct);
             }
             else if (isWeekend)

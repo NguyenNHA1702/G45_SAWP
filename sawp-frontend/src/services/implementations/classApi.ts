@@ -41,8 +41,10 @@ export const classApi = {
     return res.data;
   },
 
-  async deleteSchoolYear(id: number): Promise<ApiResponse<boolean>> {
-    const res = await apiClient.delete<ApiResponse<boolean>>(`/classes/school-years/${id}`);
+  async deleteSchoolYear(id: number, force = false): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/classes/school-years/${id}`, {
+      params: force ? { force: true } : undefined,
+    });
     return res.data;
   },
 

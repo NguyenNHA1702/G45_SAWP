@@ -347,10 +347,15 @@ export default function AttendancePage() {
 
   const handleConfirmRejectRequest = async () => {
     if (!rejectingRequest) return;
+    const trimmed = rejectNote.trim();
+    if (trimmed.length < 5 || trimmed.length > 500) {
+      toast.error('Vui lòng nhập lý do từ chối từ 5 đến 500 ký tự.');
+      return;
+    }
     setRejectSending(true);
     try {
       const res = await attendanceApi.rejectReattendanceRequest(rejectingRequest.id, {
-        note: rejectNote.trim() || undefined,
+        note: trimmed,
       });
       toast.success(res.message || 'Đã từ chối yêu cầu mở khóa điểm danh.');
       setRejectingRequest(null);
@@ -1387,16 +1392,18 @@ export default function AttendancePage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="field">
             <label htmlFor="reject-reattend-note" className="label">
-              Lý do từ chối (tùy chọn)
+              Lý do từ chối <span style={{ color: '#DC2626' }}>*</span>
             </label>
             <textarea
               id="reject-reattend-note"
               className="input"
               rows={3}
+              required
+              minLength={5}
               maxLength={500}
               value={rejectNote}
               onChange={(e) => setRejectNote(e.target.value)}
-              placeholder="Nhập lý do hoặc hướng dẫn gửi lại cho giáo viên..."
+              placeholder="Nhập lý do từ chối (từ 5 đến 500 ký tự) để gửi lại cho giáo viên..."
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

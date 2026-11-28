@@ -12,7 +12,7 @@ public interface IClassService
 
     /// <summary>Marks a class of a Draft school year as Reviewed (UC-14 A2, BR-72).</summary>
     Task<ApiResponse<ClassSummaryDto>> MarkClassReviewedAsync(int classId, int? actorUserId = null, CancellationToken cancellationToken = default);
-    Task<ApiResponse<bool>> DeleteSchoolYearAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> DeleteSchoolYearAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default, bool force = false);
 
     // Classes
     Task<ApiResponse<ClassSummaryDto>> CreateClassAsync(CreateClassDto request, int? actorUserId = null, CancellationToken cancellationToken = default);

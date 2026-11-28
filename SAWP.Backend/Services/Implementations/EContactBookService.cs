@@ -4,7 +4,9 @@ using Core.Constants;
 using Core.DTOs;
 using Core.DTOs.ContactBook;
 using Core.Entities;
+using Core.Enums;
 using Infrastructure.Data;
+using Infrastructure.ExternalServices;
 using Microsoft.EntityFrameworkCore;
 using Services.Interfaces;
 
@@ -12,8 +14,10 @@ namespace Services.Implementations;
 
 public class EContactBookService : IEContactBookService
 {
+    private const int MaxAttachmentsPerPost = 10;
     private readonly ApplicationDbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IFileStorageService? _fileStorageService;
 
     private static readonly HashSet<string> AllowedCategories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,10 +35,49 @@ public class EContactBookService : IEContactBookService
         "Like", "Heart", "Clap", "Smile"
     };
 
-    public EContactBookService(ApplicationDbContext context, IAuditService auditService)
+    public EContactBookService(
+        ApplicationDbContext context,
+        IAuditService auditService,
+        IFileStorageService? fileStorageService = null)
     {
         _context = context;
         _auditService = auditService;
+        _fileStorageService = fileStorageService;
+    }
+
+    private static string? TryExtractInternalContactBookPath(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var trimmed = url.Trim();
+        const string prefix1 = "/api/contact-book/attachment-file?path=";
+        const string prefix2 = "/api/contactbook/attachment-file?path=";
+
+        string? encoded = null;
+        if (trimmed.StartsWith(prefix1, StringComparison.OrdinalIgnoreCase))
+        {
+            encoded = trimmed[prefix1.Length..];
+        }
+        else if (trimmed.StartsWith(prefix2, StringComparison.OrdinalIgnoreCase))
+        {
+            encoded = trimmed[prefix2.Length..];
+        }
+
+        if (encoded == null) return null;
+
+        var qExtra = encoded.IndexOf('&');
+        if (qExtra >= 0) encoded = encoded[..qExtra];
+
+        var decoded = Uri.UnescapeDataString(encoded).Replace('\\', '/').Trim().TrimStart('/');
+        if (string.IsNullOrWhiteSpace(decoded)
+            || decoded.Contains("..", StringComparison.Ordinal)
+            || decoded.Contains(':', StringComparison.Ordinal)
+            || Path.IsPathRooted(decoded)
+            || !decoded.StartsWith("contact-book/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return decoded;
     }
 
     private static bool IsSafeInternalAttachmentUrl(string? url)
@@ -42,9 +85,13 @@ public class EContactBookService : IEContactBookService
         if (string.IsNullOrWhiteSpace(url)) return false;
         var trimmed = url.Trim();
         if (trimmed.Contains("..", StringComparison.Ordinal)) return false;
-        return trimmed.StartsWith("/api/contact-book/attachment-file?path=", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("/api/contactbook/attachment-file?path=", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("/files/", StringComparison.OrdinalIgnoreCase);
+        if (trimmed.StartsWith("/api/contact-book/attachment-file?path=", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("/api/contactbook/attachment-file?path=", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryExtractInternalContactBookPath(trimmed) != null;
+        }
+
+        return trimmed.StartsWith("/files/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSafeExternalOrInternalUrl(string? url)
@@ -65,6 +112,80 @@ public class EContactBookService : IEContactBookService
 
     #region 1. Bảng tin lớp học (UC-61 & UC-62)
 
+    private async Task<bool> HasClassAccessAsync(
+        int currentUserId,
+        int classId,
+        int? homeroomTeacherId,
+        CancellationToken cancellationToken)
+    {
+        var roleNames = await _context.UserRoles
+            .Where(ur => ur.UserId == currentUserId)
+            .Select(ur => ur.Role.Name)
+            .ToListAsync(cancellationToken);
+
+        if (roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard"))
+        {
+            return true;
+        }
+
+        var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == currentUserId, cancellationToken);
+        if (staff != null && homeroomTeacherId == staff.Id)
+        {
+            return true;
+        }
+
+        return await _context.StudentGuardians.AnyAsync(sg =>
+            sg.Guardian.UserId == currentUserId &&
+            _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == classId && ca.IsActive),
+            cancellationToken);
+    }
+
+    public async Task<bool> CanAccessAttachmentAsync(int currentUserId, string cleanRelativePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(cleanRelativePath)) return false;
+
+        var roleNames = await _context.UserRoles
+            .AsNoTracking()
+            .Where(ur => ur.UserId == currentUserId)
+            .Select(ur => ur.Role.Name)
+            .ToListAsync(cancellationToken);
+
+        if (roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard"))
+        {
+            return true;
+        }
+
+        var leafFileName = Path.GetFileName(cleanRelativePath);
+        if (string.IsNullOrWhiteSpace(leafFileName)) return false;
+        var escapedLeaf = Uri.EscapeDataString(leafFileName);
+
+        var candidateAttachments = await _context.PostAttachments
+            .AsNoTracking()
+            .Include(pa => pa.Post).ThenInclude(p => p.Class)
+            .Where(pa => pa.FileUrl.Contains(leafFileName) || pa.FileUrl.Contains(escapedLeaf))
+            .ToListAsync(cancellationToken);
+
+        var matched = candidateAttachments
+            .Where(pa => string.Equals(TryExtractInternalContactBookPath(pa.FileUrl), cleanRelativePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matched.Count == 0)
+        {
+            // Draft upload preview before posting: Teachers may preview; Parents cannot probe unattached files
+            return roleNames.Contains("Teacher");
+        }
+
+        foreach (var att in matched)
+        {
+            if (att.Post?.Class != null && await HasClassAccessAsync(currentUserId, att.Post.ClassId, att.Post.Class.HomeroomTeacherId, cancellationToken))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public async Task<ApiResponse<List<ClassPostDto>>> GetClassPostsAsync(int currentUserId, int classId, CancellationToken cancellationToken = default)
     {
         var targetClass = await _context.Classes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == classId, cancellationToken);
@@ -74,25 +195,9 @@ public class EContactBookService : IEContactBookService
         }
 
         // BR-56 & Data scope: Check if current user has access to this class
-        var roleNames = await _context.UserRoles
-            .Where(ur => ur.UserId == currentUserId)
-            .Select(ur => ur.Role.Name)
-            .ToListAsync(cancellationToken);
-
-        bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
-        if (!isPrivileged)
+        if (!await HasClassAccessAsync(currentUserId, classId, targetClass.HomeroomTeacherId, cancellationToken))
         {
-            var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == currentUserId, cancellationToken);
-            bool isHomeroom = staff != null && targetClass.HomeroomTeacherId == staff.Id;
-            bool isLinkedParent = await _context.StudentGuardians.AnyAsync(sg =>
-                sg.Guardian.UserId == currentUserId &&
-                _context.ClassAssignments.Any(ca => ca.StudentId == sg.StudentId && ca.ClassId == classId && ca.IsActive),
-                cancellationToken);
-
-            if (!isHomeroom && !isLinkedParent)
-            {
-                return ApiResponse<List<ClassPostDto>>.Fail(SystemMessages.MSG10);
-            }
+            return ApiResponse<List<ClassPostDto>>.Fail(SystemMessages.MSG10);
         }
 
         var linkedGuardians = await _context.StudentGuardians
@@ -227,19 +332,43 @@ public class EContactBookService : IEContactBookService
 
         var allowedExts = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
 
+        var totalAttachmentCount = (request.Attachments?.Count ?? 0)
+            + (request.AttachmentUrls?.Count(u => !string.IsNullOrWhiteSpace(u)) ?? 0);
+        if (totalAttachmentCount > MaxAttachmentsPerPost)
+        {
+            return ApiResponse<ClassPostDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Mỗi bài viết chỉ được đính kèm tối đa {MaxAttachmentsPerPost} tệp hoặc liên kết." });
+        }
+
         if (request.Attachments != null && request.Attachments.Count > 0)
         {
             foreach (var att in request.Attachments)
             {
-                if (!IsSafeInternalAttachmentUrl(att.FileUrl))
+                var trimmedUrl = att.FileUrl?.Trim() ?? string.Empty;
+                if (trimmedUrl.Length > UploadValidationHelper.MaxAttachmentUrlLength || !IsSafeInternalAttachmentUrl(trimmedUrl))
                 {
                     return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Đường dẫn tệp đính kèm không hợp lệ." });
                 }
-                if (att.FileSizeBytes > 5 * 1024 * 1024)
+
+                var internalPath = TryExtractInternalContactBookPath(trimmedUrl);
+                if (internalPath != null && _fileStorageService != null && !_fileStorageService.FileExists(internalPath))
                 {
-                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
+                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tệp đính kèm không tồn tại trên hệ thống. Vui lòng tải tệp lên trước khi đăng bài." });
                 }
-                var ext = System.IO.Path.GetExtension(att.FileName).ToLowerInvariant();
+
+                if (!UploadValidationHelper.IsSafeFileNameLength(att.FileName))
+                {
+                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { $"Tên tệp đính kèm không hợp lệ hoặc vượt quá {UploadValidationHelper.MaxFileNameLength} ký tự." });
+                }
+
+                if (att.FileSizeBytes <= 0 || att.FileSizeBytes > 5 * 1024 * 1024)
+                {
+                    return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41, new List<string> { "Kích thước tệp đính kèm phải lớn hơn 0 và không vượt quá 5MB." });
+                }
+
+                var cleanFileName = UploadValidationHelper.SanitizeFileName(att.FileName);
+                var ext = System.IO.Path.GetExtension(cleanFileName).ToLowerInvariant();
                 if (!allowedExts.Contains(ext))
                 {
                     return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
@@ -247,8 +376,8 @@ public class EContactBookService : IEContactBookService
 
                 post.Attachments.Add(new PostAttachment
                 {
-                    FileUrl = att.FileUrl.Trim(),
-                    FileName = att.FileName,
+                    FileUrl = trimmedUrl,
+                    FileName = cleanFileName,
                     FileType = att.FileType ?? (ext is ".jpg" or ".jpeg" or ".png" ? "Image" : "Document"),
                     FileSizeBytes = att.FileSizeBytes,
                     CreatedAt = DateTime.UtcNow
@@ -263,10 +392,17 @@ public class EContactBookService : IEContactBookService
                 if (!string.IsNullOrWhiteSpace(rawUrl))
                 {
                     var url = rawUrl.Trim();
-                    if (!IsSafeExternalOrInternalUrl(url))
+                    if (url.Length > UploadValidationHelper.MaxAttachmentUrlLength || !IsSafeExternalOrInternalUrl(url))
                     {
                         return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Liên kết đính kèm không hợp lệ hoặc không an toàn." });
                     }
+
+                    var internalPath = TryExtractInternalContactBookPath(url);
+                    if (internalPath != null && _fileStorageService != null && !_fileStorageService.FileExists(internalPath))
+                    {
+                        return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG01, new List<string> { "Tệp đính kèm không tồn tại trên hệ thống. Vui lòng tải tệp lên trước khi đăng bài." });
+                    }
+
                     var isYouTube = url.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) ||
                                     url.Contains("youtu.be", StringComparison.OrdinalIgnoreCase);
 
@@ -280,7 +416,7 @@ public class EContactBookService : IEContactBookService
                     }
                     else
                     {
-                        var ext = System.IO.Path.GetExtension(url).ToLowerInvariant();
+                        var ext = System.IO.Path.GetExtension(internalPath ?? url).ToLowerInvariant();
                         if (!string.IsNullOrEmpty(ext) && ext.Length <= 5 && !allowedExts.Contains(ext))
                         {
                             return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG41);
@@ -297,8 +433,13 @@ public class EContactBookService : IEContactBookService
                         }
                         catch
                         {
-                            var fn = System.IO.Path.GetFileName(url);
+                            var fn = System.IO.Path.GetFileName(internalPath ?? url);
                             fileName = !string.IsNullOrWhiteSpace(fn) ? fn : "Liên kết đính kèm";
+                        }
+
+                        if (fileName.Length > UploadValidationHelper.MaxFileNameLength)
+                        {
+                            fileName = fileName[..UploadValidationHelper.MaxFileNameLength];
                         }
                     }
 
@@ -362,7 +503,8 @@ public class EContactBookService : IEContactBookService
                 Id = a.Id,
                 FileUrl = a.FileUrl,
                 FileName = a.FileName,
-                FileType = a.FileType
+                FileType = a.FileType,
+                FileSizeBytes = a.FileSizeBytes
             }).ToList()
         };
 
@@ -577,7 +719,7 @@ public class EContactBookService : IEContactBookService
                 Title = Truncate($"Bình luận mới từ {roleLabel}", 150),
                 Content = Truncate($"{user?.FullName ?? "Phụ huynh"} vừa bình luận bài \"{titlePreview}\": \"{commentPreview}\"", 450),
                 Type = "PostComment",
-                ReferenceKey = $"POST:{post.Id}",
+                ReferenceKey = $"POST:{post.Id}:CMT:{Guid.NewGuid():N}",
                 LinkUrl = "/teacher/contact-book",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
@@ -1028,7 +1170,7 @@ public class EContactBookService : IEContactBookService
             Content = $"Phụ huynh em {eval.Student.FullName} đã xác nhận phiếu tuần {eval.WeekNumber}." +
                       (!string.IsNullOrWhiteSpace(eval.ParentFeedback) ? $" Phản hồi: \"{eval.ParentFeedback}\"" : ""),
             Type = "EvaluationAcknowledged",
-            ReferenceKey = $"EVAL:{eval.Id}",
+            ReferenceKey = $"EVAL:{eval.Id}:ACK:{Guid.NewGuid():N}",
             LinkUrl = "/teacher/contact-book",
             CreatedAt = DateTime.UtcNow,
             IsRead = false

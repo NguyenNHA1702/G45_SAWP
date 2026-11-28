@@ -427,10 +427,21 @@ export default function ParentLunchPage() {
               <input
                 id="parent-lunch-month"
                 type="month"
+                min={`${new Date().getFullYear() - 1}-01`}
+                max={`${new Date().getFullYear() + 1}-12`}
                 value={month}
                 onChange={(e) => {
-                  setMonth(e.target.value);
-                  setParams({ studentId: String(studentId), month: e.target.value });
+                  const next = e.target.value;
+                  if (!next) return;
+                  const [yrStr] = next.split('-');
+                  const yr = Number(yrStr);
+                  const curYr = new Date().getFullYear();
+                  if (!Number.isFinite(yr) || yr < curYr - 1 || yr > curYr + 1) {
+                    toast.error(`Chỉ có thể xem lịch bán trú trong khoảng năm ${curYr - 1} - ${curYr + 1}.`);
+                    return;
+                  }
+                  setMonth(next);
+                  setParams({ studentId: String(studentId), month: next });
                 }}
                 style={{
                   border: 'none',

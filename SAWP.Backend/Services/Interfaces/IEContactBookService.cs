@@ -7,6 +7,7 @@ public interface IEContactBookService
 {
     // --- Bảng tin lớp học (UC-61, UC-62) ---
     Task<ApiResponse<List<ClassPostDto>>> GetClassPostsAsync(int currentUserId, int classId, CancellationToken cancellationToken = default);
+    Task<bool> CanAccessAttachmentAsync(int currentUserId, string cleanRelativePath, CancellationToken cancellationToken = default);
     Task<ApiResponse<ClassPostDto>> CreateClassPostAsync(int teacherUserId, CreateClassPostDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<ClassPostDto>> UpdateClassPostAsync(int teacherUserId, int postId, UpdateClassPostDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> TogglePinPostAsync(int teacherUserId, int postId, CancellationToken cancellationToken = default);

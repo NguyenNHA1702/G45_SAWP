@@ -59,8 +59,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.xlsx')) {
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
       toast.error('Vui lòng chọn tệp Excel định dạng .xlsx!');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Dung lượng tệp Excel không được vượt quá 5MB!');
       return;
     }
 

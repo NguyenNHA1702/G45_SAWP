@@ -938,7 +938,9 @@ public class AttendanceService : IAttendanceService
         // UC-23 E2: only a record of status Unexcused absence takes a contact note
         if (rec.Status != AttendanceStatus.UnexcusedAbsence)
         {
-            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG09);
+            return ApiResponse<AbsenceContactNoteDto>.Fail(
+                SystemMessages.MSG09,
+                new List<string> { "Chỉ có thể thêm ghi chú liên hệ khi bản ghi điểm danh đang ở trạng thái Vắng không phép." });
         }
 
         var errors = new List<string>();
@@ -950,13 +952,14 @@ public class AttendanceService : IAttendanceService
         else
         {
             contactedAtUtc = ToUtc(dto.ContactedAt.Value);
-            // A small allowance for clock differences between the browser and the server
             if (contactedAtUtc.Value > DateTime.UtcNow.AddMinutes(5))
             {
                 errors.Add("Thời điểm liên hệ không được ở trong tương lai.");
             }
-            // No lower bound: the family may have called before the day of the absence, and the note can be
-            // recorded later (no deadline)
+            else if (_clock.ToSchoolTime(contactedAtUtc.Value).Date < rec.Date.Date.AddDays(-7))
+            {
+                errors.Add("Thời điểm liên hệ không được trước ngày vắng học quá 7 ngày.");
+            }
         }
         if (dto.Channel == null || !Enum.IsDefined(typeof(ContactChannel), dto.Channel.Value))
         {
@@ -2052,10 +2055,10 @@ public class AttendanceService : IAttendanceService
             return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể từ chối yêu cầu đang chờ xử lý." });
         }
 
-        var trimmedNote = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
-        if (trimmedNote != null && trimmedNote.Length > 500)
+        var trimmedNote = string.IsNullOrWhiteSpace(dto.Note) ? string.Empty : dto.Note.Trim();
+        if (trimmedNote.Length < 5 || trimmedNote.Length > 500)
         {
-            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Lý do từ chối tối đa 500 ký tự." });
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối từ 5 đến 500 ký tự." });
         }
 
         var utcNow = DateTime.UtcNow;

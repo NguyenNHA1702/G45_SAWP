@@ -59,6 +59,11 @@ export const CreateClassModal: React.FC<CreateClassModalProps> = ({
       return;
     }
 
+    if (roomNumber.trim().length > 50) {
+      toast.error('Số phòng học không được vượt quá 50 ký tự!');
+      return;
+    }
+
     if (isNaN(capacity) || capacity < 25 || capacity > 40) {
       toast.error('Sĩ số mỗi lớp phải từ 25 đến 40 học sinh (Quy chuẩn thông thường: 30 - 35 em/lớp).');
       return;

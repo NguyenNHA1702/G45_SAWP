@@ -173,7 +173,7 @@ export default function ClassesPage() {
     if (!selectedYearId || !activeSchoolYear) return;
     setDeletingYear(true);
     try {
-      const res = await classApi.deleteSchoolYear(selectedYearId);
+      const res = await classApi.deleteSchoolYear(selectedYearId, true);
       if (res.success) {
         toast.success(`Đã xóa năm học "${activeSchoolYear.yearName}" thành công!`);
         setConfirmDeleteYear(false);
@@ -726,6 +726,7 @@ export default function ClassesPage() {
       <CreateSchoolYearModal
         open={createYearModalOpen}
         onClose={() => setCreateYearModalOpen(false)}
+        existingYears={schoolYears}
         onYearCreated={(newYear) => {
           loadSchoolYears();
           setSelectedYearId(newYear.id);
@@ -820,7 +821,16 @@ export default function ClassesPage() {
         onCancel={() => !deletingYear && setConfirmDeleteYear(false)}
       >
         <p style={{ margin: 0 }}>
-          Bạn có chắc chắn muốn xóa năm học <strong>{activeSchoolYear?.yearName}</strong> và toàn bộ lớp học nháp bên trong? Thao tác này không thể hoàn tác.
+          {classes.length > 0 ? (
+            <>
+              <strong style={{ color: '#DC2626' }}>Cảnh báo: Năm học {activeSchoolYear?.yearName} hiện đang có {classes.length} lớp học!</strong>{' '}
+              Xóa năm học sẽ xóa toàn bộ {classes.length} lớp học nháp và dữ liệu xếp lớp nháp bên trong. Thao tác này không thể hoàn tác.
+            </>
+          ) : (
+            <>
+              Bạn có chắc chắn muốn xóa năm học <strong>{activeSchoolYear?.yearName}</strong>? Thao tác này không thể hoàn tác.
+            </>
+          )}
         </p>
       </ConfirmDialog>
     </div>

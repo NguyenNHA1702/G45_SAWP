@@ -576,7 +576,7 @@ public class LunchService : ILunchService
         if (!string.IsNullOrWhiteSpace(month))
         {
             var parts = month.Split('-');
-            if (parts.Length == 2 && int.TryParse(parts[0], out var py) && int.TryParse(parts[1], out var pm) && pm >= 1 && pm <= 12)
+            if (parts.Length == 2 && int.TryParse(parts[0], out var py) && int.TryParse(parts[1], out var pm) && pm >= 1 && pm <= 12 && py >= 2000 && py <= 2100)
             {
                 year = py;
                 m = pm;
@@ -656,7 +656,7 @@ public class LunchService : ILunchService
                 ServiceRemarks = resolved.Remarks,
                 Menus = menusDto,
                 RegistrationId = reg?.Id,
-                IsRegistered = reg != null && reg.IsActive,
+                IsRegistered = resolved.IsServing && reg != null && reg.IsActive,
                 MealType = reg?.MealType,
                 StudentRemarks = reg?.Remarks,
                 AllergyConflicts = conflicts,
@@ -785,6 +785,26 @@ public class LunchService : ILunchService
         }
 
         var targetDates = request.Dates.Select(d => d.Date).Distinct().OrderBy(d => d).ToList();
+
+        // N-05: Giới hạn ngày đăng ký bán trú theo năm học hiện hành (hoặc tối đa 180 ngày nếu chưa cấu hình năm học)
+        var schoolYearRepo = _unitOfWork.Repository<SchoolYear>();
+        var activeYear = schoolYearRepo != null
+            ? await schoolYearRepo.Query()
+                .Where(sy => sy.IsActive)
+                .OrderByDescending(sy => sy.Id)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+        var maxAllowedDate = (activeYear != null && activeYear.EndDate.Date >= _clock.Today)
+            ? activeYear.EndDate.Date
+            : _clock.Today.AddDays(180);
+        var tooFarDate = targetDates.FirstOrDefault(d => d > maxAllowedDate);
+        if (tooFarDate != default)
+        {
+            var errMsg = (activeYear != null && activeYear.EndDate.Date >= _clock.Today)
+                ? $"Không thể đăng ký bán trú cho ngày {tooFarDate:dd/MM/yyyy} vì vượt quá ngày kết thúc năm học hiện tại ({activeYear.EndDate:dd/MM/yyyy})."
+                : $"Không thể đăng ký bán trú quá 180 ngày kể từ hôm nay ({maxAllowedDate:dd/MM/yyyy}).";
+            return ApiResponse<BatchLunchRegistrationResultDto>.Fail(SystemMessages.MSG01, new List<string> { errMsg });
+        }
 
         // D-A: Không cho phép đăng ký lại suất ăn trên ngày đang có đơn xin nghỉ đã được phê duyệt (buổi Sáng / Cả ngày, không giữ suất ăn)
         var leaveRepo = _unitOfWork.Repository<LeaveRequest>();

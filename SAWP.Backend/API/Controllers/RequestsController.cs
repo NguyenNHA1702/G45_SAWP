@@ -206,60 +206,29 @@ public class RequestsController : ControllerBase
             return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Vui lòng chọn tệp tin cần tải lên." }));
         }
 
-        if (file.Length > 10 * 1024 * 1024)
-        {
-            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Kích thước tệp không được vượt quá 10MB (BR-50)." }));
-        }
-
         var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!allowedExtensions.Contains(ext))
-        {
-            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Định dạng tệp không được hỗ trợ theo quy định BR-50. Chỉ chấp nhận tệp hình ảnh (.jpg, .jpeg, .png) hoặc PDF (.pdf)." }));
-        }
-
-        // Magic bytes inspection
-        using (var headerStream = file.OpenReadStream())
-        {
-            var headerBytes = new byte[8];
-            var bytesRead = await headerStream.ReadAsync(headerBytes, 0, headerBytes.Length, cancellationToken);
-            if (bytesRead < 4)
-            {
-                return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Tệp rỗng hoặc không hợp lệ." }));
-            }
-
-            bool isValidHeader = false;
-            if (ext == ".pdf")
-            {
-                // %PDF-
-                isValidHeader = headerBytes[0] == 0x25 && headerBytes[1] == 0x50 && headerBytes[2] == 0x44 && headerBytes[3] == 0x46;
-            }
-            else if (ext == ".png")
-            {
-                // \x89PNG
-                isValidHeader = headerBytes[0] == 0x89 && headerBytes[1] == 0x50 && headerBytes[2] == 0x4E && headerBytes[3] == 0x47;
-            }
-            else if (ext == ".jpg" || ext == ".jpeg")
-            {
-                // 0xFF 0xD8 0xFF
-                isValidHeader = headerBytes[0] == 0xFF && headerBytes[1] == 0xD8 && headerBytes[2] == 0xFF;
-            }
-
-            if (!isValidHeader)
-            {
-                return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { "Nội dung tệp không khớp với phần mở rộng định dạng hoặc tệp đã bị hư hỏng." }));
-            }
-        }
-
         using var stream = file.OpenReadStream();
-        var relativePath = await fileStorageService.SaveFileAsync(stream, file.FileName, "request_attachments", cancellationToken);
+        var validationError = await Core.Common.UploadValidationHelper.ValidateFileStreamAsync(
+            stream,
+            file.FileName,
+            allowedExtensions,
+            10 * 1024 * 1024,
+            file.Length,
+            cancellationToken);
+        if (validationError != null)
+        {
+            return BadRequest(ApiResponse<AttachmentUploadResultDto>.Fail(SystemMessages.MSG41, new List<string> { validationError }));
+        }
+
+        var sanitizedFileName = Core.Common.UploadValidationHelper.SanitizeFileName(file.FileName);
+        var relativePath = await fileStorageService.SaveFileAsync(stream, sanitizedFileName, "request_attachments", cancellationToken);
         var normalizedPath = relativePath.Replace('\\', '/');
         var fileUrl = $"/api/requests/attachment-file?path={Uri.EscapeDataString(normalizedPath)}";
 
         return Ok(ApiResponse<AttachmentUploadResultDto>.Ok(new AttachmentUploadResultDto
         {
             Url = fileUrl,
-            FileName = file.FileName,
+            FileName = sanitizedFileName,
             FileSize = file.Length,
             SavedPath = normalizedPath
         }, "Tải lên tệp đính kèm thành công."));

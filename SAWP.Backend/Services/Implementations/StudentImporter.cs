@@ -40,6 +40,14 @@ public class StudentImporter : IStudentImporter
                 return ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG49, new List<string> { "Tệp Excel không có dòng dữ liệu hợp lệ nào." });
             }
 
+            const int MaxRowsPerSheet = 5000;
+            if (range.RowCount() - 1 > MaxRowsPerSheet)
+            {
+                return ApiResponse<List<ImportStudentRowDto>>.Fail(
+                    SystemMessages.MSG01,
+                    new List<string> { $"Tệp Excel vượt quá giới hạn tối đa {MaxRowsPerSheet} dòng mỗi lần nhập." });
+            }
+
             var existingCodesInDb = (await _unitOfWork.Repository<Student>().GetAllAsync(cancellationToken))
                 .Select(s => s.StudentCode.ToUpperInvariant())
                 .ToHashSet();
@@ -280,6 +288,11 @@ public class StudentImporter : IStudentImporter
         if (request.ValidRows == null || !request.ValidRows.Any())
         {
             return ApiResponse<ImportStudentsResultDto>.Fail(SystemMessages.MSG49, new List<string> { "Không có bản ghi hợp lệ nào để nhập." });
+        }
+
+        if (request.ValidRows.Count > 5000)
+        {
+            return ApiResponse<ImportStudentsResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Số lượng bản ghi nhập tối đa mỗi lần là 5.000 học sinh." });
         }
 
         var result = new ImportStudentsResultDto

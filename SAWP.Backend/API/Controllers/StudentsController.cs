@@ -124,8 +124,11 @@ public class StudentsController : BaseApiController
 
     #region Excel Bulk Import (UC-09)
 
+    private const long MaxImportFileBytes = 5 * 1024 * 1024;
+
     [HttpPost("import/parse")]
     [Authorize(Roles = "OfficeStaff,Admin")]
+    [RequestSizeLimit(MaxImportFileBytes)]
     [ProducesResponseType(typeof(ApiResponse<List<ImportStudentRowDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<List<ImportStudentRowDto>>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ParseExcel(IFormFile file, CancellationToken cancellationToken)
@@ -135,6 +138,11 @@ public class StudentsController : BaseApiController
             return BadRequest(ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG49, new List<string> { "Tệp Excel không có dòng dữ liệu hợp lệ nào." }));
         }
 
+        if (file.Length > MaxImportFileBytes)
+        {
+            return BadRequest(ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG41, new List<string> { "Dung lượng tệp Excel không được vượt quá 5MB." }));
+        }
+
         var extension = Path.GetExtension(file.FileName);
         if (!string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase))
         {
@@ -142,12 +150,25 @@ public class StudentsController : BaseApiController
         }
 
         using var stream = file.OpenReadStream();
+        var fileError = await Core.Common.UploadValidationHelper.ValidateFileStreamAsync(
+            stream,
+            file.FileName,
+            new[] { ".xlsx" },
+            MaxImportFileBytes,
+            file.Length,
+            cancellationToken);
+        if (fileError != null)
+        {
+            return BadRequest(ApiResponse<List<ImportStudentRowDto>>.Fail(SystemMessages.MSG41, new List<string> { fileError }));
+        }
+
         var result = await _studentImporter.ParseExcelAsync(stream, cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [HttpPost("import/confirm")]
     [Authorize(Roles = "OfficeStaff,Admin")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
     [ProducesResponseType(typeof(ApiResponse<ImportStudentsResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ImportStudentsResultDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ConfirmImport([FromBody] ImportStudentsConfirmDto request, CancellationToken cancellationToken)

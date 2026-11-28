@@ -9,12 +9,14 @@ interface CreateSchoolYearModalProps {
   open: boolean;
   onClose: () => void;
   onYearCreated: (newYear: SchoolYearDto) => void;
+  existingYears?: SchoolYearDto[];
 }
 
 export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
   open,
   onClose,
   onYearCreated,
+  existingYears = [],
 }) => {
   const currentYear = new Date().getFullYear();
   const nextYear = currentYear + 1;
@@ -55,6 +57,13 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
 
     const expectedStartYear = parseInt(yearMatch[1], 10);
     const expectedEndYear = parseInt(yearMatch[2], 10);
+    const minAllowedYear = currentYear - 5;
+    const maxAllowedYear = currentYear + 5;
+
+    if (expectedStartYear < minAllowedYear || expectedStartYear > maxAllowedYear) {
+      toast.error(`Năm bắt đầu năm học phải nằm trong khoảng từ ${minAllowedYear} đến ${maxAllowedYear}.`);
+      return;
+    }
 
     if (expectedEndYear !== expectedStartYear + 1) {
       toast.error(`Năm kết thúc (${expectedEndYear}) phải bằng năm bắt đầu (${expectedStartYear}) + 1. Ví dụ: ${expectedStartYear}-${expectedStartYear + 1}`);
@@ -68,6 +77,16 @@ export const CreateSchoolYearModal: React.FC<CreateSchoolYearModalProps> = ({
       toast.error(
         `Năm của ngày bắt đầu (${startYear}) và ngày kết thúc (${endYear}) phải trùng khớp với tên năm học (${expectedStartYear}-${expectedEndYear})!`
       );
+      return;
+    }
+
+    const overlap = existingYears.find((y) => {
+      const yStart = new Date(y.startDate).toISOString().slice(0, 10);
+      const yEnd = new Date(y.endDate).toISOString().slice(0, 10);
+      return yStart <= endDate && startDate <= yEnd;
+    });
+    if (overlap) {
+      toast.error(`Khoảng thời gian bị chồng lấn với năm học '${overlap.yearName}'.`);
       return;
     }
 

@@ -1923,22 +1923,29 @@ public class LeaveRequestService : ILeaveRequestService
             return ApiResponse<AttachmentUploadResultDto>.Fail("Kích thước tệp không được vượt quá 10MB.");
         }
 
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!AllowedAttachmentExtensions.Contains(ext))
+        var validationError = await UploadValidationHelper.ValidateFileStreamAsync(
+            content,
+            fileName,
+            AllowedAttachmentExtensions,
+            MaxAttachmentBytes,
+            length,
+            cancellationToken);
+        if (validationError != null)
         {
             return ApiResponse<AttachmentUploadResultDto>.Fail(
                 SystemMessages.MSG41,
-                new List<string> { "Định dạng tệp không được hỗ trợ theo quy định (BR-50). Vui lòng chọn tệp PDF, JPG hoặc PNG." });
+                new List<string> { validationError });
         }
 
-        var relativePath = await _fileStorage.SaveFileAsync(content, fileName, "attachments", cancellationToken);
+        var sanitizedFileName = UploadValidationHelper.SanitizeFileName(fileName);
+        var relativePath = await _fileStorage.SaveFileAsync(content, sanitizedFileName, "attachments", cancellationToken);
         var normalizedPath = relativePath.Replace('\\', '/');
         var fileUrl = $"{AttachmentUrlPrefix}{Uri.EscapeDataString(normalizedPath)}";
 
         return ApiResponse<AttachmentUploadResultDto>.Ok(new AttachmentUploadResultDto
         {
             Url = fileUrl,
-            FileName = fileName,
+            FileName = sanitizedFileName,
             FileSize = length,
             SavedPath = normalizedPath
         }, "Tải lên tệp đính kèm thành công.");

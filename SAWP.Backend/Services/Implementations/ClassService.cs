@@ -56,6 +56,16 @@ public class ClassService : IClassService
 
         var expectedStartYear = int.Parse(yearMatch.Groups[1].Value);
         var expectedEndYear = int.Parse(yearMatch.Groups[2].Value);
+        var currentYear = DateTime.UtcNow.Year;
+        var minAllowedYear = currentYear - 5;
+        var maxAllowedYear = currentYear + 5;
+        if (expectedStartYear < minAllowedYear || expectedStartYear > maxAllowedYear)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Năm bắt đầu năm học phải nằm trong khoảng từ {minAllowedYear} đến {maxAllowedYear}." });
+        }
+
         if (expectedEndYear != expectedStartYear + 1)
         {
             return ApiResponse<SchoolYearDto>.Fail(
@@ -74,6 +84,18 @@ public class ClassService : IClassService
         if (existingYears != null && existingYears.Any(y => y.YearName.Trim().Equals(request.YearName.Trim(), StringComparison.OrdinalIgnoreCase)))
         {
             return ApiResponse<SchoolYearDto>.Fail(SystemMessages.MSG01, new List<string> { $"Năm học '{request.YearName.Trim()}' đã tồn tại trong hệ thống." });
+        }
+
+        var overlappingYear = existingYears?.FirstOrDefault(y =>
+            y.StartDate != default &&
+            y.EndDate != default &&
+            y.StartDate.Date <= request.EndDate.Date &&
+            request.StartDate.Date <= y.EndDate.Date);
+        if (overlappingYear != null)
+        {
+            return ApiResponse<SchoolYearDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { $"Khoảng thời gian năm học bị chồng lấn với năm học '{overlappingYear.YearName}' ({overlappingYear.StartDate:dd/MM/yyyy} - {overlappingYear.EndDate:dd/MM/yyyy})." });
         }
 
         // UC-13 step 2, BR-72: a new school year is saved in Draft state; it does not affect the active year (BR-14)
@@ -255,7 +277,7 @@ public class ClassService : IClassService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG08);
     }
 
-    public async Task<ApiResponse<bool>> DeleteSchoolYearAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<bool>> DeleteSchoolYearAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default, bool force = false)
     {
         var schoolYear = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(schoolYearId, cancellationToken);
         if (schoolYear == null)
@@ -288,6 +310,13 @@ public class ClassService : IClassService
         if (hasAttendance)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Không thể xóa năm học vì đã có dữ liệu điểm danh phát sinh." });
+        }
+
+        if (classesInYear.Count > 0 && !force)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG09,
+                new List<string> { $"Năm học nháp '{schoolYear.YearName}' đang có {classesInYear.Count} lớp học bên trong. Vui lòng xóa các lớp hoặc xác nhận xóa kèm toàn bộ lớp nháp." });
         }
 
         // Safe to delete: remove assignments, schedules, classes, and then the school year
@@ -348,6 +377,12 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên phòng học không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
+        var roomNumber = string.IsNullOrWhiteSpace(request.RoomNumber) ? null : request.RoomNumber.Trim();
+        if (roomNumber != null && roomNumber.Length > 50)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Số phòng học không được vượt quá 50 ký tự." });
+        }
+
         var normalizedClassName = request.ClassName.Trim().ToUpperInvariant();
 
         if (request.Capacity < 25 || request.Capacity > 40)
@@ -372,7 +407,7 @@ public class ClassService : IClassService
             SchoolYearId = request.SchoolYearId,
             ClassName = normalizedClassName,
             Grade = request.Grade,
-            RoomNumber = request.RoomNumber?.Trim(),
+            RoomNumber = roomNumber,
             Capacity = request.Capacity,
             Status = "Active",
         };
@@ -496,9 +531,14 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Không tìm thấy lớp học." });
         }
 
-        if (request.Grade < 1 || request.Grade > 5 || request.Capacity <= 0)
+        if (request.Grade < 1 || request.Grade > 5)
         {
-            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5 và sĩ số tối đa phải lớn hơn 0." });
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Khối học phải từ 1 đến 5." });
+        }
+
+        if (request.Capacity < 25 || request.Capacity > 40)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Sĩ số tối đa mỗi lớp phải từ 25 đến 40 học sinh (BR-15)." });
         }
 
         var classNameError = StudentValidationHelper.ValidateClassNameForGrade(request.ClassName, request.Grade);
@@ -512,7 +552,34 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Tên phòng học không được chứa thẻ HTML hoặc ký tự '<', '>'." });
         }
 
+        var roomNumber = string.IsNullOrWhiteSpace(request.RoomNumber) ? null : request.RoomNumber.Trim();
+        if (roomNumber != null && roomNumber.Length > 50)
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Số phòng học không được vượt quá 50 ký tự." });
+        }
+
+        var rawStatus = request.Status?.Trim();
+        string normalizedStatus;
+        if (string.Equals(rawStatus, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedStatus = "Active";
+        }
+        else if (string.Equals(rawStatus, "Inactive", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedStatus = "Inactive";
+        }
+        else
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Trạng thái lớp học chỉ chấp nhận 'Active' hoặc 'Inactive'." });
+        }
+
         var normalizedName = request.ClassName.Trim().ToUpperInvariant();
+        var existingClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(c.SchoolYearId, null, null, cancellationToken);
+        if (existingClasses != null && existingClasses.Any(ec => ec.Id != classId && ec.ClassName.Equals(normalizedName, StringComparison.OrdinalIgnoreCase)))
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { $"Lớp {normalizedName} đã tồn tại trong năm học này." });
+        }
+
         var enrolledCount = c.ClassAssignments?.Count(IsMember) ?? 0;
         if (request.Capacity < enrolledCount)
         {
@@ -521,14 +588,14 @@ public class ClassService : IClassService
 
         var oldValues = new { c.ClassName, c.Grade, c.RoomNumber, c.Capacity, c.Status };
 
-        var changed = c.ClassName != normalizedName || c.Grade != request.Grade || c.RoomNumber != request.RoomNumber?.Trim()
-                      || c.Capacity != request.Capacity || c.Status != request.Status;
+        var changed = c.ClassName != normalizedName || c.Grade != request.Grade || c.RoomNumber != roomNumber
+                      || c.Capacity != request.Capacity || c.Status != normalizedStatus;
 
         c.ClassName = normalizedName;
         c.Grade = request.Grade;
-        c.RoomNumber = request.RoomNumber?.Trim();
+        c.RoomNumber = roomNumber;
         c.Capacity = request.Capacity;
-        c.Status = request.Status;
+        c.Status = normalizedStatus;
         if (changed)
         {
             ResetReview(c);
@@ -1268,6 +1335,7 @@ public class ClassService : IClassService
     private async Task<bool> AnyRecordAsync<T>(System.Linq.Expressions.Expression<Func<T, bool>> predicate, CancellationToken cancellationToken) where T : class
     {
         var repo = _unitOfWork.Repository<T>();
+        if (repo == null) return false;
         var query = repo.Query();
         if (query != null)
         {

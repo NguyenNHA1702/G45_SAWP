@@ -86,11 +86,12 @@ export default function AdminRequestsManagementPage() {
     const isFuture = req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999);
     const effDateStr = req.classTransfer?.effectiveDate ? new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN') : '';
 
-    let confirmMsg = `Xác nhận thực thi chuyển lớp cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName}? Hệ thống sẽ tự động gán lớp mới và hoàn tất hồ sơ.`;
     if (isFuture) {
-      confirmMsg = `⚠️ LƯU Ý NGÀY HIỆU LỰC:\nĐơn này có ngày hiệu lực mong muốn là ngày ${effDateStr} (Chưa đến hạn).\n\nBạn có chắc chắn muốn thực thi điều chuyển SỚM ngay hôm nay không?`;
+      toast.error(`Chưa đến ngày hiệu lực (${effDateStr}). Chỉ có thể áp dụng chuyển lớp từ ngày hiệu lực trở đi.`);
+      return;
     }
 
+    const confirmMsg = `Xác nhận thực thi chuyển lớp cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName}? Hệ thống sẽ tự động gán lớp mới và hoàn tất hồ sơ.`;
     if (!window.confirm(confirmMsg)) {
       return;
     }

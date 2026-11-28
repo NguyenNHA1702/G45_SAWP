@@ -178,11 +178,22 @@ export default function TeacherContactBookPage() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+    if (postAttachments.length + files.length > 10) {
+      toast.error('Mỗi bài viết chỉ được đính kèm tối đa 10 tệp.');
+      e.target.value = '';
+      return;
+    }
+
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
     const newAttachments: PostAttachmentInputDto[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      if (file.name.length > 150) {
+        toast.error('Tên tệp không được vượt quá 150 ký tự.');
+        e.target.value = '';
+        return;
+      }
       const ext = '.' + file.name.split('.').pop()?.toLowerCase();
 
       // BR-50: Giới hạn kích thước tệp đính kèm <= 5MB

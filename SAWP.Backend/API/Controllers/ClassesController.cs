@@ -69,13 +69,13 @@ public class ClassesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteSchoolYear(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> DeleteSchoolYear(int id, [FromQuery] bool force = false, CancellationToken cancellationToken = default)
     {
-        var result = await _classService.DeleteSchoolYearAsync(id, User.GetUserId(), cancellationToken);
+        var result = await _classService.DeleteSchoolYearAsync(id, User.GetUserId(), cancellationToken, force);
         if (result.Success) return Ok(result);
         if (result.Errors != null && result.Errors.Any(e => e.Contains("không tồn tại")))
             return NotFound(result);
-        return BadRequest(result);
+        return result.Code == SystemMessages.MSG09.Code ? Conflict(result) : BadRequest(result);
     }
 
     #endregion

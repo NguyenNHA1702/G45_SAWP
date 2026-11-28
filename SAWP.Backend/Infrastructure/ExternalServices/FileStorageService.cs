@@ -1,3 +1,5 @@
+using Core.Common;
+
 namespace Infrastructure.ExternalServices;
 
 public class FileStorageService : IFileStorageService
@@ -15,19 +17,21 @@ public class FileStorageService : IFileStorageService
 
     public async Task<string> SaveFileAsync(Stream fileStream, string fileName, string folderName, CancellationToken cancellationToken = default)
     {
-        var targetFolder = Path.Combine(_baseStoragePath, folderName);
+        var safeFolder = UploadValidationHelper.SanitizeFileName(folderName, 64);
+        var targetFolder = Path.Combine(_baseStoragePath, safeFolder);
         if (!Directory.Exists(targetFolder))
         {
             Directory.CreateDirectory(targetFolder);
         }
 
-        var uniqueFileName = $"{Guid.NewGuid()}_{fileName}";
+        var safeFileName = UploadValidationHelper.SanitizeFileName(fileName, 100);
+        var uniqueFileName = $"{Guid.NewGuid()}_{safeFileName}";
         var fullPath = Path.Combine(targetFolder, uniqueFileName);
 
         using var destinationStream = new FileStream(fullPath, FileMode.Create);
         await fileStream.CopyToAsync(destinationStream, cancellationToken);
 
-        return Path.Combine(folderName, uniqueFileName);
+        return Path.Combine(safeFolder, uniqueFileName);
     }
 
     private string? ResolveSafeFullPath(string filePath)
@@ -73,5 +77,11 @@ public class FileStorageService : IFileStorageService
         }
 
         return Task.FromResult(false);
+    }
+
+    public bool FileExists(string filePath)
+    {
+        var fullPath = ResolveSafeFullPath(filePath);
+        return fullPath != null && File.Exists(fullPath);
     }
 }
