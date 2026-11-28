@@ -32,6 +32,45 @@ public class RequestReattendanceDto
     public string? Reason { get; set; }
 }
 
+public class UnlockAttendanceSheetDto
+{
+    public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
+    public string? Note { get; set; }
+    public int? RequestId { get; set; }
+}
+
+public class LockAttendanceSheetDto
+{
+    public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; } = AttendanceSession.Morning;
+    public string? Note { get; set; }
+}
+
+public class RejectReattendanceRequestDto
+{
+    public string? Note { get; set; }
+}
+
+public class ReattendanceRequestDto
+{
+    public int Id { get; set; }
+    public int ClassId { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+    public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; }
+    public int? RequestedByUserId { get; set; }
+    public string RequesterName { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public ReattendanceRequestStatus Status { get; set; }
+    public int? ReviewedByUserId { get; set; }
+    public string? ReviewedByName { get; set; }
+    public string? ReviewNote { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UnlockedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}
+
 // ===== Response =====
 public class TeacherClassOptionDto
 {
@@ -94,6 +133,13 @@ public class AttendanceSheetDto
     public DateTime? SubmittedAt { get; set; }                     // UTC, lần đầu
     public string? SubmittedByName { get; set; }
     public DateTime? LastUpdatedAt { get; set; }
+    public bool IsReattendanceUnlocked { get; set; }
+    public string? UnlockNote { get; set; }
+    public string? UnlockedByName { get; set; }
+    public DateTime? UnlockedAt { get; set; }
+    public bool HasPendingReattendanceRequest { get; set; }
+    public string? PendingReattendanceReason { get; set; }
+    public DateTime? PendingReattendanceRequestedAt { get; set; }
     public List<AttendanceSheetEntryDto> Entries { get; set; } = new();
     public AttendanceSummaryDto Summary { get; set; } = new();
 }

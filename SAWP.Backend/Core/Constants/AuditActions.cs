@@ -54,6 +54,10 @@ public static class AuditActions
     public const string AttendanceCorrect = "ATTENDANCE_CORRECT";
     public const string AttendanceContactNoteCreate = "ATTENDANCE_CONTACT_NOTE_CREATE";
     public const string AttendanceContactNoteSupersede = "ATTENDANCE_CONTACT_NOTE_SUPERSEDE";
+    public const string AttendanceReattendanceRequest = "ATTENDANCE_REATTENDANCE_REQUEST";
+    public const string AttendanceSheetUnlock = "ATTENDANCE_SHEET_UNLOCK";
+    public const string AttendanceSheetLock = "ATTENDANCE_SHEET_LOCK";
+    public const string AttendanceReattendanceReject = "ATTENDANCE_REATTENDANCE_REJECT";
 
     // Requests
     public const string LeaveRequestSubmit = "LEAVE_REQUEST_SUBMIT";

@@ -1,22 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
-import { BarChart3, CalendarCheck2, MessageSquareText, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, PencilLine, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Users } from 'lucide-react';
+import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, Lock, MessageSquareText, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Unlock, Users, XCircle } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
 import { useAttendanceSheet } from '../../hooks/useAttendanceSheet';
 import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
-import { formatViDateTime, todayIso, toIsoDate } from '../../utils/date';
+import { formatDateDDMMYYYY, formatViDateTime, todayIso, toIsoDate } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import type {
   AttendanceSession,
   AttendanceSheetEntry,
-  AttendanceStatus,
   AttendanceSubmitResult,
   ClassAttendanceMatrix,
   ClassAttendanceSummary,
+  ReattendanceRequest,
   StudentAttendanceHistory,
   TeacherClassOption,
 } from '../../types/attendance.types';
@@ -84,14 +84,23 @@ export default function AttendancePage() {
   });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<AttendanceSubmitResult | null>(null);
-  const [correctingEntry, setCorrectingEntry] = useState<AttendanceSheetEntry | null>(null);
-  const [correctionStatus, setCorrectionStatus] = useState<AttendanceStatus>('Present');
-  const [correctionRemarks, setCorrectionRemarks] = useState('');
-  const [correctionReason, setCorrectionReason] = useState('');
-  const [submittingCorrection, setSubmittingCorrection] = useState(false);
+  const [reattendRequests, setReattendRequests] = useState<ReattendanceRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
+  const [rejectingRequest, setRejectingRequest] = useState<ReattendanceRequest | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [rejectSending, setRejectSending] = useState(false);
   const [supplementReason, setSupplementReason] = useState('');
   const todayStr = todayIso();
-  const isSupplementingPastDay = date < todayStr;
+
+  useEffect(() => {
+    const qDate = searchParams.get('date');
+    const qSession = searchParams.get('session');
+    const qClassId = Number(searchParams.get('classId'));
+    if (qDate && /^\d{4}-\d{2}-\d{2}$/.test(qDate)) setDate(qDate);
+    if (qSession === 'Morning' || qSession === 'Afternoon') setSession(qSession);
+    if (Number.isFinite(qClassId) && qClassId > 0) setClassId(qClassId);
+  }, [searchParams]);
 
   // ATT-14: Tab Tổng hợp chuyên cần lớp (UC-23, UC-28, UC-50)
   const [summaryFrom, setSummaryFrom] = useState<string>(defaultSummaryFromIso);
@@ -109,7 +118,27 @@ export default function AttendancePage() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   const vm = useAttendanceSheet(classId, date, session);
+  const isSupplementingPastDay = date < todayStr && isOfficeOrAdmin && !vm.sheet?.isReattendanceUnlocked;
   useUnsavedChangesWarning(vm.isDirty);
+
+  const loadReattendanceRequests = async () => {
+    if (!isOfficeOrAdmin) return;
+    setLoadingRequests(true);
+    try {
+      const list = await attendanceApi.getReattendanceRequests();
+      setReattendRequests(list);
+    } catch {
+      // silent
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOfficeOrAdmin) {
+      void loadReattendanceRequests();
+    }
+  }, [isOfficeOrAdmin]);
 
   // Load danh sách lớp GV được điểm danh trong ngày / buổi
   useEffect(() => {
@@ -256,43 +285,83 @@ export default function AttendancePage() {
   };
 
   const canEdit = vm.sheet?.canEdit ?? false;
-  const canCorrectPastDay =
-    !canEdit &&
-    (vm.sheet?.lockReason === 'PastDay' || vm.sheet?.lockReason === 'AlreadySubmitted') &&
-    isOfficeStaff; // UC-22: Office Staff only (OVR-10)
 
-  const openCorrectionModal = (entry: AttendanceSheetEntry) => {
-    setCorrectingEntry(entry);
-    const initialStatus = entry.status === 'ExcusedAbsence' ? 'Present' : (entry.status ?? 'Present');
-    setCorrectionStatus(initialStatus);
-    setCorrectionRemarks(entry.remarks ?? '');
-    setCorrectionReason('');
-  };
-
-  const handleSubmitCorrection = async () => {
-    if (!correctingEntry?.recordId) return;
-    const trimmedReason = correctionReason.trim();
-    if (trimmedReason.length < 5 || trimmedReason.length > 500) {
-      toast.error('Lý do điều chỉnh bắt buộc từ 5 đến 500 ký tự.');
+  const handleUnlockClassSheet = async (
+    targetClassId: number,
+    targetDate: string,
+    targetSession: AttendanceSession,
+    classNameLabel?: string,
+    requestId?: number
+  ) => {
+    const label = classNameLabel ? `lớp ${classNameLabel}` : 'lớp này';
+    const sessionLabel = targetSession === 'Morning' ? 'Buổi sáng' : 'Buổi chiều';
+    if (!window.confirm(`Mở khóa bảng điểm danh ${label} (${sessionLabel} · ${formatDateDDMMYYYY(targetDate)}) để giáo viên chỉnh sửa toàn bộ lớp?`)) {
       return;
     }
-
+    setUnlockBusy(true);
     try {
-      setSubmittingCorrection(true);
-      const res = await attendanceApi.correctRecord(correctingEntry.recordId, {
-        status: correctionStatus,
-        remarks: correctionRemarks.trim() || null,
-        correctionReason: trimmedReason,
+      const res = await attendanceApi.unlockSheet(targetClassId, {
+        date: targetDate.slice(0, 10),
+        session: targetSession,
+        requestId,
       });
-      toast.success(res.message || 'Đã điều chỉnh bản ghi điểm danh thành công.');
-      setCorrectingEntry(null);
+      toast.success(res.message || 'Đã mở khóa bảng điểm danh cho giáo viên.');
+      await loadReattendanceRequests();
+      if (classId === targetClassId && date === targetDate.slice(0, 10) && session === targetSession) {
+        vm.reload();
+      }
+    } catch (e) {
+      const err = asApiError(e);
+      toast.error(err.errors?.[0] || err.message || 'Không thể mở khóa bảng điểm danh.');
+    } finally {
+      setUnlockBusy(false);
+    }
+  };
+
+  const handleLockClassSheet = async (
+    targetClassId: number,
+    targetDate: string,
+    targetSession: AttendanceSession
+  ) => {
+    if (!window.confirm('Khóa lại bảng điểm danh này (giáo viên sẽ không thể chỉnh sửa nữa)?')) {
+      return;
+    }
+    setUnlockBusy(true);
+    try {
+      const res = await attendanceApi.lockSheet(targetClassId, {
+        date: targetDate.slice(0, 10),
+        session: targetSession,
+      });
+      toast.success(res.message || 'Đã khóa lại bảng điểm danh.');
+      await loadReattendanceRequests();
+      if (classId === targetClassId && date === targetDate.slice(0, 10) && session === targetSession) {
+        vm.reload();
+      }
+    } catch (e) {
+      const err = asApiError(e);
+      toast.error(err.errors?.[0] || err.message || 'Không thể khóa lại bảng điểm danh.');
+    } finally {
+      setUnlockBusy(false);
+    }
+  };
+
+  const handleConfirmRejectRequest = async () => {
+    if (!rejectingRequest) return;
+    setRejectSending(true);
+    try {
+      const res = await attendanceApi.rejectReattendanceRequest(rejectingRequest.id, {
+        note: rejectNote.trim() || undefined,
+      });
+      toast.success(res.message || 'Đã từ chối yêu cầu mở khóa điểm danh.');
+      setRejectingRequest(null);
+      setRejectNote('');
+      await loadReattendanceRequests();
       vm.reload();
     } catch (e) {
       const err = asApiError(e);
-      toast.error(err.message);
-      err.errors?.forEach((m) => toast.error(m));
+      toast.error(err.errors?.[0] || err.message || 'Không thể từ chối yêu cầu.');
     } finally {
-      setSubmittingCorrection(false);
+      setRejectSending(false);
     }
   };
 
@@ -404,6 +473,147 @@ export default function AttendancePage() {
           )}
         </div>
       </header>
+
+      {/* OfficeStaff / Admin: Hộp thư yêu cầu mở khóa điểm danh từ Giáo viên */}
+      {isOfficeOrAdmin && (() => {
+        const activeReqs = reattendRequests.filter((r) => r.status === 'Pending' || r.status === 'Unlocked');
+        if (!loadingRequests && activeReqs.length === 0) return null;
+        const pendingCount = activeReqs.filter((r) => r.status === 'Pending').length;
+        return (
+          <section
+            className="card pop-in"
+            aria-label="Yêu cầu mở khóa điểm danh từ Giáo viên"
+            style={{
+              marginBottom: 20,
+              padding: '16px 20px',
+              background: '#FFFBEB',
+              border: '2px solid var(--color-fg)',
+              boxShadow: '4px 4px 0 0 var(--color-fg)',
+              borderRadius: 'var(--radius-lg)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Unlock size={18} color="#B45309" />
+                <strong style={{ fontSize: 'var(--fs-base)' }}>Yêu cầu mở khóa điểm danh từ Giáo viên</strong>
+                {pendingCount > 0 && (
+                  <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
+                    {pendingCount} chờ mở khóa
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={loadReattendanceRequests}
+                disabled={loadingRequests}
+              >
+                <RotateCcw size={13} /> Tải lại
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {activeReqs.map((req) => {
+                const reqDateIso = req.date.slice(0, 10);
+                const sessionLabel = req.session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều';
+                const isUnlocked = req.status === 'Unlocked';
+                return (
+                  <div
+                    key={req.id}
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1.5px solid var(--color-fg)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <span className="badge badge--violet" style={{ border: '1px solid var(--color-fg)', fontWeight: 800 }}>
+                          Lớp {req.className}
+                        </span>
+                        <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                          {sessionLabel} · {formatDateDDMMYYYY(reqDateIso)}
+                        </span>
+                        <span
+                          className={`badge ${isUnlocked ? 'badge--mint' : 'badge--pink'}`}
+                          style={{ border: '1px solid var(--color-fg)', fontWeight: 800 }}
+                        >
+                          {isUnlocked ? 'Đang mở khóa cho GV' : 'Chờ mở khóa'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--color-fg)' }}>
+                        GV: {req.requesterName}{' '}
+                        <span style={{ fontWeight: 500, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                          ({formatViDateTime(req.createdAt)})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: '#334155', marginTop: 2 }}>
+                        Lý do: <strong>{req.reason}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        onClick={() => {
+                          if (!guardDirty()) return;
+                          setActiveTab('sheet');
+                          setDate(reqDateIso);
+                          setSession(req.session);
+                          setClassId(req.classId);
+                        }}
+                      >
+                        <Eye size={14} /> Xem bảng
+                      </button>
+
+                      {isUnlocked ? (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          disabled={unlockBusy}
+                          onClick={() => handleLockClassSheet(req.classId, reqDateIso, req.session)}
+                        >
+                          <Lock size={14} /> Khóa lại
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn--primary btn--sm"
+                            disabled={unlockBusy}
+                            onClick={() => handleUnlockClassSheet(req.classId, reqDateIso, req.session, req.className, req.id)}
+                          >
+                            <Unlock size={14} /> Mở khóa cả lớp
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            style={{ color: '#DC2626', borderColor: '#FCA5A5' }}
+                            disabled={unlockBusy}
+                            onClick={() => {
+                              setRejectingRequest(req);
+                              setRejectNote('');
+                            }}
+                          >
+                            <XCircle size={14} /> Từ chối
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Toolbar */}
       {activeTab !== 'followup' && (
@@ -775,6 +985,118 @@ export default function AttendancePage() {
         <>
           <LockedBanner reason={vm.sheet?.lockReason ?? null} />
 
+          {/* Trạng thái mở khóa cả lớp / yêu cầu mở khóa */}
+          {vm.sheet?.isReattendanceUnlocked && (
+            <div
+              className="banner pop-in"
+              role="status"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12,
+                padding: '14px 20px',
+                background: '#ECFDF5',
+                border: '2px solid #059669',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 20,
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 600,
+                color: '#065F46',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Unlock size={18} color="#059669" />
+                <div>
+                  {isTeacherOnly ? (
+                    <>
+                      <strong>Bảng điểm danh đã được Giáo vụ mở khóa.</strong> Bạn có thể chỉnh sửa trạng thái/ghi chú của toàn bộ học sinh rồi bấm <strong>Lưu điểm danh</strong> (sau khi lưu bảng sẽ tự khóa lại).
+                    </>
+                  ) : (
+                    <>
+                      <strong>Bảng điểm danh đang mở khóa cho Giáo viên</strong>
+                      {vm.sheet.unlockedByName ? ` (mở bởi ${vm.sheet.unlockedByName})` : ''}. Giáo viên có thể tự chỉnh sửa toàn bộ lớp.
+                    </>
+                  )}
+                </div>
+              </div>
+              {isOfficeOrAdmin && classId !== null && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  disabled={unlockBusy}
+                  onClick={() => handleLockClassSheet(classId, date, session)}
+                >
+                  <Lock size={14} /> Khóa lại
+                </button>
+              )}
+            </div>
+          )}
+
+          {!vm.sheet?.isReattendanceUnlocked && vm.sheet?.lockReason === 'PastDay' && (
+            <div
+              className="banner pop-in"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12,
+                padding: '12px 18px',
+                background: '#FFFBEB',
+                border: '2px solid var(--color-fg)',
+                boxShadow: '3px 3px 0 0 var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 20,
+                fontSize: 'var(--fs-sm)',
+              }}
+            >
+              {isTeacherOnly ? (
+                vm.sheet.hasPendingReattendanceRequest ? (
+                  <div style={{ fontWeight: 600, color: '#92400E' }}>
+                    ⏳ Đã gửi yêu cầu mở khóa điểm danh lại tới Phòng Giáo vụ
+                    {vm.sheet.pendingReattendanceReason ? ` (Lý do: "${vm.sheet.pendingReattendanceReason}")` : ''}. Đang chờ Giáo vụ mở khóa.
+                  </div>
+                ) : (
+                  <>
+                    <span style={{ fontWeight: 600, color: '#92400E' }}>
+                      Cần chỉnh sửa lại bảng điểm danh ngày quá khứ? Gửi yêu cầu để Phòng Giáo vụ mở khóa cả lớp cho bạn.
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--sm"
+                      disabled={classId === null}
+                      onClick={() => {
+                        setReattendReason('');
+                        setReattendOpen(true);
+                      }}
+                    >
+                      <RotateCcw size={14} /> Yêu cầu mở khóa điểm danh lại
+                    </button>
+                  </>
+                )
+              ) : isOfficeOrAdmin && classId !== null ? (
+                <>
+                  <span style={{ fontWeight: 600, color: '#92400E' }}>
+                    {vm.sheet.hasPendingReattendanceRequest
+                      ? `Giáo viên đang yêu cầu mở khóa bảng điểm danh này (${vm.sheet.pendingReattendanceReason || ''}).`
+                      : 'Thay vì sửa từng học sinh, Giáo vụ có thể mở khóa cả lớp để Giáo viên tự chỉnh sửa lại.'}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--sm"
+                    disabled={unlockBusy}
+                    onClick={() => handleUnlockClassSheet(classId, date, session, vm.sheet?.className)}
+                  >
+                    <Unlock size={14} /> Mở khóa cả lớp cho GV chỉnh
+                  </button>
+                </>
+              ) : null}
+            </div>
+          )}
+
           {vm.sheet?.submittedAt && (
             <div
               className="banner pop-in"
@@ -857,7 +1179,6 @@ export default function AttendancePage() {
               disabled={!canEdit || vm.saving}
               onStatusChange={vm.setStatus}
               onRemarksChange={vm.setRemarks}
-              onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
               onOpenContactNotes={canViewContactNotes ? setContactEntry : undefined}
               contactNotesDisabled={vm.saving || vm.isDirty}
             />
@@ -1049,90 +1370,51 @@ export default function AttendancePage() {
       </ConfirmDialog>
 
       <GeometricModal
-        open={Boolean(correctingEntry)}
-        onClose={() => setCorrectingEntry(null)}
-        title={date < todayStr ? 'Điều Chỉnh Điểm Danh Ngày Quá Khứ' : 'Điều Chỉnh Điểm Danh'}
-        subtitle={correctingEntry ? `${correctingEntry.fullName} (${correctingEntry.studentCode}) • Ngày ${formatDashDate(date)}` : ''}
-        badgeText="Ghi nhận Audit Log"
-        badgeColor="amber"
-        icon={<PencilLine size={20} color="var(--color-fg)" />}
-        iconBg="var(--color-tertiary)"
+        open={Boolean(rejectingRequest)}
+        onClose={() => !rejectSending && setRejectingRequest(null)}
+        title="Từ chối yêu cầu mở khóa điểm danh"
+        subtitle={
+          rejectingRequest
+            ? `Lớp ${rejectingRequest.className} • ${rejectingRequest.session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} ${formatDateDDMMYYYY(rejectingRequest.date)}`
+            : ''
+        }
+        badgeText="Phòng Giáo vụ"
+        badgeColor="pink"
+        icon={<XCircle size={20} color="var(--color-fg)" />}
+        iconBg="#FFE4E6"
         maxWidth="sm"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-md)', background: '#FEF3C7', border: '1.5px solid var(--color-fg)', fontSize: 'var(--fs-xs)', fontWeight: 700, color: '#92400E' }}>
-            {date < todayStr
-              ? 'Chỉ dùng để sửa lỗi nhập liệu ngày quá khứ (không chuyển sang Vắng có phép). Mọi thao tác đều lưu lý do và lịch sử kiểm toán.'
-              : 'Điều chỉnh từng bản ghi điểm danh hôm nay. Mọi thao tác đều lưu lý do và lịch sử kiểm toán.'}
-          </div>
-
-          <div>
-            <label htmlFor="correction-status" className="label" style={{ display: 'block', marginBottom: 6 }}>
-              Trạng thái mới
-            </label>
-            <select
-              id="correction-status"
-              className="select"
-              value={correctionStatus}
-              onChange={(e) => setCorrectionStatus(e.target.value as AttendanceStatus)}
-              style={{ width: '100%' }}
-            >
-              <option value="Present">Có mặt</option>
-              <option value="Late">Đi muộn</option>
-              <option
-                value="UnexcusedAbsence"
-                disabled={correctingEntry?.leave?.status === 'Approved'}
-              >
-                Vắng không phép{correctingEntry?.leave?.status === 'Approved' ? ' (Đã có đơn nghỉ duyệt)' : ''}
-              </option>
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="correction-remarks" className="label" style={{ display: 'block', marginBottom: 6 }}>
-              Ghi chú điểm danh (tùy chọn)
-            </label>
-            <input
-              id="correction-remarks"
-              className="input"
-              maxLength={500}
-              value={correctionRemarks}
-              onChange={(e) => setCorrectionRemarks(e.target.value)}
-              placeholder="Ghi chú kèm theo bản ghi..."
-            />
-          </div>
-
-          <div>
-            <label htmlFor="correction-reason" className="label" style={{ display: 'block', marginBottom: 6 }}>
-              Lý do điều chỉnh (bắt buộc, 5–500 ký tự) *
+          <div className="field">
+            <label htmlFor="reject-reattend-note" className="label">
+              Lý do từ chối (tùy chọn)
             </label>
             <textarea
-              id="correction-reason"
+              id="reject-reattend-note"
               className="input"
               rows={3}
               maxLength={500}
-              value={correctionReason}
-              onChange={(e) => setCorrectionReason(e.target.value)}
-              placeholder="Ví dụ: Giáo viên chấm nhầm dòng học sinh, đã xác nhận lại sổ điểm danh giấy..."
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder="Nhập lý do hoặc hướng dẫn gửi lại cho giáo viên..."
             />
           </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button
               type="button"
               className="btn btn--secondary"
-              onClick={() => setCorrectingEntry(null)}
-              disabled={submittingCorrection}
+              onClick={() => setRejectingRequest(null)}
+              disabled={rejectSending}
             >
               Hủy
             </button>
             <button
               type="button"
               className="btn btn--primary"
-              onClick={handleSubmitCorrection}
-              disabled={submittingCorrection}
+              onClick={handleConfirmRejectRequest}
+              disabled={rejectSending}
             >
-              {submittingCorrection ? 'Đang lưu...' : 'Xác nhận điều chỉnh'}
+              {rejectSending ? 'Đang xử lý...' : 'Xác nhận từ chối'}
             </button>
           </div>
         </div>
@@ -1232,8 +1514,9 @@ export default function AttendancePage() {
                     session,
                     reason: reattendReason.trim(),
                   });
-                  toast.success(res.message || 'Đã gửi yêu cầu điểm danh lại tới Phòng Giáo vụ.');
+                  toast.success(res.message || 'Đã gửi yêu cầu mở khóa điểm danh lại tới Phòng Giáo vụ.');
                   setReattendOpen(false);
+                  vm.reload();
                 } catch (err) {
                   toast.error(asApiError(err).message || 'Không thể gửi yêu cầu điểm danh lại.');
                 } finally {

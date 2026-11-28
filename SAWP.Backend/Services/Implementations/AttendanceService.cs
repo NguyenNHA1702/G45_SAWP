@@ -171,9 +171,10 @@ public class AttendanceService : IAttendanceService
         var lunches = await _unitOfWork.Lunch
             .GetRegistrationsForStudentsAsync(studentIds, targetDate, track: false, ct);
 
-        // Xác định quyền sửa & lý do khóa (D1 + A7)
+        // Xác định quyền sửa & lý do khóa (D1 + A7 + mở khóa cả lớp)
         var submittedRecords = existingRecords.Values.Where(r => r.ClassId == classId && IsTeacherSubmittedRecord(r)).ToList();
         var hasTeacherSubmittedAttendance = submittedRecords.Count > 0;
+        var (unlockedReq, pendingReq) = await GetActiveReattendanceStateAsync(classId, targetDate, session, ct);
         bool canEdit = false;
         string? lockReason = null;
 
@@ -194,7 +195,7 @@ public class AttendanceService : IAttendanceService
             }
             else if (targetDate < _clock.Today && hasTeacherSubmittedAttendance)
             {
-                // A7: Ngày quá khứ ĐÃ có điểm danh -> khóa sửa hàng loạt, buộc đi qua điều chỉnh từng bản ghi kèm lý do
+                // A7: Ngày quá khứ ĐÃ có điểm danh -> khóa sửa hàng loạt đối với Giáo vụ/Admin; Giáo vụ mở khóa cả lớp để GV chỉnh
                 canEdit = false;
                 lockReason = "PastDay";
             }
@@ -237,8 +238,25 @@ public class AttendanceService : IAttendanceService
         }
         else if (targetDate < _clock.Today)
         {
-            canEdit = false;
-            lockReason = "PastDay";
+            if (unlockedReq != null)
+            {
+                var (canRecord, reason) = await CanRecordAsync(classId, targetDate, userId, ct);
+                if (!canRecord)
+                {
+                    canEdit = false;
+                    lockReason = reason ?? "NotAssigned";
+                }
+                else
+                {
+                    canEdit = true;
+                    lockReason = null;
+                }
+            }
+            else
+            {
+                canEdit = false;
+                lockReason = "PastDay";
+            }
         }
         else
         {
@@ -305,6 +323,21 @@ public class AttendanceService : IAttendanceService
             submittedByName = user?.FullName;
         }
 
+        string? unlockedByName = null;
+        if (unlockedReq != null)
+        {
+            if (unlockedReq.ReviewedByUser != null)
+            {
+                unlockedByName = unlockedReq.ReviewedByUser.FullName;
+            }
+            else if (unlockedReq.ReviewedByUserId.HasValue)
+            {
+                var userRepo = _unitOfWork.Repository<User>();
+                var reviewer = userRepo != null ? await userRepo.GetByIdAsync(unlockedReq.ReviewedByUserId.Value, ct) : null;
+                unlockedByName = reviewer?.FullName;
+            }
+        }
+
         var sheetDto = new AttendanceSheetDto
         {
             ClassId = classId,
@@ -314,9 +347,16 @@ public class AttendanceService : IAttendanceService
             IsSchoolDay = isSchoolDay,
             CanEdit = canEdit,
             LockReason = lockReason,
-            SubmittedAt = submittedAt,
+            SubmittedAt = UtcDateTimeHelper.Normalize(submittedAt),
             SubmittedByName = submittedByName,
-            LastUpdatedAt = lastUpdatedAt,
+            LastUpdatedAt = UtcDateTimeHelper.Normalize(lastUpdatedAt),
+            IsReattendanceUnlocked = unlockedReq != null,
+            UnlockNote = unlockedReq?.ReviewNote ?? unlockedReq?.Reason,
+            UnlockedByName = unlockedByName,
+            UnlockedAt = UtcDateTimeHelper.Normalize(unlockedReq?.UnlockedAt),
+            HasPendingReattendanceRequest = pendingReq != null,
+            PendingReattendanceReason = pendingReq?.Reason,
+            PendingReattendanceRequestedAt = UtcDateTimeHelper.Normalize(pendingReq?.CreatedAt),
             Entries = entries,
             Summary = summary
         };
@@ -344,21 +384,27 @@ public class AttendanceService : IAttendanceService
         var now = _clock.Now;
         // UC-22 (OVR-10): only Office Staff (not the System Administrator) fill in a past day or edit any class
         var isOfficeStaff = roles.Contains(UserRoles.OfficeStaff);
+        var (activeUnlock, _) = await GetActiveReattendanceStateAsync(classId, targetDate, session, ct, track: true);
 
-        // V1: validate the date (Office Staff may fill in a past school day that has no attendance, with a reason)
+        // V1: Validate ngày (OfficeStaff bổ sung ngày quá khứ chưa điểm danh, hoặc GV được Giáo vụ mở khóa cả lớp)
         if (targetDate < _clock.Today)
         {
             if (!isOfficeStaff)
             {
-                return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG19);
+                if (activeUnlock == null)
+                {
+                    return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG19);
+                }
             }
-
-            var supplementReason = dto.CorrectionReason?.Trim();
-            if (string.IsNullOrEmpty(supplementReason) || supplementReason.Length < 5 || supplementReason.Length > 500)
+            else if (activeUnlock == null)
             {
-                return ApiResponse<AttendanceSubmitResultDto>.Fail(
-                    SystemMessages.MSG01,
-                    new List<string> { "Bổ sung điểm danh ngày quá khứ bắt buộc nhập lý do từ 5 đến 500 ký tự." });
+                var supplementReason = dto.CorrectionReason?.Trim();
+                if (string.IsNullOrEmpty(supplementReason) || supplementReason.Length < 5 || supplementReason.Length > 500)
+                {
+                    return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                        SystemMessages.MSG01,
+                        new List<string> { "Bổ sung điểm danh ngày quá khứ bắt buộc nhập lý do từ 5 đến 500 ký tự." });
+                }
             }
         }
         if (targetDate > _clock.Today)
@@ -441,13 +487,13 @@ public class AttendanceService : IAttendanceService
         // Tải bản ghi hiện có theo lớp + học sinh trong danh sách lớp (bao gồm HS mới chuyển lớp trong ngày để tránh đụng unique index StudentId+Date+Session)
         var existingRecords = await LoadExistingRecordsForRosterAsync(classId, rosterIds, targetDate, session, track: true, ct);
 
-        // A7: a past day that already has teacher-submitted records is locked for bulk edits, Office Staff included
+        // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt trừ khi Giáo vụ đã mở khóa cả lớp cho GV
         var hasSubmittedRecords = existingRecords.Values.Any(r => r.ClassId == classId && IsTeacherSubmittedRecord(r));
-        if (targetDate < _clock.Today && hasSubmittedRecords)
+        if (targetDate < _clock.Today && hasSubmittedRecords && (activeUnlock == null || isOfficeStaff))
         {
             return ApiResponse<AttendanceSubmitResultDto>.Fail(
                 SystemMessages.MSG19,
-                new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng sử dụng chức năng điều chỉnh từng bản ghi kèm lý do." });
+                new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng mở khóa bảng điểm danh cho giáo viên để chỉnh sửa." });
         }
 
         // AT-11: today's sheet was submitted by the teacher -> Office Staff who are not in charge of the class may not overwrite it in bulk
@@ -631,6 +677,35 @@ public class AttendanceService : IAttendanceService
 
             // OVR-10 (BR-62): recording attendance never notifies Parents / Guardians; the homeroom
             // Teacher records a contact note on each unexcused absence instead (AddContactNoteAsync).
+
+            // T3: Đóng yêu cầu mở khóa điểm danh lại sau khi Giáo viên hoàn tất lưu bảng điểm danh
+            if (activeUnlock != null && !isOfficeStaff)
+            {
+                activeUnlock.Status = ReattendanceRequestStatus.Completed;
+                activeUnlock.CompletedAt = utcNow;
+
+                if (activeUnlock.ReviewedByUserId.HasValue && activeUnlock.ReviewedByUserId.Value != userId)
+                {
+                    var notifRepo = _unitOfWork.Repository<Notification>();
+                    var userRepo = _unitOfWork.Repository<User>();
+                    if (notifRepo != null)
+                    {
+                        var teacherUser = userRepo != null ? await userRepo.GetByIdAsync(userId, ct) : null;
+                        var sessionLabel = session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
+                        await notifRepo.AddAsync(new Notification
+                        {
+                            UserId = activeUnlock.ReviewedByUserId.Value,
+                            Type = "AttendanceReattendanceCompleted",
+                            Title = $"GV đã hoàn tất điểm danh lại lớp {cls.ClassName}",
+                            Content = $"{teacherUser?.FullName ?? "Giáo viên"} đã cập nhật xong bảng điểm danh {sessionLabel} ngày {targetDate:dd/MM/yyyy} lớp {cls.ClassName}.",
+                            LinkUrl = $"/teacher/attendance?classId={classId}&date={targetDate:yyyy-MM-dd}&session={session}",
+                            ReferenceKey = $"reattendance-done:{activeUnlock.Id}:{utcNow.Ticks}",
+                            CreatedAt = utcNow,
+                            IsRead = false
+                        }, ct);
+                    }
+                }
+            }
 
             // T4: Lưu thay đổi
             await _unitOfWork.SaveChangesAsync(ct);
@@ -1615,10 +1690,21 @@ public class AttendanceService : IAttendanceService
         int requesterUserId,
         CancellationToken ct = default)
     {
-        var reason = dto.Reason?.Trim() ?? string.Empty;
-        if (reason.Length < 5)
+        if (dto.Date == default)
         {
-            return ApiResponse<bool>.Fail("MSG01", "Vui lòng nhập lý do yêu cầu điểm danh lại (tối thiểu 5 ký tự).");
+            return ApiResponse<bool>.Fail("MSG01", "Ngày điểm danh là bắt buộc.");
+        }
+
+        var targetDate = dto.Date.Date;
+        if (targetDate > _clock.Today)
+        {
+            return ApiResponse<bool>.Fail("MSG01", "Không thể yêu cầu điểm danh lại cho ngày trong tương lai.");
+        }
+
+        var reason = dto.Reason?.Trim() ?? string.Empty;
+        if (reason.Length < 5 || reason.Length > 500)
+        {
+            return ApiResponse<bool>.Fail("MSG01", "Vui lòng nhập lý do yêu cầu điểm danh lại (từ 5 đến 500 ký tự).");
         }
 
         var cls = await _unitOfWork.Repository<Class>()
@@ -1629,6 +1715,12 @@ public class AttendanceService : IAttendanceService
         if (cls == null)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG43);
+        }
+
+        var schoolYearId = cls.SchoolYearId > 0 ? cls.SchoolYearId : (int?)null;
+        if (!await ValidateSchoolDayAsync(targetDate, schoolYearId, ct))
+        {
+            return ApiResponse<bool>.Fail("MSG01", "Ngày đã chọn không phải ngày học.");
         }
 
         var officeStaffUserIds = await _unitOfWork.Repository<User>()
@@ -1649,10 +1741,39 @@ public class AttendanceService : IAttendanceService
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == requesterUserId, ct);
 
-        var targetDate = dto.Date.Date;
+        var utcNow = DateTime.UtcNow;
+        var reqRepo = _unitOfWork.Repository<AttendanceReattendanceRequest>();
+        if (reqRepo != null)
+        {
+            var (unlockedReq, pendingReq) = await GetActiveReattendanceStateAsync(classId, targetDate, dto.Session, ct, track: true);
+            if (unlockedReq != null)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Bảng điểm danh này đã được Giáo vụ mở khóa; bạn có thể chỉnh sửa trực tiếp ngay bây giờ." });
+            }
+
+            if (pendingReq != null)
+            {
+                pendingReq.Reason = reason;
+                pendingReq.RequestedByUserId = requesterUserId;
+                pendingReq.CreatedAt = utcNow;
+            }
+            else
+            {
+                await reqRepo.AddAsync(new AttendanceReattendanceRequest
+                {
+                    ClassId = classId,
+                    Date = targetDate,
+                    Session = dto.Session,
+                    RequestedByUserId = requesterUserId,
+                    Reason = reason,
+                    Status = ReattendanceRequestStatus.Pending,
+                    CreatedAt = utcNow
+                }, ct);
+            }
+        }
+
         var sessionLabel = dto.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
         var requesterName = requester?.FullName ?? "Giáo viên";
-        var utcNow = DateTime.UtcNow;
 
         foreach (var staffUserId in officeStaffUserIds)
         {
@@ -1660,8 +1781,8 @@ public class AttendanceService : IAttendanceService
             {
                 UserId = staffUserId,
                 Type = "AttendanceReattendanceRequest",
-                Title = $"GV yêu cầu điểm danh lại lớp {cls.ClassName}",
-                Content = $"{requesterName} yêu cầu Giáo vụ hỗ trợ điểm danh lại {sessionLabel} ngày {targetDate:dd/MM/yyyy} cho lớp {cls.ClassName}. Lý do: {reason}",
+                Title = $"GV yêu cầu mở khóa điểm danh lớp {cls.ClassName}",
+                Content = $"{requesterName} yêu cầu Giáo vụ mở khóa điểm danh {sessionLabel} ngày {targetDate:dd-MM-yyyy} cho lớp {cls.ClassName}. Lý do: {reason}",
                 LinkUrl = $"/teacher/attendance?classId={classId}&date={targetDate:yyyy-MM-dd}&session={dto.Session}",
                 ReferenceKey = $"reattendance:{classId}:{targetDate:yyyy-MM-dd}:{dto.Session}:{staffUserId}:{utcNow.Ticks}",
                 CreatedAt = utcNow,
@@ -1673,7 +1794,7 @@ public class AttendanceService : IAttendanceService
 
         await _auditService.LogActionAsync(
             requesterUserId,
-            "TeacherRequestReattendance",
+            AuditActions.AttendanceReattendanceRequest,
             nameof(Class),
             classId.ToString(),
             null,
@@ -1682,6 +1803,349 @@ public class AttendanceService : IAttendanceService
             ct);
         await _unitOfWork.SaveChangesAsync(ct);
 
-        return ApiResponse<bool>.Ok(true, "Đã gửi yêu cầu điểm danh lại tới Phòng Giáo vụ.");
+        return ApiResponse<bool>.Ok(true, "Đã gửi yêu cầu mở khóa điểm danh lại tới Phòng Giáo vụ.");
     }
+
+    public async Task<ApiResponse<List<ReattendanceRequestDto>>> GetReattendanceRequestsAsync(
+        string? status = null,
+        CancellationToken ct = default)
+    {
+        var reqRepo = _unitOfWork.Repository<AttendanceReattendanceRequest>();
+        if (reqRepo == null)
+        {
+            return ApiResponse<List<ReattendanceRequestDto>>.Ok(new List<ReattendanceRequestDto>());
+        }
+
+        var query = reqRepo.Query()
+            .AsNoTracking()
+            .Include(r => r.Class)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ReviewedByUser)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ReattendanceRequestStatus>(status.Trim(), true, out var parsedStatus))
+        {
+            query = query.Where(r => r.Status == parsedStatus);
+        }
+
+        var rows = await query
+            .OrderBy(r => r.Status == ReattendanceRequestStatus.Pending ? 0 : r.Status == ReattendanceRequestStatus.Unlocked ? 1 : 2)
+            .ThenByDescending(r => r.CreatedAt)
+            .Take(100)
+            .ToListAsync(ct);
+
+        var result = rows.Select(MapReattendanceToDto).ToList();
+        return ApiResponse<List<ReattendanceRequestDto>>.Ok(result);
+    }
+
+    public async Task<ApiResponse<ReattendanceRequestDto>> UnlockAttendanceSheetAsync(
+        int classId,
+        UnlockAttendanceSheetDto dto,
+        int staffUserId,
+        CancellationToken ct = default)
+    {
+        if (dto.Date == default)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày điểm danh là bắt buộc." });
+        }
+
+        var targetDate = dto.Date.Date;
+        if (targetDate > _clock.Today)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Không thể mở khóa điểm danh cho ngày trong tương lai." });
+        }
+
+        var trimmedNote = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
+        if (trimmedNote != null && trimmedNote.Length > 500)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Ghi chú mở khóa tối đa 500 ký tự." });
+        }
+
+        var cls = await _unitOfWork.Repository<Class>()
+            .Query()
+            .Include(c => c.HomeroomTeacher)
+            .FirstOrDefaultAsync(c => c.Id == classId, ct);
+        if (cls == null)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG43);
+        }
+
+        var schoolYearId = cls.SchoolYearId > 0 ? cls.SchoolYearId : (int?)null;
+        if (!await ValidateSchoolDayAsync(targetDate, schoolYearId, ct))
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày đã chọn không phải ngày học." });
+        }
+
+        var reqRepo = _unitOfWork.Repository<AttendanceReattendanceRequest>();
+        if (reqRepo == null)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG50);
+        }
+
+        AttendanceReattendanceRequest? targetReq = null;
+        if (dto.RequestId.HasValue && dto.RequestId.Value > 0)
+        {
+            targetReq = await reqRepo.Query()
+                .Include(r => r.Class)
+                .Include(r => r.RequestedByUser)
+                .Include(r => r.ReviewedByUser)
+                .FirstOrDefaultAsync(r => r.Id == dto.RequestId.Value && r.ClassId == classId, ct);
+        }
+
+        if (targetReq == null)
+        {
+            var (unlockedExisting, pendingExisting) = await GetActiveReattendanceStateAsync(classId, targetDate, dto.Session, ct, track: true);
+            targetReq = unlockedExisting ?? pendingExisting;
+        }
+
+        if (targetReq != null && targetReq.Status == ReattendanceRequestStatus.Unlocked)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Ok(MapReattendanceToDto(targetReq), "Bảng điểm danh này hiện đã ở trạng thái mở khóa.");
+        }
+
+        var utcNow = DateTime.UtcNow;
+        if (targetReq != null && targetReq.Status == ReattendanceRequestStatus.Pending)
+        {
+            targetReq.Status = ReattendanceRequestStatus.Unlocked;
+            targetReq.ReviewedByUserId = staffUserId;
+            targetReq.ReviewNote = trimmedNote;
+            targetReq.UnlockedAt = utcNow;
+        }
+        else
+        {
+            targetReq = new AttendanceReattendanceRequest
+            {
+                ClassId = classId,
+                Date = targetDate,
+                Session = dto.Session,
+                RequestedByUserId = null,
+                Reason = trimmedNote ?? "Giáo vụ mở khóa bảng điểm danh cả lớp cho giáo viên chỉnh sửa",
+                Status = ReattendanceRequestStatus.Unlocked,
+                ReviewedByUserId = staffUserId,
+                ReviewNote = trimmedNote,
+                CreatedAt = utcNow,
+                UnlockedAt = utcNow,
+                Class = cls
+            };
+            await reqRepo.AddAsync(targetReq, ct);
+        }
+
+        // Notify requester and homeroom teacher so Teacher knows the whole sheet is unlocked
+        var recipientIds = new HashSet<int>();
+        if (targetReq.RequestedByUserId.HasValue)
+        {
+            recipientIds.Add(targetReq.RequestedByUserId.Value);
+        }
+        if (cls.HomeroomTeacher != null && cls.HomeroomTeacher.UserId > 0)
+        {
+            recipientIds.Add(cls.HomeroomTeacher.UserId);
+        }
+
+        var notifRepo = _unitOfWork.Repository<Notification>();
+        var userRepo = _unitOfWork.Repository<User>();
+        var staffUser = userRepo != null ? await userRepo.GetByIdAsync(staffUserId, ct) : null;
+        if (notifRepo != null && recipientIds.Count > 0)
+        {
+            var sessionLabel = dto.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
+            foreach (var recipientId in recipientIds)
+            {
+                await notifRepo.AddAsync(new Notification
+                {
+                    UserId = recipientId,
+                    Type = "AttendanceSheetUnlocked",
+                    Title = $"Đã mở khóa điểm danh lớp {cls.ClassName}",
+                    Content = $"{staffUser?.FullName ?? "Phòng Giáo vụ"} đã mở khóa bảng điểm danh {sessionLabel} ngày {targetDate:dd-MM-yyyy} lớp {cls.ClassName} để giáo viên chỉnh sửa toàn bộ lớp.",
+                    LinkUrl = $"/teacher/attendance?classId={classId}&date={targetDate:yyyy-MM-dd}&session={dto.Session}",
+                    ReferenceKey = $"attendance-unlock:{classId}:{targetDate:yyyy-MM-dd}:{dto.Session}:{recipientId}:{utcNow.Ticks}",
+                    CreatedAt = utcNow,
+                    IsRead = false
+                }, ct);
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AttendanceSheetUnlock,
+            nameof(Class),
+            classId.ToString(),
+            null,
+            new { ClassId = classId, Date = targetDate.ToString("yyyy-MM-dd"), Session = dto.Session.ToString(), Note = trimmedNote, RequestId = targetReq.Id },
+            null,
+            ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        targetReq.Class = cls;
+        targetReq.ReviewedByUser ??= staffUser;
+        return ApiResponse<ReattendanceRequestDto>.Ok(MapReattendanceToDto(targetReq), $"Đã mở khóa bảng điểm danh lớp {cls.ClassName} cho giáo viên.");
+    }
+
+    public async Task<ApiResponse<bool>> LockAttendanceSheetAsync(
+        int classId,
+        LockAttendanceSheetDto dto,
+        int staffUserId,
+        CancellationToken ct = default)
+    {
+        if (dto.Date == default)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Ngày điểm danh là bắt buộc." });
+        }
+
+        var targetDate = dto.Date.Date;
+        var (unlockedReq, _) = await GetActiveReattendanceStateAsync(classId, targetDate, dto.Session, ct, track: true);
+        if (unlockedReq == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Bảng điểm danh này hiện không ở trạng thái mở khóa." });
+        }
+
+        var utcNow = DateTime.UtcNow;
+        unlockedReq.Status = ReattendanceRequestStatus.Completed;
+        unlockedReq.CompletedAt = utcNow;
+        unlockedReq.ReviewedByUserId = staffUserId;
+        if (!string.IsNullOrWhiteSpace(dto.Note))
+        {
+            unlockedReq.ReviewNote = dto.Note.Trim();
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AttendanceSheetLock,
+            nameof(Class),
+            classId.ToString(),
+            null,
+            new { ClassId = classId, Date = targetDate.ToString("yyyy-MM-dd"), Session = dto.Session.ToString(), RequestId = unlockedReq.Id },
+            null,
+            ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return ApiResponse<bool>.Ok(true, "Đã khóa lại bảng điểm danh.");
+    }
+
+    public async Task<ApiResponse<ReattendanceRequestDto>> RejectReattendanceRequestAsync(
+        int requestId,
+        RejectReattendanceRequestDto dto,
+        int staffUserId,
+        CancellationToken ct = default)
+    {
+        var reqRepo = _unitOfWork.Repository<AttendanceReattendanceRequest>();
+        if (reqRepo == null)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG43);
+        }
+
+        var req = await reqRepo.Query()
+            .Include(r => r.Class)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ReviewedByUser)
+            .FirstOrDefaultAsync(r => r.Id == requestId, ct);
+
+        if (req == null)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG43);
+        }
+
+        if (req.Status != ReattendanceRequestStatus.Pending)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể từ chối yêu cầu đang chờ xử lý." });
+        }
+
+        var trimmedNote = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
+        if (trimmedNote != null && trimmedNote.Length > 500)
+        {
+            return ApiResponse<ReattendanceRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Lý do từ chối tối đa 500 ký tự." });
+        }
+
+        var utcNow = DateTime.UtcNow;
+        req.Status = ReattendanceRequestStatus.Rejected;
+        req.ReviewedByUserId = staffUserId;
+        req.ReviewNote = trimmedNote;
+        req.CompletedAt = utcNow;
+
+        var notifRepo = _unitOfWork.Repository<Notification>();
+        var userRepo = _unitOfWork.Repository<User>();
+        var staffUser = userRepo != null ? await userRepo.GetByIdAsync(staffUserId, ct) : null;
+        if (notifRepo != null && req.RequestedByUserId.HasValue)
+        {
+            var sessionLabel = req.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
+            await notifRepo.AddAsync(new Notification
+            {
+                UserId = req.RequestedByUserId.Value,
+                Type = "AttendanceReattendanceRejected",
+                Title = $"Yêu cầu mở khóa điểm danh lớp {req.Class?.ClassName ?? $"#{req.ClassId}"} bị từ chối",
+                Content = $"{staffUser?.FullName ?? "Phòng Giáo vụ"} chưa mở khóa bảng điểm danh {sessionLabel} ngày {req.Date:dd-MM-yyyy}." + (trimmedNote != null ? $" Ghi chú: {trimmedNote}" : ""),
+                LinkUrl = $"/teacher/attendance?classId={req.ClassId}&date={req.Date:yyyy-MM-dd}&session={req.Session}",
+                ReferenceKey = $"reattendance-reject:{req.Id}:{utcNow.Ticks}",
+                CreatedAt = utcNow,
+                IsRead = false
+            }, ct);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditService.LogActionAsync(
+            staffUserId,
+            AuditActions.AttendanceReattendanceReject,
+            nameof(Class),
+            req.ClassId.ToString(),
+            null,
+            new { RequestId = req.Id, req.ClassId, Date = req.Date.ToString("yyyy-MM-dd"), Session = req.Session.ToString(), Note = trimmedNote },
+            null,
+            ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        req.ReviewedByUser ??= staffUser;
+        return ApiResponse<ReattendanceRequestDto>.Ok(MapReattendanceToDto(req), "Đã từ chối yêu cầu mở khóa điểm danh.");
+    }
+
+    private async Task<(AttendanceReattendanceRequest? Unlocked, AttendanceReattendanceRequest? Pending)> GetActiveReattendanceStateAsync(
+        int classId,
+        DateTime targetDate,
+        AttendanceSession session,
+        CancellationToken ct,
+        bool track = false)
+    {
+        var reqRepo = _unitOfWork.Repository<AttendanceReattendanceRequest>();
+        if (reqRepo == null) return (null, null);
+
+        var query = reqRepo.Query()
+            .Include(r => r.Class)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ReviewedByUser)
+            .Where(r => r.ClassId == classId
+                        && r.Date == targetDate.Date
+                        && r.Session == session
+                        && (r.Status == ReattendanceRequestStatus.Unlocked || r.Status == ReattendanceRequestStatus.Pending));
+
+        if (!track)
+        {
+            query = query.AsNoTracking();
+        }
+
+        var list = await query.OrderByDescending(r => r.Id).ToListAsync(ct);
+        var unlocked = list.FirstOrDefault(r => r.Status == ReattendanceRequestStatus.Unlocked);
+        var pending = list.FirstOrDefault(r => r.Status == ReattendanceRequestStatus.Pending);
+        return (unlocked, pending);
+    }
+
+    private static ReattendanceRequestDto MapReattendanceToDto(AttendanceReattendanceRequest r) => new()
+    {
+        Id = r.Id,
+        ClassId = r.ClassId,
+        ClassName = r.Class?.ClassName ?? $"Lớp #{r.ClassId}",
+        Date = r.Date,
+        Session = r.Session,
+        RequestedByUserId = r.RequestedByUserId,
+        RequesterName = r.RequestedByUser?.FullName ?? (r.RequestedByUserId == null ? "Phòng Giáo vụ" : "Giáo viên"),
+        Reason = r.Reason,
+        Status = r.Status,
+        ReviewedByUserId = r.ReviewedByUserId,
+        ReviewedByName = r.ReviewedByUser?.FullName,
+        ReviewNote = r.ReviewNote,
+        CreatedAt = UtcDateTimeHelper.Normalize(r.CreatedAt),
+        UnlockedAt = UtcDateTimeHelper.Normalize(r.UnlockedAt),
+        CompletedAt = UtcDateTimeHelper.Normalize(r.CompletedAt)
+    };
 }

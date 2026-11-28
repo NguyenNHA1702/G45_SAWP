@@ -40,4 +40,9 @@ public interface IAttendanceService
 
     // POST /api/attendance/classes/{classId}/request-reattendance
     Task<ApiResponse<bool>> RequestReattendanceAsync(int classId, RequestReattendanceDto dto, int requesterUserId, CancellationToken ct = default);
+
+    Task<ApiResponse<List<ReattendanceRequestDto>>> GetReattendanceRequestsAsync(string? status = null, CancellationToken ct = default);
+    Task<ApiResponse<ReattendanceRequestDto>> UnlockAttendanceSheetAsync(int classId, UnlockAttendanceSheetDto dto, int staffUserId, CancellationToken ct = default);
+    Task<ApiResponse<bool>> LockAttendanceSheetAsync(int classId, LockAttendanceSheetDto dto, int staffUserId, CancellationToken ct = default);
+    Task<ApiResponse<ReattendanceRequestDto>> RejectReattendanceRequestAsync(int requestId, RejectReattendanceRequestDto dto, int staffUserId, CancellationToken ct = default);
 }

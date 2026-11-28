@@ -10,6 +10,7 @@ import type {
   ClassAttendanceSummary,
   CorrectAttendancePayload,
   CreateContactNotePayload,
+  ReattendanceRequest,
   StudentAttendanceHistory,
   SubmitAttendanceSheetPayload,
   TeacherClassOption,
@@ -31,4 +32,17 @@ export interface IAttendanceApi {
     classId: number,
     payload: { date: string; session: AttendanceSession; reason?: string }
   ): Promise<ApiResponse<boolean>>;
+  getReattendanceRequests(status?: string): Promise<ReattendanceRequest[]>;
+  unlockSheet(
+    classId: number,
+    payload: { date: string; session: AttendanceSession; note?: string; requestId?: number }
+  ): Promise<ApiResponse<ReattendanceRequest>>;
+  lockSheet(
+    classId: number,
+    payload: { date: string; session: AttendanceSession; note?: string }
+  ): Promise<ApiResponse<boolean>>;
+  rejectReattendanceRequest(
+    requestId: number,
+    payload: { note?: string }
+  ): Promise<ApiResponse<ReattendanceRequest>>;
 }

@@ -27,6 +27,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ClassAssignment> ClassAssignments => Set<ClassAssignment>();
     public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
     public DbSet<AbsenceContactNote> AbsenceContactNotes => Set<AbsenceContactNote>();
+    public DbSet<AttendanceReattendanceRequest> AttendanceReattendanceRequests => Set<AttendanceReattendanceRequest>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
     public DbSet<LunchServiceDay> LunchServiceDays => Set<LunchServiceDay>();
     public DbSet<LunchRegistration> LunchRegistrations => Set<LunchRegistration>();

@@ -201,7 +201,7 @@ public class AttendanceController : BaseApiController
     }
 
     /// <summary>
-    /// Giáo viên gửi yêu cầu Phòng Giáo vụ hỗ trợ điểm danh / điều chỉnh lại kèm lý do
+    /// Giáo viên gửi yêu cầu Phòng Giáo vụ mở khóa điểm danh lại kèm lý do
     /// </summary>
     [HttpPost("classes/{classId}/request-reattendance")]
     [Authorize(Roles = "Teacher")]
@@ -212,6 +212,62 @@ public class AttendanceController : BaseApiController
     {
         var userId = User.GetRequiredUserId();
         var result = await _attendanceService.RequestReattendanceAsync(classId, dto, userId, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Giáo vụ/Admin xem danh sách yêu cầu mở khóa điểm danh lại từ Giáo viên
+    /// </summary>
+    [HttpGet("reattendance-requests")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> GetReattendanceRequests([FromQuery] string? status = null, CancellationToken ct = default)
+    {
+        var result = await _attendanceService.GetReattendanceRequestsAsync(status, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Giáo vụ/Admin mở khóa bảng điểm danh cả lớp cho Giáo viên chỉnh sửa lại
+    /// </summary>
+    [HttpPost("classes/{classId}/unlock")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> UnlockAttendanceSheet(
+        int classId,
+        [FromBody] UnlockAttendanceSheetDto dto,
+        CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _attendanceService.UnlockAttendanceSheetAsync(classId, dto, userId, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Giáo vụ/Admin khóa lại bảng điểm danh đang mở khóa
+    /// </summary>
+    [HttpPost("classes/{classId}/lock")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> LockAttendanceSheet(
+        int classId,
+        [FromBody] LockAttendanceSheetDto dto,
+        CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _attendanceService.LockAttendanceSheetAsync(classId, dto, userId, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// Giáo vụ/Admin từ chối yêu cầu mở khóa điểm danh lại
+    /// </summary>
+    [HttpPost("reattendance-requests/{requestId:int}/reject")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> RejectReattendanceRequest(
+        int requestId,
+        [FromBody] RejectReattendanceRequestDto dto,
+        CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _attendanceService.RejectReattendanceRequestAsync(requestId, dto, userId, ct);
         return ToActionResult(result);
     }
 }

@@ -2359,4 +2359,120 @@ public class AttendanceServiceTests : TestBase
         result.Data!.ClassName.Should().Be("1A");
         result.Data.Days[0].Remarks.Should().Be("Đi muộn 10 phút");
     }
+
+    [Fact]
+    public async Task ReattendanceFlow_TeacherRequests_OfficeUnlocksClass_TeacherEditsAllAndRelocks()
+    {
+        var today = new DateTime(2026, 11, 28);
+        var pastDate = new DateTime(2026, 11, 26);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(10));
+
+        var cls = new Class
+        {
+            Id = 1,
+            ClassName = "1A",
+            HomeroomTeacherId = 10,
+            Status = "Active",
+            HomeroomTeacher = new StaffProfile { Id = 10, UserId = 30 }
+        };
+        var teacherUser = new User
+        {
+            Id = 30,
+            Username = "teacher1",
+            FullName = "Cô Hương",
+            Status = AccountStatus.Active,
+            UserRoles = new List<UserRole> { new() { Role = new Role { Id = 4, Name = "Teacher" } } }
+        };
+        var officeUser = new User
+        {
+            Id = 20,
+            Username = "office1",
+            FullName = "Cô Hà Giáo vụ",
+            Status = AccountStatus.Active,
+            UserRoles = new List<UserRole> { new() { Role = new Role { Id = 3, Name = "OfficeStaff" } } }
+        };
+
+        var requests = new List<AttendanceReattendanceRequest>();
+        var notifications = new List<Notification>();
+        var existingRec = new AttendanceRecord
+        {
+            Id = 500,
+            StudentId = 1,
+            ClassId = 1,
+            Date = pastDate,
+            Session = AttendanceSession.Morning,
+            Status = AttendanceStatus.UnexcusedAbsence,
+            RecordedByUserId = 30
+        };
+
+        SetupRepository(new List<Class> { cls });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<User> { teacherUser, officeUser });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(requests);
+        SetupRepository(notifications);
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, pastDate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, pastDate, AttendanceSession.Morning, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { existingRec });
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), pastDate, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), pastDate, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        // 1. GV gửi yêu cầu điểm danh lại -> tạo bản ghi Pending + thông báo cho Giáo vụ
+        var reqRes = await _service.RequestReattendanceAsync(1, new RequestReattendanceDto
+        {
+            Date = pastDate,
+            Session = AttendanceSession.Morning,
+            Reason = "Chấm nhầm em A vắng"
+        }, 30);
+        reqRes.Success.Should().BeTrue();
+        requests.Should().ContainSingle(r => r.Status == ReattendanceRequestStatus.Pending && r.Reason == "Chấm nhầm em A vắng");
+        notifications.Should().ContainSingle(n => n.UserId == 20 && n.Type == "AttendanceReattendanceRequest");
+
+        // 2. Giáo vụ xem danh sách yêu cầu và mở khóa cả lớp cho GV
+        var listRes = await _service.GetReattendanceRequestsAsync();
+        listRes.Success.Should().BeTrue();
+        listRes.Data.Should().ContainSingle(r => r.Id == requests[0].Id && r.Status == ReattendanceRequestStatus.Pending);
+
+        var unlockRes = await _service.UnlockAttendanceSheetAsync(1, new UnlockAttendanceSheetDto
+        {
+            Date = pastDate,
+            Session = AttendanceSession.Morning,
+            RequestId = requests[0].Id
+        }, 20);
+        unlockRes.Success.Should().BeTrue();
+        requests[0].Status.Should().Be(ReattendanceRequestStatus.Unlocked);
+        notifications.Should().Contain(n => n.UserId == 30 && n.Type == "AttendanceSheetUnlocked");
+
+        // 3. GV mở bảng điểm danh ngày quá khứ -> đã được mở khóa (CanEdit = true)
+        var sheetRes = await _service.GetAttendanceSheetAsync(1, pastDate, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
+        sheetRes.Success.Should().BeTrue();
+        sheetRes.Data!.CanEdit.Should().BeTrue();
+        sheetRes.Data.IsReattendanceUnlocked.Should().BeTrue();
+
+        // 4. GV chỉnh sửa và lưu lại toàn bộ lớp -> thành công & tự khóa lại (Completed)
+        var submitRes = await _service.RecordDailyAttendanceAsync(1, new SubmitAttendanceSheetDto
+        {
+            Date = pastDate,
+            Session = AttendanceSession.Morning,
+            Entries = new List<DailyAttendanceEntryDto>
+            {
+                new() { StudentId = 1, Status = AttendanceStatus.Present, Remarks = "Đã đi học" }
+            }
+        }, 30, new[] { UserRoles.Teacher });
+
+        submitRes.Success.Should().BeTrue();
+        existingRec.Status.Should().Be(AttendanceStatus.Present);
+        existingRec.Remarks.Should().Be("Đã đi học");
+        requests[0].Status.Should().Be(ReattendanceRequestStatus.Completed);
+
+        // 5. Sau khi GV đã lưu, bảng tự động khóa lại
+        var relockedSheet = await _service.GetAttendanceSheetAsync(1, pastDate, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
+        relockedSheet.Data!.CanEdit.Should().BeFalse();
+        relockedSheet.Data.LockReason.Should().Be("PastDay");
+    }
 }

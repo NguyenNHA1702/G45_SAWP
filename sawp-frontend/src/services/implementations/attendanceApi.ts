@@ -43,4 +43,16 @@ export const attendanceApi: IAttendanceApi = {
 
   requestReattendance: (classId, payload) =>
     unwrap(apiClient.post(`/attendance/classes/${classId}/request-reattendance`, payload)),
+
+  getReattendanceRequests: (status) =>
+    unwrapData(apiClient.get('/attendance/reattendance-requests', { params: status ? { status } : undefined })),
+
+  unlockSheet: (classId, payload) =>
+    unwrap(apiClient.post(`/attendance/classes/${classId}/unlock`, payload)),
+
+  lockSheet: (classId, payload) =>
+    unwrap(apiClient.post(`/attendance/classes/${classId}/lock`, payload)),
+
+  rejectReattendanceRequest: (requestId, payload) =>
+    unwrap(apiClient.post(`/attendance/reattendance-requests/${requestId}/reject`, payload)),
 };

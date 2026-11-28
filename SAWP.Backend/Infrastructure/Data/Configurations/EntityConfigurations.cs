@@ -333,6 +333,34 @@ public class AbsenceContactNoteConfiguration : IEntityTypeConfiguration<AbsenceC
     }
 }
 
+public class AttendanceReattendanceRequestConfiguration : IEntityTypeConfiguration<AttendanceReattendanceRequest>
+{
+    public void Configure(EntityTypeBuilder<AttendanceReattendanceRequest> builder)
+    {
+        builder.HasKey(r => r.Id);
+        builder.Property(r => r.Date).HasColumnType("date");
+        builder.Property(r => r.Reason).HasMaxLength(500).IsRequired();
+        builder.Property(r => r.ReviewNote).HasMaxLength(500);
+        builder.HasIndex(r => new { r.ClassId, r.Date, r.Session, r.Status });
+        builder.HasIndex(r => new { r.Status, r.CreatedAt });
+
+        builder.HasOne(r => r.Class)
+               .WithMany()
+               .HasForeignKey(r => r.ClassId)
+               .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(r => r.RequestedByUser)
+               .WithMany()
+               .HasForeignKey(r => r.RequestedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(r => r.ReviewedByUser)
+               .WithMany()
+               .HasForeignKey(r => r.ReviewedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public class LeaveRequestConfiguration : IEntityTypeConfiguration<LeaveRequest>
 {
     public void Configure(EntityTypeBuilder<LeaveRequest> builder)

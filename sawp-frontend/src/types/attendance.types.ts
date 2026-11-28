@@ -12,6 +12,25 @@ export type AttendanceSession = 'Morning' | 'Afternoon';
 export type LeaveSession = 'Morning' | 'Afternoon' | 'FullDay';
 export type LunchCancellationSource = 'Parent' | 'Leave' | 'Attendance' | 'Staff';
 export type SheetLockReason = 'PastDay' | 'NotAssigned' | 'NonSchoolDay' | 'Future' | 'EmptyRoster' | 'AlreadySubmitted';
+export type ReattendanceRequestStatus = 'Pending' | 'Unlocked' | 'Completed' | 'Rejected';
+
+export interface ReattendanceRequest {
+  id: number;
+  classId: number;
+  className: string;
+  date: string;
+  session: AttendanceSession;
+  requestedByUserId: number | null;
+  requesterName: string;
+  reason: string;
+  status: ReattendanceRequestStatus;
+  reviewedByUserId: number | null;
+  reviewedByName: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  unlockedAt: string | null;
+  completedAt: string | null;
+}
 
 export interface TeacherClassOption {
   classId: number;
@@ -69,6 +88,13 @@ export interface AttendanceSheet {
   submittedAt: string | null;
   submittedByName: string | null;
   lastUpdatedAt: string | null;
+  isReattendanceUnlocked?: boolean;
+  unlockNote?: string | null;
+  unlockedByName?: string | null;
+  unlockedAt?: string | null;
+  hasPendingReattendanceRequest?: boolean;
+  pendingReattendanceReason?: string | null;
+  pendingReattendanceRequestedAt?: string | null;
   entries: AttendanceSheetEntry[];
   summary: AttendanceSummary;
 }

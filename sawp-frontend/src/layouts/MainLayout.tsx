@@ -424,9 +424,9 @@ export function MainLayout() {
 
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000);
+    const interval = setInterval(fetchUnreadCount, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [location.pathname]);
 
   // Close notifications on outside click
   useEffect(() => {
