@@ -1,9 +1,9 @@
-import { BellRing, PencilLine, Utensils } from 'lucide-react';
+import { MessageSquareText, PencilLine, Utensils } from 'lucide-react';
 import type { AttendanceSheetEntry, AttendanceStatus } from '../../types/attendance.types';
 import type { DraftMap } from '../../hooks/useAttendanceSheet';
 import { AttendanceStatusToggle } from './AttendanceStatusToggle';
 import { LeaveBadge } from './LeaveBadge';
-import { formatViDateTime } from '../../utils/date';
+import { ATTENDANCE_STATUS, LEAVE_REQUEST_STATUS, LUNCH_CANCELLATION_SOURCE } from '../../constants/attendance';
 
 interface Props {
   entries: AttendanceSheetEntry[];
@@ -12,17 +12,36 @@ interface Props {
   onStatusChange: (studentId: number, status: AttendanceStatus) => void;
   onRemarksChange: (studentId: number, remarks: string) => void;
   onCorrect?: (entry: AttendanceSheetEntry) => void;
-  /** Office Staff or Teacher (OVR-01, UC-23 A2): shows the absence notice column. */
-  onSendAbsenceNotice?: (entry: AttendanceSheetEntry) => void;
-  /** Disables the send buttons, e.g. while sending or while the sheet has unsaved changes. */
-  absenceNoticeDisabled?: boolean;
-  /** Only today's records allow sending a new absence notice (AT-08). */
-  canSendNoticeForDate?: boolean;
+  /** School staff (OVR-10, UC-23 A1): shows the family contact column and opens the contact notes of a record. */
+  onOpenContactNotes?: (entry: AttendanceSheetEntry) => void;
+  /** Disables the contact note buttons, e.g. while the sheet has unsaved changes. */
+  contactNotesDisabled?: boolean;
 }
 
-/** A notice can be sent for a saved unexcused absence not covered by an approved leave. */
-const canSendAbsenceNotice = (e: AttendanceSheetEntry) =>
-  e.recordId !== null && e.status === 'UnexcusedAbsence' && e.leave?.status !== 'Approved';
+/** A saved unexcused absence, or a record that still has contact notes as history (BR-62). */
+const hasContactColumn = (e: AttendanceSheetEntry) =>
+  e.recordId !== null && (e.status === ATTENDANCE_STATUS.UnexcusedAbsence || (e.contactNotes?.length ?? 0) > 0);
+
+const notesInEffect = (e: AttendanceSheetEntry) => (e.contactNotes ?? []).filter((n) => !n.isSuperseded).length;
+
+function renderContactStatus(e: AttendanceSheetEntry) {
+  const count = notesInEffect(e);
+  if (count > 0) {
+    return (
+      <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+        Đã liên hệ ({count})
+      </span>
+    );
+  }
+  if (e.status === ATTENDANCE_STATUS.UnexcusedAbsence) {
+    return (
+      <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
+        Chưa có ghi chú
+      </span>
+    );
+  }
+  return null;
+}
 
 const initials = (name: string) => {
   const parts = name.trim().split(/\s+/);
@@ -37,14 +56,14 @@ function renderLunchBadge(e: AttendanceSheetEntry) {
       </span>
     );
   }
-  if (e.lunchCancelledBy === 'Attendance') {
+  if (e.lunchCancelledBy === LUNCH_CANCELLATION_SOURCE.Attendance) {
     return (
       <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }} title="Đã trừ do vắng">
         Đã trừ
       </span>
     );
   }
-  if (e.lunchCancelledBy === 'Leave' || e.lunchCancelledBy === 'Parent' || e.lunchCancelledBy === 'Staff') {
+  if (e.lunchCancelledBy === LUNCH_CANCELLATION_SOURCE.Leave || e.lunchCancelledBy === LUNCH_CANCELLATION_SOURCE.Parent || e.lunchCancelledBy === LUNCH_CANCELLATION_SOURCE.Staff) {
     return (
       <span
         className="badge"
@@ -55,7 +74,7 @@ function renderLunchBadge(e: AttendanceSheetEntry) {
           color: '#334155',
         }}
         title={
-          e.lunchCancelledBy === 'Leave'
+          e.lunchCancelledBy === LUNCH_CANCELLATION_SOURCE.Leave
             ? 'Không ăn (suất ăn đã được hủy do đơn xin nghỉ được duyệt)'
             : 'Không ăn (đã hủy suất ăn bán trú)'
         }
@@ -74,11 +93,10 @@ export function AttendanceRosterTable({
   onStatusChange,
   onRemarksChange,
   onCorrect,
-  onSendAbsenceNotice,
-  absenceNoticeDisabled = false,
-  canSendNoticeForDate = true,
+  onOpenContactNotes,
+  contactNotesDisabled = false,
 }: Props) {
-  const showNotice = onSendAbsenceNotice !== undefined;
+  const showContact = onOpenContactNotes !== undefined;
   return (
     <>
       <div
@@ -106,8 +124,8 @@ export function AttendanceRosterTable({
               {onCorrect && (
                 <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', width: 120, fontWeight: 800 }}>Điều chỉnh</th>
               )}
-              {showNotice && (
-                <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', minWidth: 170, fontWeight: 800 }}>Thông báo vắng</th>
+              {showContact && (
+                <th scope="col" style={{ padding: '12px 14px', textAlign: 'center', minWidth: 170, fontWeight: 800 }}>Liên hệ gia đình</th>
               )}
             </tr>
           </thead>
@@ -159,7 +177,7 @@ export function AttendanceRosterTable({
                     <AttendanceStatusToggle
                       label={`Trạng thái của ${e.fullName}`}
                       value={row?.status ?? null}
-                      excusedAllowed={e.leave?.status === 'Approved'}
+                      excusedAllowed={e.leave?.status === LEAVE_REQUEST_STATUS.Approved}
                       disabled={disabled}
                       onChange={(s) => onStatusChange(e.studentId, s)}
                     />
@@ -208,36 +226,31 @@ export function AttendanceRosterTable({
                       )}
                     </td>
                   )}
-                  {showNotice && (
-                    <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                      {e.status === 'UnexcusedAbsence' && e.absenceNoticeSentAt ? (
-                        <span
-                          className="badge badge--mint"
-                          style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}
-                          title={`Đã gửi lúc ${formatViDateTime(e.absenceNoticeSentAt)}`}
-                        >
-                          Đã gửi · {formatViDateTime(e.absenceNoticeSentAt)}
-                        </span>
-                      ) : canSendAbsenceNotice(e) && canSendNoticeForDate ? (
-                        <button
-                          type="button"
-                          className="btn btn--secondary btn--sm"
-                          onClick={() => onSendAbsenceNotice(e)}
-                          disabled={absenceNoticeDisabled}
-                          aria-label={`Gửi thông báo vắng mặt cho phụ huynh của ${e.fullName}`}
-                          style={{
-                            borderRadius: 'var(--radius-full)',
-                            border: '1.5px solid var(--color-fg)',
-                            fontWeight: 700,
-                            fontSize: 'var(--fs-xs)',
-                            padding: '6px 12px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                        >
-                          <BellRing size={14} aria-hidden="true" /> Gửi thông báo vắng
-                        </button>
+                  {showContact && (
+                    <td style={{ padding: '10px 14px', textAlign: 'center' }} data-testid={`contact-cell-${e.studentId}`}>
+                      {hasContactColumn(e) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                          {renderContactStatus(e)}
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            onClick={() => onOpenContactNotes(e)}
+                            disabled={contactNotesDisabled}
+                            aria-label={`Ghi chú liên hệ của ${e.fullName}`}
+                            style={{
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid var(--color-fg)',
+                              fontWeight: 700,
+                              fontSize: 'var(--fs-xs)',
+                              padding: '6px 12px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
+                          >
+                            <MessageSquareText size={14} aria-hidden="true" /> Ghi chú liên hệ
+                          </button>
+                        </div>
                       ) : (
                         <span style={{ color: 'var(--color-muted-fg)' }}>—</span>
                       )}
@@ -285,7 +298,7 @@ export function AttendanceRosterTable({
             <AttendanceStatusToggle
               label={`Trạng thái của ${e.fullName}`}
               value={row?.status ?? null}
-              excusedAllowed={e.leave?.status === 'Approved'}
+              excusedAllowed={e.leave?.status === LEAVE_REQUEST_STATUS.Approved}
               disabled={disabled}
               onChange={(s) => onStatusChange(e.studentId, s)}
             />
@@ -317,15 +330,16 @@ export function AttendanceRosterTable({
                   <PencilLine size={13} /> Sửa
                 </button>
               )}
-              {showNotice && canSendAbsenceNotice(e) && canSendNoticeForDate && !(e.status === 'UnexcusedAbsence' && e.absenceNoticeSentAt) && (
+              {showContact && hasContactColumn(e) && (
                 <button
                   type="button"
                   className="btn btn--secondary btn--sm"
-                  onClick={() => onSendAbsenceNotice(e)}
-                  disabled={absenceNoticeDisabled}
+                  onClick={() => onOpenContactNotes(e)}
+                  disabled={contactNotesDisabled}
+                  aria-label={`Ghi chú liên hệ của ${e.fullName}`}
                   style={{ flexShrink: 0 }}
                 >
-                  <BellRing size={13} /> Báo vắng
+                  <MessageSquareText size={13} /> Ghi chú liên hệ
                 </button>
               )}
             </div>

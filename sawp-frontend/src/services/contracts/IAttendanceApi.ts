@@ -1,6 +1,7 @@
 import type { ApiResponse } from '../../types/common.types';
 import type {
-  AbsenceNoticeResult,
+  AbsenceContactNote,
+  AbsenceWithoutContactNote,
   AttendanceSession,
   AttendanceSheet,
   AttendanceSheetEntry,
@@ -8,6 +9,7 @@ import type {
   ClassAttendanceMatrix,
   ClassAttendanceSummary,
   CorrectAttendancePayload,
+  CreateContactNotePayload,
   StudentAttendanceHistory,
   SubmitAttendanceSheetPayload,
   TeacherClassOption,
@@ -18,7 +20,10 @@ export interface IAttendanceApi {
   getSheet(classId: number, date: string, session: AttendanceSession): Promise<AttendanceSheet>;
   submitSheet(classId: number, payload: SubmitAttendanceSheetPayload): Promise<ApiResponse<AttendanceSubmitResult>>;
   correctRecord(recordId: number, payload: CorrectAttendancePayload): Promise<ApiResponse<AttendanceSheetEntry>>;
-  sendAbsenceNotice(recordId: number): Promise<ApiResponse<AbsenceNoticeResult>>;
+  getContactNotes(recordId: number): Promise<AbsenceContactNote[]>;
+  addContactNote(recordId: number, payload: CreateContactNotePayload): Promise<ApiResponse<AbsenceContactNote>>;
+  supersedeContactNote(noteId: number, reason: string): Promise<ApiResponse<AbsenceContactNote>>;
+  getAbsencesWithoutContactNote(from: string, to: string, classId?: number | null): Promise<AbsenceWithoutContactNote[]>;
   getClassSummary(classId: number, from: string, to: string): Promise<ClassAttendanceSummary>;
   getClassMatrix(classId: number, from: string, to: string): Promise<ClassAttendanceMatrix>;
   getStudentHistory(studentId: number, from: string, to: string): Promise<StudentAttendanceHistory>;

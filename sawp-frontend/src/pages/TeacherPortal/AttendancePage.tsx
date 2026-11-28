@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
-import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, PencilLine, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Users } from 'lucide-react';
+import { BarChart3, CalendarCheck2, MessageSquareText, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, PencilLine, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Users } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
@@ -28,6 +28,8 @@ import { LockedBanner } from '../../components/attendance/LockedBanner';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { DateInput } from '../../components/common/DateInput';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { ContactNotesModal } from '../../components/attendance/ContactNotesModal';
+import { AbsenceFollowUpPanel } from '../../components/attendance/AbsenceFollowUpPanel';
 
 const formatDashDate = (iso: string): string => {
   const [y, m, d] = iso.slice(0, 10).split('-');
@@ -58,15 +60,16 @@ export default function AttendancePage() {
   const [roles] = useState(() => currentRoles());
   const hasRole = (...targets: string[]) =>
     roles.some((r) => targets.some((t) => t.toLowerCase() === r.toLowerCase()));
-  // OVR-01 (UC-23 A2): Office Staff and Teacher can send absence notices; the API checks the role too.
+  // OVR-10 (UC-23 A1, BR-62): the homeroom Teacher and Office Staff record contact notes; School Board only
+  // views them; the System Administrator and Parents never see them. The API checks the role too.
   const isOfficeStaff = hasRole('OfficeStaff');
-  const canSendAbsenceNotice = isOfficeStaff || hasRole('Teacher');
+  const canRecordContactNote = isOfficeStaff || hasRole('Teacher');
+  const canViewContactNotes = canRecordContactNote || hasRole('SchoolBoard');
   const isOfficeOrAdmin = isOfficeStaff || hasRole('Admin');
   const isTeacherOnly = hasRole('Teacher') && !isOfficeOrAdmin;
   const isSchoolBoardOnly = hasRole('SchoolBoard') && !hasRole('Teacher') && !isOfficeOrAdmin;
-  const [activeTab, setActiveTab] = useState<'sheet' | 'summary'>(() => (isSchoolBoardOnly ? 'summary' : 'sheet'));
-  const [noticeEntry, setNoticeEntry] = useState<AttendanceSheetEntry | null>(null);
-  const [noticeSending, setNoticeSending] = useState(false);
+  const [activeTab, setActiveTab] = useState<'sheet' | 'summary' | 'followup'>(() => (isSchoolBoardOnly ? 'summary' : 'sheet'));
+  const [contactEntry, setContactEntry] = useState<AttendanceSheetEntry | null>(null);
   const [reattendOpen, setReattendOpen] = useState(false);
   const [reattendReason, setReattendReason] = useState('');
   const [reattendSending, setReattendSending] = useState(false);
@@ -252,27 +255,11 @@ export default function AttendancePage() {
     }
   };
 
-  const handleSendAbsenceNotice = async () => {
-    if (!noticeEntry?.recordId) return;
-    setNoticeSending(true);
-    try {
-      const res = await attendanceApi.sendAbsenceNotice(noticeEntry.recordId);
-      toast.success(res.message || SYSTEM_MESSAGES.MSG55.content);
-    } catch (e) {
-      const apiErr = asApiError(e);
-      toast.error(apiErr.errors?.[0] || apiErr.message);
-    } finally {
-      setNoticeSending(false);
-      setNoticeEntry(null);
-      vm.reload(); // show the sent time, or the current state after MSG09
-    }
-  };
-
   const canEdit = vm.sheet?.canEdit ?? false;
   const canCorrectPastDay =
     !canEdit &&
     (vm.sheet?.lockReason === 'PastDay' || vm.sheet?.lockReason === 'AlreadySubmitted') &&
-    isOfficeOrAdmin;
+    isOfficeStaff; // UC-22: Office Staff only (OVR-10)
 
   const openCorrectionModal = (entry: AttendanceSheetEntry) => {
     setCorrectingEntry(entry);
@@ -322,7 +309,7 @@ export default function AttendancePage() {
           Điểm Danh <span className="squiggle">Hằng Ngày</span>
         </h1>
         <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)', maxWidth: '68ch' }}>
-          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng có phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Giáo viên hoặc Phòng Giáo vụ có thể gửi thông báo vắng mặt không phép tới phụ huynh.
+          Ghi nhận chuyên cần từng buổi của học sinh. Học sinh vắng có phép trước giờ cắt cơm sẽ tự động hủy suất ăn. Với mỗi buổi vắng không phép, giáo viên chủ nhiệm liên hệ gia đình và lưu ghi chú liên hệ.
         </p>
 
         {/* ATT-14: Chuyển đổi giữa Điểm danh theo ngày & Tổng hợp chuyên cần lớp */}
@@ -367,6 +354,28 @@ export default function AttendancePage() {
           >
             <BarChart3 size={16} aria-hidden="true" /> Tổng hợp chuyên cần
           </button>
+          {isOfficeStaff && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'followup'}
+              className={`btn ${activeTab === 'followup' ? 'btn--primary' : 'btn--secondary'}`}
+              onClick={() => {
+                if (guardDirty()) setActiveTab('followup');
+              }}
+              style={{
+                borderRadius: 'var(--radius-full)',
+                border: '2px solid var(--color-fg)',
+                boxShadow: activeTab === 'followup' ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <MessageSquareText size={16} aria-hidden="true" /> Vắng chưa có ghi chú liên hệ
+            </button>
+          )}
           {isTeacherOnly && (
             <button
               id="btn-header-request-reattendance"
@@ -397,6 +406,7 @@ export default function AttendancePage() {
       </header>
 
       {/* Toolbar */}
+      {activeTab !== 'followup' && (
       <section
         className="card card--toolbar pop-in"
         style={{
@@ -563,8 +573,11 @@ export default function AttendancePage() {
           </>
         )}
       </section>
+      )}
 
-      {activeTab === 'summary' ? (
+      {activeTab === 'followup' ? (
+        <AbsenceFollowUpPanel classes={classes} defaultFrom={defaultSummaryFromIso()} defaultTo={todayStr} />
+      ) : activeTab === 'summary' ? (
         <section aria-label="Báo cáo tổng hợp chuyên cần lớp">
           {/* Thanh chuyển chế độ xem: Bảng thống kê vs Ma trận theo ngày */}
           <div
@@ -845,9 +858,8 @@ export default function AttendancePage() {
               onStatusChange={vm.setStatus}
               onRemarksChange={vm.setRemarks}
               onCorrect={canCorrectPastDay ? openCorrectionModal : undefined}
-              onSendAbsenceNotice={canSendAbsenceNotice ? setNoticeEntry : undefined}
-              absenceNoticeDisabled={noticeSending || vm.saving || vm.isDirty}
-              canSendNoticeForDate={date === todayStr}
+              onOpenContactNotes={canViewContactNotes ? setContactEntry : undefined}
+              contactNotesDisabled={vm.saving || vm.isDirty}
             />
           )}
 
@@ -1126,19 +1138,15 @@ export default function AttendancePage() {
         </div>
       </GeometricModal>
 
-      <ConfirmDialog
-        open={noticeEntry !== null}
-        title="Gửi thông báo vắng mặt"
-        confirmText="Gửi"
-        busy={noticeSending}
-        onConfirm={handleSendAbsenceNotice}
-        onCancel={() => setNoticeEntry(null)}
-      >
-        <p>
-          Gửi thông báo vắng mặt không phép của <strong>{noticeEntry?.fullName}</strong> ({session === 'Morning' ? 'buổi sáng' : 'buổi chiều'}{' '}
-          {formatDashDate(date)}) tới phụ huynh? Mỗi buổi vắng chỉ gửi được một lần.
-        </p>
-      </ConfirmDialog>
+      <ContactNotesModal
+        open={contactEntry !== null}
+        recordId={contactEntry?.recordId ?? null}
+        studentName={contactEntry?.fullName ?? ''}
+        absenceLabel={`${session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} · ${formatDashDate(date)}`}
+        canRecord={canRecordContactNote && contactEntry?.status === 'UnexcusedAbsence'}
+        onClose={() => setContactEntry(null)}
+        onChanged={vm.reload}
+      />
 
       <GeometricModal
         open={detailStudent !== null}

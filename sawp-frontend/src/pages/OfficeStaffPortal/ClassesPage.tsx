@@ -530,7 +530,7 @@ export default function ClassesPage() {
                     justifyContent: 'space-between',
                   }}
                 >
-                  {/* Header Row 1: Tên lớp, Khối, Trạng thái Công bố */}
+                  {/* Header row 1: class name, grade and review status (UC-14 A2) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
                       <span

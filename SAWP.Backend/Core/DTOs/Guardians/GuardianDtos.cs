@@ -1,45 +1,6 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Core.Enums;
 
 namespace Core.DTOs;
-
-public class RelationshipJsonConverter : JsonConverter<RelationshipTypes>
-{
-    public override RelationshipTypes Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        if (reader.TokenType == JsonTokenType.Number)
-        {
-            var val = reader.GetInt32();
-            if (Enum.IsDefined(typeof(RelationshipTypes), val))
-                return (RelationshipTypes)val;
-            return RelationshipTypes.Father;
-        }
-
-        if (reader.TokenType == JsonTokenType.String)
-        {
-            var str = reader.GetString()?.Trim().ToLowerInvariant() ?? string.Empty;
-            if (int.TryParse(str, out var num) && Enum.IsDefined(typeof(RelationshipTypes), num))
-                return (RelationshipTypes)num;
-
-            if (str.Contains("bố") || str.Contains("cha") || str.Contains("father"))
-                return RelationshipTypes.Father;
-            if (str.Contains("mẹ") || str.Contains("me") || str.Contains("mother"))
-                return RelationshipTypes.Mother;
-            if (str.Contains("giám hộ") || str.Contains("giam ho") || str.Contains("guardian"))
-                return RelationshipTypes.Guardian;
-
-            return RelationshipTypes.Other;
-        }
-
-        return RelationshipTypes.Father;
-    }
-
-    public override void Write(Utf8JsonWriter writer, RelationshipTypes value, JsonSerializerOptions options)
-    {
-        writer.WriteNumberValue((int)value);
-    }
-}
 
 public class LinkedChildSummaryDto
 {

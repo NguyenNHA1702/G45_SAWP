@@ -1,7 +1,7 @@
 namespace Core.Constants;
 
 /// <summary>
-/// Standard System Messages defined in SRS (MSG01 to MSG63).
+/// Standard System Messages defined in SRS (MSG01 to MSG63, MSG319).
 /// </summary>
 public static class SystemMessages
 {
@@ -221,9 +221,9 @@ public static class SystemMessages
     public static readonly SystemMessage MSG54 = new("MSG54", "Toast (Info)", "Comments disabled", "Bài viết này hiện đã tắt tính năng bình luận.");
     public static readonly SystemMessage MSG54_CommentsDisabled = MSG54;
 
-    /// <summary>[Toast (Success)] Absence notice sent: Đã gửi thông báo vắng mặt cho phụ huynh.</summary>
-    public static readonly SystemMessage MSG55 = new("MSG55", "Toast (Success)", "Absence notice sent", "Đã gửi thông báo vắng mặt cho phụ huynh.");
-    public static readonly SystemMessage MSG55_AbsenceNoticeSent = MSG55;
+    /// <summary>[Toast (Success)] Contact note saved: Đã lưu ghi chú liên hệ gia đình.</summary>
+    public static readonly SystemMessage MSG55 = new("MSG55", "Toast (Success)", "Contact note saved", "Đã lưu ghi chú liên hệ gia đình.");
+    public static readonly SystemMessage MSG55_ContactNoteSaved = MSG55;
 
     /// <summary>[Toast (Info)] Recovery or activation link requested: Nếu địa chỉ email đã được đăng ký, một đường liên kết sẽ được gửi đến hộp thư của bạn. Vui lòng kiểm tra email.</summary>
     public static readonly SystemMessage MSG56 = new("MSG56", "Toast (Info)", "Recovery or activation link requested", "Nếu địa chỉ email đã được đăng ký, một đường liên kết sẽ được gửi đến hộp thư của bạn. Vui lòng kiểm tra email.");
@@ -256,6 +256,10 @@ public static class SystemMessages
     /// <summary>[Toast (Error)] School year cannot be activated: Không thể kích hoạt năm học: năm học phải ở trạng thái Bản nháp và tất cả các lớp phải được đánh dấu Đã rà soát.</summary>
     public static readonly SystemMessage MSG63 = new("MSG63", "Toast (Error)", "School year cannot be activated", "Không thể kích hoạt năm học: năm học phải ở trạng thái Bản nháp và tất cả các lớp phải được đánh dấu Đã rà soát.");
     public static readonly SystemMessage MSG63_SchoolYearCannotBeActivated = MSG63;
+
+    /// <summary>[Toast (Success)] Contact note marked superseded: Đã đánh dấu ghi chú liên hệ không còn hiệu lực.</summary>
+    public static readonly SystemMessage MSG319 = new("MSG319", "Toast (Success)", "Contact note marked superseded", "Đã đánh dấu ghi chú liên hệ không còn hiệu lực.");
+    public static readonly SystemMessage MSG319_ContactNoteSuperseded = MSG319;
 
     /// <summary>Map of all system messages by code</summary>
     public static readonly IReadOnlyDictionary<string, SystemMessage> All = new Dictionary<string, SystemMessage>(System.StringComparer.OrdinalIgnoreCase)
@@ -323,6 +327,7 @@ public static class SystemMessages
         { "MSG61", MSG61 },
         { "MSG62", MSG62 },
         { "MSG63", MSG63 },
+        { "MSG319", MSG319 },
     };
 
     /// <summary>Lookup a message by code (e.g. MSG01)</summary>

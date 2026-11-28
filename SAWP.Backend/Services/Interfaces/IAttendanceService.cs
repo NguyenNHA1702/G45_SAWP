@@ -17,8 +17,17 @@ public interface IAttendanceService
     // API-4: PUT /api/attendance/records/{recordId}
     Task<ApiResponse<AttendanceSheetEntryDto>> CorrectAttendanceAsync(int recordId, CorrectAttendanceDto dto, int userId, CancellationToken ct = default);
 
-    // OVR-01 (UC-23 A2): Office Staff or Teacher send an absence notice for one unexcused absence
-    Task<ApiResponse<AbsenceNoticeResultDto>> SendAbsenceNoticeAsync(int recordId, int userId, IReadOnlyList<UserRoles>? roles = null, CancellationToken ct = default);
+    // OVR-10 (UC-23 A1): contact notes of one attendance record (school staff with access to the class)
+    Task<ApiResponse<List<AbsenceContactNoteDto>>> GetContactNotesAsync(int recordId, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // OVR-10 (UC-23 A1): the homeroom Teacher or Office Staff record a contact note on an unexcused absence (MSG55)
+    Task<ApiResponse<AbsenceContactNoteDto>> AddContactNoteAsync(int recordId, CreateAbsenceContactNoteDto dto, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // OVR-10 (UC-23 A1): the note's author or Office Staff mark a wrong note superseded (MSG319)
+    Task<ApiResponse<AbsenceContactNoteDto>> SupersedeContactNoteAsync(int noteId, SupersedeAbsenceContactNoteDto dto, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
+
+    // OVR-10 (UC-23 A2): Office Staff list the unexcused absences of a date range with no contact note in effect
+    Task<ApiResponse<List<AbsenceWithoutContactNoteDto>>> GetAbsencesWithoutContactNoteAsync(DateTime from, DateTime to, int? classId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);
 
     // API-5: GET /api/attendance/classes/{classId}/summary?from=&to=
     Task<ApiResponse<ClassAttendanceSummaryDto>> GetClassSummaryAsync(int classId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);

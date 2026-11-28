@@ -143,11 +143,6 @@ export const classApi = {
   },
 
   // Student class assignment (UC-16)
-  async getEligibleStudents(classId: number): Promise<ApiResponse<RosterStudentItemDto[]>> {
-    const res = await apiClient.get<ApiResponse<RosterStudentItemDto[]>>(`/classes/${classId}/eligible-students`);
-    return res.data;
-  },
-
   async getEligibleStudentsPaged(
     classId: number,
     search?: string,

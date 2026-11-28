@@ -45,7 +45,8 @@ export interface AttendanceSheetEntry {
   leave: LeaveIndicator | null;
   hasLunch: boolean;
   lunchCancelledBy: LunchCancellationSource | null;
-  absenceNoticeSentAt: string | null; // UTC; null = no absence notice sent yet (OVR-01)
+  /** OVR-10 (UC-23 A1): contact notes of the record, newest first; empty for roles that may not see them. */
+  contactNotes: AbsenceContactNote[];
 }
 
 export interface AttendanceSummary {
@@ -99,10 +100,49 @@ export interface AttendanceSubmitResult {
   warnings: string[];
 }
 
-export interface AbsenceNoticeResult {
+// ===== OVR-10: contact notes on unexcused absences (UC-23 A1, A2; BR-62) =====
+export type ContactChannel = 'Phone' | 'Zalo' | 'InPerson' | 'Other';
+export type ContactOutcome = 'Reached' | 'NotReached';
+
+export interface AbsenceContactNote {
+  id: number;
+  attendanceRecordId: number;
+  contactedAt: string; // UTC
+  channel: ContactChannel;
+  outcome: ContactOutcome;
+  note: string;
+  createdByUserId: number;
+  createdByName: string | null;
+  createdAt: string; // UTC
+  isSuperseded: boolean;
+  supersededAt: string | null; // UTC
+  supersededByName: string | null;
+  supersedeReason: string | null;
+  /** The current user may mark the note superseded (its author or Office Staff, note in effect). */
+  canSupersede: boolean;
+}
+
+export interface CreateContactNotePayload {
+  contactedAt: string; // ISO, UTC
+  channel: ContactChannel | null;
+  outcome: ContactOutcome | null;
+  note: string;
+}
+
+/** An unexcused absence with no contact note in effect (UC-23 A2). */
+export interface AbsenceWithoutContactNote {
   recordId: number;
-  absenceNoticeSentAt: string;
-  parentsNotifiedCount: number;
+  studentId: number;
+  studentCode: string;
+  fullName: string;
+  classId: number;
+  className: string;
+  grade: number;
+  homeroomTeacherName: string | null;
+  date: string;
+  session: AttendanceSession;
+  remarks: string | null;
+  supersededNoteCount: number;
 }
 
 export interface AttendanceDay {
