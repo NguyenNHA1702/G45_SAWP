@@ -22,6 +22,59 @@ namespace Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Core.Entities.AbsenceContactNote", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AttendanceRecordId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ContactedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SupersedeReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("SupersededAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("SupersededByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttendanceRecordId");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("SupersededByUserId");
+
+                    b.ToTable("AbsenceContactNotes");
+                });
+
             modelBuilder.Entity("Core.Entities.AccountRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -213,12 +266,6 @@ namespace Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTime?>("AbsenceNoticeSentAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("AbsenceNoticeSentByUserId")
-                        .HasColumnType("int");
-
                     b.Property<int>("ClassId")
                         .HasColumnType("int");
 
@@ -258,8 +305,6 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AbsenceNoticeSentByUserId");
 
                     b.HasIndex("LeaveRequestId");
 
@@ -1641,6 +1686,32 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("WeeklyMenuTemplateItems");
                 });
 
+            modelBuilder.Entity("Core.Entities.AbsenceContactNote", b =>
+                {
+                    b.HasOne("Core.Entities.AttendanceRecord", "AttendanceRecord")
+                        .WithMany("ContactNotes")
+                        .HasForeignKey("AttendanceRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.User", "SupersededByUser")
+                        .WithMany()
+                        .HasForeignKey("SupersededByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AttendanceRecord");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("SupersededByUser");
+                });
+
             modelBuilder.Entity("Core.Entities.AccountRequest", b =>
                 {
                     b.HasOne("Core.Entities.AccountRequest", "FollowsUpRequest")
@@ -1719,11 +1790,6 @@ namespace Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Core.Entities.AttendanceRecord", b =>
                 {
-                    b.HasOne("Core.Entities.User", "AbsenceNoticeSentByUser")
-                        .WithMany()
-                        .HasForeignKey("AbsenceNoticeSentByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Core.Entities.Class", "Class")
                         .WithMany("AttendanceRecords")
                         .HasForeignKey("ClassId")
@@ -1751,8 +1817,6 @@ namespace Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("UpdatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("AbsenceNoticeSentByUser");
 
                     b.Navigation("Class");
 
@@ -2214,6 +2278,11 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("DocumentRequestDetail");
 
                     b.Navigation("LeaveRequest");
+                });
+
+            modelBuilder.Entity("Core.Entities.AttendanceRecord", b =>
+                {
+                    b.Navigation("ContactNotes");
                 });
 
             modelBuilder.Entity("Core.Entities.Class", b =>

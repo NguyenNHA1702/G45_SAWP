@@ -1,4 +1,4 @@
-// Standard System Messages defined in SRS (MSG01 to MSG63)
+// Standard System Messages defined in SRS (MSG01 to MSG63, MSG319)
 
 export interface SystemMessage {
   code: string;
@@ -335,8 +335,8 @@ export const SYSTEM_MESSAGES = {
   MSG55: {
     code: "MSG55",
     messageType: "Toast (Success)",
-    context: "Absence notice sent",
-    content: "Đã gửi thông báo vắng mặt cho phụ huynh.",
+    context: "Contact note saved",
+    content: "Đã lưu ghi chú liên hệ gia đình.",
   },
   MSG56: {
     code: "MSG56",
@@ -385,6 +385,12 @@ export const SYSTEM_MESSAGES = {
     messageType: "Toast (Error)",
     context: "School year cannot be activated",
     content: "Không thể kích hoạt năm học: năm học phải ở trạng thái Bản nháp và tất cả các lớp phải được đánh dấu Đã rà soát.",
+  },
+  MSG319: {
+    code: "MSG319",
+    messageType: "Toast (Success)",
+    context: "Contact note marked superseded",
+    content: "Đã đánh dấu ghi chú liên hệ không còn hiệu lực.",
   },
 } as const;
 

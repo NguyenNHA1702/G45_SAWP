@@ -29,8 +29,6 @@ public class AttendanceRecord
     public int? LeaveRequestId { get; set; }           // đơn nghỉ đã duyệt phủ ngày này
     public virtual LeaveRequest? LeaveRequest { get; set; }
 
-    // OVR-01 (UC-23 A2): absence notice sent by Office Staff; null = not sent. At most one per record.
-    public DateTime? AbsenceNoticeSentAt { get; set; } // UTC
-    public int? AbsenceNoticeSentByUserId { get; set; }
-    public virtual User? AbsenceNoticeSentByUser { get; set; }
+    // OVR-10 (UC-23 A1): contact notes recorded for an unexcused absence; kept as history when the status is corrected
+    public virtual ICollection<AbsenceContactNote> ContactNotes { get; set; } = new List<AbsenceContactNote>();
 }

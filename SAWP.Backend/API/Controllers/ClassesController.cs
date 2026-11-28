@@ -244,15 +244,6 @@ public class ClassesController : ControllerBase
 
     #region Student Class Assignment (UC-16)
 
-    [HttpGet("{id}/eligible-students")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
-    [ProducesResponseType(typeof(ApiResponse<List<RosterStudentItemDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetEligibleStudents(int id, CancellationToken cancellationToken)
-    {
-        var result = await _classService.GetEligibleStudentsForAssignmentAsync(id, cancellationToken);
-        return Ok(result);
-    }
-
     [HttpGet("{id}/eligible-students/paged")]
     [Authorize(Roles = "OfficeStaff,Admin")]
     [ProducesResponseType(typeof(ApiResponse<PaginatedResult<RosterStudentItemDto>>), StatusCodes.Status200OK)]

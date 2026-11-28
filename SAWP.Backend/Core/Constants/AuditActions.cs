@@ -23,7 +23,6 @@ public static class AuditActions
     public const string SchoolYearActivate = "SCHOOL_YEAR_ACTIVATE";
     public const string SchoolYearDelete = "SCHOOL_YEAR_DELETE";
     public const string ClassCreate = "CLASS_CREATE";
-    public const string ClassInitializeBatch = "CLASS_INITIALIZE_BATCH";
     public const string ClassUpdate = "CLASS_UPDATE";
     public const string ClassAssignHomeroomTeacher = "CLASS_ASSIGN_HOMEROOM_TEACHER";
     public const string ClassUnassignHomeroomTeacher = "CLASS_UNASSIGN_HOMEROOM_TEACHER";
@@ -53,7 +52,8 @@ public static class AuditActions
     public const string AttendanceSubmit = "ATTENDANCE_SUBMIT";
     public const string AttendanceUpdate = "ATTENDANCE_UPDATE";
     public const string AttendanceCorrect = "ATTENDANCE_CORRECT";
-    public const string AttendanceAbsenceNoticeSend = "ATTENDANCE_ABSENCE_NOTICE_SEND";
+    public const string AttendanceContactNoteCreate = "ATTENDANCE_CONTACT_NOTE_CREATE";
+    public const string AttendanceContactNoteSupersede = "ATTENDANCE_CONTACT_NOTE_SUPERSEDE";
 
     // Requests
     public const string LeaveRequestSubmit = "LEAVE_REQUEST_SUBMIT";

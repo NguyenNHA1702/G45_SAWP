@@ -10,7 +10,7 @@ public class Notification
     public string Content { get; set; } = string.Empty;
     public bool IsRead { get; set; } = false;
     public string? LinkUrl { get; set; }
-    public string Type { get; set; } = "General";       // max 50, vd "ATTENDANCE_ABSENT"
-    public string? ReferenceKey { get; set; }           // max 100, vd "ATT_ABSENT:{studentId}:{yyyyMMdd}"
+    public string Type { get; set; } = "General";       // max 50, e.g. "AttendanceReattendanceRequest"
+    public string? ReferenceKey { get; set; }           // max 100, a key that prevents duplicate notifications for the same event
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

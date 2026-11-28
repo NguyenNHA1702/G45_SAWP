@@ -58,12 +58,13 @@ public class AttendanceController : BaseApiController
     }
 
     /// <summary>
-    /// API-3: Nộp / Lưu điểm danh lớp theo ngày và buổi (Idempotent)
+    /// API-3: submit / save the attendance of a class for a date and session (idempotent).
+    /// Teacher (UC-21) or Office Staff (UC-22 A1); the System Administrator is not an actor (OVR-10).
     /// </summary>
     [HttpPut("classes/{classId}/sheet")]
     [HttpPut("classes/{classId}")]
     [HttpPost("classes/{classId}")]
-    [Authorize(Roles = "Teacher,OfficeStaff,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff")]
     public async Task<IActionResult> SubmitAttendanceSheet(int classId, [FromBody] SubmitAttendanceSheetDto dto, CancellationToken ct)
     {
         var userId = User.GetRequiredUserId();
@@ -73,11 +74,11 @@ public class AttendanceController : BaseApiController
     }
 
     /// <summary>
-    /// API-4: Giáo vụ sửa bản ghi điểm danh kèm lý do bắt buộc
+    /// API-4: Office Staff correct an attendance record with a mandatory reason (UC-22; Office Staff only, OVR-10)
     /// </summary>
     [HttpPatch("records/{recordId}/correction")]
     [HttpPut("records/{recordId}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> CorrectAttendance(int recordId, [FromBody] CorrectAttendanceDto dto, CancellationToken ct)
     {
         var userId = User.GetRequiredUserId();
@@ -86,15 +87,59 @@ public class AttendanceController : BaseApiController
     }
 
     /// <summary>
-    /// OVR-01 (UC-23 A2): Office Staff or Teacher send an absence notice for one unexcused absence (MSG55; MSG09 if not allowed)
+    /// OVR-10 (UC-23 A1, BR-62): contact notes of one attendance record; school staff with access to the class only, never Parents
     /// </summary>
-    [HttpPost("records/{recordId}/absence-notice")]
-    [Authorize(Roles = "OfficeStaff,Teacher")]
-    public async Task<IActionResult> SendAbsenceNotice(int recordId, CancellationToken ct)
+    [HttpGet("records/{recordId}/contact-notes")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
+    public async Task<IActionResult> GetContactNotes(int recordId, CancellationToken ct)
     {
         var userId = User.GetRequiredUserId();
         var roles = User.GetRoles();
-        var result = await _attendanceService.SendAbsenceNoticeAsync(recordId, userId, roles, ct);
+        var result = await _attendanceService.GetContactNotesAsync(recordId, userId, roles, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// OVR-10 (UC-23 A1): the homeroom Teacher or Office Staff record a contact note on an unexcused absence (MSG55; MSG09 / MSG01 if not allowed)
+    /// </summary>
+    [HttpPost("records/{recordId}/contact-notes")]
+    [Authorize(Roles = "Teacher,OfficeStaff")]
+    public async Task<IActionResult> AddContactNote(int recordId, [FromBody] CreateAbsenceContactNoteDto dto, CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _attendanceService.AddContactNoteAsync(recordId, dto, userId, roles, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// OVR-10 (UC-23 A1): the note's author or Office Staff mark a wrong contact note superseded, with a reason (MSG319)
+    /// </summary>
+    [HttpPost("contact-notes/{noteId}/supersede")]
+    [Authorize(Roles = "Teacher,OfficeStaff")]
+    public async Task<IActionResult> SupersedeContactNote(int noteId, [FromBody] SupersedeAbsenceContactNoteDto dto, CancellationToken ct)
+    {
+        var userId = User.GetRequiredUserId();
+        var roles = User.GetRoles();
+        var result = await _attendanceService.SupersedeContactNoteAsync(noteId, dto, userId, roles, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// OVR-10 (UC-23 A2): unexcused absences of a date range with no contact note in effect, optionally of one class
+    /// </summary>
+    [HttpGet("absences-without-contact-note")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> GetAbsencesWithoutContactNote(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int? classId,
+        CancellationToken ct)
+    {
+        var roles = User.GetRoles();
+        var fromDate = from ?? _clock.Today.AddDays(-30);
+        var toDate = to ?? _clock.Today;
+        var result = await _attendanceService.GetAbsencesWithoutContactNoteAsync(fromDate, toDate, classId, roles, ct);
         return ToActionResult(result);
     }
 

@@ -300,14 +300,35 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
                .WithMany()
                .HasForeignKey(ar => ar.UpdatedByUserId)
                .OnDelete(DeleteBehavior.Restrict);
-        // OVR-01: Office Staff member who sent the absence notice
-        builder.HasOne(ar => ar.AbsenceNoticeSentByUser)
-               .WithMany()
-               .HasForeignKey(ar => ar.AbsenceNoticeSentByUserId)
-               .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(ar => ar.LeaveRequest)
                .WithMany()
                .HasForeignKey(ar => ar.LeaveRequestId)
+               .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+// OVR-10 (UC-23 A1, BR-62): contact notes on an unexcused absence
+public class AbsenceContactNoteConfiguration : IEntityTypeConfiguration<AbsenceContactNote>
+{
+    public void Configure(EntityTypeBuilder<AbsenceContactNote> builder)
+    {
+        builder.HasKey(n => n.Id);
+        builder.Property(n => n.Note).HasMaxLength(500).IsRequired();
+        builder.Property(n => n.SupersedeReason).HasMaxLength(500);
+        // Two users marking the same note superseded at once: the second update finds no row and fails (MSG09)
+        builder.Property(n => n.SupersededAt).IsConcurrencyToken();
+        builder.HasIndex(n => n.AttendanceRecordId);
+        builder.HasOne(n => n.AttendanceRecord)
+               .WithMany(ar => ar.ContactNotes)
+               .HasForeignKey(n => n.AttendanceRecordId)
+               .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(n => n.CreatedByUser)
+               .WithMany()
+               .HasForeignKey(n => n.CreatedByUserId)
+               .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(n => n.SupersededByUser)
+               .WithMany()
+               .HasForeignKey(n => n.SupersededByUserId)
                .OnDelete(DeleteBehavior.Restrict);
     }
 }

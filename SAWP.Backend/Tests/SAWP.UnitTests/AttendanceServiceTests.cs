@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Core.Configuration;
@@ -26,6 +27,7 @@ public class AttendanceServiceTests : TestBase
         _clockMock = new Mock<ISchoolClock>();
         _clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 10, 28));
         _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 10, 28, 7, 45, 0));
+        _clockMock.Setup(c => c.ToSchoolTime(It.IsAny<DateTime>())).Returns((DateTime utc) => utc.AddHours(7));
 
         var options = Options.Create(new SchoolOptions { LunchCutoffTime = "08:15" });
         _service = new AttendanceService(UnitOfWorkMock.Object, _clockMock.Object, AuditServiceMock.Object, options);
@@ -239,7 +241,7 @@ public class AttendanceServiceTests : TestBase
     }
 
     // ==================== 54. RecordDailyAttendanceAsync (8 TCs) ====================
-    // OVR-01 (BR-62): submitting attendance never notifies parents.
+    // OVR-10 (BR-62): submitting attendance never notifies parents.
 
     [Fact]
     public async Task UTCID01_RecordDailyAttendance_Success_DeductsLunchAndDoesNotNotifyParent()
@@ -634,7 +636,7 @@ public class AttendanceServiceTests : TestBase
     [Fact]
     public async Task UTCID07_CorrectAttendance_ToUnexcusedAbsenceToday_DoesNotNotifyParent()
     {
-        // Arrange: OVR-01 (BR-62) - a correction never notifies parents
+        // Arrange: OVR-10 (BR-62) - a correction never notifies parents
         var today = new DateTime(2026, 10, 28);
         var rec = new AttendanceRecord
         {
@@ -667,7 +669,6 @@ public class AttendanceServiceTests : TestBase
         // Assert
         result.Success.Should().BeTrue();
         rec.Status.Should().Be(AttendanceStatus.UnexcusedAbsence);
-        rec.AbsenceNoticeSentAt.Should().BeNull();
         notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -1031,7 +1032,7 @@ public class AttendanceServiceTests : TestBase
         pastRec.Status.Should().Be(AttendanceStatus.Present);
     }
 
-    // ==================== 58. SendAbsenceNoticeAsync (6 TCs) - OVR-01, UC-23 A2 ====================
+    // ==================== 58. Contact notes (OVR-10, UC-23 A1 / A2, BR-62) [SSAWP-155] ====================
 
     private AttendanceRecord UnexcusedRecord(int id = 10) => new()
     {
@@ -1042,167 +1043,416 @@ public class AttendanceServiceTests : TestBase
         Session = AttendanceSession.Morning,
         Status = AttendanceStatus.UnexcusedAbsence,
         Student = new Student { Id = 1, StudentCode = "HS001", FullName = "Em A" },
-        Class = new Class { Id = 1, ClassName = "1A" }
+        Class = new Class { Id = 1, ClassName = "1A", Grade = 1, HomeroomTeacherId = 10, Status = "Active" }
     };
 
-    private void SetupNoLeaveAndGuardians(params int[] guardianUserIds)
+    /// <summary>Teacher user 30 (staff 10) is the homeroom teacher of class 1; user 31 (staff 11) is not.</summary>
+    private void SetupHomeroom()
     {
-        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<DateTime>(), It.IsAny<AttendanceSession>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
-        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int>(guardianUserIds) });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 }, new() { Id = 11, UserId = 31 } });
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", Grade = 1, HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<User>
+        {
+            new() { Id = 30, FullName = "GV Chủ nhiệm" },
+            new() { Id = 31, FullName = "GV Khác" },
+            new() { Id = 40, FullName = "Giáo vụ" }
+        });
     }
 
-    [Fact]
-    public async Task UTCID01_SendAbsenceNotice_UnexcusedAbsence_NotifiesEveryLinkedParent()
+    private static CreateAbsenceContactNoteDto ValidNote() => new()
     {
-        // Arrange
+        ContactedAt = DateTime.UtcNow.AddHours(-1),
+        Channel = ContactChannel.Phone,
+        Outcome = ContactOutcome.Reached,
+        Note = "Phụ huynh báo em bị ốm."
+    };
+
+    [Fact]
+    public async Task OVR10_01_AddContactNote_HomeroomTeacher_SavesNoteAuditsAndShowsMSG55()
+    {
         var rec = UnexcusedRecord();
         AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        SetupNoLeaveAndGuardians(20, 21);
+        SetupHomeroom();
+        var notes = new List<AbsenceContactNote>();
+        SetupRepository(notes);
         var notificationRepo = SetupRepository(new List<Notification>());
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+        var result = await _service.AddContactNoteAsync(10, ValidNote(), 30, new[] { UserRoles.Teacher });
 
-        // Assert
         result.Success.Should().BeTrue();
-        result.Code.Should().Be(SystemMessages.MSG55.Code);
-        result.Data!.ParentsNotifiedCount.Should().Be(2);
-        rec.AbsenceNoticeSentAt.Should().NotBeNull();
-        rec.AbsenceNoticeSentByUserId.Should().Be(40);
-        notificationRepo.Verify(r => r.AddAsync(It.Is<Notification>(n => n.ReferenceKey == NotificationTemplates.AbsenceNoticeKey(10)), It.IsAny<CancellationToken>()), Times.Exactly(2));
-        AuditServiceMock.Verify(a => a.LogActionAsync(40, AuditActions.AttendanceAbsenceNoticeSend, nameof(AttendanceRecord), "10",
+        result.Message.Should().Be(SystemMessages.MSG55.Content);
+        notes.Should().ContainSingle();
+        notes[0].AttendanceRecordId.Should().Be(10);
+        notes[0].CreatedByUserId.Should().Be(30);
+        notes[0].Channel.Should().Be(ContactChannel.Phone);
+        notes[0].Outcome.Should().Be(ContactOutcome.Reached);
+        notes[0].SupersededAt.Should().BeNull();
+        result.Data!.CreatedByName.Should().Be("GV Chủ nhiệm");
+        result.Data.CanSupersede.Should().BeTrue();
+        AuditServiceMock.Verify(a => a.LogActionAsync(30, AuditActions.AttendanceContactNoteCreate, nameof(AbsenceContactNote), It.IsAny<string>(),
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        // BR-62: never notifies the Parent / Guardian
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task UTCID02_SendAbsenceNotice_AlreadySent_FailsWithMSG09()
+    public async Task OVR10_02_AddContactNote_OfficeStaff_PastAbsence_Saves()
     {
-        // Arrange
         var rec = UnexcusedRecord();
-        rec.AbsenceNoticeSentAt = new DateTime(2026, 10, 28, 9, 0, 0, DateTimeKind.Utc);
+        rec.Date = new DateTime(2026, 10, 20); // no deadline for the note
         AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        var notificationRepo = SetupRepository(new List<Notification>());
+        SetupHomeroom();
+        var notes = new List<AbsenceContactNote>();
+        SetupRepository(notes);
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+        var result = await _service.AddContactNoteAsync(10, ValidNote(), 40, new[] { UserRoles.OfficeStaff });
 
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG09.Code);
-        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.Success.Should().BeTrue();
+        notes.Should().ContainSingle(n => n.CreatedByUserId == 40);
     }
 
     [Theory]
     [InlineData(AttendanceStatus.Present)]
     [InlineData(AttendanceStatus.Late)]
     [InlineData(AttendanceStatus.ExcusedAbsence)]
-    public async Task UTCID03_SendAbsenceNotice_NotUnexcusedAbsence_FailsWithMSG09(AttendanceStatus status)
+    public async Task OVR10_03_AddContactNote_NotUnexcusedAbsence_FailsWithMSG09(AttendanceStatus status)
     {
-        // Arrange
         var rec = UnexcusedRecord();
         rec.Status = status;
         AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupHomeroom();
+        var notes = new List<AbsenceContactNote>();
+        SetupRepository(notes);
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+        var result = await _service.AddContactNoteAsync(10, ValidNote(), 30, new[] { UserRoles.Teacher });
 
-        // Assert
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG09.Code);
-        rec.AbsenceNoticeSentAt.Should().BeNull();
+        notes.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task UTCID04_SendAbsenceNotice_CoveredByApprovedLeave_FailsWithMSG09()
+    public async Task OVR10_04_AddContactNote_MissingFields_FailsWithMSG01()
     {
-        // Arrange
-        var rec = UnexcusedRecord();
-        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), rec.Date, rec.Session, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>
-            {
-                [1] = new LeaveIndicatorDto { LeaveRequestId = 5, Status = RequestStatus.Approved }
-            });
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(UnexcusedRecord());
+        SetupHomeroom();
+        var notes = new List<AbsenceContactNote>();
+        SetupRepository(notes);
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+        var result = await _service.AddContactNoteAsync(10, new CreateAbsenceContactNoteDto { Note = "   " }, 30, new[] { UserRoles.Teacher });
 
-        // Assert
         result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG09.Code);
-        rec.AbsenceNoticeSentAt.Should().BeNull();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().HaveCount(4);
+        notes.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task UTCID05_SendAbsenceNotice_NoLinkedParent_FailsWithMSG09()
+    public async Task OVR10_05_AddContactNote_FutureContactTimeOrLongNote_FailsWithMSG01()
     {
-        // Arrange
-        var rec = UnexcusedRecord();
-        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        SetupNoLeaveAndGuardians();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(UnexcusedRecord());
+        SetupHomeroom();
+        SetupRepository(new List<AbsenceContactNote>());
+        var future = ValidNote();
+        future.ContactedAt = DateTime.UtcNow.AddDays(1);
+        var tooLong = ValidNote();
+        tooLong.Note = new string('a', 501);
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
+        var r1 = await _service.AddContactNoteAsync(10, future, 30, new[] { UserRoles.Teacher });
+        var r2 = await _service.AddContactNoteAsync(10, tooLong, 30, new[] { UserRoles.Teacher });
 
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG09.Code);
-        rec.AbsenceNoticeSentAt.Should().BeNull();
+        r1.Code.Should().Be(SystemMessages.MSG01.Code);
+        r2.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
     [Fact]
-    public async Task UTCID06_SendAbsenceNotice_RecordNotFound_FailsWithMSG43()
+    public async Task OVR10_06_AddContactNote_TeacherOfAnotherClass_FailsWithMSG10()
     {
-        // Arrange
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(UnexcusedRecord());
+        SetupHomeroom();
+        var notes = new List<AbsenceContactNote>();
+        SetupRepository(notes);
+
+        var teacher = await _service.AddContactNoteAsync(10, ValidNote(), 31, new[] { UserRoles.Teacher });
+        var board = await _service.AddContactNoteAsync(10, ValidNote(), 50, new[] { UserRoles.SchoolBoard });
+        var admin = await _service.AddContactNoteAsync(10, ValidNote(), 1, new[] { UserRoles.Admin });
+
+        teacher.Code.Should().Be(SystemMessages.MSG10.Code);
+        board.Code.Should().Be(SystemMessages.MSG10.Code);
+        admin.Code.Should().Be(SystemMessages.MSG10.Code);
+        notes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OVR10_07_AddContactNote_RecordNotFound_FailsWithMSG43()
+    {
         AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(999, It.IsAny<CancellationToken>())).ReturnsAsync((AttendanceRecord?)null);
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(999, 40);
+        var result = await _service.AddContactNoteAsync(999, ValidNote(), 40, new[] { UserRoles.OfficeStaff });
 
-        // Assert
-        result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG43.Code);
     }
 
-    [Fact]
-    public async Task UTCID07_SendAbsenceNotice_HomeroomTeacher_NotifiesParents()
+    private AbsenceContactNote NoteBy(int authorUserId, int id = 5) => new()
     {
-        // Arrange
-        var rec = UnexcusedRecord();
-        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
-        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
-        SetupNoLeaveAndGuardians(20);
-        var notificationRepo = SetupRepository(new List<Notification>());
+        Id = id,
+        AttendanceRecordId = 10,
+        ContactedAt = new DateTime(2026, 10, 28, 2, 0, 0, DateTimeKind.Utc),
+        Channel = ContactChannel.Zalo,
+        Outcome = ContactOutcome.NotReached,
+        Note = "Gọi Zalo không nghe máy.",
+        CreatedByUserId = authorUserId,
+        CreatedAt = new DateTime(2026, 10, 28, 2, 5, 0, DateTimeKind.Utc)
+    };
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 30, new[] { UserRoles.Teacher });
+    /// <summary>Record 10 of class 1A, the absence the notes of <see cref="NoteBy"/> belong to.</summary>
+    private void SetupNoteRecord() =>
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(UnexcusedRecord());
 
-        // Assert
+    [Theory]
+    [InlineData(30, UserRoles.Teacher)]     // the author
+    [InlineData(40, UserRoles.OfficeStaff)] // Office Staff
+    public async Task OVR10_08_SupersedeContactNote_AuthorOrOfficeStaff_MarksItAndShowsMSG319(int userId, UserRoles role)
+    {
+        SetupHomeroom();
+        SetupNoteRecord();
+        var note = NoteBy(30);
+        SetupRepository(new List<AbsenceContactNote> { note });
+
+        var result = await _service.SupersedeContactNoteAsync(5, new SupersedeAbsenceContactNoteDto { Reason = "Ghi nhầm học sinh." }, userId, new[] { role });
+
         result.Success.Should().BeTrue();
-        result.Code.Should().Be(SystemMessages.MSG55.Code);
-        rec.AbsenceNoticeSentByUserId.Should().Be(30);
-        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Once);
+        result.Message.Should().Be(SystemMessages.MSG319.Content);
+        note.SupersededAt.Should().NotBeNull();
+        note.SupersededByUserId.Should().Be(userId);
+        note.SupersedeReason.Should().Be("Ghi nhầm học sinh.");
+        note.Note.Should().Be("Gọi Zalo không nghe máy."); // the note itself is kept unchanged
+        result.Data!.IsSuperseded.Should().BeTrue();
+        result.Data.CanSupersede.Should().BeFalse();
+        AuditServiceMock.Verify(a => a.LogActionAsync(userId, AuditActions.AttendanceContactNoteSupersede, nameof(AbsenceContactNote), "5",
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task UTCID08_SendAbsenceNotice_NonHomeroomTeacher_FailsWithMSG10()
+    public async Task OVR10_09_SupersedeContactNote_AlreadySupersededOrOtherTeacher_FailsWithMSG09()
     {
-        // Arrange
+        SetupHomeroom();
+        SetupNoteRecord();
+        var superseded = NoteBy(30, 5);
+        superseded.SupersededAt = DateTime.UtcNow.AddHours(-1);
+        superseded.SupersededByUserId = 30;
+        superseded.SupersedeReason = "Ghi nhầm.";
+        var other = NoteBy(30, 6);
+        SetupRepository(new List<AbsenceContactNote> { superseded, other });
+
+        var again = await _service.SupersedeContactNoteAsync(5, new SupersedeAbsenceContactNoteDto { Reason = "Lý do khác nữa" }, 40, new[] { UserRoles.OfficeStaff });
+        var notAuthor = await _service.SupersedeContactNoteAsync(6, new SupersedeAbsenceContactNoteDto { Reason = "Lý do khác nữa" }, 31, new[] { UserRoles.Teacher });
+
+        again.Code.Should().Be(SystemMessages.MSG09.Code);
+        superseded.SupersedeReason.Should().Be("Ghi nhầm.");
+        notAuthor.Code.Should().Be(SystemMessages.MSG09.Code);
+        other.SupersededAt.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("abc")]
+    [InlineData("    ab    ")]
+    public async Task OVR10_10_SupersedeContactNote_ReasonTooShort_FailsWithMSG01(string? reason)
+    {
+        SetupHomeroom();
+        SetupNoteRecord();
+        var note = NoteBy(30);
+        SetupRepository(new List<AbsenceContactNote> { note });
+
+        var result = await _service.SupersedeContactNoteAsync(5, new SupersedeAbsenceContactNoteDto { Reason = reason }, 30, new[] { UserRoles.Teacher });
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        note.SupersededAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OVR10_11_SupersedeContactNote_ReasonTooLong_FailsWithMSG01()
+    {
+        SetupHomeroom();
+        SetupNoteRecord();
+        var note = NoteBy(30);
+        SetupRepository(new List<AbsenceContactNote> { note });
+
+        var result = await _service.SupersedeContactNoteAsync(5, new SupersedeAbsenceContactNoteDto { Reason = new string('x', 501) }, 30, new[] { UserRoles.Teacher });
+
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        note.SupersededAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OVR10_18_AddContactNote_ContactBeforeAbsenceDay_Saves()
+    {
         var rec = UnexcusedRecord();
+        rec.Date = DateTime.UtcNow.Date.AddDays(-1);
         AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
-        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 99, Status = "Active" } });
+        SetupHomeroom();
+        var notes = new List<AbsenceContactNote>();
+        SetupRepository(notes);
+        var dto = ValidNote();
+        dto.ContactedAt = rec.Date.AddDays(-1).AddHours(3); // the family called the day before; recorded later
 
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 30, new[] { UserRoles.Teacher });
+        var result = await _service.AddContactNoteAsync(10, dto, 30, new[] { UserRoles.Teacher });
 
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG10.Code);
-        rec.AbsenceNoticeSentAt.Should().BeNull();
+        result.Success.Should().BeTrue();
+        notes.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task OVR10_19_SupersedeContactNote_AuthorNoLongerHomeroomTeacher_FailsWithMSG09()
+    {
+        SetupHomeroom();
+        SetupNoteRecord();
+        var note = NoteBy(31); // written by user 31, who is not the homeroom teacher of class 1A (any more)
+        SetupRepository(new List<AbsenceContactNote> { note });
+
+        var result = await _service.SupersedeContactNoteAsync(5, new SupersedeAbsenceContactNoteDto { Reason = "Ghi nhầm học sinh." }, 31, new[] { UserRoles.Teacher });
+
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        note.SupersededAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OVR10_20_SupersedeContactNote_MarkedByAnotherUserAtTheSameTime_FailsWithMSG09()
+    {
+        SetupHomeroom();
+        SetupRepository(new List<AbsenceContactNote> { NoteBy(30) });
+        UnitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("0 rows affected"));
+
+        var result = await _service.SupersedeContactNoteAsync(5, new SupersedeAbsenceContactNoteDto { Reason = "Ghi nhầm học sinh." }, 40, new[] { UserRoles.OfficeStaff });
+
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        UnitOfWorkMock.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        AuditServiceMock.Verify(a => a.LogActionAsync(It.IsAny<int>(), AuditActions.AttendanceContactNoteSupersede, It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task OVR10_12_GetContactNotes_StaffOfClassSeeNotes_ParentAndAdminDoNot()
+    {
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(UnexcusedRecord());
+        SetupHomeroom();
+        var older = NoteBy(30, 5);
+        older.SupersededAt = DateTime.UtcNow.AddHours(-1);
+        older.SupersededByUserId = 40;
+        older.SupersededByUser = new User { Id = 40, FullName = "Giáo vụ" };
+        older.SupersedeReason = "Ghi nhầm học sinh.";
+        older.CreatedByUser = new User { Id = 30, FullName = "GV Chủ nhiệm" };
+        var newer = NoteBy(30, 6);
+        newer.CreatedAt = older.CreatedAt.AddHours(1);
+        newer.CreatedByUser = older.CreatedByUser;
+        SetupRepository(new List<AbsenceContactNote> { older, newer });
+
+        var teacher = await _service.GetContactNotesAsync(10, 30, new[] { UserRoles.Teacher });
+        var board = await _service.GetContactNotesAsync(10, 50, new[] { UserRoles.SchoolBoard });
+        var otherTeacher = await _service.GetContactNotesAsync(10, 31, new[] { UserRoles.Teacher });
+        var parent = await _service.GetContactNotesAsync(10, 20, new[] { UserRoles.Parent });
+        var admin = await _service.GetContactNotesAsync(10, 1, new[] { UserRoles.Admin });
+
+        teacher.Success.Should().BeTrue();
+        teacher.Data!.Select(n => n.Id).Should().Equal(6, 5); // newest first, superseded note still shown
+        teacher.Data![1].IsSuperseded.Should().BeTrue();
+        teacher.Data[1].SupersededByName.Should().Be("Giáo vụ");
+        teacher.Data[0].CanSupersede.Should().BeTrue();
+        board.Success.Should().BeTrue();
+        board.Data!.Should().OnlyContain(n => !n.CanSupersede); // School Board only views
+        otherTeacher.Code.Should().Be(SystemMessages.MSG10.Code);
+        parent.Code.Should().Be(SystemMessages.MSG10.Code);
+        admin.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    [Fact]
+    public async Task OVR10_13_GetAbsencesWithoutContactNote_ListsOnlyAbsencesWithNoNoteInEffect()
+    {
+        var cls1 = new Class { Id = 1, ClassName = "1A", Grade = 1, HomeroomTeacher = new StaffProfile { Id = 10, User = new User { FullName = "GV Chủ nhiệm" } } };
+        var cls2 = new Class { Id = 2, ClassName = "2A", Grade = 2 };
+        AttendanceRecord Rec(int id, Class c, DateTime d, AttendanceStatus st, params AbsenceContactNote[] notes) => new()
+        {
+            Id = id, StudentId = id, ClassId = c.Id, Class = c, Date = d, Session = AttendanceSession.Morning, Status = st,
+            Student = new Student { Id = id, StudentCode = $"HS{id:000}", FullName = $"Em {id}" },
+            ContactNotes = notes.ToList()
+        };
+        var day = new DateTime(2026, 10, 27);
+        var supersededOnly = new AbsenceContactNote { Id = 1, SupersededAt = DateTime.UtcNow };
+        var inEffect = new AbsenceContactNote { Id = 2 };
+        SetupRepository(new List<AttendanceRecord>
+        {
+            Rec(1, cls1, day, AttendanceStatus.UnexcusedAbsence),                    // no note -> listed
+            Rec(2, cls1, day, AttendanceStatus.UnexcusedAbsence, supersededOnly),    // only a superseded note -> listed
+            Rec(3, cls1, day, AttendanceStatus.UnexcusedAbsence, inEffect),          // note in effect -> not listed
+            Rec(4, cls1, day, AttendanceStatus.Present),                             // not an absence
+            Rec(5, cls2, day, AttendanceStatus.UnexcusedAbsence),                    // other class
+            Rec(6, cls1, new DateTime(2026, 9, 1), AttendanceStatus.UnexcusedAbsence) // out of range
+        });
+
+        var all = await _service.GetAbsencesWithoutContactNoteAsync(new DateTime(2026, 10, 1), new DateTime(2026, 10, 31), null, new[] { UserRoles.OfficeStaff });
+        var oneClass = await _service.GetAbsencesWithoutContactNoteAsync(new DateTime(2026, 10, 1), new DateTime(2026, 10, 31), 1, new[] { UserRoles.OfficeStaff });
+
+        all.Success.Should().BeTrue();
+        all.Data!.Select(a => a.RecordId).Should().Equal(1, 2, 5);
+        all.Data![0].HomeroomTeacherName.Should().Be("GV Chủ nhiệm");
+        all.Data[1].SupersededNoteCount.Should().Be(1);
+        oneClass.Data!.Select(a => a.RecordId).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task OVR10_14_GetAbsencesWithoutContactNote_NotOfficeStaffOrBadRange_Fails()
+    {
+        SetupRepository(new List<AttendanceRecord>());
+
+        var teacher = await _service.GetAbsencesWithoutContactNoteAsync(new DateTime(2026, 10, 1), new DateTime(2026, 10, 31), null, new[] { UserRoles.Teacher });
+        var reversed = await _service.GetAbsencesWithoutContactNoteAsync(new DateTime(2026, 10, 31), new DateTime(2026, 10, 1), null, new[] { UserRoles.OfficeStaff });
+
+        teacher.Code.Should().Be(SystemMessages.MSG10.Code);
+        reversed.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task OVR10_15_GetAttendanceSheet_ShowsContactNotesToTeacherButNotToAdmin()
+    {
+        var today = new DateTime(2026, 10, 28);
+        SetupHomeroom();
+        SetupRepository(new List<SchoolCalendarDay>());
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
+        var rec = UnexcusedRecord();
+        rec.RecordedByUserId = 30;
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { rec });
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+        SetupRepository(new List<AbsenceContactNote> { NoteBy(30) });
+
+        var teacher = await _service.GetAttendanceSheetAsync(1, today, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
+        var admin = await _service.GetAttendanceSheetAsync(1, today, AttendanceSession.Morning, 1, new[] { UserRoles.Admin });
+
+        teacher.Data!.Entries[0].ContactNotes.Should().ContainSingle(n => n.Id == 5);
+        admin.Data!.Entries[0].ContactNotes.Should().BeEmpty();
+        admin.Data.CanEdit.Should().BeFalse(); // UC-22: the System Administrator does not edit attendance
+    }
+
+    [Fact]
+    public async Task OVR10_16_RecordDailyAttendance_AdminPastDay_FailsWithMSG19()
+    {
+        var dto = new SubmitAttendanceSheetDto
+        {
+            Date = new DateTime(2026, 10, 27),
+            Session = AttendanceSession.Morning,
+            CorrectionReason = "Bổ sung điểm danh",
+            Entries = new List<DailyAttendanceEntryDto> { new() { StudentId = 1, Status = AttendanceStatus.Present } }
+        };
+
+        var result = await _service.RecordDailyAttendanceAsync(1, dto, 1, new[] { UserRoles.Admin });
+
+        result.Code.Should().Be(SystemMessages.MSG19.Code);
     }
 
     // ==================== Round 2 Regression Tests (ATT-3..ATT-13) ====================
@@ -1484,34 +1734,19 @@ public class AttendanceServiceTests : TestBase
     }
 
     [Fact]
-    public async Task AT08_SendAbsenceNotice_PastDate_FailsWithMSG09()
-    {
-        var rec = UnexcusedRecord();
-        rec.Date = new DateTime(2026, 10, 27); // yesterday
-        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
-
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG09.Code);
-        result.Errors.Should().Contain(e => e.Contains("hôm nay"));
-    }
-
-    [Fact]
-    public async Task AT08_CorrectAttendance_FromUnexcusedWithNoticeToPresent_ClearsNoticeAndNotifiesParent()
+    public async Task OVR10_17_CorrectAttendance_FromUnexcusedWithContactNoteToPresent_KeepsNoteAndNotifiesNobody()
     {
         var today = new DateTime(2026, 10, 28);
         var rec = UnexcusedRecord();
         rec.Date = today.AddDays(-1);
-        rec.AbsenceNoticeSentAt = DateTime.UtcNow.AddHours(-2);
-        rec.AbsenceNoticeSentByUserId = 40;
+        var note = NoteBy(30);
+        rec.ContactNotes.Add(note);
         AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
         SetupRepository(new List<LunchServiceDay>());
         LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), rec.Date, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<int, LunchRegistration>());
-        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int> { 20 } });
         var notifRepo = SetupRepository(new List<Notification>());
+        var noteRepo = SetupRepository(new List<AbsenceContactNote> { note });
 
         var result = await _service.CorrectAttendanceAsync(10, new CorrectAttendanceDto
         {
@@ -1520,9 +1755,10 @@ public class AttendanceServiceTests : TestBase
         }, 40);
 
         result.Success.Should().BeTrue();
-        rec.AbsenceNoticeSentAt.Should().BeNull();
-        rec.AbsenceNoticeSentByUserId.Should().BeNull();
-        notifRepo.Verify(r => r.AddAsync(It.Is<Notification>(n => n.Type == NotificationTemplates.AttendanceAbsentRetractType && n.UserId == 20), It.IsAny<CancellationToken>()), Times.Once);
+        rec.ContactNotes.Should().ContainSingle(); // kept as history (BR-62)
+        note.SupersededAt.Should().BeNull();
+        noteRepo.Verify(r => r.DeleteAsync(It.IsAny<AbsenceContactNote>(), It.IsAny<CancellationToken>()), Times.Never);
+        notifRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -1929,58 +2165,6 @@ public class AttendanceServiceTests : TestBase
     }
 
     [Fact]
-    public async Task RecordDailyAttendance_UnexcusedWithNoticeChangedToPresent_RetractsNoticeAndNotifiesParent()
-    {
-        // Arrange
-        var today = new DateTime(2026, 10, 28);
-        _clockMock.Setup(c => c.Today).Returns(today);
-        _clockMock.Setup(c => c.Now).Returns(today.AddHours(8));
-        SetupRepository(new List<SchoolCalendarDay>());
-        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
-        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
-        SetupRepository(new List<LunchServiceDay>());
-        var notifRepo = SetupRepository(new List<Notification>());
-        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
-        var existingRec = new AttendanceRecord
-        {
-            Id = 33,
-            StudentId = 1,
-            ClassId = 1,
-            Date = today,
-            Session = AttendanceSession.Morning,
-            Status = AttendanceStatus.UnexcusedAbsence,
-            AbsenceNoticeSentAt = DateTime.UtcNow.AddMinutes(-15),
-            AbsenceNoticeSentByUserId = 40,
-            RecordedByUserId = 30
-        };
-        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AttendanceRecord> { existingRec });
-        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
-        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
-        StudentRepoMock.Setup(s => s.GetGuardianUserIdsAsync(It.IsAny<IEnumerable<int>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Dictionary<int, List<int>> { [1] = new List<int> { 20 } });
-
-        var dto = new SubmitAttendanceSheetDto
-        {
-            Date = today,
-            Session = AttendanceSession.Morning,
-            Entries = new List<DailyAttendanceEntryDto> { new() { StudentId = 1, Status = AttendanceStatus.Present } }
-        };
-
-        // Act
-        var result = await _service.RecordDailyAttendanceAsync(1, dto, 30, new[] { UserRoles.Teacher });
-
-        // Assert
-        result.Success.Should().BeTrue();
-        existingRec.AbsenceNoticeSentAt.Should().BeNull();
-        existingRec.AbsenceNoticeSentByUserId.Should().BeNull();
-        notifRepo.Verify(n => n.AddAsync(It.Is<Notification>(nf => nf.Type == NotificationTemplates.AttendanceAbsentRetractType && nf.UserId == 20), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
     public async Task RecordDailyAttendance_RemarksExactly500Chars_Succeeds()
     {
         // Arrange
@@ -2091,26 +2275,6 @@ public class AttendanceServiceTests : TestBase
         result.Success.Should().BeTrue();
         rec.Status.Should().Be(AttendanceStatus.Present);
         lunch.IsActive.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task SendAbsenceNotice_DbUpdateException_RollsBackAndReturnsMSG09()
-    {
-        // Arrange
-        var rec = UnexcusedRecord();
-        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
-        SetupNoLeaveAndGuardians(20);
-        SetupRepository(new List<Notification>());
-        UnitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Microsoft.EntityFrameworkCore.DbUpdateException("duplicate key"));
-
-        // Act
-        var result = await _service.SendAbsenceNoticeAsync(10, 40);
-
-        // Assert
-        result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG09.Code);
-        UnitOfWorkMock.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

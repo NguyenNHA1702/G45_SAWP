@@ -68,7 +68,8 @@ public class AttendanceSheetEntryDto
     public LeaveIndicatorDto? Leave { get; set; }
     public bool HasLunch { get; set; }                             // đang có suất ăn active
     public LunchCancellationSource? LunchCancelledBy { get; set; }
-    public DateTime? AbsenceNoticeSentAt { get; set; }             // UTC; OVR-01, null = no notice sent
+    // OVR-10 (UC-23 A1): contact notes of the record, newest first; empty for roles that may not see them
+    public List<AbsenceContactNoteDto> ContactNotes { get; set; } = new();
 }
 
 public class AttendanceSummaryDto
@@ -150,12 +151,55 @@ public class StudentAttendanceRowDto
     public int NotMarked { get; set; }
 }
 
-// OVR-01 (UC-23 A2): result of sending an absence notice for one attendance record.
-public class AbsenceNoticeResultDto
+// ===== OVR-10: contact notes on unexcused absences (UC-23 A1, A2; BR-62) =====
+public class CreateAbsenceContactNoteDto
+{
+    public DateTime? ContactedAt { get; set; }                      // required; not in the future
+    public ContactChannel? Channel { get; set; }                    // required
+    public ContactOutcome? Outcome { get; set; }                    // required
+    public string? Note { get; set; }                               // required, max 500
+}
+
+public class SupersedeAbsenceContactNoteDto
+{
+    public string? Reason { get; set; }                             // required, 5..500
+}
+
+public class AbsenceContactNoteDto
+{
+    public int Id { get; set; }
+    public int AttendanceRecordId { get; set; }
+    public DateTime ContactedAt { get; set; }                       // UTC
+    public ContactChannel Channel { get; set; }
+    public ContactOutcome Outcome { get; set; }
+    public string Note { get; set; } = string.Empty;
+    public int CreatedByUserId { get; set; }
+    public string? CreatedByName { get; set; }
+    public DateTime CreatedAt { get; set; }                         // UTC
+    public bool IsSuperseded => SupersededAt != null;
+    public DateTime? SupersededAt { get; set; }                     // UTC
+    public string? SupersededByName { get; set; }
+    public string? SupersedeReason { get; set; }
+    /// <summary>The current user may mark it superseded: the note is in effect and the user is its author or Office Staff.</summary>
+    public bool CanSupersede { get; set; }
+}
+
+/// <summary>One unexcused absence with no contact note in effect (UC-23 A2).</summary>
+public class AbsenceWithoutContactNoteDto
 {
     public int RecordId { get; set; }
-    public DateTime AbsenceNoticeSentAt { get; set; }               // UTC
-    public int ParentsNotifiedCount { get; set; }
+    public int StudentId { get; set; }
+    public string StudentCode { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public int ClassId { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+    public int Grade { get; set; }
+    public string? HomeroomTeacherName { get; set; }
+    public DateTime Date { get; set; }
+    public AttendanceSession Session { get; set; }
+    public string? Remarks { get; set; }
+    /// <summary>Notes that were marked superseded; the absence is listed again because none is in effect.</summary>
+    public int SupersededNoteCount { get; set; }
 }
 
 public class ClassAttendanceMatrixDto

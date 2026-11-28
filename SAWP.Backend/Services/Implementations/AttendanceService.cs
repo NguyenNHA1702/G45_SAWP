@@ -177,9 +177,10 @@ public class AttendanceService : IAttendanceService
         bool canEdit = false;
         string? lockReason = null;
 
-        var isAdminOrOffice = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff);
+        // UC-22 (OVR-10): only Office Staff correct or fill in a sheet; the System Administrator only views it
+        var isOfficeStaff = roles.Contains(UserRoles.OfficeStaff);
 
-        if (isAdminOrOffice)
+        if (isOfficeStaff)
         {
             if (!isSchoolDay)
             {
@@ -207,7 +208,7 @@ public class AttendanceService : IAttendanceService
                 }
                 else
                 {
-                    // AT-11: Bảng hôm nay đã có giáo viên nộp -> khóa sửa hàng loạt đối với Giáo vụ/Admin không phụ trách lớp
+                    // AT-11: today's sheet was submitted by the teacher -> locked for bulk edits by Office Staff not in charge of the class
                     canEdit = false;
                     lockReason = "AlreadySubmitted";
                 }
@@ -253,6 +254,11 @@ public class AttendanceService : IAttendanceService
             }
         }
 
+        // OVR-10 (BR-62): contact notes are shown to school staff with access to the class only
+        var contactNotes = CanSeeContactNotes(roles)
+            ? await LoadContactNotesAsync(existingRecords.Values.Select(r => r.Id).ToList(), userId, roles, ct)
+            : new Dictionary<int, List<AbsenceContactNoteDto>>();
+
         var entries = new List<AttendanceSheetEntryDto>();
         foreach (var s in roster)
         {
@@ -281,7 +287,7 @@ public class AttendanceService : IAttendanceService
                 Leave = leave,
                 HasLunch = lunch != null && lunch.IsActive,
                 LunchCancelledBy = (lunch != null && !lunch.IsActive) ? lunch.CancellationSource : null,
-                AbsenceNoticeSentAt = rec?.AbsenceNoticeSentAt
+                ContactNotes = rec != null && contactNotes.TryGetValue(rec.Id, out var notes) ? notes : new List<AbsenceContactNoteDto>()
             });
         }
 
@@ -336,12 +342,13 @@ public class AttendanceService : IAttendanceService
         var targetDate = dto.Date.Date;
         var session = dto.Session;
         var now = _clock.Now;
-        var isAdminOrOffice = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.OfficeStaff);
+        // UC-22 (OVR-10): only Office Staff (not the System Administrator) fill in a past day or edit any class
+        var isOfficeStaff = roles.Contains(UserRoles.OfficeStaff);
 
-        // V1: Validate ngày (Admin / OfficeStaff được phép bổ sung ngày quá khứ chưa có điểm danh kèm lý do)
+        // V1: validate the date (Office Staff may fill in a past school day that has no attendance, with a reason)
         if (targetDate < _clock.Today)
         {
-            if (!isAdminOrOffice)
+            if (!isOfficeStaff)
             {
                 return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG19);
             }
@@ -378,8 +385,8 @@ public class AttendanceService : IAttendanceService
             return ApiResponse<AttendanceSubmitResultDto>.Fail(SystemMessages.MSG01, new List<string> { "Ngày đã chọn không phải ngày học." });
         }
 
-        // V3: Validate quyền điểm danh (Admin / OfficeStaff được toàn quyền sửa cho mọi lớp)
-        if (!isAdminOrOffice)
+        // V3: validate the right to record (Office Staff may record for every class)
+        if (!isOfficeStaff)
         {
             var (canRecord, _) = await CanRecordAsync(classId, targetDate, userId, ct);
             if (!canRecord)
@@ -434,7 +441,7 @@ public class AttendanceService : IAttendanceService
         // Tải bản ghi hiện có theo lớp + học sinh trong danh sách lớp (bao gồm HS mới chuyển lớp trong ngày để tránh đụng unique index StudentId+Date+Session)
         var existingRecords = await LoadExistingRecordsForRosterAsync(classId, rosterIds, targetDate, session, track: true, ct);
 
-        // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt ngay cả với Giáo vụ/Admin
+        // A7: a past day that already has teacher-submitted records is locked for bulk edits, Office Staff included
         var hasSubmittedRecords = existingRecords.Values.Any(r => r.ClassId == classId && IsTeacherSubmittedRecord(r));
         if (targetDate < _clock.Today && hasSubmittedRecords)
         {
@@ -443,8 +450,8 @@ public class AttendanceService : IAttendanceService
                 new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng sử dụng chức năng điều chỉnh từng bản ghi kèm lý do." });
         }
 
-        // AT-11: Bảng hôm nay đã có giáo viên nộp -> Giáo vụ/Admin không phụ trách lớp không được ghi đè hàng loạt
-        if (targetDate == _clock.Today && hasSubmittedRecords && isAdminOrOffice)
+        // AT-11: today's sheet was submitted by the teacher -> Office Staff who are not in charge of the class may not overwrite it in bulk
+        if (targetDate == _clock.Today && hasSubmittedRecords && isOfficeStaff)
         {
             var (canRecordToday, _) = await CanRecordAsync(classId, targetDate, userId, ct);
             if (!canRecordToday)
@@ -524,23 +531,12 @@ public class AttendanceService : IAttendanceService
 
                     if (hasChanged || needsTeacherConfirmation)
                     {
-                        var retractNotice = rec.Status == AttendanceStatus.UnexcusedAbsence
-                            && entry.Status != AttendanceStatus.UnexcusedAbsence
-                            && rec.AbsenceNoticeSentAt != null;
-
                         rec.ClassId = classId;
                         rec.Status = entry.Status;
                         rec.Remarks = entry.Remarks;
                         rec.LeaveRequestId = leaveRequestId;
                         rec.UpdatedAt = utcNow;
                         rec.UpdatedByUserId = userId;
-                        if (retractNotice)
-                        {
-                            rec.AbsenceNoticeSentAt = null;
-                            rec.AbsenceNoticeSentByUserId = null;
-                            var studentName = rosterMap.TryGetValue(entry.StudentId, out var st) ? st.FullName : $"HS #{entry.StudentId}";
-                            await SendAbsenceRetractionNoticesAsync(rec.Id, rec.StudentId, studentName, cls.ClassName, targetDate, entry.Status, utcNow, ct);
-                        }
                     }
                 }
                 else
@@ -633,8 +629,8 @@ public class AttendanceService : IAttendanceService
                 }
             }
 
-            // OVR-01 (BR-62): recording attendance never notifies parents; Office Staff send an
-            // absence notice separately (SendAbsenceNoticeAsync).
+            // OVR-10 (BR-62): recording attendance never notifies Parents / Guardians; the homeroom
+            // Teacher records a contact note on each unexcused absence instead (AddContactNoteAsync).
 
             // T4: Lưu thay đổi
             await _unitOfWork.SaveChangesAsync(ct);
@@ -787,23 +783,8 @@ public class AttendanceService : IAttendanceService
                 }
             }
 
-            // AT-08: Nếu đã gửi thông báo vắng không phép mà nay sửa sang trạng thái khác -> thu hồi trạng thái đã gửi và gửi đính chính cho phụ huynh
-            if (oldStatus == AttendanceStatus.UnexcusedAbsence
-                && dto.Status != AttendanceStatus.UnexcusedAbsence
-                && rec.AbsenceNoticeSentAt != null)
-            {
-                rec.AbsenceNoticeSentAt = null;
-                rec.AbsenceNoticeSentByUserId = null;
-                await SendAbsenceRetractionNoticesAsync(
-                    rec.Id,
-                    rec.StudentId,
-                    rec.Student?.FullName ?? $"HS #{rec.StudentId}",
-                    rec.Class?.ClassName ?? string.Empty,
-                    rec.Date,
-                    dto.Status,
-                    utcNow,
-                    ct);
-            }
+            // OVR-10 (BR-62): correcting attendance never notifies Parents / Guardians; the contact
+            // notes of the record stay as history whatever the new status is.
 
             await _unitOfWork.SaveChangesAsync(ct);
 
@@ -836,95 +817,134 @@ public class AttendanceService : IAttendanceService
     }
     #endregion
 
-    #region OVR-01: SendAbsenceNoticeAsync (Office Staff or Teacher send an absence notice, UC-23 A2)
-    public async Task<ApiResponse<AbsenceNoticeResultDto>> SendAbsenceNoticeAsync(
+    #region OVR-10: contact notes on unexcused absences (UC-23 A1, A2; BR-62)
+    public async Task<ApiResponse<List<AbsenceContactNoteDto>>> GetContactNotesAsync(
         int recordId,
         int userId,
-        IReadOnlyList<UserRoles>? roles = null,
+        IReadOnlyList<UserRoles> roles,
         CancellationToken ct = default)
     {
         var rec = await _unitOfWork.Attendance.GetByIdWithStudentClassAsync(recordId, ct);
         if (rec == null)
         {
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG43);
+            return ApiResponse<List<AbsenceContactNoteDto>>.Fail(SystemMessages.MSG43);
         }
 
-        if (roles != null && !await CanViewClassAsync(rec.ClassId, userId, roles, ct))
+        // BR-62: school staff with access to the class only, never Parents / Guardians
+        if (!CanSeeContactNotes(roles) || !await CanViewClassAsync(rec.ClassId, userId, roles, ct))
         {
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG10);
+            return ApiResponse<List<AbsenceContactNoteDto>>.Fail(SystemMessages.MSG10);
         }
 
-        // AT-08: Chỉ cho phép gửi thông báo vắng mặt cho bản ghi điểm danh của ngày hôm nay
-        if (rec.Date.Date != _clock.Today)
+        var notes = await LoadContactNotesAsync(new[] { rec.Id }, userId, roles, ct);
+        return ApiResponse<List<AbsenceContactNoteDto>>.Ok(
+            notes.TryGetValue(rec.Id, out var list) ? list : new List<AbsenceContactNoteDto>());
+    }
+
+    public async Task<ApiResponse<AbsenceContactNoteDto>> AddContactNoteAsync(
+        int recordId,
+        CreateAbsenceContactNoteDto dto,
+        int userId,
+        IReadOnlyList<UserRoles> roles,
+        CancellationToken ct = default)
+    {
+        var rec = await _unitOfWork.Attendance.GetByIdWithStudentClassAsync(recordId, ct);
+        if (rec == null)
         {
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(
-                SystemMessages.MSG09,
-                new List<string> { "Chỉ được gửi thông báo vắng mặt cho bản ghi điểm danh của ngày hôm nay." });
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG43);
         }
 
-        // Only an unexcused absence, at most one notice per record (BR-62, UC-23 E2)
-        if (rec.Status != AttendanceStatus.UnexcusedAbsence || rec.AbsenceNoticeSentAt != null)
+        // UC-23 A1: the homeroom Teacher of the class, or Office Staff following the absence up
+        if (!roles.Contains(UserRoles.OfficeStaff) && !await IsHomeroomTeacherAsync(rec.ClassId, userId, roles, ct))
         {
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG10);
         }
 
-        // An absence covered by an approved leave is not unexcused, even if the record says so
-        var leaves = await _unitOfWork.Attendance.GetActiveLeavesCoveringDateAsync(new[] { rec.StudentId }, rec.Date, rec.Session, ct);
-        if (leaves.TryGetValue(rec.StudentId, out var leave) && leave.Status == RequestStatus.Approved)
+        // UC-23 E2: only a record of status Unexcused absence takes a contact note
+        if (rec.Status != AttendanceStatus.UnexcusedAbsence)
         {
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG09);
         }
 
-        var guardians = await _unitOfWork.Students.GetGuardianUserIdsAsync(new[] { rec.StudentId }, ct);
-        var guardianUserIds = guardians.TryGetValue(rec.StudentId, out var ids) ? ids.Distinct().ToList() : new List<int>();
-        if (guardianUserIds.Count == 0)
+        var errors = new List<string>();
+        DateTime? contactedAtUtc = null;
+        if (dto.ContactedAt == null || dto.ContactedAt.Value == default)
         {
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
+            errors.Add("Vui lòng nhập thời điểm liên hệ.");
+        }
+        else
+        {
+            contactedAtUtc = ToUtc(dto.ContactedAt.Value);
+            // A small allowance for clock differences between the browser and the server
+            if (contactedAtUtc.Value > DateTime.UtcNow.AddMinutes(5))
+            {
+                errors.Add("Thời điểm liên hệ không được ở trong tương lai.");
+            }
+            // No lower bound: the family may have called before the day of the absence, and the note can be
+            // recorded later (no deadline)
+        }
+        if (dto.Channel == null || !Enum.IsDefined(typeof(ContactChannel), dto.Channel.Value))
+        {
+            errors.Add("Vui lòng chọn hình thức liên hệ.");
+        }
+        if (dto.Outcome == null || !Enum.IsDefined(typeof(ContactOutcome), dto.Outcome.Value))
+        {
+            errors.Add("Vui lòng chọn kết quả liên hệ.");
+        }
+        var noteText = dto.Note?.Trim() ?? string.Empty;
+        if (noteText.Length == 0)
+        {
+            errors.Add("Vui lòng nhập nội dung ghi chú.");
+        }
+        else if (noteText.Length > 500)
+        {
+            errors.Add("Nội dung ghi chú không được vượt quá 500 ký tự.");
+        }
+        if (errors.Count > 0)
+        {
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG01, errors);
         }
 
-        var utcNow = DateTime.UtcNow;
+        var note = new AbsenceContactNote
+        {
+            AttendanceRecordId = rec.Id,
+            ContactedAt = contactedAtUtc!.Value,
+            Channel = dto.Channel!.Value,
+            Outcome = dto.Outcome!.Value,
+            Note = noteText,
+            CreatedByUserId = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
-            var key = NotificationTemplates.AbsenceNoticeKey(rec.Id);
-            foreach (var guardianUserId in guardianUserIds)
-            {
-                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
-                {
-                    UserId = guardianUserId,
-                    Type = NotificationTemplates.AttendanceAbsentType,
-                    Title = NotificationTemplates.AttendanceAbsentTitle,
-                    Content = string.Format(NotificationTemplates.AttendanceAbsentContent, rec.Student.FullName, rec.Class.ClassName, $"{rec.Date:dd/MM/yyyy}"),
-                    LinkUrl = $"/parent/attendance?studentId={rec.StudentId}&month={rec.Date:yyyy-MM}",
-                    ReferenceKey = key,
-                    CreatedAt = utcNow,
-                    IsRead = false
-                }, ct);
-            }
-
-            rec.AbsenceNoticeSentAt = utcNow;
-            rec.AbsenceNoticeSentByUserId = userId;
+            await _unitOfWork.Repository<AbsenceContactNote>().AddAsync(note, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             // TODO: pass the client IP address; it is not recorded yet.
             await _auditService.LogActionAsync(
                 userId,
-                AuditActions.AttendanceAbsenceNoticeSend,
-                nameof(AttendanceRecord),
-                rec.Id.ToString(),
+                AuditActions.AttendanceContactNoteCreate,
+                nameof(AbsenceContactNote),
+                note.Id.ToString(),
                 null,
-                new { rec.StudentId, Date = rec.Date.ToString("yyyy-MM-dd"), Session = rec.Session.ToString(), ParentsNotified = guardianUserIds.Count },
+                new
+                {
+                    AttendanceRecordId = rec.Id,
+                    rec.StudentId,
+                    Date = rec.Date.ToString("yyyy-MM-dd"),
+                    Session = rec.Session.ToString(),
+                    ContactedAt = note.ContactedAt,
+                    Channel = note.Channel.ToString(),
+                    Outcome = note.Outcome.ToString(),
+                    note.Note
+                },
                 null,
                 ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             await _unitOfWork.CommitTransactionAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            // e.g. another Office Staff member sent the notice at the same time
-            await _unitOfWork.RollbackTransactionAsync(ct);
-            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG09);
         }
         catch
         {
@@ -932,12 +952,161 @@ public class AttendanceService : IAttendanceService
             throw;
         }
 
-        return ApiResponse<AbsenceNoticeResultDto>.Ok(new AbsenceNoticeResultDto
+        var creator = await _unitOfWork.Repository<User>().GetByIdAsync(userId, ct);
+        return ApiResponse<AbsenceContactNoteDto>.Ok(
+            ToContactNoteDto(note, creator?.FullName, null, userId, roles),
+            SystemMessages.MSG55);
+    }
+
+    public async Task<ApiResponse<AbsenceContactNoteDto>> SupersedeContactNoteAsync(
+        int noteId,
+        SupersedeAbsenceContactNoteDto dto,
+        int userId,
+        IReadOnlyList<UserRoles> roles,
+        CancellationToken ct = default)
+    {
+        var noteRepo = _unitOfWork.Repository<AbsenceContactNote>();
+        var note = await noteRepo.GetByIdAsync(noteId, ct);
+        if (note == null)
         {
-            RecordId = rec.Id,
-            AbsenceNoticeSentAt = utcNow,
-            ParentsNotifiedCount = guardianUserIds.Count
-        }, SystemMessages.MSG55);
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG43);
+        }
+
+        // UC-23 E2: only the note's author or Office Staff, and only once (cannot be undone)
+        var isOfficeStaff = roles.Contains(UserRoles.OfficeStaff);
+        if (note.SupersededAt != null || (note.CreatedByUserId != userId && !isOfficeStaff))
+        {
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG09);
+        }
+
+        // An author who is not Office Staff must still be the homeroom teacher of the absence's class (BR-07)
+        if (!isOfficeStaff)
+        {
+            var rec = await _unitOfWork.Attendance.GetByIdWithStudentClassAsync(note.AttendanceRecordId, ct);
+            if (rec == null || !await IsHomeroomTeacherAsync(rec.ClassId, userId, roles, ct))
+            {
+                return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG09);
+            }
+        }
+
+        var reason = dto.Reason?.Trim() ?? string.Empty;
+        if (reason.Length < 5 || reason.Length > 500)
+        {
+            return ApiResponse<AbsenceContactNoteDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Lý do đánh dấu không còn hiệu lực bắt buộc từ 5 đến 500 ký tự." });
+        }
+
+        var utcNow = DateTime.UtcNow;
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            note.SupersededAt = utcNow;
+            note.SupersededByUserId = userId;
+            note.SupersedeReason = reason;
+            await noteRepo.UpdateAsync(note, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            // TODO: pass the client IP address; it is not recorded yet.
+            await _auditService.LogActionAsync(
+                userId,
+                AuditActions.AttendanceContactNoteSupersede,
+                nameof(AbsenceContactNote),
+                note.Id.ToString(),
+                new { Superseded = false },
+                new { Superseded = true, note.AttendanceRecordId, Reason = reason },
+                null,
+                ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+
+            await _unitOfWork.CommitTransactionAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Someone else marked the note superseded at the same time (SupersededAt is a concurrency token)
+            await _unitOfWork.RollbackTransactionAsync(ct);
+            return ApiResponse<AbsenceContactNoteDto>.Fail(SystemMessages.MSG09);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(ct);
+            throw;
+        }
+
+        var userRepo = _unitOfWork.Repository<User>();
+        var creator = await userRepo.GetByIdAsync(note.CreatedByUserId, ct);
+        var marker = note.CreatedByUserId == userId ? creator : await userRepo.GetByIdAsync(userId, ct);
+        return ApiResponse<AbsenceContactNoteDto>.Ok(
+            ToContactNoteDto(note, creator?.FullName, marker?.FullName, userId, roles),
+            SystemMessages.MSG319);
+    }
+
+    public async Task<ApiResponse<List<AbsenceWithoutContactNoteDto>>> GetAbsencesWithoutContactNoteAsync(
+        DateTime from,
+        DateTime to,
+        int? classId,
+        IReadOnlyList<UserRoles> roles,
+        CancellationToken ct = default)
+    {
+        // UC-23 A2: Office Staff follow up the absences that have no contact note in effect
+        if (!roles.Contains(UserRoles.OfficeStaff))
+        {
+            return ApiResponse<List<AbsenceWithoutContactNoteDto>>.Fail(SystemMessages.MSG10);
+        }
+
+        var fromDate = from.Date;
+        var toDate = to.Date;
+        if (toDate < fromDate || (toDate - fromDate).TotalDays > 366)
+        {
+            return ApiResponse<List<AbsenceWithoutContactNoteDto>>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Khoảng thời gian không hợp lệ (tối đa 366 ngày và Từ ngày phải trước Đến ngày)." });
+        }
+
+        var effectiveTo = toDate > _clock.Today ? _clock.Today : toDate;
+        if (effectiveTo < fromDate)
+        {
+            return ApiResponse<List<AbsenceWithoutContactNoteDto>>.Ok(new List<AbsenceWithoutContactNoteDto>());
+        }
+
+        var query = _unitOfWork.Repository<AttendanceRecord>().Query()
+            .AsNoTracking()
+            .Where(r => r.Status == AttendanceStatus.UnexcusedAbsence
+                     && r.Date >= fromDate
+                     && r.Date <= effectiveTo
+                     // a superseded note does not count as a contact note (BR-62)
+                     && !r.ContactNotes.Any(n => n.SupersededAt == null));
+        if (classId.HasValue)
+        {
+            query = query.Where(r => r.ClassId == classId.Value);
+        }
+
+        var list = await query
+            .Select(r => new AbsenceWithoutContactNoteDto
+            {
+                RecordId = r.Id,
+                StudentId = r.StudentId,
+                StudentCode = r.Student.StudentCode,
+                FullName = r.Student.FullName,
+                ClassId = r.ClassId,
+                ClassName = r.Class.ClassName,
+                Grade = r.Class.Grade,
+                HomeroomTeacherName = r.Class.HomeroomTeacher != null ? r.Class.HomeroomTeacher.User.FullName : null,
+                Date = r.Date,
+                Session = r.Session,
+                Remarks = r.Remarks,
+                SupersededNoteCount = r.ContactNotes.Count()
+            })
+            .ToListAsync(ct);
+
+        var ordered = list
+            .OrderBy(a => a.Grade)
+            .ThenBy(a => a.ClassName)
+            .ThenBy(a => a.Date)
+            .ThenBy(a => a.Session)
+            .ThenBy(a => a.FullName)
+            .ToList();
+        return ApiResponse<List<AbsenceWithoutContactNoteDto>>.Ok(ordered);
     }
     #endregion
 
@@ -1360,47 +1529,83 @@ public class AttendanceService : IAttendanceService
         return SchoolCalendarHelper.IsDefaultSchoolDay(date);
     }
 
-    private async Task SendAbsenceRetractionNoticesAsync(
-        int recordId,
-        int studentId,
-        string studentName,
-        string className,
-        DateTime date,
-        AttendanceStatus newStatus,
-        DateTime utcNow,
+    /// <summary>BR-62: contact notes are for school staff (Teacher, Office Staff, School Board), never Parents / Guardians or the System Administrator.</summary>
+    private static bool CanSeeContactNotes(IReadOnlyList<UserRoles> roles) =>
+        roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.SchoolBoard) || roles.Contains(UserRoles.Teacher);
+
+    /// <summary>The user is a Teacher and the homeroom teacher of the class.</summary>
+    private async Task<bool> IsHomeroomTeacherAsync(int classId, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct)
+    {
+        if (!roles.Contains(UserRoles.Teacher)) return false;
+        var staff = (await _unitOfWork.Repository<StaffProfile>().FindAsync(sp => sp.UserId == userId, ct)).FirstOrDefault();
+        if (staff == null) return false;
+        var cls = await _unitOfWork.Repository<Class>().GetByIdAsync(classId, ct);
+        return cls != null && cls.HomeroomTeacherId == staff.Id;
+    }
+
+    private async Task<Dictionary<int, List<AbsenceContactNoteDto>>> LoadContactNotesAsync(
+        IReadOnlyCollection<int> recordIds,
+        int userId,
+        IReadOnlyList<UserRoles> roles,
         CancellationToken ct)
     {
-        var guardians = await _unitOfWork.Students.GetGuardianUserIdsAsync(new[] { studentId }, ct);
-        var guardianUserIds = guardians.TryGetValue(studentId, out var ids) ? ids.Distinct().ToList() : new List<int>();
-        if (guardianUserIds.Count == 0) return;
+        var result = new Dictionary<int, List<AbsenceContactNoteDto>>();
+        var repo = _unitOfWork.Repository<AbsenceContactNote>();
+        if (repo == null || recordIds.Count == 0) return result;
 
-        var statusText = newStatus switch
-        {
-            AttendanceStatus.Present => "Có mặt",
-            AttendanceStatus.Late => "Đi muộn",
-            AttendanceStatus.ExcusedAbsence => "Vắng có phép",
-            _ => newStatus.ToString()
-        };
-
-        var notifRepo = _unitOfWork.Repository<Notification>();
-        if (notifRepo == null) return;
-
-        var key = NotificationTemplates.AbsenceNoticeRetractKey(recordId, utcNow);
-        foreach (var guardianUserId in guardianUserIds)
-        {
-            await notifRepo.AddAsync(new Notification
+        var rows = await repo.Query()
+            .AsNoTracking()
+            .Where(n => recordIds.Contains(n.AttendanceRecordId))
+            .Select(n => new
             {
-                UserId = guardianUserId,
-                Type = NotificationTemplates.AttendanceAbsentRetractType,
-                Title = NotificationTemplates.AttendanceAbsentRetractTitle,
-                Content = string.Format(NotificationTemplates.AttendanceAbsentRetractContent, studentName, className, $"{date:dd/MM/yyyy}", statusText),
-                LinkUrl = $"/parent/attendance?studentId={studentId}&month={date:yyyy-MM}",
-                ReferenceKey = key,
-                CreatedAt = utcNow,
-                IsRead = false
-            }, ct);
+                Note = n,
+                CreatedByName = n.CreatedByUser != null ? n.CreatedByUser.FullName : null,
+                SupersededByName = n.SupersededByUser != null ? n.SupersededByUser.FullName : null
+            })
+            .ToListAsync(ct);
+
+        foreach (var row in rows.OrderByDescending(r => r.Note.CreatedAt).ThenByDescending(r => r.Note.Id))
+        {
+            if (!result.TryGetValue(row.Note.AttendanceRecordId, out var list))
+            {
+                list = new List<AbsenceContactNoteDto>();
+                result[row.Note.AttendanceRecordId] = list;
+            }
+            list.Add(ToContactNoteDto(row.Note, row.CreatedByName, row.SupersededByName, userId, roles));
         }
+        return result;
     }
+
+    private static AbsenceContactNoteDto ToContactNoteDto(
+        AbsenceContactNote n,
+        string? createdByName,
+        string? supersededByName,
+        int userId,
+        IReadOnlyList<UserRoles> roles) => new()
+    {
+        Id = n.Id,
+        AttendanceRecordId = n.AttendanceRecordId,
+        ContactedAt = DateTime.SpecifyKind(n.ContactedAt, DateTimeKind.Utc),
+        Channel = n.Channel,
+        Outcome = n.Outcome,
+        Note = n.Note,
+        CreatedByUserId = n.CreatedByUserId,
+        CreatedByName = createdByName,
+        CreatedAt = DateTime.SpecifyKind(n.CreatedAt, DateTimeKind.Utc),
+        SupersededAt = n.SupersededAt.HasValue ? DateTime.SpecifyKind(n.SupersededAt.Value, DateTimeKind.Utc) : null,
+        SupersededByName = n.SupersededAt != null ? supersededByName : null,
+        SupersedeReason = n.SupersedeReason,
+        CanSupersede = n.SupersededAt == null
+            && (n.CreatedByUserId == userId || roles.Contains(UserRoles.OfficeStaff))
+            && (roles.Contains(UserRoles.OfficeStaff) || roles.Contains(UserRoles.Teacher))
+    };
+
+    private static DateTime ToUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
 
     #endregion
 

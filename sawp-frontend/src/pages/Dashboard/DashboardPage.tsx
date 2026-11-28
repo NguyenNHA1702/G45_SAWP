@@ -103,7 +103,7 @@ export default function DashboardPage() {
             </div>
             <h3>Điểm danh hằng ngày</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              Điểm danh lớp chủ nhiệm / tiết đầu, tự động trừ suất ăn và gửi cảnh báo vắng tới phụ huynh.
+              Điểm danh lớp chủ nhiệm / tiết đầu, tự động trừ suất ăn và lưu ghi chú liên hệ gia đình cho buổi vắng không phép.
             </p>
             <span className="badge badge--mint">Mở trang điểm danh →</span>
           </Link>

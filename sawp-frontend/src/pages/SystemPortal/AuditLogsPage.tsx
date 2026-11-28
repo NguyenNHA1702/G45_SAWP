@@ -24,9 +24,9 @@ const ENTITY_LABELS: Record<string, string> = {
   SchoolYear: 'Năm học',
   SchoolCalendarDay: 'Lịch năm học',
   Class: 'Lớp học',
-  PlacementPlan: 'Phương án xếp lớp',
   Student: 'Học sinh',
   AttendanceRecord: 'Phiếu điểm danh',
+  AbsenceContactNote: 'Ghi chú liên hệ gia đình',
   AdministrativeRequest: 'Đơn hành chính',
   LunchServiceDay: 'Lịch bán trú',
   LunchRegistration: 'Đăng ký ăn trưa',
@@ -70,24 +70,15 @@ const ACTION_LABELS: Record<string, string> = {
   SCHOOLYEARCREATE: 'Tạo năm học mới',
   SCHOOLYEARACTIVATE: 'Kích hoạt năm học',
   SCHOOLYEARDELETE: 'Xóa năm học',
-  SCHOOLYEARPUBLISHPLACEMENTS: 'Công bố kết quả xếp lớp',
   CLASSCREATE: 'Tạo lớp học mới',
-  CLASSINITIALIZEBATCH: 'Khởi tạo hàng loạt lớp học',
   CLASSUPDATE: 'Cập nhật thông tin lớp',
   CLASSASSIGNHOMEROOMTEACHER: 'Phân công GVCN',
   CLASSUNASSIGNHOMEROOMTEACHER: 'Gỡ phân công GVCN',
   CLASSASSIGNSTUDENTS: 'Xếp học sinh vào lớp',
   CLASSREMOVESTUDENT: 'Rút học sinh khỏi lớp',
   CLASSDELETE: 'Xóa lớp học',
-  CLASSPUBLISHPLACEMENT: 'Công bố danh sách lớp',
   CLASSIMPORTASSIGNMENTS: 'Nhập xếp lớp từ tệp',
   CLASSMARKREVIEWED: 'Đánh dấu lớp đã rà soát',
-  PLACEMENTPLANGENERATEDRAFT: 'Tạo phương án xếp lớp nháp',
-  PLACEMENTPLANMOVESTUDENT: 'Chuyển học sinh trong phương án',
-  PLACEMENTPLANSWAPSTUDENTS: 'Hoán đổi học sinh giữa 2 lớp',
-  PLACEMENTPLANSUBMIT: 'Trình phương án xếp lớp',
-  PLACEMENTPLANAPPROVE: 'Phê duyệt phương án xếp lớp',
-  PLACEMENTPLANREJECT: 'Từ chối phương án xếp lớp',
   STUDENTCREATE: 'Thêm hồ sơ học sinh',
   STUDENTUPDATE: 'Cập nhật hồ sơ học sinh',
   STUDENTACTIVATE: 'Kích hoạt hồ sơ học sinh',
@@ -105,7 +96,8 @@ const ACTION_LABELS: Record<string, string> = {
   ATTENDANCESUBMIT: 'Lưu bảng điểm danh',
   ATTENDANCEUPDATE: 'Cập nhật điểm danh',
   ATTENDANCECORRECT: 'Điều chỉnh điểm danh',
-  ATTENDANCEABSENCENOTICESEND: 'Gửi thông báo vắng mặt',
+  ATTENDANCECONTACTNOTECREATE: 'Ghi chú liên hệ gia đình',
+  ATTENDANCECONTACTNOTESUPERSEDE: 'Đánh dấu ghi chú liên hệ không còn hiệu lực',
   TEACHERREQUESTREATTENDANCE: 'GV yêu cầu điểm danh lại',
   REQUESTREATTENDANCE: 'Yêu cầu điểm danh lại',
   LEAVEREQUESTSUBMIT: 'Nộp đơn xin nghỉ học',
@@ -158,7 +150,8 @@ function translateAction(action: string): string {
   if (ACTION_LABELS[normalized]) return ACTION_LABELS[normalized];
 
   if (normalized.includes('REATTENDANCE')) return 'Yêu cầu điểm danh lại';
-  if (normalized.includes('ABSENCENOTICE')) return 'Gửi thông báo vắng mặt';
+  if (normalized.includes('CONTACTNOTESUPERSEDE')) return 'Đánh dấu ghi chú liên hệ không còn hiệu lực';
+  if (normalized.includes('CONTACTNOTE')) return 'Ghi chú liên hệ gia đình';
   if (normalized.includes('CORRECT') && normalized.includes('ATTENDANCE')) return 'Điều chỉnh điểm danh';
   if (normalized.includes('ATTENDANCE')) return 'Cập nhật điểm danh';
   if (normalized.includes('IMPORT')) return 'Nhập dữ liệu từ Excel';
@@ -347,13 +340,13 @@ export default function AuditLogsPage() {
           >
             <option value="">Tất cả mục quản lý</option>
             <option value="AttendanceRecord">Điểm danh học sinh</option>
+            <option value="AbsenceContactNote">Ghi chú liên hệ gia đình</option>
             <option value="AdministrativeRequest">Đơn từ & Giấy tờ</option>
             <option value="LeaveRequest">Đơn xin nghỉ học</option>
             <option value="LunchServiceDay">Lịch bán trú</option>
             <option value="LunchRegistration">Đăng ký ăn trưa</option>
             <option value="Student">Hồ sơ học sinh</option>
             <option value="Class">Lớp học</option>
-            <option value="PlacementPlan">Phương án xếp lớp</option>
             <option value="SchoolCalendarDay">Lịch năm học</option>
             <option value="User">Tài khoản người dùng</option>
           </select>
