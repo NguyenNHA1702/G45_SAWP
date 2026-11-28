@@ -192,6 +192,7 @@ export default function ClassesPage() {
   };
 
   const isDraftYear = activeSchoolYear?.status === 'Draft';
+  const isArchivedYear = activeSchoolYear?.status === 'Archived';
 
   const handleMarkReviewed = async (c: ClassSummaryDto) => {
     setReviewingClassId(c.id);
@@ -348,6 +349,7 @@ export default function ClassesPage() {
                   </button>
                 </>
               )}
+              {!isArchivedYear && (
                   <button
                     type="button"
                     className="btn btn--primary"
@@ -356,6 +358,7 @@ export default function ClassesPage() {
                   >
                     <PlusCircle size={18} /> + Thêm lớp học
                   </button>
+              )}
             </div>
           )}
         </div>
@@ -496,7 +499,7 @@ export default function ClassesPage() {
                   <FileSpreadsheet size={18} /> Nhập xếp lớp từ tệp
                 </button>
               )}
-              {canManage && (
+              {canManage && !isArchivedYear && (
                 <button
                   type="button"
                   className="btn btn--primary"

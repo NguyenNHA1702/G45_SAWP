@@ -338,7 +338,7 @@ public class RequestWorkflowEngineTests : TestBase
     }
 
     [Fact]
-    public async Task UTCID05_SubmitDocumentRequest_DefaultNumberOfCopies_WhenZero()
+    public async Task UTCID05_SubmitDocumentRequest_RejectsZeroNumberOfCopies()
     {
         // Arrange
         var guardian = new Guardian
@@ -359,7 +359,7 @@ public class RequestWorkflowEngineTests : TestBase
             StudentId = 10,
             DocumentType = "Giấy xác nhận học sinh",
             Purpose = "Xin visa",
-            NumberOfCopies = 0 // boundary
+            NumberOfCopies = 0 // N-07: 0 must be rejected, not coerced to 1
         };
 
         // Act
@@ -367,9 +367,65 @@ public class RequestWorkflowEngineTests : TestBase
 
         // Assert
         result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        docDetails.Should().HaveCount(1);
-        docDetails[0].NumberOfCopies.Should().Be(1);
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        docDetails.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("&lt;script&gt;alert(1)&lt;/script&gt;")]
+    [InlineData("&#60;b&#62;test&#60;/b&#62;")]
+    [InlineData("1234567890")]
+    [InlineData("aaaaaaaaaa")]
+    [InlineData("..........")]
+    public async Task SubmitDocumentRequest_RejectsEncodedHtmlAndGibberishPurpose(string invalidPurpose)
+    {
+        var request = new DocumentIssuanceRequestDto
+        {
+            StudentId = 10,
+            DocumentType = "Giấy xác nhận học sinh đang theo học",
+            Purpose = invalidPurpose,
+            NumberOfCopies = 1
+        };
+
+        var result = await _service.SubmitDocumentRequestAsync(20, request);
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Theory]
+    [InlineData("Bản sao Học bạ Tiểu học (có đóng dấu xác nhận của trường)")]
+    [InlineData("Giấy xác nhận hoàn thành chương trình")]
+    [InlineData("Đơn xin cấp lại / trích lục hồ sơ học tập")]
+    public async Task DirectIssueDocument_RejectsBoardRequiredDocumentTypes(string docType)
+    {
+        var req = new AdministrativeRequest
+        {
+            Id = 55,
+            RequestType = RequestTypes.Document,
+            Status = RequestStatus.Submitted,
+            RequiresAmendment = false,
+            DocumentRequestDetail = new DocumentRequestDetail
+            {
+                DocumentType = docType,
+                Purpose = "Nộp hồ sơ"
+            }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+
+        var dto = new StaffDirectIssueDocumentDto
+        {
+            DocumentFileUrl = "/uploads/doc.pdf",
+            StaffNotes = "Đã kiểm tra"
+        };
+
+        var result = await _service.DirectIssueDocumentAsync(55, 2, dto);
+
+        result.Should().NotBeNull();
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
     }
 
     #endregion

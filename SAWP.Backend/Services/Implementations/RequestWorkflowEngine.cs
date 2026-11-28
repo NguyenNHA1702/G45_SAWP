@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -53,7 +54,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
     private static DateTime? AsUtc(DateTime? dt) => dt.HasValue ? AsUtc(dt.Value) : null;
 
     private static bool ContainsHtmlSyntax(string? input)
-        => !string.IsNullOrWhiteSpace(input) && (input.Contains('<') || input.Contains('>'));
+        => TextValidationHelper.ContainsUnsafeHtmlOrScript(input);
 
     #region Parent Operations
 
@@ -67,15 +68,12 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, lớp muốn chuyển và nhập lý do." });
         }
 
-        var cleanTransferReason = System.Text.RegularExpressions.Regex.Replace(request.TransferReason.Trim(), @"\s+", " ");
-        if (ContainsHtmlSyntax(cleanTransferReason))
+        var transferReasonError = TextValidationHelper.ValidateFreeText(request.TransferReason, "lý do xin chuyển lớp", 5, 1000);
+        if (transferReasonError != null)
         {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Lý do xin chuyển lớp không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { transferReasonError });
         }
-        if (cleanTransferReason.Length < 5 || cleanTransferReason.Length > 1000)
-        {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Lý do xin chuyển lớp phải có độ dài từ 5 đến 1000 ký tự." });
-        }
+        var cleanTransferReason = TextValidationHelper.NormalizeWhitespace(request.TransferReason);
 
         if (request.EffectiveDate.HasValue && request.EffectiveDate.Value.Date < SchoolToday)
         {
@@ -241,22 +239,19 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, loại giấy tờ và mục đích xin cấp." });
         }
 
-        var cleanPurpose = System.Text.RegularExpressions.Regex.Replace(request.Purpose.Trim(), @"\s+", " ");
-        if (ContainsHtmlSyntax(cleanPurpose))
+        var purposeError = TextValidationHelper.ValidateFreeText(request.Purpose, "mục đích xin cấp giấy tờ", 5, 1000);
+        if (purposeError != null)
         {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Mục đích xin cấp giấy tờ không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { purposeError });
         }
-        if (cleanPurpose.Length < 5 || cleanPurpose.Length > 1000)
+        var cleanPurpose = TextValidationHelper.NormalizeWhitespace(request.Purpose);
+
+        if (request.NumberOfCopies < 1 || request.NumberOfCopies > 10)
         {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Mục đích xin cấp giấy tờ phải có độ dài từ 5 đến 1000 ký tự." });
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Số lượng bản sao phải từ 1 đến 10 bản (không chấp nhận số 0, số âm hoặc vượt quá 10 bản)." });
         }
 
-        if (request.NumberOfCopies < 0 || request.NumberOfCopies > 10)
-        {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Số lượng bản sao phải từ 1 đến 10 bản (không chấp nhận số âm hoặc vượt quá 10 bản)." });
-        }
-
-        var copies = request.NumberOfCopies == 0 ? 1 : request.NumberOfCopies;
+        var copies = request.NumberOfCopies;
 
         if (ContainsHtmlSyntax(request.DocumentType))
         {
@@ -377,25 +372,19 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
             return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng chọn học sinh, nhập tiêu đề và nội dung đơn." });
         }
 
-        if (ContainsHtmlSyntax(request.Title))
+        var titleError = TextValidationHelper.ValidateFreeText(request.Title, "tiêu đề loại đơn khác", 5, 150);
+        if (titleError != null)
         {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề loại đơn khác không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { titleError });
         }
-        var cleanTitle = System.Text.RegularExpressions.Regex.Replace(request.Title.Trim(), @"\s+", " ");
-        if (cleanTitle.Length < 5 || cleanTitle.Length > 150)
-        {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Tiêu đề loại đơn khác phải có độ dài từ 5 đến 150 ký tự." });
-        }
+        var cleanTitle = TextValidationHelper.NormalizeWhitespace(request.Title);
 
-        var cleanContent = System.Text.RegularExpressions.Regex.Replace(request.Content.Trim(), @"\s+", " ");
-        if (ContainsHtmlSyntax(cleanContent))
+        var contentError = TextValidationHelper.ValidateFreeText(request.Content, "nội dung chi tiết đơn", 5, 1000);
+        if (contentError != null)
         {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chi tiết đơn không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { contentError });
         }
-        if (cleanContent.Length < 5 || cleanContent.Length > 1000)
-        {
-            return ApiResponse<string>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chi tiết đơn phải có độ dài từ 5 đến 1000 ký tự." });
-        }
+        var cleanContent = TextValidationHelper.NormalizeWhitespace(request.Content);
 
         var guardian = await _unitOfWork.Repository<Guardian>()
             .Query()
@@ -685,7 +674,7 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         if (ContainsHtmlSyntax(request.TransferReason) || ContainsHtmlSyntax(request.Purpose) || ContainsHtmlSyntax(request.AdditionalNotes))
         {
-            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chỉnh sửa / bổ sung không được chứa thẻ HTML hoặc ký tự '<', '>'." });
+            return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Nội dung chỉnh sửa / bổ sung không được chứa thẻ HTML hoặc mã kịch bản." });
         }
 
         if (req.RequestType == RequestTypes.ClassTransfer && !string.IsNullOrWhiteSpace(request.TransferReason))
@@ -711,18 +700,41 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
 
         if (req.ClassTransferDetail != null && !string.IsNullOrWhiteSpace(request.TransferReason))
         {
-            req.ClassTransferDetail.TransferReason = request.TransferReason.Trim();
+            var err = TextValidationHelper.ValidateFreeText(request.TransferReason, "lý do xin chuyển lớp", 5, 1000);
+            if (err != null)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { err });
+            }
+            req.ClassTransferDetail.TransferReason = TextValidationHelper.NormalizeWhitespace(request.TransferReason);
         }
 
         if (req.DocumentRequestDetail != null)
         {
             if (!string.IsNullOrWhiteSpace(request.Purpose))
             {
-                req.DocumentRequestDetail.Purpose = request.Purpose.Trim();
+                var err = TextValidationHelper.ValidateFreeText(request.Purpose, "mục đích xin cấp giấy tờ", 5, 1000);
+                if (err != null)
+                {
+                    return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { err });
+                }
+                req.DocumentRequestDetail.Purpose = TextValidationHelper.NormalizeWhitespace(request.Purpose);
             }
-            if (req.RequestType != RequestTypes.Other && request.NumberOfCopies.HasValue && request.NumberOfCopies.Value >= 1 && request.NumberOfCopies.Value <= 10)
+            if (req.RequestType != RequestTypes.Other && request.NumberOfCopies.HasValue)
             {
+                if (request.NumberOfCopies.Value < 1 || request.NumberOfCopies.Value > 10)
+                {
+                    return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { "Số lượng bản sao phải từ 1 đến 10 bản (không chấp nhận số 0, số âm hoặc vượt quá 10 bản)." });
+                }
                 req.DocumentRequestDetail.NumberOfCopies = request.NumberOfCopies.Value;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.AdditionalNotes))
+        {
+            var err = TextValidationHelper.ValidateFreeText(request.AdditionalNotes, "ghi chú bổ sung", 5, 1000);
+            if (err != null)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG01, new List<string> { err });
             }
         }
 
@@ -1324,7 +1336,11 @@ public class RequestWorkflowEngine : IRequestWorkflowEngine
                 "phúc khảo",
                 "miễn, giảm",
                 "miễn giảm",
-                "hỗ trợ chi phí"
+                "hỗ trợ chi phí",
+                "bản sao học bạ",
+                "hoàn thành chương trình",
+                "cấp lại",
+                "trích lục hồ sơ"
             };
 
             if (sensitiveTypesRequiringBoard.Any(t => req.DocumentRequestDetail.DocumentType.Contains(t, StringComparison.OrdinalIgnoreCase)))

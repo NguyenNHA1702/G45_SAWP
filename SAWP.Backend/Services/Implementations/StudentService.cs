@@ -164,7 +164,7 @@ public class StudentService : IStudentService
                 s.SpecialNeedsNotes,
                 s.CreatedAt,
                 ActiveClass = s.ClassAssignments
-                    .Where(ca => ca.IsActive)
+                    .Where(ca => ca.IsActive && (ca.Class.SchoolYear == null || ca.Class.SchoolYear.IsActive))
                     .Select(ca => new
                     {
                         ca.Class.Id,
