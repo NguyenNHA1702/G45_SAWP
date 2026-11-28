@@ -924,7 +924,7 @@ export default function LeaveRequestPage() {
               </div>
 
               {/* Ngày nghỉ (L-F: min/max trên input date) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+              <div className="responsive-grid-2">
                 <div className="field">
                   <label className="label" htmlFor="leave-start-date">Từ ngày *</label>
                   <input
@@ -960,7 +960,7 @@ export default function LeaveRequestPage() {
               {/* Buổi nghỉ */}
               <div className="field">
                 <label className="label">Buổi nghỉ *</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8 }}>
+                <div className="responsive-grid-3">
                   {[
                     { val: 3, label: 'Cả ngày' },
                     { val: 1, label: 'Buổi sáng' },

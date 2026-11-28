@@ -210,7 +210,7 @@ export default function App() {
           <Route
             path="/service/headcount"
             element={
-              <RequireRole roles={['ServiceStaff', 'OfficeStaff', 'SchoolBoard', 'Admin']}>
+              <RequireRole roles={['ServiceStaff', 'SchoolBoard']}>
                 <MealHeadcountPage />
               </RequireRole>
             }

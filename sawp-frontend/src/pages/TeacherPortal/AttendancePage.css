@@ -70,6 +70,23 @@
     margin-bottom: 20px;
   }
 
+  .status-toggle {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    border-radius: 14px !important;
+    padding: 6px !important;
+    gap: 6px !important;
+    box-sizing: border-box;
+  }
+
+  .status-toggle > button {
+    justify-content: center;
+    padding: 8px 6px !important;
+    width: 100%;
+    white-space: nowrap;
+  }
+
   .roster-mobile-card {
     display: flex;
     flex-direction: column;
@@ -139,5 +156,20 @@
     align-items: stretch !important;
     padding: 12px 14px !important;
     gap: 10px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .attendance-page .toolbar {
+    gap: var(--space-3);
+  }
+  .attendance-page .toolbar .field {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    width: 100%;
+  }
+  .attendance-page .toolbar .btn {
+    width: 100%;
+    justify-content: center;
   }
 }

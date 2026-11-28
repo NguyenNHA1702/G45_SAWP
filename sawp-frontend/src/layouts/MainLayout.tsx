@@ -12,6 +12,7 @@ import {
   HeartHandshake,
   LayoutDashboard,
   LogOut,
+  Menu,
   Newspaper,
   School,
   Sparkles,
@@ -25,7 +26,6 @@ import {
   UserCog,
   ShieldAlert,
   UserPlus,
-  Menu,
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -64,12 +64,12 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard xem) ---
+  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; SchoolBoard xem) ---
   {
     id: 'kitchen-reports',
     label: 'Báo cáo suất ăn Bếp',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff', 'OfficeStaff', 'SchoolBoard'],
+    roles: ['ServiceStaff', 'SchoolBoard'],
     children: [
       {
         id: 'kitchen-summary',
@@ -326,6 +326,11 @@ export function MainLayout() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // Tự đóng mobile drawer khi chuyển trang
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname, location.search]);
 
   // Expanded submenus state
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({

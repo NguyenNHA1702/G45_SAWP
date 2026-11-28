@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Ban,
-  Calendar,
   CheckCircle2,
   RefreshCw,
   Search,
@@ -20,6 +19,7 @@ import {
   normalizeMealTypeNumber,
 } from '../../constants/allergens';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { DatePickerPill } from '../../components/common/DatePickerPill';
 import type {
   DailyMealBoard,
   DailyMenusByMealType,
@@ -28,12 +28,12 @@ import type {
 } from '../../types/lunch.types';
 
 const MEAL_TYPE_BADGE: Record<string, { label: string; cls: string; color: 'mint' | 'amber' | 'pink' }> = {
-  StandardLunch: { label: '🍱 Tiêu chuẩn', cls: 'badge--mint', color: 'mint' },
-  VegetarianLunch: { label: '🥗 Ăn chay', cls: 'badge--amber', color: 'amber' },
-  SpecialDiet: { label: '⚕️ Đặc biệt', cls: 'badge--pink', color: 'pink' },
-  '1': { label: '🍱 Tiêu chuẩn', cls: 'badge--mint', color: 'mint' },
-  '2': { label: '🥗 Ăn chay', cls: 'badge--amber', color: 'amber' },
-  '3': { label: '⚕️ Đặc biệt', cls: 'badge--pink', color: 'pink' },
+  StandardLunch: { label: 'Tiêu chuẩn', cls: 'badge--mint', color: 'mint' },
+  VegetarianLunch: { label: 'Ăn chay', cls: 'badge--amber', color: 'amber' },
+  SpecialDiet: { label: 'Đặc biệt', cls: 'badge--pink', color: 'pink' },
+  '1': { label: 'Tiêu chuẩn', cls: 'badge--mint', color: 'mint' },
+  '2': { label: 'Ăn chay', cls: 'badge--amber', color: 'amber' },
+  '3': { label: 'Đặc biệt', cls: 'badge--pink', color: 'pink' },
 };
 
 const COURSE_SLOTS = [
@@ -254,34 +254,12 @@ export default function TeacherBoardingPage() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '6px 14px',
-                borderRadius: 'var(--radius-full)',
-                border: '2px solid var(--color-fg)',
-                boxShadow: '3px 3px 0 0 var(--color-fg)',
-                background: '#FFFFFF',
-              }}
-            >
-              <Calendar size={16} />
-              <input
-                type="date"
-                aria-label="Chọn ngày bán trú"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                style={{
-                  border: 'none',
-                  outline: 'none',
-                  fontWeight: 800,
-                  fontSize: 'var(--fs-sm)',
-                  background: 'transparent',
-                }}
-              />
-            </div>
+          <div className="mobile-header-actions">
+            <DatePickerPill
+              value={selectedDate}
+              onChange={setSelectedDate}
+              ariaLabel="Chọn ngày bán trú"
+            />
 
             {board && board.classBreakdowns.length > 1 && (
               <select
@@ -352,8 +330,8 @@ export default function TeacherBoardingPage() {
             </h2>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative' }}>
+          <div className="responsive-filter-bar">
+            <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
               <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted-fg)' }} />
               <input
                 type="text"
@@ -361,7 +339,7 @@ export default function TeacherBoardingPage() {
                 placeholder="Tìm mã HS, tên, dị ứng..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ paddingLeft: 34, minWidth: 220 }}
+                style={{ paddingLeft: 34 }}
               />
             </div>
 
@@ -670,7 +648,7 @@ export default function TeacherBoardingPage() {
         }
         badgeText={
           selectedStudentTray
-            ? (MEAL_TYPE_BADGE[String(selectedStudentTray.mealType)]?.label ?? '🍱 Tiêu chuẩn')
+            ? (MEAL_TYPE_BADGE[String(selectedStudentTray.mealType)]?.label ?? 'Tiêu chuẩn')
             : ''
         }
         badgeColor={
@@ -893,7 +871,7 @@ export default function TeacherBoardingPage() {
                           fontSize: '11px',
                         }}
                       >
-                        ⚠️ {getAllergenFullLabel(tag)}
+                        {getAllergenFullLabel(tag)}
                       </span>
                     ))}
                   </div>

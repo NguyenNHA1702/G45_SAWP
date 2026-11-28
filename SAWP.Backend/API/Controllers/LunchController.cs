@@ -103,7 +103,7 @@ public class LunchController : BaseApiController
     /// Báo cáo tổng hợp suất ăn bán trú theo khoảng ngày / tháng
     /// </summary>
     [HttpGet("report")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    [Authorize(Roles = "ServiceStaff,SchoolBoard,Teacher")]
     public async Task<IActionResult> GetPeriodReport([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] int? classId, CancellationToken ct)
     {
         var start = (from ?? new DateTime(_clock.Today.Year, _clock.Today.Month, 1)).Date;
@@ -118,7 +118,7 @@ public class LunchController : BaseApiController
     /// API-7: Số liệu suất ăn phục vụ trong ngày cho tổ Bếp / Ban Giám hiệu
     /// </summary>
     [HttpGet("headcount")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    [Authorize(Roles = "ServiceStaff,SchoolBoard,Teacher")]
     public async Task<IActionResult> GetMealHeadcount([FromQuery] DateTime? date, CancellationToken ct)
     {
         var targetDate = date ?? _clock.Today;
@@ -130,7 +130,7 @@ public class LunchController : BaseApiController
     /// UC-33: Lấy bảng vận hành & báo cáo suất ăn bán trú theo ngày (hỗ trợ phân quyền theo role và lọc lớp)
     /// </summary>
     [HttpGet("live-board")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    [Authorize(Roles = "ServiceStaff,SchoolBoard,Teacher")]
     public async Task<IActionResult> GetLiveBoard([FromQuery] DateTime? date, [FromQuery] int? classId, CancellationToken cancellationToken)
     {
         var targetDate = date ?? _clock.Today;
@@ -144,7 +144,7 @@ public class LunchController : BaseApiController
     /// Lấy báo cáo tổng số suất ăn theo ngày
     /// </summary>
     [HttpGet("daily-count")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    [Authorize(Roles = "ServiceStaff,SchoolBoard,Teacher")]
     public async Task<IActionResult> GetDailyCount([FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
         var targetDate = date ?? _clock.Today;
