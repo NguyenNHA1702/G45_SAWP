@@ -836,16 +836,22 @@ public class AttendanceService : IAttendanceService
     }
     #endregion
 
-    #region OVR-01: SendAbsenceNoticeAsync (Office Staff send an absence notice, UC-23 A2)
+    #region OVR-01: SendAbsenceNoticeAsync (Office Staff or Teacher send an absence notice, UC-23 A2)
     public async Task<ApiResponse<AbsenceNoticeResultDto>> SendAbsenceNoticeAsync(
         int recordId,
         int userId,
+        IReadOnlyList<UserRoles>? roles = null,
         CancellationToken ct = default)
     {
         var rec = await _unitOfWork.Attendance.GetByIdWithStudentClassAsync(recordId, ct);
         if (rec == null)
         {
             return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG43);
+        }
+
+        if (roles != null && !await CanViewClassAsync(rec.ClassId, userId, roles, ct))
+        {
+            return ApiResponse<AbsenceNoticeResultDto>.Fail(SystemMessages.MSG10);
         }
 
         // AT-08: Chỉ cho phép gửi thông báo vắng mặt cho bản ghi điểm danh của ngày hôm nay

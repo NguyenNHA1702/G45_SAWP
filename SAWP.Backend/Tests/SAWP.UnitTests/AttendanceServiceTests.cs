@@ -1166,6 +1166,45 @@ public class AttendanceServiceTests : TestBase
         result.Code.Should().Be(SystemMessages.MSG43.Code);
     }
 
+    [Fact]
+    public async Task UTCID07_SendAbsenceNotice_HomeroomTeacher_NotifiesParents()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupNoLeaveAndGuardians(20);
+        var notificationRepo = SetupRepository(new List<Notification>());
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 30, new[] { UserRoles.Teacher });
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Code.Should().Be(SystemMessages.MSG55.Code);
+        rec.AbsenceNoticeSentByUserId.Should().Be(30);
+        notificationRepo.Verify(r => r.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UTCID08_SendAbsenceNotice_NonHomeroomTeacher_FailsWithMSG10()
+    {
+        // Arrange
+        var rec = UnexcusedRecord();
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 99, Status = "Active" } });
+
+        // Act
+        var result = await _service.SendAbsenceNoticeAsync(10, 30, new[] { UserRoles.Teacher });
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG10.Code);
+        rec.AbsenceNoticeSentAt.Should().BeNull();
+    }
+
     // ==================== Round 2 Regression Tests (ATT-3..ATT-13) ====================
 
     [Fact]

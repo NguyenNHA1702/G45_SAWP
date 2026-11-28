@@ -17,8 +17,8 @@ public interface IAttendanceService
     // API-4: PUT /api/attendance/records/{recordId}
     Task<ApiResponse<AttendanceSheetEntryDto>> CorrectAttendanceAsync(int recordId, CorrectAttendanceDto dto, int userId, CancellationToken ct = default);
 
-    // OVR-01 (UC-23 A2): Office Staff send an absence notice for one unexcused absence
-    Task<ApiResponse<AbsenceNoticeResultDto>> SendAbsenceNoticeAsync(int recordId, int userId, CancellationToken ct = default);
+    // OVR-01 (UC-23 A2): Office Staff or Teacher send an absence notice for one unexcused absence
+    Task<ApiResponse<AbsenceNoticeResultDto>> SendAbsenceNoticeAsync(int recordId, int userId, IReadOnlyList<UserRoles>? roles = null, CancellationToken ct = default);
 
     // API-5: GET /api/attendance/classes/{classId}/summary?from=&to=
     Task<ApiResponse<ClassAttendanceSummaryDto>> GetClassSummaryAsync(int classId, DateTime from, DateTime to, int userId, IReadOnlyList<UserRoles> roles, CancellationToken ct = default);

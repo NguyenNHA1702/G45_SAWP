@@ -12,7 +12,7 @@ interface Props {
   onStatusChange: (studentId: number, status: AttendanceStatus) => void;
   onRemarksChange: (studentId: number, remarks: string) => void;
   onCorrect?: (entry: AttendanceSheetEntry) => void;
-  /** Office Staff only (OVR-01, UC-23 A2): shows the absence notice column. */
+  /** Office Staff or Teacher (OVR-01, UC-23 A2): shows the absence notice column. */
   onSendAbsenceNotice?: (entry: AttendanceSheetEntry) => void;
   /** Disables the send buttons, e.g. while sending or while the sheet has unsaved changes. */
   absenceNoticeDisabled?: boolean;

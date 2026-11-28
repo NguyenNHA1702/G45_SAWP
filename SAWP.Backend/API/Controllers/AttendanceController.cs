@@ -86,14 +86,15 @@ public class AttendanceController : BaseApiController
     }
 
     /// <summary>
-    /// OVR-01 (UC-23 A2): Office Staff send an absence notice for one unexcused absence (MSG55; MSG09 if not allowed)
+    /// OVR-01 (UC-23 A2): Office Staff or Teacher send an absence notice for one unexcused absence (MSG55; MSG09 if not allowed)
     /// </summary>
     [HttpPost("records/{recordId}/absence-notice")]
-    [Authorize(Roles = "OfficeStaff")]
+    [Authorize(Roles = "OfficeStaff,Teacher")]
     public async Task<IActionResult> SendAbsenceNotice(int recordId, CancellationToken ct)
     {
         var userId = User.GetRequiredUserId();
-        var result = await _attendanceService.SendAbsenceNoticeAsync(recordId, userId, ct);
+        var roles = User.GetRoles();
+        var result = await _attendanceService.SendAbsenceNoticeAsync(recordId, userId, roles, ct);
         return ToActionResult(result);
     }
 
