@@ -140,7 +140,7 @@ public class StudentRepository : Repository<Student>, IStudentRepository
                 s.SpecialNeedsNotes,
                 s.CreatedAt,
                 ActiveClass = s.ClassAssignments
-                    .Where(ca => ca.IsActive)
+                    .Where(ca => ca.IsActive && (ca.Class.SchoolYear == null || ca.Class.SchoolYear.IsActive))
                     .Select(ca => new
                     {
                         ca.Class.Id,
@@ -242,7 +242,7 @@ public class StudentRepository : Repository<Student>, IStudentRepository
                 sg.Relationship,
                 sg.IsPrimaryContact,
                 ActiveClass = sg.Student.ClassAssignments
-                    .Where(ca => ca.IsActive)
+                    .Where(ca => ca.IsActive && (ca.Class.SchoolYear == null || ca.Class.SchoolYear.IsActive))
                     .Select(ca => new
                     {
                         ca.ClassId,

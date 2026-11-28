@@ -75,6 +75,10 @@ export function StaffReviewDocumentModal({
     'miễn, giảm',
     'miễn giảm',
     'hỗ trợ chi phí',
+    'bản sao học bạ',
+    'hoàn thành chương trình',
+    'cấp lại',
+    'trích lục hồ sơ',
   ];
   const isBoardRequired =
     !isOther &&
