@@ -361,6 +361,11 @@ public class ClassService : IClassService
             return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { "Năm học không hợp lệ." });
         }
 
+        if (string.Equals(schoolYear.Status, SchoolYearStatuses.Archived, StringComparison.OrdinalIgnoreCase))
+        {
+            return ApiResponse<ClassSummaryDto>.Fail(SystemMessages.MSG01, new List<string> { $"Năm học {schoolYear.YearName} đã lưu trữ (Archived), không thể thêm lớp học mới." });
+        }
+
         var existingClasses = await _unitOfWork.Classes.GetClassesBySchoolYearAsync(request.SchoolYearId, null, null, cancellationToken);
         if (existingClasses != null && existingClasses.Any(c => c.ClassName.Equals(normalizedClassName, StringComparison.OrdinalIgnoreCase)))
         {
@@ -375,6 +380,7 @@ public class ClassService : IClassService
             RoomNumber = request.RoomNumber?.Trim(),
             Capacity = request.Capacity,
             Status = "Active",
+            IsReviewed = string.Equals(schoolYear.Status, SchoolYearStatuses.Active, StringComparison.OrdinalIgnoreCase),
         };
 
         await _unitOfWork.Classes.AddAsync(newClass, cancellationToken);
