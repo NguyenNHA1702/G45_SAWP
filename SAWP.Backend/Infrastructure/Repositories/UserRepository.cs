@@ -19,7 +19,10 @@ public class UserRepository : Repository<User>, IUserRepository
                 .ThenInclude(ur => ur.Role)
             .Include(u => u.StaffProfile)
             .Include(u => u.Guardian)
-            .FirstOrDefaultAsync(u => u.Username.ToLower() == normalized || u.Email.ToLower() == normalized, cancellationToken);
+            .Where(u => u.Email.ToLower() == normalized)
+            .OrderBy(u => u.Status == Core.Enums.AccountStatus.Deactivated ? 1 : 0)
+            .ThenByDescending(u => u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<User?> GetByIdWithRolesAsync(int userId, CancellationToken cancellationToken = default)

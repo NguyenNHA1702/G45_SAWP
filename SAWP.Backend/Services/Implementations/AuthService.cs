@@ -72,16 +72,16 @@ public class AuthService : IAuthService
             return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG02);
         }
 
+        // BR-01, BR-63 (BUG-AUTH-02): check account status BEFORE VerifyPassword so PendingActivation / Deactivated returns MSG03
+        if (user.Status != AccountStatus.Active)
+        {
+            return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG03);
+        }
+
         // BR-01: Verify password using BCrypt
         if (!VerifyPassword(user, request.Password))
         {
             return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG02);
-        }
-
-        // BR-01, BR-63: only Active accounts sign in (not Pending Activation or Deactivated)
-        if (user.Status != AccountStatus.Active)
-        {
-            return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG03);
         }
 
         var responseData = BuildLoginResponse(user);
@@ -115,10 +115,10 @@ public class AuthService : IAuthService
             return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG02);
         }
 
-        // A temporary password must really be replaced (BR-02, UC-60 A1)
+        // A temporary password must really be replaced (BR-02, UC-60 A1, BUG-AUTH-07)
         if (request.NewPassword == request.CurrentPassword)
         {
-            return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG04, new List<string> { "Mật khẩu mới phải khác mật khẩu hiện tại." });
+            return ApiResponse<LoginResponseDto>.Fail(SystemMessages.MSG89);
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
@@ -157,7 +157,9 @@ public class AuthService : IAuthService
         var normalized = email.ToLowerInvariant();
         var user = await _unitOfWork.Users.Query()
             .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalized, cancellationToken);
+            .Where(u => u.Email.ToLower() == normalized && u.Status != AccountStatus.Deactivated)
+            .OrderByDescending(u => u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
         // A4 / BR-04: no link for System Administrator accounts or accounts that cannot sign in; same answer (MSG56).
         // The link is created and emailed after the response: doing it here would make the answer slower for a
@@ -251,6 +253,133 @@ public class AuthService : IAuthService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG46); // step 10
+    }
+
+    public async Task<ApiResponse<bool>> LogoutAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _unitOfWork.Users.GetByIdWithRolesAsync(userId, cancellationToken);
+        if (user == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG07);
+        }
+
+        user.SessionVersion++;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _auditService.LogActionAsync(userId, AuditActions.UserLogout, nameof(User), user.Id.ToString(),
+            null, new { LoggedOutAt = user.UpdatedAt }, null, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<bool>.Ok(true, SystemMessages.MSG06);
+    }
+
+    public async Task<ApiResponse<EmailChangeLinkCheckResultDto>> CheckEmailChangeLinkAsync(string rawToken, CancellationToken cancellationToken = default)
+    {
+        var token = await FindEmailChangeLinkAsync(rawToken, cancellationToken);
+        if (token == null)
+        {
+            return ApiResponse<EmailChangeLinkCheckResultDto>.Fail(SystemMessages.MSG57);
+        }
+
+        return ApiResponse<EmailChangeLinkCheckResultDto>.Ok(new EmailChangeLinkCheckResultDto
+        {
+            CurrentEmail = token.User.Email,
+            NewEmail = token.NewEmail!,
+            FullName = token.User.FullName
+        });
+    }
+
+    public async Task<ApiResponse<bool>> ConfirmEmailChangeAsync(string rawToken, CancellationToken cancellationToken = default)
+    {
+        var token = await FindEmailChangeLinkAsync(rawToken, cancellationToken);
+        if (token == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG57);
+        }
+
+        var user = token.User;
+        var newEmail = token.NewEmail!.Trim();
+        var oldEmail = user.Email;
+
+        var emailTaken = await _unitOfWork.Users.Query()
+            .AnyAsync(u => u.Id != user.Id && u.Status != AccountStatus.Deactivated && u.Email.ToLower() == newEmail.ToLower(), cancellationToken);
+        if (emailTaken)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Email mới hiện đã được sử dụng bởi tài khoản khác." });
+        }
+
+        var now = DateTime.UtcNow;
+        user.Email = newEmail;
+        if (string.Equals(user.Username, oldEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            var usernameTaken = await _unitOfWork.Users.Query()
+                .AnyAsync(u => u.Id != user.Id && u.Status != AccountStatus.Deactivated && u.Username.ToLower() == newEmail.ToLower(), cancellationToken);
+            if (!usernameTaken)
+            {
+                user.Username = newEmail;
+            }
+        }
+        user.EmailVerifiedAt = now;
+        user.SessionVersion++;
+        user.UpdatedAt = now;
+
+        if (user.Guardian != null)
+        {
+            user.Guardian.Email = newEmail;
+        }
+        else
+        {
+            var guardian = await _unitOfWork.Repository<Guardian>().Query()
+                .FirstOrDefaultAsync(g => g.UserId == user.Id, cancellationToken);
+            if (guardian != null)
+            {
+                guardian.Email = newEmail;
+            }
+        }
+
+        token.UsedAt = now;
+        var others = await _unitOfWork.Repository<VerificationToken>().Query()
+            .Where(t => t.UserId == user.Id && t.Id != token.Id && t.UsedAt == null && t.ExpiresAt > now
+                        && t.Purpose == VerificationTokenPurpose.EmailChange)
+            .ToListAsync(cancellationToken);
+        foreach (var other in others)
+        {
+            other.ExpiresAt = now;
+        }
+
+        // Mark matching approved EmailChangeRequests completed if present
+        var reqRepo = _unitOfWork.Repository<EmailChangeRequest>();
+        if (reqRepo != null)
+        {
+            var pendingReqs = await reqRepo.Query()
+                .Where(r => r.TargetUserId == user.Id
+                            && r.NewEmail.ToLower() == newEmail.ToLower()
+                            && (r.Status == EmailChangeRequestStatus.Approved || r.Status == EmailChangeRequestStatus.EmailFailed))
+                .ToListAsync(cancellationToken);
+            foreach (var r in pendingReqs)
+            {
+                r.Status = EmailChangeRequestStatus.Completed;
+                r.CompletedAt = now;
+            }
+        }
+
+        await _auditService.LogActionAsync(user.Id, AuditActions.UserChangeEmail, nameof(User), user.Id.ToString(),
+            new { Email = oldEmail }, new { Email = newEmail, Confirmed = true }, null, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return ApiResponse<bool>.Ok(true, "Đã xác nhận thay đổi email đăng nhập thành công.");
+    }
+
+    private async Task<VerificationToken?> FindEmailChangeLinkAsync(string rawToken, CancellationToken ct)
+    {
+        var token = await _accountLinks.FindUsableAsync(rawToken, ct);
+        if (token == null
+            || token.Purpose != VerificationTokenPurpose.EmailChange
+            || string.IsNullOrWhiteSpace(token.NewEmail)
+            || token.User.Status == AccountStatus.Deactivated)
+        {
+            return null;
+        }
+        return token;
     }
 
     /// <summary>An activation or recovery link that may still be used: unused, unexpired, and for an account in the matching state.</summary>
@@ -527,18 +656,13 @@ public class AuthService : IAuthService
         {
             user.PhoneNumber = request.PhoneNumber.Trim();
         }
-        if (!string.IsNullOrWhiteSpace(request.Email))
+        if (!string.IsNullOrWhiteSpace(request.Email)
+            && !string.Equals(request.Email.Trim(), user.Email, StringComparison.OrdinalIgnoreCase))
         {
-            var newEmail = request.Email.Trim();
-            // Login emails are unique (BR-64). TODO SSAWP-154: users no longer change their own email (BR-69).
-            var emailTaken = await _unitOfWork.Users.Query()
-                .AnyAsync(u => u.Id != user.Id && u.Email.ToLower() == newEmail.ToLower(), ct);
-            if (emailTaken)
-            {
-                return ApiResponse<UserProfileDto>.Fail(SystemMessages.MSG01, new List<string> { "Email đã được sử dụng bởi một tài khoản khác." });
-            }
-            user.Email = newEmail;
-            if (user.Guardian != null) user.Guardian.Email = newEmail; // only an address the Parent typed, never a placeholder
+            // BR-69 (BUG-SEC-05): users cannot change their own login email
+            return ApiResponse<UserProfileDto>.Fail(
+                SystemMessages.MSG10,
+                new List<string> { "Bạn không thể tự thay đổi địa chỉ email đăng nhập. Vui lòng liên hệ nhà trường để được hỗ trợ." });
         }
         user.UpdatedAt = DateTime.UtcNow;
 

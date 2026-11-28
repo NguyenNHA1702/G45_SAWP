@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { ExternalLink, FileSpreadsheet, FileText, Play } from 'lucide-react';
 import type { PostAttachmentDto } from '../../types/contactBook.types';
+import { apiClient } from '../../services/apiClient';
+import { openProtectedFile } from '../../utils/fileViewer';
 
 export function getYouTubeVideoId(url: string): string | null {
   if (!url) return null;
@@ -7,6 +10,106 @@ export function getYouTubeVideoId(url: string): string | null {
     /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
   );
   return match ? match[1] : null;
+}
+
+function toRelativeApiEndpoint(fileUrl: string): string {
+  const trimmed = fileUrl.trim();
+  return trimmed.startsWith('/api/') || trimmed.startsWith('/api')
+    ? trimmed.slice(4)
+    : trimmed;
+}
+
+function ProtectedImage({ fileUrl, fileName }: { fileUrl: string; fileName?: string }) {
+  const isInternalApi = fileUrl.trim().startsWith('/api');
+  const [src, setSrc] = useState<string | null>(isInternalApi ? null : fileUrl);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!isInternalApi) {
+      setSrc(fileUrl);
+      setFailed(false);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setFailed(false);
+
+    apiClient
+      .get(toRelativeApiEndpoint(fileUrl), { responseType: 'blob' })
+      .then((res) => {
+        if (cancelled) return;
+        objectUrl = window.URL.createObjectURL(res.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl);
+    };
+  }, [fileUrl, isInternalApi]);
+
+  if (failed) {
+    return (
+      <div style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span>🔗</span>
+        <button
+          type="button"
+          className="btn btn--link"
+          onClick={() => openProtectedFile(fileUrl, false, fileName)}
+          style={{
+            background: 'none',
+            border: 0,
+            padding: 0,
+            cursor: 'pointer',
+            fontWeight: 600,
+            color: '#2563EB',
+            wordBreak: 'break-all',
+            textAlign: 'left',
+          }}
+        >
+          {fileName || fileUrl}
+        </button>
+      </div>
+    );
+  }
+
+  if (!src) {
+    return (
+      <div
+        style={{
+          height: 160,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--color-muted-fg)',
+          fontSize: '0.85rem',
+        }}
+      >
+        Đang tải ảnh...
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={fileName || 'Ảnh đính kèm'}
+      style={{
+        width: '100%',
+        maxHeight: 320,
+        objectFit: 'contain',
+        display: 'block',
+        cursor: 'pointer',
+        background: '#F1F5F9',
+      }}
+      onClick={() => openProtectedFile(fileUrl, false, fileName)}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 interface PostAttachmentsRendererProps {
@@ -96,34 +199,7 @@ export function PostAttachmentsRenderer({ attachments }: PostAttachmentsRenderer
                 background: '#F8FAFC',
               }}
             >
-              <img
-                src={att.fileUrl}
-                alt={att.fileName || 'Ảnh đính kèm'}
-                style={{
-                  width: '100%',
-                  maxHeight: 320,
-                  objectFit: 'contain',
-                  display: 'block',
-                  cursor: 'pointer',
-                  background: '#F1F5F9',
-                }}
-                onClick={() => window.open(att.fileUrl, '_blank')}
-                onError={(e) => {
-                  const target = e.target as HTMLElement;
-                  target.style.display = 'none';
-                  const parent = target.parentElement;
-                  if (parent) {
-                    parent.innerHTML = `
-                      <div style="padding: 12px; display: flex; alignItems: center; gap: 8px;">
-                        <span>🔗</span>
-                        <a href="${att.fileUrl}" target="_blank" rel="noreferrer" style="font-weight: 600; color: #2563EB; word-break: break-all;">
-                          ${att.fileName || att.fileUrl}
-                        </a>
-                      </div>
-                    `;
-                  }
-                }}
-              />
+              <ProtectedImage fileUrl={att.fileUrl} fileName={att.fileName} />
             </div>
           );
         }
@@ -173,17 +249,20 @@ export function PostAttachmentsRenderer({ attachments }: PostAttachmentsRenderer
               >
                 {fileLabel}
               </div>
-              <a
-                href={att.fileUrl}
-                target="_blank"
-                rel="noreferrer"
-                download={att.fileName}
+              <button
+                type="button"
+                onClick={() => openProtectedFile(att.fileUrl, false, att.fileName)}
                 style={{
+                  background: 'none',
+                  border: 0,
+                  padding: 0,
+                  cursor: 'pointer',
                   fontWeight: 600,
                   fontSize: '0.85rem',
                   color: '#1E293B',
-                  textDecoration: 'none',
+                  textAlign: 'left',
                   display: 'block',
+                  width: '100%',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -191,18 +270,16 @@ export function PostAttachmentsRenderer({ attachments }: PostAttachmentsRenderer
                 title={att.fileName}
               >
                 {att.fileName}
-              </a>
+              </button>
             </div>
-            <a
-              href={att.fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              download={att.fileName}
+            <button
+              type="button"
+              onClick={() => openProtectedFile(att.fileUrl, true, att.fileName)}
               className="btn btn--outline btn--sm"
               style={{ flexShrink: 0, padding: '4px 10px', fontSize: '0.75rem' }}
             >
               Mở / Tải
-            </a>
+            </button>
           </div>
         );
       })}

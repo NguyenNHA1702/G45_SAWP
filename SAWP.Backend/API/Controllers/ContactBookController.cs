@@ -27,6 +27,7 @@ public class ContactBookController : BaseApiController
     /// Lấy danh sách bài đăng bảng tin lớp học
     /// </summary>
     [HttpGet("classes/{classId}/posts")]
+    [Authorize(Roles = "Teacher,Parent,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetClassPosts(int classId, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -40,7 +41,7 @@ public class ContactBookController : BaseApiController
     /// Tải lên tệp đính kèm cho bài viết bảng tin lớp (hình ảnh hoặc tài liệu) (UC-61, BR-50)
     /// </summary>
     [HttpPost("upload-attachment")]
-    [Authorize(Roles = "Teacher,OfficeStaff,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff")]
     public async Task<IActionResult> UploadAttachment(
         IFormFile file,
         [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
@@ -51,7 +52,7 @@ public class ContactBookController : BaseApiController
             return BadRequest(ApiResponse<ContactAttachmentUploadResultDto>.Fail(SystemMessages.MSG01));
         }
 
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx", ".xls", ".xlsx" };
         using var stream = file.OpenReadStream();
         var validationError = await UploadValidationHelper.ValidateFileStreamAsync(
             stream,
@@ -89,6 +90,7 @@ public class ContactBookController : BaseApiController
     /// Tải / Xem tệp đính kèm bảng tin lớp
     /// </summary>
     [HttpGet("attachment-file")]
+    [Authorize(Roles = "Teacher,Parent,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetAttachmentFile(
         [FromQuery] string path,
         [FromServices] Infrastructure.ExternalServices.IFileStorageService fileStorageService,
@@ -154,6 +156,7 @@ public class ContactBookController : BaseApiController
     /// GVCN đăng bài viết mới lên bảng tin lớp (UC-61)
     /// </summary>
     [HttpPost("posts")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> CreateClassPost([FromBody] CreateClassPostDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -167,6 +170,7 @@ public class ContactBookController : BaseApiController
     /// GVCN chỉnh sửa bài viết trên bảng tin lớp
     /// </summary>
     [HttpPut("posts/{postId}")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> UpdateClassPost(int postId, [FromBody] UpdateClassPostDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -180,6 +184,7 @@ public class ContactBookController : BaseApiController
     /// Ghim hoặc gỡ ghim bài viết lớp học
     /// </summary>
     [HttpPost("posts/{postId}/pin")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> TogglePinPost(int postId, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -190,6 +195,7 @@ public class ContactBookController : BaseApiController
     }
 
     [HttpPatch("posts/{postId}/comments-lock")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> ToggleCommentsLock(int postId, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -203,6 +209,7 @@ public class ContactBookController : BaseApiController
     /// Xóa bài viết lớp học
     /// </summary>
     [HttpDelete("posts/{postId}")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> DeleteClassPost(int postId, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -216,6 +223,7 @@ public class ContactBookController : BaseApiController
     /// Thêm bình luận tương tác vào bài viết lớp (UC-62)
     /// </summary>
     [HttpPost("posts/{postId}/comments")]
+    [Authorize(Roles = "Teacher,Parent")]
     public async Task<IActionResult> AddComment(int postId, [FromBody] CreatePostCommentDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -229,6 +237,7 @@ public class ContactBookController : BaseApiController
     /// Xóa bình luận bài viết
     /// </summary>
     [HttpDelete("comments/{commentId}")]
+    [Authorize(Roles = "Teacher,Parent")]
     public async Task<IActionResult> DeleteComment(int commentId, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -242,6 +251,7 @@ public class ContactBookController : BaseApiController
     /// Thả cảm xúc / like bài viết
     /// </summary>
     [HttpPost("posts/{postId}/reactions")]
+    [Authorize(Roles = "Teacher,Parent")]
     public async Task<IActionResult> ToggleReaction(int postId, [FromBody] ToggleReactionDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -259,6 +269,7 @@ public class ContactBookController : BaseApiController
     /// GVCN lấy danh sách phiếu nhận xét của cả lớp theo tuần (UC-63)
     /// </summary>
     [HttpGet("classes/{classId}/evaluations/roster")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetClassEvaluationsRoster(int classId, [FromQuery] int weekNumber = 1, CancellationToken cancellationToken = default)
     {
         var userId = User.GetUserId();
@@ -272,6 +283,7 @@ public class ContactBookController : BaseApiController
     /// Lấy lịch sử phiếu nhận xét của một học sinh cụ thể (UC-64)
     /// </summary>
     [HttpGet("students/{studentId}/evaluations")]
+    [Authorize(Roles = "Teacher,Parent,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetStudentEvaluations(int studentId, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -285,6 +297,7 @@ public class ContactBookController : BaseApiController
     /// GVCN lưu hoặc cập nhật phiếu nhận xét rèn luyện nề nếp tuần (UC-63)
     /// </summary>
     [HttpPost("evaluations")]
+    [Authorize(Roles = "Teacher")]
     public async Task<IActionResult> CreateOrUpdateEvaluation([FromBody] CreateStudentEvaluationDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -298,6 +311,7 @@ public class ContactBookController : BaseApiController
     /// Phụ huynh ký nhận "Đã đọc" và gửi phản hồi 2 chiều cho GVCN (UC-64)
     /// </summary>
     [HttpPost("evaluations/{id}/acknowledge")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> AcknowledgeEvaluation(int id, [FromBody] AcknowledgeEvaluationDto request, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();

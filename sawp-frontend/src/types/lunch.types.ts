@@ -163,6 +163,7 @@ export interface DailyMealBoard {
   isLocked: boolean;
   lockedAt?: string;
   lockedByName?: string | null;
+  lockNotes?: string | null;
   cutoffTime: string;
   serviceRemarks?: string | null;
   menus?: DailyMenusByMealType | null;

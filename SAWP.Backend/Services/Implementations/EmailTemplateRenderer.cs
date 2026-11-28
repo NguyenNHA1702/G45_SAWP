@@ -10,8 +10,9 @@ public static class EmailTemplates
 {
     public const string Activation = "Activation";
     public const string PasswordRecovery = "PasswordRecovery";
+    public const string EmailChange = "EmailChange";
 
-    public static readonly IReadOnlyList<string> All = new[] { Activation, PasswordRecovery };
+    public static readonly IReadOnlyList<string> All = new[] { Activation, PasswordRecovery, EmailChange };
 }
 
 /// <summary>

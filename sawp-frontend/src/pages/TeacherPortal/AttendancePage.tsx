@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
-import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, Lock, MessageSquareText, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Unlock, Users, XCircle } from 'lucide-react';
+import { BarChart3, CalendarCheck2, CalendarRange, CheckCheck, Clock, Eye, GraduationCap, Lock, MessageSquareText, PencilLine, RotateCcw, Save, Search, Send, Table2, TriangleAlert, Unlock, Users, XCircle } from 'lucide-react';
 import './AttendancePage.css';
 import { getAuthUser } from '../../services/apiClient';
 import { attendanceApi } from '../../services/implementations/attendanceApi';
@@ -10,9 +10,11 @@ import { useUnsavedChangesWarning } from '../../hooks/useUnsavedChangesWarning';
 import { asApiError } from '../../utils/apiError';
 import { formatDateDDMMYYYY, formatViDateTime, todayIso, toIsoDate } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
+import { ATTENDANCE_STATUS, LEAVE_REQUEST_STATUS } from '../../constants/attendance';
 import type {
   AttendanceSession,
   AttendanceSheetEntry,
+  AttendanceStatus,
   AttendanceSubmitResult,
   ClassAttendanceMatrix,
   ClassAttendanceSummary,
@@ -22,6 +24,7 @@ import type {
 } from '../../types/attendance.types';
 import { AttendanceSummaryBar } from '../../components/attendance/AttendanceSummaryBar';
 import { AttendanceRosterTable } from '../../components/attendance/AttendanceRosterTable';
+import { AttendanceStatusToggle } from '../../components/attendance/AttendanceStatusToggle';
 import { ClassAttendanceMatrixTable } from '../../components/attendance/ClassAttendanceMatrixTable';
 import { StudentAttendanceDetailView } from '../../components/attendance/StudentAttendanceDetailView';
 import { LockedBanner } from '../../components/attendance/LockedBanner';
@@ -65,11 +68,15 @@ export default function AttendancePage() {
   const isOfficeStaff = hasRole('OfficeStaff');
   const canRecordContactNote = isOfficeStaff || hasRole('Teacher');
   const canViewContactNotes = canRecordContactNote || hasRole('SchoolBoard');
-  const isOfficeOrAdmin = isOfficeStaff || hasRole('Admin');
-  const isTeacherOnly = hasRole('Teacher') && !isOfficeOrAdmin;
-  const isSchoolBoardOnly = hasRole('SchoolBoard') && !hasRole('Teacher') && !isOfficeOrAdmin;
+  const isTeacherOnly = hasRole('Teacher') && !isOfficeStaff;
+  const isSchoolBoardOnly = hasRole('SchoolBoard') && !hasRole('Teacher') && !isOfficeStaff;
   const [activeTab, setActiveTab] = useState<'sheet' | 'summary' | 'followup'>(() => (isSchoolBoardOnly ? 'summary' : 'sheet'));
   const [contactEntry, setContactEntry] = useState<AttendanceSheetEntry | null>(null);
+  const [correctEntry, setCorrectEntry] = useState<AttendanceSheetEntry | null>(null);
+  const [correctStatus, setCorrectStatus] = useState<AttendanceStatus>(ATTENDANCE_STATUS.Present);
+  const [correctRemarks, setCorrectRemarks] = useState('');
+  const [correctReason, setCorrectReason] = useState('');
+  const [correctSending, setCorrectSending] = useState(false);
   const [reattendOpen, setReattendOpen] = useState(false);
   const [reattendReason, setReattendReason] = useState('');
   const [reattendSending, setReattendSending] = useState(false);
@@ -118,11 +125,11 @@ export default function AttendancePage() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   const vm = useAttendanceSheet(classId, date, session);
-  const isSupplementingPastDay = date < todayStr && isOfficeOrAdmin && !vm.sheet?.isReattendanceUnlocked;
+  const isSupplementingPastDay = date < todayStr && isOfficeStaff && !vm.sheet?.isReattendanceUnlocked;
   useUnsavedChangesWarning(vm.isDirty);
 
   const loadReattendanceRequests = async () => {
-    if (!isOfficeOrAdmin) return;
+    if (!isOfficeStaff) return;
     setLoadingRequests(true);
     try {
       const list = await attendanceApi.getReattendanceRequests();
@@ -135,10 +142,10 @@ export default function AttendancePage() {
   };
 
   useEffect(() => {
-    if (isOfficeOrAdmin) {
+    if (isOfficeStaff) {
       void loadReattendanceRequests();
     }
-  }, [isOfficeOrAdmin]);
+  }, [isOfficeStaff]);
 
   // Load danh sách lớp GV được điểm danh trong ngày / buổi
   useEffect(() => {
@@ -282,6 +289,13 @@ export default function AttendancePage() {
       err.errors?.forEach((m) => toast.error(m));
       if (err.code === 'MSG19') vm.reload(); // vừa bị khóa -> tải lại ở chế độ chỉ xem
     }
+  };
+
+  const openCorrectModal = (entry: AttendanceSheetEntry) => {
+    setCorrectEntry(entry);
+    setCorrectStatus(entry.status ?? ATTENDANCE_STATUS.Present);
+    setCorrectRemarks(entry.remarks ?? '');
+    setCorrectReason('');
   };
 
   const canEdit = vm.sheet?.canEdit ?? false;
@@ -479,8 +493,8 @@ export default function AttendancePage() {
         </div>
       </header>
 
-      {/* OfficeStaff / Admin: Hộp thư yêu cầu mở khóa điểm danh từ Giáo viên */}
-      {isOfficeOrAdmin && (() => {
+      {/* OfficeStaff: Hộp thư yêu cầu mở khóa điểm danh từ Giáo viên */}
+      {isOfficeStaff && (() => {
         const activeReqs = reattendRequests.filter((r) => r.status === 'Pending' || r.status === 'Unlocked');
         if (!loadingRequests && activeReqs.length === 0) return null;
         const pendingCount = activeReqs.filter((r) => r.status === 'Pending').length;
@@ -1027,7 +1041,7 @@ export default function AttendancePage() {
                   )}
                 </div>
               </div>
-              {isOfficeOrAdmin && classId !== null && (
+              {isOfficeStaff && classId !== null && (
                 <button
                   type="button"
                   className="btn btn--secondary btn--sm"
@@ -1040,7 +1054,7 @@ export default function AttendancePage() {
             </div>
           )}
 
-          {!vm.sheet?.isReattendanceUnlocked && vm.sheet?.lockReason === 'PastDay' && (
+          {!vm.sheet?.isReattendanceUnlocked && (vm.sheet?.lockReason === 'PastDay' || vm.sheet?.lockReason === 'AlreadySubmitted') && (
             <div
               className="banner pop-in"
               style={{
@@ -1067,7 +1081,7 @@ export default function AttendancePage() {
                 ) : (
                   <>
                     <span style={{ fontWeight: 600, color: '#92400E' }}>
-                      Cần chỉnh sửa lại bảng điểm danh ngày quá khứ? Gửi yêu cầu để Phòng Giáo vụ mở khóa cả lớp cho bạn.
+                      Cần chỉnh sửa lại bảng điểm danh đã nộp? Gửi yêu cầu để Phòng Giáo vụ mở khóa cả lớp cho bạn.
                     </span>
                     <button
                       type="button"
@@ -1082,12 +1096,12 @@ export default function AttendancePage() {
                     </button>
                   </>
                 )
-              ) : isOfficeOrAdmin && classId !== null ? (
+              ) : isOfficeStaff && classId !== null ? (
                 <>
                   <span style={{ fontWeight: 600, color: '#92400E' }}>
                     {vm.sheet.hasPendingReattendanceRequest
                       ? `Giáo viên đang yêu cầu mở khóa bảng điểm danh này (${vm.sheet.pendingReattendanceReason || ''}).`
-                      : 'Thay vì sửa từng học sinh, Giáo vụ có thể mở khóa cả lớp để Giáo viên tự chỉnh sửa lại.'}
+                      : 'Thay vì sửa từng học sinh (nút Sửa bên dưới), Giáo vụ có thể mở khóa cả lớp để Giáo viên tự chỉnh sửa lại.'}
                   </span>
                   <button
                     type="button"
@@ -1134,11 +1148,6 @@ export default function AttendancePage() {
                   <>
                     Đã điểm danh lúc <strong>{formatViDateTime(vm.sheet.submittedAt)}</strong>
                     {vm.sheet.submittedByName ? ` bởi ${vm.sheet.submittedByName}` : ''}.
-                    {canEdit && (
-                      <span style={{ color: '#059669', marginLeft: 8, fontWeight: 700 }}>
-                        ✓ Bạn vẫn có thể chỉnh sửa đến hết ngày hôm nay.
-                      </span>
-                    )}
                   </>
                 )}
               </div>
@@ -1184,6 +1193,7 @@ export default function AttendancePage() {
               disabled={!canEdit || vm.saving}
               onStatusChange={vm.setStatus}
               onRemarksChange={vm.setRemarks}
+              onCorrect={isOfficeStaff && !canEdit ? openCorrectModal : undefined}
               onOpenContactNotes={canViewContactNotes ? setContactEntry : undefined}
               contactNotesDisabled={vm.saving || vm.isDirty}
             />
@@ -1532,6 +1542,107 @@ export default function AttendancePage() {
               }}
             >
               <Send size={15} /> {reattendSending ? 'Đang gửi...' : 'Gửi yêu cầu'}
+            </button>
+          </div>
+        </div>
+      </GeometricModal>
+
+      <GeometricModal
+        open={correctEntry !== null}
+        onClose={() => !correctSending && setCorrectEntry(null)}
+        title="Điều Chỉnh Bản Ghi Điểm Danh"
+        subtitle={
+          correctEntry
+            ? `${correctEntry.fullName} (${correctEntry.studentCode}) • ${session === 'Morning' ? 'Buổi sáng' : 'Buổi chiều'} ${formatDashDate(date)}`
+            : ''
+        }
+        badgeText="Phòng Giáo vụ"
+        badgeColor="mint"
+        icon={<PencilLine size={20} color="var(--color-fg)" />}
+        iconBg="var(--status-present)"
+        maxWidth="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="field">
+            <span className="label" style={{ display: 'block', marginBottom: 6 }}>
+              Trạng thái điểm danh mới <span style={{ color: '#DC2626' }}>*</span>
+            </span>
+            <AttendanceStatusToggle
+              label={`Điều chỉnh trạng thái của ${correctEntry?.fullName ?? ''}`}
+              value={correctStatus}
+              excusedAllowed={correctEntry?.leave?.status === LEAVE_REQUEST_STATUS.Approved}
+              disabled={correctSending}
+              onChange={setCorrectStatus}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="correct-remarks" className="label">
+              Ghi chú học sinh (tối đa 500 ký tự)
+            </label>
+            <input
+              id="correct-remarks"
+              className="input"
+              type="text"
+              maxLength={500}
+              value={correctRemarks}
+              onChange={(e) => setCorrectRemarks(e.target.value)}
+              placeholder="Ghi chú kèm theo (bắt buộc >= 5 ký tự nếu Vắng có phép chưa có đơn)..."
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="correct-reason" className="label">
+              Lý do điều chỉnh <span style={{ color: '#DC2626' }}>*</span>
+            </label>
+            <textarea
+              id="correct-reason"
+              className="input"
+              rows={3}
+              required
+              minLength={5}
+              maxLength={500}
+              value={correctReason}
+              onChange={(e) => setCorrectReason(e.target.value)}
+              placeholder="Nhập lý do điều chỉnh (từ 5 đến 500 ký tự) để lưu lịch sử kiểm toán..."
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => setCorrectEntry(null)}
+              disabled={correctSending}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={correctSending || correctEntry?.recordId == null}
+              onClick={async () => {
+                if (correctEntry?.recordId == null) return;
+                const reason = correctReason.trim();
+                if (reason.length < 5 || reason.length > 500) {
+                  toast.error('Vui lòng nhập lý do điều chỉnh từ 5 đến 500 ký tự.');
+                  return;
+                }
+                setCorrectSending(true);
+                try {
+                  const res = await attendanceApi.correctRecord(correctEntry.recordId, {
+                    status: correctStatus,
+                    remarks: correctRemarks.trim() || null,
+                    correctionReason: reason,
+                  });
+                  toast.success(res.message || 'Đã điều chỉnh bản ghi điểm danh thành công.');
+                  setCorrectEntry(null);
+                  vm.reload();
+                } catch (err) {
+                  toast.error(asApiError(err).message || 'Không thể điều chỉnh bản ghi điểm danh.');
+                } finally {
+                  setCorrectSending(false);
+                }
+              }}
+            >
+              <Save size={15} /> {correctSending ? 'Đang lưu...' : 'Lưu điều chỉnh'}
             </button>
           </div>
         </div>

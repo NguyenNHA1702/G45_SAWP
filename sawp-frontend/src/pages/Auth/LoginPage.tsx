@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { LogIn, School, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
+import { getAuthToken, getAuthUser, clearAuthSession } from '../../services/apiClient';
 import { authApi } from '../../services/implementations/authApi';
 import { asApiError } from '../../utils/apiError';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
@@ -10,14 +11,12 @@ import './LoginPage.css';
 
 /* =====================================================================
  * [DEMO ACCOUNTS CONFIG]
- * Phần này dùng để điền nhanh tài khoản mẫu khi test / demo.
- * Sau này khi deploy thật hoặc xong nghiệm thu, chỉ cần XÓA block này
- * và đoạn <div className="demo-accounts-box">...</div> ở phía dưới JSX.
+ * Phần này dùng để điền nhanh tài khoản mẫu khi test / demo (chỉ dùng Email theo BR-01).
  * ===================================================================== */
 interface DemoAccount {
   roleName: string;
   badgeClass: string;
-  username: string;
+  email: string;
   password: string;
   description: string;
 }
@@ -26,50 +25,65 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     roleName: 'Quản trị viên',
     badgeClass: 'badge--violet',
-    username: 'admin',
+    email: 'admin@sawp.edu.vn',
     password: 'Password@123',
     description: 'Admin hệ thống',
   },
   {
     roleName: 'Ban Giám Hiệu',
     badgeClass: 'badge--amber',
-    username: 'board1',
+    email: 'hieutruong@sawp.edu.vn',
     password: 'Password@123',
     description: 'Hiệu trưởng, duyệt đơn',
   },
   {
     roleName: 'Giáo vụ',
     badgeClass: 'badge--mint',
-    username: 'office1',
+    email: 'giaovu@sawp.edu.vn',
     password: 'Password@123',
     description: 'Hồ sơ, phân lớp, sửa điểm danh',
   },
   {
     roleName: 'Giáo viên',
     badgeClass: 'badge--violet',
-    username: 'teacher1',
+    email: 'teacher1@sawp.edu.vn',
     password: 'Password@123',
     description: 'GVCN lớp 1A, điểm danh',
   },
   {
     roleName: 'Nhân viên bếp',
     badgeClass: 'badge--amber',
-    username: 'kitchen1',
+    email: 'kitchen1@sawp.edu.vn',
     password: 'Password@123',
     description: 'Tổng hợp suất ăn bán trú',
   },
   {
     roleName: 'Phụ huynh',
     badgeClass: 'badge--pink',
-    username: 'parent1',
+    email: 'parent1@gmail.com',
     password: 'Password@123',
     description: 'Theo dõi con, chuyên cần',
   },
 ];
 /* ===================================================================== */
 
+function isJwtValid(token: string): boolean {
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return false;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(atob(base64));
+    if (typeof decoded.exp === 'number' && decoded.exp * 1000 <= Date.now()) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function LoginPage() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchParams] = useSearchParams();
@@ -77,16 +91,33 @@ export default function LoginPage() {
 
   const isExpired = searchParams.get('expired') === '1';
 
+  // UC-01 A1 (BUG-AUTH-05): already signed-in user opening /login goes directly to dashboard / change-password
+  useEffect(() => {
+    if (isExpired) return;
+    const token = getAuthToken();
+    if (!token) return;
+    if (!isJwtValid(token)) {
+      clearAuthSession();
+      return;
+    }
+    try {
+      const user = JSON.parse(getAuthUser() ?? '{}');
+      navigate(user?.mustChangePassword ? '/change-password' : '/dashboard', { replace: true });
+    } catch {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isExpired, navigate]);
+
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password) {
+    if (!email.trim() || !password) {
       toast.error(SYSTEM_MESSAGES.MSG01.content);
       return;
     }
 
     setLoading(true);
     try {
-      const res = await authApi.login({ username: username.trim(), password });
+      const res = await authApi.login({ username: email.trim(), password });
       toast.success(res.message || SYSTEM_MESSAGES.MSG05.content);
 
       // A temporary password from an administrator must be changed first (UC-60 A1); otherwise every role
@@ -102,7 +133,7 @@ export default function LoginPage() {
 
   /* Helper điền nhanh tài khoản demo */
   const handleSelectDemoAccount = (acc: DemoAccount) => {
-    setUsername(acc.username);
+    setEmail(acc.email);
     setPassword(acc.password);
     toast.success(`Đã điền sẵn tài khoản: ${acc.roleName}`);
   };
@@ -138,18 +169,18 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="login-form" noValidate>
           <div className="field">
-            <label className="label" htmlFor="username">
-              Tên đăng nhập hoặc Email
+            <label className="label" htmlFor="email">
+              Email
             </label>
             <input
-              id="username"
-              type="text"
+              id="email"
+              type="email"
               className="input"
-              placeholder="vd: teacher1 / admin"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              placeholder="vd: teacher1@sawp.edu.vn"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
-              autoComplete="username"
+              autoComplete="email"
               required
             />
           </div>
@@ -191,14 +222,14 @@ export default function LoginPage() {
           <div className="demo-accounts-grid">
             {DEMO_ACCOUNTS.map((acc) => (
               <button
-                key={acc.username}
+                key={acc.email}
                 type="button"
                 className="demo-account-chip"
                 onClick={() => handleSelectDemoAccount(acc)}
-                title={`Bấm để điền: ${acc.username} (${acc.description})`}
+                title={`Bấm để điền: ${acc.email} (${acc.description})`}
               >
                 <span className={`badge ${acc.badgeClass} badge--sm`}>{acc.roleName}</span>
-                <span className="demo-username">{acc.username}</span>
+                <span className="demo-username">{acc.email}</span>
               </button>
             ))}
           </div>

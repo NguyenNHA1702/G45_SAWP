@@ -163,6 +163,21 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
 
   if (!targetClass) return null;
 
+  const canManage = (() => {
+    try {
+      const raw = window.sessionStorage.getItem('sawp_user') || window.localStorage.getItem('sawp_user');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      const roles: string[] = parsed?.roles ?? (parsed?.role ? [parsed.role] : []);
+      return roles.some((r) => typeof r === 'string' && r.toLowerCase() === 'officestaff');
+    } catch {
+      return false;
+    }
+  })();
+
+  const currentEnrolled = roster?.students?.length ?? targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0;
+  const isClassFull = targetClass.capacity > 0 && currentEnrolled >= targetClass.capacity;
+
   return (
     <GeometricModal
       open={open}
@@ -197,14 +212,16 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
               <strong style={{ fontSize: 'var(--fs-base)' }}>
                 {targetClass.homeroomTeacherName || 'Chưa phân công'}
               </strong>
-              <button
-                type="button"
-                className="btn btn--secondary btn--sm"
-                style={{ padding: '2px 8px', fontSize: 'var(--fs-xs)', marginLeft: 'auto' }}
-                onClick={() => onOpenAssignTeacher(targetClass)}
-              >
-                {targetClass.homeroomTeacherName ? 'Đổi GVCN' : '+ Phân công'}
-              </button>
+              {canManage && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  style={{ padding: '2px 8px', fontSize: 'var(--fs-xs)', marginLeft: 'auto' }}
+                  onClick={() => onOpenAssignTeacher(targetClass)}
+                >
+                  {targetClass.homeroomTeacherName ? 'Đổi GVCN' : '+ Phân công'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -215,7 +232,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <span className="badge badge--mint">
-                {roster?.students?.length ?? targetClass.enrolledCount ?? targetClass.enrolledStudentsCount ?? 0} / {targetClass.capacity} học sinh
+                {currentEnrolled} / {targetClass.capacity} học sinh
               </span>
             </div>
           </div>
@@ -224,15 +241,17 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
         {/* Action Row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn--primary btn--sm"
-              onClick={() => onOpenAssignStudents(targetClass)}
-              disabled={targetClass.availableCapacity <= 0}
-            >
-              <UserPlus size={16} /> Xếp thêm học sinh
-            </button>
-            {selectedStudentIds.length > 0 && (
+            {canManage && (
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={() => onOpenAssignStudents(targetClass)}
+                disabled={isClassFull}
+              >
+                <UserPlus size={16} /> Xếp thêm học sinh
+              </button>
+            )}
+            {canManage && selectedStudentIds.length > 0 && (
               <button
                 type="button"
                 className="btn btn--secondary btn--sm"
@@ -272,7 +291,11 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
           <div className="card empty-state" style={{ padding: 28, textAlign: 'center' }}>
             <Users size={36} color="var(--color-muted-fg)" style={{ margin: '0 auto 8px' }} />
             <p style={{ margin: 0, color: 'var(--color-muted-fg)' }}>
-              Lớp này hiện chưa có học sinh nào. Bấm nút <strong>"Xếp thêm học sinh"</strong> ở trên để thêm.
+              {canManage ? (
+                <>Lớp này hiện chưa có học sinh nào. Bấm nút <strong>&quot;Xếp thêm học sinh&quot;</strong> ở trên để thêm.</>
+              ) : (
+                'Lớp này hiện chưa có học sinh nào.'
+              )}
             </p>
           </div>
         ) : (
@@ -280,15 +303,17 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: 38, textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={roster.students.length > 0 && selectedStudentIds.length === roster.students.length}
-                      onChange={handleToggleAll}
-                      title="Chọn / Bỏ chọn tất cả học sinh"
-                      style={{ cursor: 'pointer', width: 16, height: 16 }}
-                    />
-                  </th>
+                  {canManage && (
+                    <th style={{ width: 38, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={roster.students.length > 0 && selectedStudentIds.length === roster.students.length}
+                        onChange={handleToggleAll}
+                        title="Chọn / Bỏ chọn tất cả học sinh"
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                    </th>
+                  )}
                   <th>STT</th>
                   <th>Mã HS</th>
                   <th>Họ và tên</th>
@@ -296,7 +321,7 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
                   <th>Giới tính</th>
                   <th>Phụ huynh</th>
                   <th>SĐT Phụ huynh</th>
-                  <th style={{ textAlign: 'center' }}>Thao tác</th>
+                  {canManage && <th style={{ textAlign: 'center' }}>Thao tác</th>}
                 </tr>
               </thead>
               <tbody>
@@ -310,14 +335,16 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
                         transition: 'background-color 0.15s ease',
                       }}
                     >
-                      <td style={{ textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleStudent(s.studentId)}
-                          style={{ cursor: 'pointer', width: 16, height: 16 }}
-                        />
-                      </td>
+                      {canManage && (
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleStudent(s.studentId)}
+                            style={{ cursor: 'pointer', width: 16, height: 16 }}
+                          />
+                        </td>
+                      )}
                       <td>{idx + 1}</td>
                       <td style={{ fontWeight: 700 }}>{s.studentCode}</td>
                       <td>{s.fullName}</td>
@@ -325,17 +352,19 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
                       <td>{s.gender}</td>
                       <td>{s.primaryGuardianName || '-'}</td>
                       <td>{s.primaryGuardianPhone || '-'}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn--secondary btn--sm"
-                          style={{ padding: '4px 8px', color: '#DC2626', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}
-                          onClick={() => handleRemoveStudent(s.studentId, s.fullName)}
-                          title="Gỡ học sinh này khỏi lớp"
-                        >
-                          <Trash2 size={14} /> Gỡ
-                        </button>
-                      </td>
+                      {canManage && (
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            style={{ padding: '4px 8px', color: '#DC2626', borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}
+                            onClick={() => handleRemoveStudent(s.studentId, s.fullName)}
+                            title="Gỡ học sinh này khỏi lớp"
+                          >
+                            <Trash2 size={14} /> Gỡ
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -344,16 +373,18 @@ export const ClassDetailModal: React.FC<ClassDetailModalProps> = ({
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-          <button
-            type="button"
-            className="btn btn--secondary btn--sm"
-            style={{ color: '#DC2626', borderColor: '#FECACA', backgroundColor: '#FEF2F2', gap: 6 }}
-            onClick={handleDeleteClass}
-            title="Xóa lớp học (chỉ khi sĩ số = 0)"
-          >
-            <Trash2 size={15} /> Xóa lớp học
-          </button>
+        <div style={{ display: 'flex', justifyContent: canManage ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: 10 }}>
+          {canManage && (
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              style={{ color: '#DC2626', borderColor: '#FECACA', backgroundColor: '#FEF2F2', gap: 6 }}
+              onClick={handleDeleteClass}
+              title="Xóa lớp học (chỉ khi sĩ số = 0)"
+            >
+              <Trash2 size={15} /> Xóa lớp học
+            </button>
+          )}
           <button type="button" className="btn btn--secondary" onClick={onClose}>
             Đóng
           </button>

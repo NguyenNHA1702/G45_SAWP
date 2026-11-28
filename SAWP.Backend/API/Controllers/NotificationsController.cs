@@ -68,4 +68,27 @@ public class NotificationsController : BaseApiController
         await _notificationService.MarkAllReadAsync(userId, ct);
         return Ok(ApiResponse<bool>.Ok(true));
     }
+
+    /// <summary>
+    /// GAP-03 (UC-47 / UC-65): Phát thông báo chung của nhà trường (Giáo vụ & BGH)
+    /// </summary>
+    [HttpPost("broadcast")]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard")]
+    public async Task<IActionResult> Broadcast([FromBody] BroadcastNotificationRequestDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetRequiredUserId();
+        var result = await _notificationService.BroadcastAsync(userId, request, ct);
+        return ToActionResult(result);
+    }
+
+    /// <summary>
+    /// GAP-03: Lịch sử các đợt phát thông báo toàn trường / theo khối / lớp
+    /// </summary>
+    [HttpGet("broadcast/history")]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard")]
+    public async Task<IActionResult> GetBroadcastHistory([FromQuery] int limit = 25, CancellationToken ct = default)
+    {
+        var result = await _notificationService.GetBroadcastHistoryAsync(limit, ct);
+        return ToActionResult(result);
+    }
 }

@@ -369,7 +369,7 @@ public class StudentImporterTests : TestBase
         var result = await _importer.ImportStudentsAsync(new ImportStudentsConfirmDto
         {
             SchoolYearId = 1,
-            ValidRows = new List<ImportStudentRowDto> { Row("HS931", "A", "b@example.com", "001100000001") }
+            ValidRows = new List<ImportStudentRowDto> { Row("HS931", "Nguyen Van A", "b@example.com", "001100000001") }
         });
 
         result.Data!.SuccessCount.Should().Be(0);
@@ -459,6 +459,22 @@ public class StudentImporterTests : TestBase
         rows[6].IsValid.Should().BeFalse(); // code with space
         rows[7].IsValid.Should().BeFalse(); // unknown class 9Z
         rows[8].IsValid.Should().BeFalse(); // phone without guardian name
+    }
+
+    [Fact]
+    public async Task ImportStudents_MoreThan5000Rows_FailsWithMSG01()
+    {
+        var dto = new ImportStudentsConfirmDto
+        {
+            ValidRows = Enumerable.Range(1, 5001)
+                .Select(i => new ImportStudentRowDto { RowNumber = i + 1, StudentCode = $"HS{i:D5}", FullName = "Hoc Sinh", IsValid = true })
+                .ToList()
+        };
+
+        var result = await _importer.ImportStudentsAsync(dto, 1);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 
     #endregion

@@ -12,10 +12,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
     {
         builder.HasKey(u => u.Id);
         builder.Property(u => u.Username).HasMaxLength(100).IsRequired();
-        builder.HasIndex(u => u.Username).IsUnique();
+        builder.HasIndex(u => u.Username).IsUnique().HasFilter("[Status] <> 3");
         builder.Property(u => u.Email).HasMaxLength(256).IsRequired();
-        // Unique login email (BR-64); the database collation is case-insensitive.
-        builder.HasIndex(u => u.Email).IsUnique();
+        // Unique login email among non-deactivated accounts (BR-64); the database collation is case-insensitive.
+        builder.HasIndex(u => u.Email).IsUnique().HasFilter("[Status] <> 3");
         builder.Property(u => u.FullName).HasMaxLength(150).IsRequired();
         builder.Property(u => u.PhoneNumber).HasMaxLength(20);
         builder.Property(u => u.Status).HasDefaultValue(AccountStatus.Active);
@@ -127,6 +127,39 @@ public class AccountRequestConfiguration : IEntityTypeConfiguration<AccountReque
                .WithMany()
                .HasForeignKey(r => r.FollowsUpRequestId)
                .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class EmailChangeRequestConfiguration : IEntityTypeConfiguration<EmailChangeRequest>
+{
+    public void Configure(EntityTypeBuilder<EmailChangeRequest> builder)
+    {
+        builder.HasKey(e => e.Id);
+        builder.Property(e => e.OldEmail).HasMaxLength(256).IsRequired();
+        builder.Property(e => e.NewEmail).HasMaxLength(256).IsRequired();
+        builder.Property(e => e.Reason).HasMaxLength(500).IsRequired();
+        builder.Property(e => e.ReviewNote).HasMaxLength(500);
+        builder.HasIndex(e => new { e.Status, e.CreatedAt });
+
+        builder.HasOne(e => e.TargetUser)
+            .WithMany()
+            .HasForeignKey(e => e.TargetUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(e => e.Guardian)
+            .WithMany()
+            .HasForeignKey(e => e.GuardianId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(e => e.RequestedByUser)
+            .WithMany()
+            .HasForeignKey(e => e.RequestedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(e => e.ReviewedByUser)
+            .WithMany()
+            .HasForeignKey(e => e.ReviewedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -381,7 +414,10 @@ public class LunchServiceDayConfiguration : IEntityTypeConfiguration<LunchServic
     public void Configure(EntityTypeBuilder<LunchServiceDay> builder)
     {
         builder.HasKey(ls => ls.Id);
+        builder.Property(ls => ls.Date).HasColumnType("date");
+        builder.HasIndex(ls => ls.Date).IsUnique();
         builder.Property(ls => ls.Remarks).HasMaxLength(250);
+        builder.Property(ls => ls.LockNotes).HasMaxLength(250);
     }
 }
 

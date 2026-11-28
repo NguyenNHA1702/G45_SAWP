@@ -16,12 +16,14 @@ export interface ClassImportStudentRowDto {
   studentCode: string;
   fullName?: string | null;
   className: string;
+  requiresAgeException?: boolean;
   isValid: boolean;
   errors: string[];
 }
 
 export interface ClassImportRowsDto {
   mode: ClassImportMode;
+  allowAgeException?: boolean;
   classes: ClassImportClassRowDto[];
   students: ClassImportStudentRowDto[];
 }

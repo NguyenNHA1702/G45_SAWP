@@ -6,8 +6,8 @@ namespace Services.Interfaces;
 public interface ILunchService
 {
     Task<ApiResponse<bool>> RegisterLunchAsync(LunchRegistrationDto request, CancellationToken cancellationToken = default);
-    Task<ApiResponse<DailyMealCountReportDto>> GetDailyMealCountAsync(DateTime date, CancellationToken cancellationToken = default);
-    Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, CancellationToken cancellationToken = default);
+    Task<ApiResponse<DailyMealCountReportDto>> GetDailyMealCountAsync(DateTime date, int? userId = null, IReadOnlyList<UserRoles>? roles = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, int? userId = null, IReadOnlyList<UserRoles>? roles = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// UC-32: Lấy cấu hình ngày phục vụ trong khoảng ngày

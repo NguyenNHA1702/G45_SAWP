@@ -142,7 +142,10 @@ public static class UploadValidationHelper
                       && prefix[0] == 0x89 && prefix[1] == 0x50 && prefix[2] == 0x4E && prefix[3] == 0x47
                       && prefix[4] == 0x0D && prefix[5] == 0x0A && prefix[6] == 0x1A && prefix[7] == 0x0A,
             ".jpg" or ".jpeg" => prefix[0] == 0xFF && prefix[1] == 0xD8 && prefix[2] == 0xFF,
-            ".xlsx" => prefix[0] == 0x50 && prefix[1] == 0x4B && prefix[2] == 0x03 && prefix[3] == 0x04, // ZIP PK
+            ".xlsx" or ".docx" => prefix[0] == 0x50 && prefix[1] == 0x4B && prefix[2] == 0x03 && prefix[3] == 0x04, // OOXML ZIP PK
+            ".xls" or ".doc" => bytesRead >= 8
+                                && prefix[0] == 0xD0 && prefix[1] == 0xCF && prefix[2] == 0x11 && prefix[3] == 0xE0
+                                && prefix[4] == 0xA1 && prefix[5] == 0xB1 && prefix[6] == 0x1A && prefix[7] == 0xE1, // OLE2 Compound Binary
             _ => false
         };
 

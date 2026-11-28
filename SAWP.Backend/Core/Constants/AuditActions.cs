@@ -16,6 +16,10 @@ public static class AuditActions
     public const string UserRecoverPassword = "USER_RECOVER_PASSWORD"; // new password set through an emailed link (UC-66)
     public const string UserActivateByLink = "USER_ACTIVATE_BY_LINK"; // first password set through the activation link (UC-66 A3)
     public const string UserActivationLinkSent = "USER_ACTIVATION_LINK_SENT";
+    public const string UserLogout = "USER_LOGOUT";
+    public const string UserChangeEmail = "USER_CHANGE_EMAIL";
+    public const string EmailChangeRequestSubmit = "EMAIL_CHANGE_REQUEST_SUBMIT";
+    public const string EmailChangeRequestDecide = "EMAIL_CHANGE_REQUEST_DECIDE";
     public const string SchoolCalendarDayConfigure = "SCHOOL_CALENDAR_DAY_CONFIGURE";
 
     // School years and classes
@@ -41,6 +45,7 @@ public static class AuditActions
     public const string StudentGuardianLink = "STUDENT_GUARDIAN_LINK";
     public const string StudentGuardianUpdate = "STUDENT_GUARDIAN_UPDATE";
     public const string StudentGuardianUnlink = "STUDENT_GUARDIAN_UNLINK";
+    public const string GuardianContactUpdate = "GUARDIAN_CONTACT_UPDATE";
     public const string AccountRequestSaveDraft = "ACCOUNT_REQUEST_SAVE_DRAFT";
     public const string AccountRequestSubmit = "ACCOUNT_REQUEST_SUBMIT";
     public const string AccountRequestDecide = "ACCOUNT_REQUEST_DECIDE";
@@ -99,6 +104,13 @@ public static class AuditActions
     public const string StudentMealProfileUpdate = "STUDENT_MEAL_PROFILE_UPDATE";
     public const string BoardingIncidentCreate = "BOARDING_INCIDENT_CREATE";
 
-    // E-contact book
+    // E-contact book & broadcasts
     public const string PostCommentDelete = "POST_COMMENT_DELETE";
+    public const string SchoolBroadcastSend = "SCHOOL_BROADCAST_SEND";
+
+    // Admin configuration (UC-54..UC-57)
+    public const string RolePermissionsUpdate = "ROLE_PERMISSIONS_UPDATE";
+    public const string UserProfileLinkUpdate = "USER_PROFILE_LINK_UPDATE";
+    public const string ReferenceItemSave = "REFERENCE_ITEM_SAVE";
+    public const string NotificationTemplateSave = "NOTIFICATION_TEMPLATE_SAVE";
 }

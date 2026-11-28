@@ -9,18 +9,36 @@ import {
   Filter,
   GraduationCap,
   Phone,
+  Printer,
   RefreshCw,
   Search,
+  Soup,
   Users,
+  UtensilsCrossed,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { classApi } from '../../services/implementations/classApi';
+import { lunchApi } from '../../services/implementations/lunchApi';
 import { StudentDetailModal } from '../../components/students/StudentDetailModal';
+import { GeometricModal } from '../../components/common/GeometricModal';
 import type { ClassRosterDto } from '../../types/class.types';
-import { formatDDMMYYYY } from '../../utils/date';
+import type { DailyMealBoard, StudentMealOperationItem } from '../../types/lunch.types';
+import { formatDDMMYYYY, todayIso } from '../../utils/date';
+import { normalizeMealTypeNumber } from '../../constants/allergens';
+
+const MEAL_BADGE_MAP: Record<string, { label: string; cls: string }> = {
+  StandardLunch: { label: 'Tiêu chuẩn', cls: 'badge--mint' },
+  VegetarianLunch: { label: 'Ăn chay', cls: 'badge--amber' },
+  SpecialDiet: { label: 'Đặc biệt', cls: 'badge--pink' },
+  '1': { label: 'Tiêu chuẩn', cls: 'badge--mint' },
+  '2': { label: 'Ăn chay', cls: 'badge--amber' },
+  '3': { label: 'Đặc biệt', cls: 'badge--pink' },
+};
 
 export default function HomeroomRosterPage() {
   const [roster, setRoster] = useState<ClassRosterDto | null>(null);
+  const [mealBoard, setMealBoard] = useState<DailyMealBoard | null>(null);
+  const [trayModalStudent, setTrayModalStudent] = useState<StudentMealOperationItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
@@ -41,6 +59,12 @@ export default function HomeroomRosterPage() {
       const res = await classApi.getMyHomeroomClass();
       if (res.success && res.data) {
         setRoster(res.data);
+        try {
+          const board = await lunchApi.getDailyMealBoard(todayIso(), res.data.classId);
+          setMealBoard(board);
+        } catch {
+          setMealBoard(null);
+        }
       }
     } catch (err: any) {
       if (err.response?.status === 404) {
@@ -51,6 +75,31 @@ export default function HomeroomRosterPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const mealByStudentId = useMemo(() => {
+    const map = new Map<number, StudentMealOperationItem>();
+    for (const item of mealBoard?.studentMeals ?? []) {
+      map.set(item.studentId, item);
+    }
+    return map;
+  }, [mealBoard]);
+
+  const getTrayDishes = (meal: StudentMealOperationItem): string[] => {
+    const mt = normalizeMealTypeNumber(meal.mealType);
+    const structured =
+      mt === 2
+        ? mealBoard?.menus?.vegetarian
+        : mt === 3
+        ? mealBoard?.menus?.special
+        : mealBoard?.menus?.standard;
+    if (structured && structured.length > 0) {
+      return structured.map((d) => d.name);
+    }
+    if (mealBoard?.menus?.standard && mealBoard.menus.standard.length > 0) {
+      return mealBoard.menus.standard.map((d) => d.name);
+    }
+    return [];
   };
 
   const totalCount = roster?.totalEnrolled ?? roster?.totalStudents ?? roster?.students?.length ?? 0;
@@ -109,7 +158,41 @@ export default function HomeroomRosterPage() {
           </div>
 
           {roster && (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="no-print" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={() => window.print()}
+                style={{
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '8px 18px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Printer size={15} /> In danh sách
+              </button>
+              <Link
+                to="/teacher/boarding"
+                className="btn btn--secondary btn--sm"
+                style={{
+                  textDecoration: 'none',
+                  borderRadius: 'var(--radius-full)',
+                  border: '2px solid var(--color-fg)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  fontWeight: 800,
+                  padding: '8px 18px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Soup size={15} /> Bán trú lớp
+              </Link>
               <Link
                 to="/teacher/attendance"
                 className="btn btn--primary btn--sm"
@@ -349,23 +432,26 @@ export default function HomeroomRosterPage() {
             }}
           >
             <div className="desktop-table-wrap" style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+              <table style={{ width: '100%', minWidth: 1080, borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
-                    <th style={{ padding: '12px 14px', textAlign: 'center', width: 48, fontWeight: 800 }}>STT</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'left', width: 110, fontWeight: 800 }}>Mã học sinh</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 180, fontWeight: 800 }}>Họ và tên</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center', width: 110, fontWeight: 800 }}>Ngày sinh</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center', width: 90, fontWeight: 800 }}>Giới tính</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 160, fontWeight: 800 }}>Phụ huynh liên hệ</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 150, fontWeight: 800 }}>SĐT Phụ huynh</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center', width: 120, fontWeight: 800 }}>Trạng thái</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'center', width: 110, fontWeight: 800 }}>Hành động</th>
+                    <th style={{ padding: '12px 12px', textAlign: 'center', width: 52, whiteSpace: 'nowrap', fontWeight: 800 }}>STT</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'left', width: 112, whiteSpace: 'nowrap', fontWeight: 800 }}>Mã học sinh</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 180, whiteSpace: 'nowrap', fontWeight: 800 }}>Họ và tên</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', minWidth: 115, whiteSpace: 'nowrap', fontWeight: 800 }}>Ngày sinh</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', minWidth: 88, whiteSpace: 'nowrap', fontWeight: 800 }}>Giới tính</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 165, whiteSpace: 'nowrap', fontWeight: 800 }}>Phụ huynh liên hệ</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', minWidth: 145, whiteSpace: 'nowrap', fontWeight: 800 }}>SĐT Phụ huynh</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', minWidth: 115, whiteSpace: 'nowrap', fontWeight: 800 }}>Trạng thái</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', minWidth: 145, whiteSpace: 'nowrap', fontWeight: 800 }}>Bán trú hôm nay</th>
+                    <th className="no-print" style={{ padding: '12px 14px', textAlign: 'center', minWidth: 115, whiteSpace: 'nowrap', fontWeight: 800 }}>Hành động</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pagedStudents.length > 0 ? (
                     pagedStudents.map((s, idx) => {
+                      const meal = mealByStudentId.get(s.studentId);
+                      const mealBadge = meal ? (MEAL_BADGE_MAP[String(meal.mealType)] ?? MEAL_BADGE_MAP.StandardLunch) : null;
                       return (
                       <tr
                         key={s.studentId}
@@ -412,7 +498,7 @@ export default function HomeroomRosterPage() {
                             </strong>
                           </button>
                         </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                        <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--color-muted-fg)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                           {formatDDMMYYYY(s.dateOfBirth)}
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'center' }}>
@@ -458,6 +544,27 @@ export default function HomeroomRosterPage() {
                           </span>
                         </td>
                         <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                          {meal && meal.isActive ? (
+                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                              <span className={`badge ${mealBadge?.cls ?? 'badge--mint'}`} style={{ border: '1px solid var(--color-fg)', fontWeight: 700 }}>
+                                {mealBadge?.label ?? 'Tiêu chuẩn'}
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn--secondary btn--sm no-print"
+                                style={{ padding: '2px 8px', fontSize: 11, minHeight: 22 }}
+                                onClick={() => setTrayModalStudent(meal)}
+                              >
+                                <UtensilsCrossed size={11} /> Xem khay ăn
+                              </button>
+                            </div>
+                          ) : meal ? (
+                            <span className="badge badge--pink" style={{ fontSize: 11 }}>Đã hủy suất</span>
+                          ) : (
+                            <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>Chưa ĐK</span>
+                          )}
+                        </td>
+                        <td className="no-print" style={{ padding: '12px 14px', textAlign: 'center' }}>
                           <button
                             type="button"
                             className="btn btn--secondary btn--sm"
@@ -482,7 +589,7 @@ export default function HomeroomRosterPage() {
                   })
                   ) : (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
+                      <td colSpan={10} style={{ textAlign: 'center', padding: '36px', color: 'var(--color-muted-fg)' }}>
                         Không tìm thấy học sinh nào phù hợp với bộ lọc tìm kiếm.
                       </td>
                     </tr>
@@ -629,6 +736,62 @@ export default function HomeroomRosterPage() {
           onClose={() => setDetailModalOpen(false)}
         />
       )}
+
+      {trayModalStudent && (
+        <GeometricModal
+          open={!!trayModalStudent}
+          onClose={() => setTrayModalStudent(null)}
+          title={`Khay ăn: ${trayModalStudent.studentName}`}
+          badgeText={trayModalStudent.studentCode}
+          badgeColor="amber"
+          icon={<UtensilsCrossed size={22} color="#1E293B" strokeWidth={2.5} />}
+          iconBg="var(--color-tertiary-soft)"
+          maxWidth="md"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className={`badge ${(MEAL_BADGE_MAP[String(trayModalStudent.mealType)] ?? MEAL_BADGE_MAP.StandardLunch).cls}`}>
+                {(MEAL_BADGE_MAP[String(trayModalStudent.mealType)] ?? MEAL_BADGE_MAP.StandardLunch).label}
+              </span>
+              {trayModalStudent.studentAllergyNotes && (
+                <span className="badge badge--pink">Dị ứng: {trayModalStudent.studentAllergyNotes}</span>
+              )}
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Thực đơn khay ăn hôm nay:</div>
+              {getTrayDishes(trayModalStudent).length > 0 ? (
+                <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {getTrayDishes(trayModalStudent).map((dish, idx) => (
+                    <li key={idx}>{dish}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
+                  Chưa có thực đơn chi tiết cho ngày hôm nay.
+                </div>
+              )}
+            </div>
+            {trayModalStudent.remarks && (
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+                Ghi chú: {trayModalStudent.remarks}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn--secondary" onClick={() => setTrayModalStudent(null)}>
+                Đóng
+              </button>
+            </div>
+          </div>
+        </GeometricModal>
+      )}
+
+      <style>{`
+        @media print {
+          .no-print, .sidebar, .topbar, nav, button.btn { display: none !important; }
+          .main-content { margin-left: 0 !important; padding: 0 !important; }
+          .card { box-shadow: none !important; border-color: #cbd5e1 !important; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Entities;
 using Core.Interfaces;
 using Services.Interfaces;
@@ -20,12 +21,7 @@ public class SchoolCalendarService : ISchoolCalendarService
     {
         var targetDate = date.Date;
         var map = await GetCalendarMapInRangeAsync(targetDate, targetDate, ct);
-        if (map.TryGetValue(targetDate, out var isSchoolDay))
-        {
-            return isSchoolDay;
-        }
-
-        return targetDate.DayOfWeek != DayOfWeek.Saturday && targetDate.DayOfWeek != DayOfWeek.Sunday;
+        return SchoolCalendarHelper.IsSchoolDay(targetDate, map);
     }
 
     public async Task<HashSet<DateTime>> GetSchoolDaysInRangeAsync(DateTime fromDate, DateTime toDate, CancellationToken ct = default)
@@ -39,11 +35,7 @@ public class SchoolCalendarService : ISchoolCalendarService
 
         for (var cur = start; cur <= end; cur = cur.AddDays(1))
         {
-            if (overrides.TryGetValue(cur, out var isSchoolDay))
-            {
-                if (isSchoolDay) result.Add(cur);
-            }
-            else if (cur.DayOfWeek != DayOfWeek.Saturday && cur.DayOfWeek != DayOfWeek.Sunday)
+            if (SchoolCalendarHelper.IsSchoolDay(cur, overrides))
             {
                 result.Add(cur);
             }

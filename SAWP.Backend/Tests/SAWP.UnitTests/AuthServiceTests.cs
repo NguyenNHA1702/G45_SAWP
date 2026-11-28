@@ -270,7 +270,7 @@ public class AuthServiceTests : TestBase
         {
             FullName = "Nguyen Van Moi",
             PhoneNumber = "0911223344",
-            Email = "moi@school.edu.vn",
+            Email = "cu@school.edu.vn",
             Address = "456 Kim Ma, Ha Noi",
             Occupation = "Bac si"
         };
@@ -286,19 +286,18 @@ public class AuthServiceTests : TestBase
 
         user.FullName.Should().Be("Nguyen Van Moi");
         user.PhoneNumber.Should().Be("0911223344");
-        user.Email.Should().Be("moi@school.edu.vn");
+        user.Email.Should().Be("cu@school.edu.vn");
         user.UpdatedAt.Should().NotBeNull();
         user.Guardian!.Address.Should().Be("456 Kim Ma, Ha Noi");
         user.Guardian.Occupation.Should().Be("Bac si");
         // The linked guardian record follows the Parent's own changes (SSAWP-151)
         user.Guardian.FullName.Should().Be("Nguyen Van Moi");
         user.Guardian.PhoneNumber.Should().Be("0911223344");
-        user.Guardian.Email.Should().Be("moi@school.edu.vn");
 
         result.Data.Should().NotBeNull();
         result.Data!.FullName.Should().Be("Nguyen Van Moi");
         result.Data.PhoneNumber.Should().Be("0911223344");
-        result.Data.Email.Should().Be("moi@school.edu.vn");
+        result.Data.Email.Should().Be("cu@school.edu.vn");
         result.Data.GuardianProfile.Should().NotBeNull();
         result.Data.GuardianProfile!.Address.Should().Be("456 Kim Ma, Ha Noi");
         result.Data.GuardianProfile.Occupation.Should().Be("Bac si");
@@ -332,7 +331,7 @@ public class AuthServiceTests : TestBase
         {
             FullName = "Can Bo Moi",
             PhoneNumber = "0922222222",
-            Email = "canbomoi@school.edu.vn",
+            Email = "canbo@school.edu.vn",
             Address = "Ignored Address",
             Occupation = "Ignored Occupation"
         };
@@ -347,7 +346,7 @@ public class AuthServiceTests : TestBase
 
         user.FullName.Should().Be("Can Bo Moi");
         user.PhoneNumber.Should().Be("0922222222");
-        user.Email.Should().Be("canbomoi@school.edu.vn");
+        user.Email.Should().Be("canbo@school.edu.vn");
         user.Guardian.Should().BeNull();
 
         result.Data.Should().NotBeNull();
@@ -388,20 +387,19 @@ public class AuthServiceTests : TestBase
     }
 
     [Fact]
-    public async Task UpdateProfileAsync_WhenEmailUsedByAnotherAccount_ReturnsMSG01()
+    public async Task UpdateProfileAsync_WhenAttemptingSelfEmailChange_ReturnsMSG10()
     {
-        // Arrange: login emails are unique (BR-64)
+        // Arrange: BR-69 (BUG-SEC-05) - users cannot change their own login email
         var user = new User { Id = 7, Username = "parent7", FullName = "Ten", Email = "a@school.edu.vn", Status = AccountStatus.Active };
-        var other = new User { Id = 8, Username = "parent8", FullName = "Khac", Email = "taken@school.edu.vn", Status = AccountStatus.Active };
-        var users = new List<User> { user, other };
+        var users = new List<User> { user };
         UserRepoMock.Setup(r => r.Query()).Returns(() => users.BuildMock());
 
         // Act
-        var result = await _authService.UpdateProfileAsync(7, new UpdateProfileRequestDto { FullName = "Ten", Email = "TAKEN@school.edu.vn" });
+        var result = await _authService.UpdateProfileAsync(7, new UpdateProfileRequestDto { FullName = "Ten", Email = "moi@school.edu.vn" });
 
         // Assert
         result.Success.Should().BeFalse();
-        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Code.Should().Be(SystemMessages.MSG10.Code);
         user.Email.Should().Be("a@school.edu.vn");
         UnitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -697,15 +695,15 @@ public class AuthServiceTests : TestBase
     }
 
     [Fact]
-    public async Task LoginAsync_PendingActivationWithoutPassword_ReturnsMSG02()
+    public async Task LoginAsync_PendingActivationWithoutPassword_ReturnsMSG03()
     {
         var user = CreateUser(string.Empty);
         user.Status = AccountStatus.PendingActivation;
-        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1", It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        UserRepoMock.Setup(r => r.GetByUsernameOrEmailWithRolesAsync("teacher1@school.vn", It.IsAny<CancellationToken>())).ReturnsAsync(user);
 
-        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1", Password = "anything" });
+        var result = await _authService.LoginAsync(new LoginRequestDto { Username = "teacher1@school.vn", Password = "anything" });
 
-        result.Code.Should().Be(SystemMessages.MSG02.Code);
+        result.Code.Should().Be(SystemMessages.MSG03.Code);
     }
 
     [Fact]
@@ -742,7 +740,7 @@ public class AuthServiceTests : TestBase
     }
 
     [Fact]
-    public async Task ChangePasswordAsync_SameAsTemporaryPassword_ReturnsMSG04()
+    public async Task ChangePasswordAsync_SameAsTemporaryPassword_ReturnsMSG89()
     {
         var user = CreateUser(BCrypt.Net.BCrypt.HashPassword("Temp@12345", 4));
         user.MustChangePassword = true;
@@ -750,7 +748,7 @@ public class AuthServiceTests : TestBase
 
         var result = await _authService.ChangePasswordAsync(user.Id, new ChangePasswordRequestDto { CurrentPassword = "Temp@12345", NewPassword = "Temp@12345" });
 
-        result.Code.Should().Be(SystemMessages.MSG04.Code);
+        result.Code.Should().Be(SystemMessages.MSG89.Code);
         user.MustChangePassword.Should().BeTrue();
     }
 

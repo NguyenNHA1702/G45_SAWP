@@ -28,7 +28,6 @@ import { formatRelationship } from '../../utils/formatters';
 import { formatDDMMYYYY } from '../../utils/date';
 import {
   containsHtmlTags,
-  validateEmailAddress,
   validatePersonFullName,
   validatePhoneNumber,
 } from '../../utils/validation';
@@ -74,8 +73,7 @@ export default function ProfilePage() {
     e.preventDefault();
     const validationErr =
       validatePersonFullName(fullName) ||
-      validatePhoneNumber(phoneNumber) ||
-      validateEmailAddress(email, false);
+      validatePhoneNumber(phoneNumber);
     if (validationErr) {
       toast.error(validationErr);
       return;
@@ -105,7 +103,6 @@ export default function ProfilePage() {
       const updated = await profileApi.updateProfile({
         fullName: fullName.trim().replace(/\s+/g, ' '),
         phoneNumber: phoneNumber.trim() || undefined,
-        email: email.trim() || undefined,
         address: profile?.guardianProfile ? address.trim() || undefined : undefined,
         occupation: profile?.guardianProfile ? occupation.trim() || undefined : undefined,
       });
@@ -119,14 +116,14 @@ export default function ProfilePage() {
         setOccupation(updated.guardianProfile.occupation || '');
       }
 
-      // Sync local storage so header display updates immediately
+      // Sync sessionStorage (where authApi stores current tab session) so header/sidebar display updates immediately
       try {
-        const storedUserJson = localStorage.getItem(USER_KEY);
+        const storedUserJson = sessionStorage.getItem(USER_KEY) ?? localStorage.getItem(USER_KEY);
         if (storedUserJson) {
           const storedUser = JSON.parse(storedUserJson);
           storedUser.fullName = updated.fullName;
           storedUser.email = updated.email;
-          localStorage.setItem(USER_KEY, JSON.stringify(storedUser));
+          sessionStorage.setItem(USER_KEY, JSON.stringify(storedUser));
           window.dispatchEvent(new CustomEvent('user-updated'));
           window.dispatchEvent(new Event('storage'));
         }
@@ -438,28 +435,37 @@ export default function ProfilePage() {
                 />
               </div>
 
-              {/* Địa chỉ Email */}
+              {/* Địa chỉ Email (BR-69: chỉ xem, do nhà trường thay đổi qua xác minh) */}
               <div className="field">
                 <label className="label" htmlFor="profile-email" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.04em' }}>
                   <Mail size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
-                  ĐỊA CHỈ EMAIL
+                  EMAIL ĐĂNG NHẬP
                 </label>
                 <input
                   id="profile-email"
                   type="email"
                   className="input"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@school.edu.vn"
+                  readOnly
+                  disabled
+                  title="Không thể tự thay đổi email đăng nhập"
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
                     borderRadius: 'var(--radius-full)',
-                    border: '2px solid var(--color-fg)',
+                    border: '2px solid var(--color-border)',
+                    background: '#F1F5F9',
+                    color: '#475569',
                     padding: '9px 18px',
                     fontWeight: 700,
+                    cursor: 'not-allowed',
                   }}
                 />
+                <small style={{ display: 'block', marginTop: 4, fontSize: '0.75rem', color: 'var(--color-muted-fg)' }}>
+                  {profile.guardianProfile
+                    ? 'Email đăng nhập không thể tự sửa. Vui lòng liên hệ Phòng Giáo vụ nếu cần yêu cầu đổi email.'
+                    : 'Email đăng nhập không thể tự sửa. Vui lòng liên hệ Quản trị viên hệ thống để được hỗ trợ.'}
+                </small>
               </div>
 
               {/* Nếu là Phụ huynh: thêm Địa chỉ và Nghề nghiệp */}

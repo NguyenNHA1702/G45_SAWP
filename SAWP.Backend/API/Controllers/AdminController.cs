@@ -107,6 +107,16 @@ public class AdminController : BaseApiController
         return ToActionResult(result);
     }
 
+    [HttpPost("users/{id:int}/change-email")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ChangeUserEmail(int id, [FromBody] AdminChangeEmailRequestDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.ChangeUserEmailAsync(userId.Value, id, request.NewEmail, ct);
+        return ToActionResult(result);
+    }
+
     [HttpPost("users/{id}/reset-password")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ResetUserPassword(int id, [FromBody] ResetUserPasswordRequestDto request, CancellationToken ct = default)
@@ -165,6 +175,96 @@ public class AdminController : BaseApiController
         var userId = User.GetUserId();
         if (!userId.HasValue) return Unauthorized();
         var result = await _adminService.UpsertLunchCutoffAsync(userId.Value, request, ct);
+        return ToActionResult(result);
+    }
+
+    // ---- UC-54: Phân quyền chi tiết theo vai trò ----
+
+    [HttpGet("permissions")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetPermissionsMatrix(CancellationToken ct = default)
+    {
+        var result = await _adminService.GetRolePermissionsMatrixAsync(ct);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("roles/{roleId:int}/permissions")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateRolePermissions(int roleId, [FromBody] UpdateRolePermissionsDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.UpdateRolePermissionsAsync(userId.Value, roleId, request, ct);
+        return ToActionResult(result);
+    }
+
+    // ---- UC-55: Liên kết thủ công User <-> StaffProfile / Guardian ----
+
+    [HttpGet("users/{id:int}/profile-links")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetUserProfileLinks(int id, [FromQuery] string? search = null, CancellationToken ct = default)
+    {
+        var result = await _adminService.GetUserProfileLinksAsync(id, search, ct);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("users/{id:int}/profile-link")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateUserProfileLink(int id, [FromBody] UpdateUserProfileLinkDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.UpdateUserProfileLinkAsync(userId.Value, id, request, ct);
+        return ToActionResult(result);
+    }
+
+    // ---- UC-56: Danh mục tham chiếu hệ thống ----
+
+    [HttpGet("reference-items")]
+    [Authorize(Roles = "Admin,OfficeStaff,Teacher,ServiceStaff,SchoolBoard,Parent")]
+    public async Task<IActionResult> GetReferenceItems([FromQuery] string? category = null, [FromQuery] bool activeOnly = false, CancellationToken ct = default)
+    {
+        var result = await _adminService.GetReferenceItemsAsync(category, activeOnly, ct);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("reference-items")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> CreateReferenceItem([FromBody] UpsertReferenceItemDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.UpsertReferenceItemAsync(userId.Value, null, request, ct);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("reference-items/{id:int}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateReferenceItem(int id, [FromBody] UpsertReferenceItemDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.UpsertReferenceItemAsync(userId.Value, id, request, ct);
+        return ToActionResult(result);
+    }
+
+    // ---- UC-57: Mẫu thông báo hệ thống ----
+
+    [HttpGet("notification-templates")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetNotificationTemplates(CancellationToken ct = default)
+    {
+        var result = await _adminService.GetNotificationTemplatesAsync(ct);
+        return ToActionResult(result);
+    }
+
+    [HttpPut("notification-templates/{id:int}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateNotificationTemplate(int id, [FromBody] UpdateNotificationTemplateDto request, CancellationToken ct = default)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized();
+        var result = await _adminService.UpdateNotificationTemplateAsync(userId.Value, id, request, ct);
         return ToActionResult(result);
     }
 }

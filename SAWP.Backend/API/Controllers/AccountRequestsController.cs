@@ -117,4 +117,48 @@ public class AccountRequestsController : BaseApiController
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Decide(int id, [FromBody] AccountRequestDecisionDto decision, CancellationToken ct)
         => ToActionResult(await _service.DecideAsync(User.GetRequiredUserId(), id, decision, ct));
+
+    // ---- Parent Email Change Requests (Office Staff -> Admin review, BR-69) ----
+
+    [HttpGet("guardians-with-account/paged")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> GuardiansWithAccountPaged(
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken ct = default)
+        => ToActionResult(await _service.GetGuardiansWithAccountPagedAsync(search, pageIndex, pageSize, ct));
+
+    [HttpPost("email-change")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> CreateEmailChange([FromBody] CreateEmailChangeRequestDto request, CancellationToken ct)
+        => ToActionResult(await _service.CreateEmailChangeRequestAsync(User.GetRequiredUserId(), request, ct));
+
+    [HttpGet("email-change/mine")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> MyEmailChangeRequests(
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+        => ToActionResult(await _service.GetMyEmailChangeRequestsPagedAsync(User.GetRequiredUserId(), pageIndex, pageSize, ct));
+
+    [HttpGet("email-change/review")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ReviewEmailChangeRequests(
+        [FromQuery] string? status,
+        [FromQuery] string? search,
+        [FromQuery] int pageIndex = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+        => ToActionResult(await _service.GetEmailChangeRequestsForReviewPagedAsync(status, search, pageIndex, pageSize, ct));
+
+    [HttpPost("email-change/{id:int}/decide")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DecideEmailChange(int id, [FromBody] DecideEmailChangeRequestDto decision, CancellationToken ct)
+        => ToActionResult(await _service.DecideEmailChangeRequestAsync(User.GetRequiredUserId(), id, decision, ct));
+
+    [HttpPost("email-change/{id:int}/resend")]
+    [Authorize(Roles = "OfficeStaff,Admin")]
+    public async Task<IActionResult> ResendEmailChange(int id, CancellationToken ct)
+        => ToActionResult(await _service.ResendEmailChangeLinkAsync(User.GetRequiredUserId(), id, ct));
 }

@@ -18,6 +18,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<VerificationToken> VerificationTokens => Set<VerificationToken>();
     public DbSet<AccountRequest> AccountRequests => Set<AccountRequest>();
     public DbSet<AccountRequestItem> AccountRequestItems => Set<AccountRequestItem>();
+    public DbSet<EmailChangeRequest> EmailChangeRequests => Set<EmailChangeRequest>();
     public DbSet<Student> Students => Set<Student>();
     public DbSet<StudentGuardian> StudentGuardians => Set<StudentGuardian>();
     public DbSet<SchoolYear> SchoolYears => Set<SchoolYear>();
@@ -43,6 +44,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<DocumentRequestDetail> DocumentRequestDetails => Set<DocumentRequestDetail>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+    public DbSet<ReferenceItem> ReferenceItems => Set<ReferenceItem>();
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
 
     // Contact Book (Sổ liên lạc điện tử)
     public DbSet<ClassPost> ClassPosts => Set<ClassPost>();

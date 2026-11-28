@@ -118,6 +118,32 @@ public class AccountLinkService : IAccountLinkService
     public Task<bool> SendRecoveryLinkAsync(User user, CancellationToken ct = default) =>
         SendLinkAsync(user, VerificationTokenPurpose.PasswordRecovery, ct);
 
+    public async Task<bool> SendEmailChangeLinkAsync(User user, string newEmail, CancellationToken ct = default)
+    {
+        var rawToken = await IssueAsync(user, VerificationTokenPurpose.EmailChange, newEmail, ct);
+        var origin = ChooseLinkOrigin(_requestOrigins.GetCandidateOrigins(), _options.FrontendOrigins);
+        var link = $"{origin}/confirm-email-change?token={Uri.EscapeDataString(rawToken)}";
+        var (subject, body) = EmailTemplateRenderer.Render(EmailTemplates.EmailChange, new Dictionary<string, string>
+        {
+            ["FullName"] = user.FullName,
+            ["OldEmail"] = user.Email,
+            ["NewEmail"] = newEmail,
+            ["Link"] = link,
+            ["Hours"] = _options.EmailChangeHours.ToString()
+        });
+
+        try
+        {
+            await _emailService.SendEmailAsync(newEmail, subject, body, true, ct);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Could not send EmailChange confirmation to user {UserId}", user.Id);
+            return false;
+        }
+    }
+
     private async Task<bool> SendLinkAsync(User user, VerificationTokenPurpose purpose, CancellationToken ct)
     {
         var rawToken = await IssueAsync(user, purpose, null, ct);

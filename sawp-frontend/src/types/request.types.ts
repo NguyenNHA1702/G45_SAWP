@@ -78,6 +78,7 @@ export interface RequestHistoryItem {
   action: string;
   description: string;
   performedBy?: string;
+  performedByRole?: string;
   status: RequestStatus;
 }
 

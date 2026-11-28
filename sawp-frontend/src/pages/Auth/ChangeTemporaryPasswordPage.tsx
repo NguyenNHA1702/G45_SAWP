@@ -27,7 +27,11 @@ export default function ChangeTemporaryPasswordPage() {
       toast.error(SYSTEM_MESSAGES.MSG01.content);
       return;
     }
-    if (!meetsPasswordPolicy(newPassword) || newPassword !== confirmPassword || newPassword === currentPassword) {
+    if (newPassword === currentPassword) {
+      toast.error(SYSTEM_MESSAGES.MSG89.content);
+      return;
+    }
+    if (!meetsPasswordPolicy(newPassword) || newPassword !== confirmPassword) {
       toast.error(SYSTEM_MESSAGES.MSG04.content);
       return;
     }

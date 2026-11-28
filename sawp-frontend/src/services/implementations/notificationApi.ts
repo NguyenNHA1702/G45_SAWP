@@ -2,7 +2,12 @@ import { apiClient } from '../apiClient';
 import { unwrap, unwrapData } from '../../utils/apiError';
 import type { INotificationApi } from '../contracts/INotificationApi';
 import type { PaginatedResult } from '../../types/common.types';
-import type { AppNotification } from '../../types/notification.types';
+import type {
+  AppNotification,
+  BroadcastHistoryItem,
+  BroadcastNotificationPayload,
+  BroadcastNotificationResult,
+} from '../../types/notification.types';
 
 export const notificationApi: INotificationApi = {
   getUnreadCount: async () => {
@@ -17,4 +22,10 @@ export const notificationApi: INotificationApi = {
   markAllRead: async () => {
     await unwrap(apiClient.patch('/notifications/read-all'));
   },
+  broadcast: async (payload: BroadcastNotificationPayload) => {
+    const res = await apiClient.post('/notifications/broadcast', payload);
+    return { result: res.data.data as BroadcastNotificationResult, message: res.data.message };
+  },
+  getBroadcastHistory: async (limit = 25): Promise<BroadcastHistoryItem[]> =>
+    unwrapData(apiClient.get('/notifications/broadcast/history', { params: { limit } })),
 };

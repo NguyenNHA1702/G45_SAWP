@@ -6,7 +6,7 @@ public interface IClassService
 {
     // Academic Year
     Task<ApiResponse<SchoolYearDto>> CreateSchoolYearAsync(CreateSchoolYearDto request, int? actorUserId = null, CancellationToken cancellationToken = default);
-    Task<ApiResponse<List<SchoolYearDto>>> GetSchoolYearsAsync(CancellationToken cancellationToken = default);
+    Task<ApiResponse<List<SchoolYearDto>>> GetSchoolYearsAsync(bool includeDraft = true, CancellationToken cancellationToken = default);
     Task<ApiResponse<SchoolYearDto>> GetActiveSchoolYearAsync(CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> ActivateSchoolYearAsync(int schoolYearId, int? actorUserId = null, CancellationToken cancellationToken = default);
 
@@ -16,8 +16,8 @@ public interface IClassService
 
     // Classes
     Task<ApiResponse<ClassSummaryDto>> CreateClassAsync(CreateClassDto request, int? actorUserId = null, CancellationToken cancellationToken = default);
-    Task<ApiResponse<List<ClassSummaryDto>>> GetClassesAsync(int? schoolYearId = null, int? grade = null, string? status = null, CancellationToken cancellationToken = default);
-    Task<ApiResponse<ClassSummaryDto>> GetClassDetailsAsync(int classId, CancellationToken cancellationToken = default);
+    Task<ApiResponse<List<ClassSummaryDto>>> GetClassesAsync(int? schoolYearId = null, int? grade = null, string? status = null, bool includeDraft = true, CancellationToken cancellationToken = default);
+    Task<ApiResponse<ClassSummaryDto>> GetClassDetailsAsync(int classId, bool includeDraft = true, CancellationToken cancellationToken = default);
     Task<ApiResponse<ClassSummaryDto>> UpdateClassAsync(int classId, UpdateClassDto request, int? actorUserId = null, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> DeleteClassAsync(int classId, int? actorUserId = null, CancellationToken cancellationToken = default);
 
@@ -35,6 +35,6 @@ public interface IClassService
 
 
     // Class Roster
-    Task<ApiResponse<ClassRosterDto>> GetClassRosterAsync(int classId, int? requestingUserId = null, string? requestingUserRole = null, CancellationToken cancellationToken = default);
+    Task<ApiResponse<ClassRosterDto>> GetClassRosterAsync(int classId, int? requestingUserId = null, string? requestingUserRole = null, bool includeDraft = true, CancellationToken cancellationToken = default);
     Task<ApiResponse<ClassRosterDto>> GetMyHomeroomClassAsync(int teacherUserId, CancellationToken cancellationToken = default);
 }

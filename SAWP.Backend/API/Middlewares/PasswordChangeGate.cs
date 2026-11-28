@@ -33,8 +33,7 @@ public class PasswordChangeGate
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.Headers[HeaderName] = "true";
-            await context.Response.WriteAsJsonAsync(ApiResponse<object>.Fail(SystemMessages.MSG10,
-                new List<string> { "Vui lòng đổi mật khẩu tạm thời trước khi tiếp tục." }));
+            await context.Response.WriteAsJsonAsync(ApiResponse<object>.Fail(SystemMessages.MSG87));
             return;
         }
 

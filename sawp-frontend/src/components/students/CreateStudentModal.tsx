@@ -112,7 +112,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
 
   const currentYear = new Date().getFullYear();
   const maxBirthDate = `${currentYear - 5}-12-31`;
-  const minBirthDate = `${currentYear - 15}-01-01`;
+  const minBirthDate = '1920-01-01';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,6 +128,10 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     }
 
     const name = formData.fullName.trim().replace(/\s+/g, ' ');
+    if (name.length < 2 || name.length > 100) {
+      toast.error('Họ và tên học sinh phải có độ dài từ 2 đến 100 ký tự.');
+      return;
+    }
     if (name.includes('<') || name.includes('>')) {
       toast.error('Họ và tên học sinh không được chứa thẻ HTML!');
       return;
@@ -153,15 +157,28 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
 
     const birthDate = new Date(formData.dateOfBirth);
     const today = new Date();
-    if (isNaN(birthDate.getTime()) || birthDate >= today) {
+    if (isNaN(birthDate.getTime()) || birthDate >= today || birthDate.getFullYear() < 1900) {
       toast.error('Ngày sinh không hợp lệ (không thể là ngày trong tương lai)!');
       return;
     }
 
     const age = today.getFullYear() - birthDate.getFullYear();
-    if (age < 5 || age > 15) {
-      toast.error(`Độ tuổi của học sinh không hợp lệ (${age} tuổi). Độ tuổi tiểu học hợp lệ là từ 5 đến 15 tuổi.`);
+    if (age < 5) {
+      toast.error(`Độ tuổi của học sinh không hợp lệ (${age} tuổi). Học sinh tiểu học phải từ 5 tuổi trở lên.`);
       return;
+    }
+
+    let allowAgeException = false;
+    let ageExceptionReason: string | undefined;
+    if (age > 15) {
+      const confirmed = window.confirm(
+        `Cảnh báo ngoại lệ độ tuổi: Học sinh này ${age} tuổi (vượt quá trần tiểu học 5–15 tuổi).\n\nBạn có chắc chắn muốn xác nhận trường hợp ngoại lệ quá tuổi và lưu hồ sơ này (sẽ ghi nhật ký hệ thống)?`
+      );
+      if (!confirmed) {
+        return;
+      }
+      allowAgeException = true;
+      ageExceptionReason = `Xác nhận ngoại lệ học sinh quá tuổi (${age} tuổi) khi tạo hồ sơ.`;
     }
 
     const phone = formData.parentPhone?.trim();
@@ -204,7 +221,11 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     }
 
     setLoading(true);
-    const payload = toCreateStudentPayload(formData);
+    const payload: CreateStudentDto = {
+      ...toCreateStudentPayload(formData),
+      allowAgeException,
+      ageExceptionReason,
+    };
     try {
       const res = await studentApi.createStudent(payload);
 
@@ -298,7 +319,7 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
                 onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
               />
               <small style={{ color: 'var(--color-muted-fg)', marginTop: 4, display: 'block' }}>
-                Độ tuổi tiểu học hợp lệ: từ 5 đến 15 tuổi (sinh năm {currentYear - 15} – {currentYear - 5}).
+                Độ tuổi tiểu học chuẩn: từ 5 đến 15 tuổi. Trường hợp quá 15 tuổi sẽ yêu cầu xác nhận ngoại lệ khi lưu.
               </small>
             </div>
 

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clearAuthSession, getAuthUser } from '../services/apiClient';
+import { authApi } from '../services/implementations/authApi';
 import { notificationApi } from '../services/implementations/notificationApi';
 import { SYSTEM_MESSAGES } from '../constants/messages';
 import { ParentChildProvider } from '../contexts/ParentChildContext';
@@ -64,12 +65,12 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; SchoolBoard xem) ---
+  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; SchoolBoard & OfficeStaff xem) ---
   {
     id: 'kitchen-reports',
     label: 'Báo cáo suất ăn Bếp',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff', 'SchoolBoard'],
+    roles: ['ServiceStaff', 'SchoolBoard', 'OfficeStaff'],
     children: [
       {
         id: 'kitchen-summary',
@@ -146,6 +147,12 @@ const NAV_ITEMS: NavItem[] = [
         path: '/system/audit-logs',
         icon: ShieldAlert,
       },
+      {
+        id: 'office-broadcast',
+        label: 'Phát thông báo trường',
+        path: '/notifications/broadcast',
+        icon: Bell,
+      },
     ],
   },
   // --- Ban giám hiệu (SchoolBoard) ---
@@ -190,6 +197,12 @@ const NAV_ITEMS: NavItem[] = [
         label: 'Nhật ký hệ thống',
         path: '/system/audit-logs',
         icon: ShieldAlert,
+      },
+      {
+        id: 'board-broadcast',
+        label: 'Phát thông báo trường',
+        path: '/notifications/broadcast',
+        icon: Bell,
       },
     ],
   },
@@ -451,10 +464,18 @@ export function MainLayout() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await authApi.logout().catch(() => null);
     clearAuthSession();
     toast.success(SYSTEM_MESSAGES.MSG06.content);
     navigate('/login');
+  };
+
+  const handleMarkAllRead = async () => {
+    if (unreadCount === 0) return;
+    await notificationApi.markAllRead().catch(() => null);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setUnreadCount(0);
   };
 
   // Lọc menu theo roles
@@ -765,9 +786,29 @@ export function MainLayout() {
                       }}
                     >
                       <strong style={{ fontSize: 'var(--fs-sm)' }}>Thông báo</strong>
-                      <span className="badge badge--violet" style={{ fontSize: '0.7rem' }}>
-                        {unreadCount} chưa đọc
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {unreadCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllRead}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              cursor: 'pointer',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              color: '#6D28D9',
+                              textDecoration: 'underline',
+                            }}
+                          >
+                            Đánh dấu tất cả đã đọc
+                          </button>
+                        )}
+                        <span className="badge badge--violet" style={{ fontSize: '0.7rem' }}>
+                          {unreadCount} chưa đọc
+                        </span>
+                      </div>
                     </div>
 
                     {notifications.length === 0 ? (

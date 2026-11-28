@@ -256,6 +256,21 @@ export const RequestHistoryModal: React.FC<RequestHistoryModalProps> = ({
                         >
                           <span>Thực hiện:</span>
                           <strong style={{ color: '#64748B' }}>{item.performedBy}</strong>
+                          {item.performedByRole && (
+                            <span
+                              style={{
+                                marginLeft: 4,
+                                backgroundColor: '#EEF2FF',
+                                color: '#4338CA',
+                                borderRadius: 999,
+                                padding: '1px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {item.performedByRole}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>

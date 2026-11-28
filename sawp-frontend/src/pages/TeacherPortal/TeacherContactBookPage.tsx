@@ -184,7 +184,7 @@ export default function TeacherContactBookPage() {
       return;
     }
 
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.xls', '.xlsx'];
     const newAttachments: PostAttachmentInputDto[] = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -888,7 +888,7 @@ export default function TeacherContactBookPage() {
             <input
               type="file"
               multiple
-              accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx"
               className="input"
               disabled={uploadingFiles}
               onChange={handleFileChange}

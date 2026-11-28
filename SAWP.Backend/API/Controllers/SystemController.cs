@@ -24,6 +24,8 @@ public class SystemController : BaseApiController
         [FromQuery] string? action = null,
         [FromQuery] string? entityName = null,
         [FromQuery] string? search = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
         CancellationToken ct = default)
     {
         var filter = new AuditLogFilterDto
@@ -32,7 +34,9 @@ public class SystemController : BaseApiController
             PageSize = pageSize,
             Action = action,
             EntityName = entityName,
-            Search = search
+            Search = search,
+            FromDate = fromDate,
+            ToDate = toDate
         };
         var result = await _auditService.GetAuditLogDtosPagedAsync(filter, ct);
         return ToActionResult(result);

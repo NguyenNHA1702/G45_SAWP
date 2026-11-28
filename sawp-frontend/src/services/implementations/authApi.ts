@@ -4,6 +4,7 @@ import type { IAuthApi } from '../contracts/IAuthApi';
 import type {
   ChangePasswordRequest,
   CurrentUser,
+  EmailChangeLinkCheckResult,
   ForgotPasswordRequest,
   LoginRequest,
   LoginResponse,
@@ -35,6 +36,9 @@ export const authApi: IAuthApi = {
     return res;
   },
 
+  logout: (): Promise<ApiResponse<boolean>> =>
+    unwrap(apiClient.post<ApiResponse<boolean>>('/auth/logout')),
+
   changePassword: async (payload: ChangePasswordRequest): Promise<ApiResponse<LoginResponse>> => {
     const res = await unwrap(apiClient.post<ApiResponse<LoginResponse>>('/auth/change-password', payload));
     if (res.data?.token) storeSession(res.data);
@@ -49,6 +53,12 @@ export const authApi: IAuthApi = {
 
   setPasswordWithLink: (payload: SetPasswordWithLinkRequest): Promise<ApiResponse<boolean>> =>
     unwrap(apiClient.post<ApiResponse<boolean>>('/auth/password-link/set-password', payload)),
+
+  checkEmailChangeLink: (token: string): Promise<ApiResponse<EmailChangeLinkCheckResult>> =>
+    unwrap(apiClient.post<ApiResponse<EmailChangeLinkCheckResult>>('/auth/email-change-link/check', { token })),
+
+  confirmEmailChange: (token: string): Promise<ApiResponse<boolean>> =>
+    unwrap(apiClient.post<ApiResponse<boolean>>('/auth/confirm-email-change', { token })),
 
   getMe: (): Promise<ApiResponse<CurrentUser>> => {
     return unwrap(apiClient.get<ApiResponse<CurrentUser>>('/auth/me'));

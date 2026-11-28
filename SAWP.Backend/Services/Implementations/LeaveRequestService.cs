@@ -1503,22 +1503,70 @@ public class LeaveRequestService : ILeaveRequestService
     {
         var req = await _unitOfWork.Repository<AdministrativeRequest>()
             .Query()
-            .FirstOrDefaultAsync(ar => ar.Id == requestId && ar.RequesterUserId == parentUserId, cancellationToken);
+            .Include(ar => ar.Student)
+                .ThenInclude(s => s!.ClassAssignments.Where(ca => ca.IsActive))
+                    .ThenInclude(ca => ca.Class)
+                        .ThenInclude(c => c.HomeroomTeacher)
+            .FirstOrDefaultAsync(ar => ar.Id == requestId && ar.RequestType == RequestTypes.Leave && ar.RequesterUserId == parentUserId, cancellationToken);
 
         if (req == null)
         {
             return ApiResponse<bool>.Fail("Không tìm thấy đơn xin nghỉ học.");
         }
 
-        if (req.Status != RequestStatus.Submitted && req.Status != RequestStatus.NeedMoreInfo)
+        if (req.Status != RequestStatus.Submitted && req.Status != RequestStatus.NeedMoreInfo && req.Status != RequestStatus.UnderReview)
         {
-            return ApiResponse<bool>.Fail("Chỉ có thể hủy đơn khi đơn đang ở trạng thái Chờ duyệt hoặc Yêu cầu bổ sung thông tin.");
+            return ApiResponse<bool>.Fail("Chỉ có thể hủy đơn khi đơn đang ở trạng thái Chờ duyệt, Đang xem xét hoặc Yêu cầu bổ sung thông tin.");
         }
 
         var oldStatus = req.Status;
         req.Status = RequestStatus.Cancelled;
         req.ProcessedDate = DateTime.UtcNow;
         req.ReviewerNotes = "Phụ huynh tự hủy đơn.";
+
+        var homeroomTeacherUserId = req.Student?.ClassAssignments
+            .FirstOrDefault(ca => ca.IsActive)?
+            .Class?.HomeroomTeacher?.UserId;
+        if (homeroomTeacherUserId.HasValue)
+        {
+            await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+            {
+                UserId = homeroomTeacherUserId.Value,
+                Type = "LeaveRequestCancelled",
+                Title = $"Phụ huynh hủy đơn nghỉ học ({req.Student?.FullName})",
+                Content = $"Đơn xin nghỉ {req.RequestNumber} của học sinh {req.Student?.FullName} đã được phụ huynh tự hủy.",
+                LinkUrl = "/teacher/leave-requests",
+                ReferenceKey = $"leave_cancel:{req.Id}",
+                CreatedAt = DateTime.UtcNow,
+                IsRead = false
+            }, cancellationToken);
+        }
+
+        if (oldStatus == RequestStatus.UnderReview)
+        {
+            var boardIds = await _unitOfWork.Repository<User>()
+                .Query()
+                .AsNoTracking()
+                .Where(u => u.Status == AccountStatus.Active && u.UserRoles.Any(ur => ur.Role.Name == nameof(UserRoles.SchoolBoard)))
+                .Select(u => u.Id)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            foreach (var bId in boardIds)
+            {
+                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                {
+                    UserId = bId,
+                    Type = "LeaveRequestCancelled",
+                    Title = $"Phụ huynh hủy đơn nghỉ học ({req.Student?.FullName})",
+                    Content = $"Đơn xin nghỉ {req.RequestNumber} của học sinh {req.Student?.FullName} đã được phụ huynh tự hủy.",
+                    LinkUrl = "/board/leave-requests",
+                    ReferenceKey = $"leave_cancel_bgh:{req.Id}:{bId}",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                }, cancellationToken);
+            }
+        }
+
         await _auditService.LogActionAsync(
             parentUserId,
             AuditActions.LeaveRequestCancel,
@@ -2019,7 +2067,7 @@ public class LeaveRequestService : ILeaveRequestService
                 else
                 {
                     var isPrivileged = requestingRoles != null && requestingRoles.Any(r =>
-                        r == UserRoles.OfficeStaff || r == UserRoles.SchoolBoard || r == UserRoles.Admin || r == UserRoles.Teacher);
+                        r == UserRoles.OfficeStaff || r == UserRoles.SchoolBoard);
                     if (!isPrivileged)
                     {
                         var matchingAdminReq = await reqRepo.Query()
@@ -2031,7 +2079,12 @@ public class LeaveRequestService : ILeaveRequestService
                                     && (ar.DocumentRequestDetail.IssuedDocumentUrl.Contains(escapedPath) || ar.DocumentRequestDetail.IssuedDocumentUrl.Contains(normalizedPath))),
                                 cancellationToken);
 
-                        if (matchingAdminReq != null && matchingAdminReq.RequesterUserId != requestingUserId.Value)
+                        if (matchingAdminReq == null)
+                        {
+                            return null;
+                        }
+
+                        if (matchingAdminReq.RequesterUserId != requestingUserId.Value)
                         {
                             var isGuardian = matchingAdminReq.StudentId.HasValue
                                 && _unitOfWork.Repository<StudentGuardian>() != null

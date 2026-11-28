@@ -156,7 +156,7 @@ public class ClassImporter : IClassImporter
 
     public async Task<ApiResponse<ClassImportPreviewDto>> PreviewAsync(int schoolYearId, ClassImportRowsDto rows, CancellationToken cancellationToken = default)
     {
-        var (plan, failure) = await BuildPlanAsync(schoolYearId, rows, cancellationToken);
+        var (plan, failure) = await BuildPlanAsync(schoolYearId, rows, isPreview: true, cancellationToken);
         if (failure != null)
         {
             return ApiResponse<ClassImportPreviewDto>.Fail(failure.Value.Message, failure.Value.Errors);
@@ -171,7 +171,7 @@ public class ClassImporter : IClassImporter
 
     public async Task<ApiResponse<ClassImportResultDto>> ImportAsync(int schoolYearId, ClassImportRowsDto rows, int? actorUserId = null, CancellationToken cancellationToken = default)
     {
-        var (plan, failure) = await BuildPlanAsync(schoolYearId, rows, cancellationToken);
+        var (plan, failure) = await BuildPlanAsync(schoolYearId, rows, isPreview: false, cancellationToken);
         if (failure != null)
         {
             return ApiResponse<ClassImportResultDto>.Fail(failure.Value.Message, failure.Value.Errors);
@@ -232,10 +232,24 @@ public class ClassImporter : IClassImporter
                 await classRepo.UpdateAsync(cls, cancellationToken);
             }
 
+            var finalTeacherIds = p.FinalClasses.Values
+                .Where(c => c.Teacher != null)
+                .Select(c => c.Teacher!.Id)
+                .ToHashSet();
+
             foreach (var teacher in p.FinalClasses.Values.Select(c => c.Teacher).Where(t => t != null && !t.IsHomeroomTeacher))
             {
                 teacher!.IsHomeroomTeacher = true;
                 await _unitOfWork.Repository<StaffProfile>().UpdateAsync(teacher, cancellationToken);
+            }
+
+            foreach (var oldTeacher in p.ExistingClasses.Values
+                .Select(c => c.HomeroomTeacher)
+                .Where(t => t != null && t.IsHomeroomTeacher && !finalTeacherIds.Contains(t.Id))
+                .DistinctBy(t => t!.Id))
+            {
+                oldTeacher!.IsHomeroomTeacher = false;
+                await _unitOfWork.Repository<StaffProfile>().UpdateAsync(oldTeacher, cancellationToken);
             }
 
             result.TeacherChanges = p.Diff.TeacherChanges.Count;
@@ -432,7 +446,7 @@ public class ClassImporter : IClassImporter
     }
 
     private async Task<(Plan? Plan, (SystemMessage Message, List<string> Errors)? Failure)> BuildPlanAsync(
-        int schoolYearId, ClassImportRowsDto rows, CancellationToken ct)
+        int schoolYearId, ClassImportRowsDto rows, bool isPreview, CancellationToken ct)
     {
         var year = await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(schoolYearId, ct);
         if (year == null)
@@ -507,7 +521,7 @@ public class ClassImporter : IClassImporter
         plan.TeachersByCode = staff;
         ValidateClassRows(plan, staff);
         ResolveTeachers(plan, staff);
-        ValidateStudentRows(plan, students);
+        ValidateStudentRows(plan, students, isPreview);
 
         plan.ValidClassRows.AddRange(rows.Classes.Where(r => r.IsValid));
         plan.ValidStudentRows.AddRange(rows.Students.Where(r => r.IsValid));
@@ -625,7 +639,7 @@ public class ClassImporter : IClassImporter
             .GroupBy(x => x.Key!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Row).ToList(), StringComparer.OrdinalIgnoreCase);
 
-    private static void ValidateStudentRows(Plan plan, Dictionary<string, Student> students)
+    private static void ValidateStudentRows(Plan plan, Dictionary<string, Student> students, bool isPreview)
     {
         var rowsByCode = RowsByKey(plan.Rows.Students, r => r.StudentCode, r => r.RowNumber);
         var classRows = plan.Rows.Classes
@@ -633,8 +647,23 @@ public class ClassImporter : IClassImporter
             .GroupBy(r => r.ClassName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Any(r => r.IsValid), StringComparer.OrdinalIgnoreCase);
 
+        var classGrades = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in plan.ExistingClasses.Values)
+        {
+            classGrades[c.ClassName] = c.Grade;
+        }
+        foreach (var cr in plan.Rows.Classes.Where(r => r.IsValid))
+        {
+            if (int.TryParse(cr.Grade, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g))
+            {
+                classGrades[cr.ClassName] = g;
+            }
+        }
+
         foreach (var row in plan.Rows.Students)
         {
+            row.RequiresAgeException = false;
+            Student? matchedStudent = null;
             if (row.StudentCode.Length == 0)
             {
                 row.Errors.Add("Thiếu mã học sinh (Student code).");
@@ -657,6 +686,10 @@ public class ClassImporter : IClassImporter
             {
                 row.Errors.Add($"Họ và tên '{row.FullName}' không khớp với hồ sơ học sinh {row.StudentCode} ({student.FullName}).");
             }
+            else
+            {
+                matchedStudent = student;
+            }
 
             if (row.ClassName.Length == 0)
             {
@@ -676,6 +709,38 @@ public class ClassImporter : IClassImporter
             else if (plan.Mode == ClassImportModes.Replace)
             {
                 row.Errors.Add($"Lớp {row.ClassName} không có ở trang {ClassesSheet}; khi Thay thế, lớp không có trong tệp sẽ bị xóa.");
+            }
+
+            if (matchedStudent != null
+                && matchedStudent.DateOfBirth != default
+                && classGrades.TryGetValue(row.ClassName, out var targetGrade)
+                && targetGrade >= 1 && targetGrade <= 5)
+            {
+                var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(
+                    matchedStudent.DateOfBirth,
+                    targetGrade,
+                    plan.Year.StartDate.Year,
+                    matchedStudent.IsSpecialNeeds,
+                    allowAgeException: plan.Rows.AllowAgeException);
+                if (gradeAgeErr != null)
+                {
+                    if (StudentValidationHelper.IsOverPrimaryAge(matchedStudent.DateOfBirth, plan.Year.StartDate.Year))
+                    {
+                        row.RequiresAgeException = true;
+                        if (isPreview)
+                        {
+                            plan.Warnings.Add($"Cảnh báo ngoại lệ quá tuổi: Học sinh {matchedStudent.StudentCode} ({matchedStudent.FullName}) vượt quá 15 tuổi khi xếp vào Khối {targetGrade} (cần xác nhận ngoại lệ trước khi nhập).");
+                        }
+                        else if (!plan.Rows.AllowAgeException)
+                        {
+                            row.Errors.Add(gradeAgeErr);
+                        }
+                    }
+                    else
+                    {
+                        row.Errors.Add(gradeAgeErr);
+                    }
+                }
             }
 
             row.IsValid = row.Errors.Count == 0;
@@ -794,7 +859,7 @@ public class ClassImporter : IClassImporter
             // class kept as it is, stays too
             var keep = classStays != null
                        && (!replace || namedStudents.Contains(current.Student?.StudentCode ?? string.Empty) || !classStays.FromFile);
-            if (keep)
+            if (keep && classStays != null)
             {
                 classStays.StudentCodes.Add(current.Student?.StudentCode ?? string.Empty);
                 continue;

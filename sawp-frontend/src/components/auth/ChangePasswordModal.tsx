@@ -23,10 +23,13 @@ export function ChangePasswordModal({ open, onClose }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Password rules validation
+  // Password rules validation (BR-02: 4 required character groups + different from current)
   const hasMinLength = newPassword.length >= 8;
-  const hasLetter = /[a-zA-Z]/.test(newPassword);
-  const hasNumberOrSymbol = /[\d!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+  const hasUpper = /[A-Z]/.test(newPassword);
+  const hasLower = /[a-z]/.test(newPassword);
+  const hasDigit = /[0-9]/.test(newPassword);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(newPassword);
+  const isDifferentFromCurrent = !currentPassword || newPassword !== currentPassword;
   const isMatch = confirmPassword.length > 0 && newPassword === confirmPassword;
 
   const handleResetAndClose = () => {
@@ -52,11 +55,12 @@ export function ChangePasswordModal({ open, onClose }: Props) {
       return;
     }
 
+    if (newPassword === currentPassword) {
+      toast.error(SYSTEM_MESSAGES.MSG89.content);
+      return;
+    }
+
     // BR-02: Yêu cầu chữ hoa, chữ thường, số, ký tự đặc biệt & khớp xác nhận
-    const hasUpper = /[A-Z]/.test(newPassword);
-    const hasLower = /[a-z]/.test(newPassword);
-    const hasDigit = /[0-9]/.test(newPassword);
-    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(newPassword);
     if (!hasUpper || !hasLower || !hasDigit || !hasSpecial || newPassword !== confirmPassword) {
       toast.error(SYSTEM_MESSAGES.MSG04.content);
       return;
@@ -105,8 +109,8 @@ export function ChangePasswordModal({ open, onClose }: Props) {
       >
         <ShieldCheck size={18} color="var(--color-accent)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div>
-          <strong style={{ color: 'var(--color-fg)' }}>Yêu cầu độ mạnh mật khẩu:</strong>{' '}
-          Tối thiểu 8 ký tự, khuyến nghị kết hợp chữ in hoa, chữ thường, số và ký tự đặc biệt để đảm bảo an toàn.
+          <strong style={{ color: 'var(--color-fg)' }}>Yêu cầu độ mạnh mật khẩu (bắt buộc):</strong>{' '}
+          Tối thiểu 8 ký tự, bắt buộc gồm chữ in hoa, chữ thường, chữ số, ký tự đặc biệt và phải khác mật khẩu hiện tại.
         </div>
       </div>
 
@@ -209,24 +213,26 @@ export function ChangePasswordModal({ open, onClose }: Props) {
           {/* Validation Chips */}
           {newPassword.length > 0 && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-              <span
-                className={`badge ${hasMinLength ? 'badge--mint' : 'badge--muted'}`}
-                style={{ fontSize: 11, padding: '2px 8px', border: hasMinLength ? '1px solid #059669' : '1px solid var(--color-border)' }}
-              >
+              <span className={`badge ${hasMinLength ? 'badge--mint' : 'badge--muted'}`} style={{ fontSize: 11, padding: '2px 8px', border: hasMinLength ? '1px solid #059669' : '1px solid var(--color-border)' }}>
                 {hasMinLength ? '✓' : '○'} ≥ 8 ký tự
               </span>
-              <span
-                className={`badge ${hasLetter ? 'badge--mint' : 'badge--muted'}`}
-                style={{ fontSize: 11, padding: '2px 8px', border: hasLetter ? '1px solid #059669' : '1px solid var(--color-border)' }}
-              >
-                {hasLetter ? '✓' : '○'} Có chữ cái
+              <span className={`badge ${hasUpper ? 'badge--mint' : 'badge--muted'}`} style={{ fontSize: 11, padding: '2px 8px', border: hasUpper ? '1px solid #059669' : '1px solid var(--color-border)' }}>
+                {hasUpper ? '✓' : '○'} Chữ hoa (A–Z)
               </span>
-              <span
-                className={`badge ${hasNumberOrSymbol ? 'badge--mint' : 'badge--muted'}`}
-                style={{ fontSize: 11, padding: '2px 8px', border: hasNumberOrSymbol ? '1px solid #059669' : '1px solid var(--color-border)' }}
-              >
-                {hasNumberOrSymbol ? '✓' : '○'} Số hoặc ký tự đặc biệt
+              <span className={`badge ${hasLower ? 'badge--mint' : 'badge--muted'}`} style={{ fontSize: 11, padding: '2px 8px', border: hasLower ? '1px solid #059669' : '1px solid var(--color-border)' }}>
+                {hasLower ? '✓' : '○'} Chữ thường (a–z)
               </span>
+              <span className={`badge ${hasDigit ? 'badge--mint' : 'badge--muted'}`} style={{ fontSize: 11, padding: '2px 8px', border: hasDigit ? '1px solid #059669' : '1px solid var(--color-border)' }}>
+                {hasDigit ? '✓' : '○'} Chữ số (0–9)
+              </span>
+              <span className={`badge ${hasSpecial ? 'badge--mint' : 'badge--muted'}`} style={{ fontSize: 11, padding: '2px 8px', border: hasSpecial ? '1px solid #059669' : '1px solid var(--color-border)' }}>
+                {hasSpecial ? '✓' : '○'} Ký tự đặc biệt
+              </span>
+              {currentPassword.length > 0 && (
+                <span className={`badge ${isDifferentFromCurrent ? 'badge--mint' : 'badge--pink'}`} style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--color-border)' }}>
+                  {isDifferentFromCurrent ? '✓' : '✕'} Khác mật khẩu cũ
+                </span>
+              )}
             </div>
           )}
         </div>

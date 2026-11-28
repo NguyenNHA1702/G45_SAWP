@@ -252,6 +252,11 @@ export default function MealHeadcountPage() {
   const [kitchenNote, setKitchenNote] = useState<string>('');
   const [savingKitchenNote, setSavingKitchenNote] = useState<boolean>(false);
 
+  // Modal Khôi phục suất ăn (BUG-LUN-02)
+  const [restoreTarget, setRestoreTarget] = useState<StudentMealOperationItem | null>(null);
+  const [restoreReason, setRestoreReason] = useState<string>('');
+  const [restoringMeal, setRestoringMeal] = useState<boolean>(false);
+
   useEffect(() => {
     if (selectedStudentTray) {
       const existing = getDistinctKitchenRemark(selectedStudentTray).replace(/^\[Bếp đổi món\]\s*/i, '').trim();
@@ -395,6 +400,96 @@ export default function MealHeadcountPage() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success('Đã xuất file CSV báo cáo thống kê suất ăn.');
+  };
+
+  const handleExportDailyBoardCsv = () => {
+    if (!board) {
+      toast.error('Chưa có dữ liệu bảng suất ăn để xuất CSV.');
+      return;
+    }
+    const rows: (string | number)[][] = [
+      ['BẢNG TỔNG HỢP SUẤT ĂN BÁN TRÚ THEO NGÀY'],
+      ['Ngày', formatDateDDMMYYYY(selectedDate), 'Tổng đăng ký', board.totalInitialRegistered, 'Đã hủy', board.totalAutoCancelled, 'Thực nấu', board.totalActiveToCook],
+      [],
+      ['Lớp', 'Khối', 'Đăng ký', 'Đã hủy', 'Thực ăn', 'Tiêu chuẩn (Mặn)', 'Ăn chay', 'Đặc biệt'],
+      ...(board.classBreakdowns ?? []).map((cls) => [
+        formatClassLabel(cls.className, cls.classId),
+        cls.grade > 0 ? `Khối ${cls.grade}` : '—',
+        cls.initialRegistered,
+        cls.cancelledCount,
+        cls.actualCount,
+        cls.standardCount ?? 0,
+        cls.vegetarianCount ?? 0,
+        cls.specialDietCount ?? 0,
+      ]),
+    ];
+    const csvContent = '\uFEFF' + rows.map((r) => r.map(escapeCsvCell).join(',')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tong-hop-suat-an-ngay_${selectedDate}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Đã xuất file CSV tổng hợp ngày!');
+  };
+
+  const handleExportStudentsCsv = () => {
+    if (!board || filteredStudentMeals.length === 0) {
+      toast.error('Chưa có danh sách học sinh để xuất CSV.');
+      return;
+    }
+    const rows: (string | number)[][] = [
+      ['DANH SÁCH HỌC SINH NHẬN SUẤT ĂN NGÀY ' + formatDateDDMMYYYY(selectedDate)],
+      ['STT', 'Mã HS', 'Họ và tên', 'Lớp', 'Chế độ ăn', 'Trạng thái', 'Dị ứng / Ghi chú'],
+      ...filteredStudentMeals.map((item, idx) => [
+        idx + 1,
+        item.studentCode,
+        item.studentName,
+        formatClassLabel(item.className, item.classId),
+        MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn',
+        item.isActive ? 'Thực ăn' : 'Đã hủy',
+        item.isActive ? (item.studentAllergyNotes || item.remarks || '') : (item.cancellationReason || ''),
+      ]),
+    ];
+    const csvContent = '\uFEFF' + rows.map((r) => r.map(escapeCsvCell).join(',')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `danh-sach-nhan-suat_${selectedDate}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Đã xuất file CSV danh sách học sinh!');
+  };
+
+  const handleConfirmRestoreMeal = async () => {
+    if (!restoreTarget) return;
+    const trimmedReason = restoreReason.trim();
+    if (trimmedReason.length < 5 || trimmedReason.length > 250) {
+      toast.error('Lý do khôi phục suất ăn phải từ 5 đến 250 ký tự.');
+      return;
+    }
+    try {
+      setRestoringMeal(true);
+      await lunchApi.restoreMeal({
+        studentId: restoreTarget.studentId,
+        date: selectedDate,
+        reason: trimmedReason,
+      });
+      toast.success(`Đã khôi phục suất ăn cho ${restoreTarget.studentName}!`);
+      setRestoreTarget(null);
+      setRestoreReason('');
+      await fetchBoard(selectedDate);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.errors?.[0] || err?.response?.data?.message || 'Không thể khôi phục suất ăn.');
+    } finally {
+      setRestoringMeal(false);
+    }
   };
 
   const evaluateTrayConflicts = (studentItem: StudentMealOperationItem) => {
@@ -1515,6 +1610,15 @@ export default function MealHeadcountPage() {
                 <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', padding: '5px 12px', fontWeight: 700 }}>
                   {board?.classBreakdowns?.length || 0} lớp học • {board?.totalActiveToCook || 0} suất
                 </span>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={handleExportDailyBoardCsv}
+                  disabled={!board}
+                  style={{ borderRadius: 'var(--radius-full)', fontWeight: 700 }}
+                >
+                  <FileSpreadsheet size={14} /> Xuất CSV ngày
+                </button>
               </div>
             </div>
 
@@ -1639,7 +1743,7 @@ export default function MealHeadcountPage() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted-fg)' }}>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted-fg)' }}>
                         Chưa có dữ liệu phân bổ cho ngày này.
                       </td>
                     </tr>
@@ -1677,6 +1781,15 @@ export default function MealHeadcountPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={handleExportStudentsCsv}
+                disabled={!board || filteredStudentMeals.length === 0}
+                style={{ borderRadius: 'var(--radius-full)', fontWeight: 800 }}
+              >
+                <FileSpreadsheet size={14} /> Xuất CSV DS
+              </button>
               <button
                 type="button"
                 className={dietFilter === 'ALL' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
@@ -1912,6 +2025,27 @@ export default function MealHeadcountPage() {
                           >
                             <UtensilsCrossed size={12} color="var(--color-accent)" strokeWidth={2.5} />
                             Xem khay ăn
+                          </button>
+                        ) : board?.canManage && !board.isLocked ? (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            onClick={() => {
+                              setRestoreTarget(item);
+                              setRestoreReason('');
+                            }}
+                            style={{
+                              borderRadius: 'var(--radius-full)',
+                              border: '1.5px solid #059669',
+                              color: '#047857',
+                              background: '#ECFDF5',
+                              fontWeight: 800,
+                              fontSize: '11.5px',
+                              padding: '4px 10px',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Khôi phục suất
                           </button>
                         ) : (
                           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>
@@ -3790,6 +3924,45 @@ export default function MealHeadcountPage() {
               disabled={sendingWindowNotify}
             >
               {sendingWindowNotify ? 'Đang gửi...' : 'Gửi thông báo tới Phụ huynh'}
+            </button>
+          </div>
+        </div>
+      </GeometricModal>
+
+      {/* ===================================================================== */}
+      {/* MODAL KHÔI PHỤC SUẤT ĂN (BUG-LUN-02)                                  */}
+      {/* ===================================================================== */}
+      <GeometricModal
+        open={!!restoreTarget}
+        onClose={() => !restoringMeal && setRestoreTarget(null)}
+        title={`Khôi phục suất ăn: ${restoreTarget?.studentName ?? ''}`}
+        subtitle={`Ngày ${formatDateDDMMYYYY(selectedDate)}`}
+        badgeText={restoreTarget?.studentCode ?? ''}
+        badgeColor="mint"
+        icon={<CheckCircle2 size={22} color="var(--color-fg)" />}
+        iconBg="var(--color-quaternary)"
+        maxWidth="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+            Học sinh đang có trạng thái <strong>Đã hủy</strong>
+            {restoreTarget?.cancellationReason ? ` (${restoreTarget.cancellationReason})` : ''}. Vui lòng nhập lý do khôi phục suất ăn (5–250 ký tự):
+          </div>
+          <textarea
+            className="input"
+            rows={3}
+            maxLength={250}
+            placeholder="VD: Phụ huynh báo học sinh đi học lại, bếp còn suất dự phòng..."
+            value={restoreReason}
+            onChange={(e) => setRestoreReason(e.target.value)}
+            style={{ width: '100%', border: '2px solid var(--color-fg)' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button type="button" className="btn btn--secondary" onClick={() => setRestoreTarget(null)} disabled={restoringMeal}>
+              Hủy
+            </button>
+            <button type="button" className="btn btn--primary" onClick={handleConfirmRestoreMeal} disabled={restoringMeal}>
+              {restoringMeal ? 'Đang khôi phục...' : 'Xác nhận khôi phục'}
             </button>
           </div>
         </div>

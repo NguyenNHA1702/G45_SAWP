@@ -235,6 +235,9 @@ export default function AuditLogsPage() {
   const [searchInput, setSearchInput] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [entityFilter, setEntityFilter] = useState<string>('');
+  const [actionFilter, setActionFilter] = useState<string>('');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
   const [jumpPageInput, setJumpPageInput] = useState<string>('1');
   const [selectedLog, setSelectedLog] = useState<AuditLogDto | null>(null);
   const [showRawTech, setShowRawTech] = useState<boolean>(false);
@@ -247,6 +250,9 @@ export default function AuditLogsPage() {
         pageSize,
         search: searchQuery || undefined,
         entityName: entityFilter || undefined,
+        action: actionFilter || undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
       });
 
       if (res.success && res.data) {
@@ -263,7 +269,7 @@ export default function AuditLogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pageIndex, pageSize, searchQuery, entityFilter]);
+  }, [pageIndex, pageSize, searchQuery, entityFilter, actionFilter, fromDate, toDate]);
 
   useEffect(() => {
     loadLogs();
@@ -357,6 +363,53 @@ export default function AuditLogsPage() {
 
           <select
             className="select"
+            aria-label="Lọc theo hành động"
+            style={{ width: 'auto', minWidth: 180, flex: '0 1 220px' }}
+            value={actionFilter}
+            onChange={(e) => {
+              setPageIndex(1);
+              setActionFilter(e.target.value);
+            }}
+          >
+            <option value="">Tất cả hành động</option>
+            <option value="USER_">Quản trị tài khoản</option>
+            <option value="ATTENDANCE_">Điểm danh</option>
+            <option value="LEAVE_REQUEST_">Đơn xin nghỉ</option>
+            <option value="ADMINISTRATIVE_REQUEST_">Đơn hành chính</option>
+            <option value="LUNCH_">Bán trú</option>
+            <option value="STUDENT_">Học sinh</option>
+            <option value="CLASS_">Lớp học</option>
+            <option value="EMAIL_CHANGE">Đổi email</option>
+          </select>
+
+          <input
+            type="date"
+            className="input"
+            aria-label="Từ ngày"
+            title="Từ ngày"
+            style={{ width: 150 }}
+            value={fromDate}
+            onChange={(e) => {
+              setPageIndex(1);
+              setFromDate(e.target.value);
+            }}
+          />
+
+          <input
+            type="date"
+            className="input"
+            aria-label="Đến ngày"
+            title="Đến ngày"
+            style={{ width: 150 }}
+            value={toDate}
+            onChange={(e) => {
+              setPageIndex(1);
+              setToDate(e.target.value);
+            }}
+          />
+
+          <select
+            className="select"
             style={{ width: 'auto', minWidth: 140, flex: '0 1 160px' }}
             value={pageSize}
             onChange={(e) => {
@@ -391,7 +444,7 @@ export default function AuditLogsPage() {
                 Trang yêu cầu ({pageIndex}) vượt quá tổng số trang hiện có ({totalPages}).
               </p>
             )}
-            {(isOutOfRange || searchQuery || entityFilter) && (
+            {(isOutOfRange || searchQuery || entityFilter || actionFilter || fromDate || toDate) && (
               <button
                 type="button"
                 className="btn btn--secondary btn--sm"
@@ -399,6 +452,9 @@ export default function AuditLogsPage() {
                   setSearchInput('');
                   setSearchQuery('');
                   setEntityFilter('');
+                  setActionFilter('');
+                  setFromDate('');
+                  setToDate('');
                   setPageIndex(1);
                 }}
               >
@@ -614,6 +670,13 @@ export default function AuditLogsPage() {
                 <div>
                   <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700 }}>THỜI GIAN</div>
                   <strong>{formatViFullDateTime(selectedLog.timestamp)}</strong>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Code2 size={16} color="var(--color-accent)" />
+                <div>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700 }}>ĐỊA CHỈ IP</div>
+                  <strong>{selectedLog.ipAddress || '—'}</strong>
                 </div>
               </div>
             </div>

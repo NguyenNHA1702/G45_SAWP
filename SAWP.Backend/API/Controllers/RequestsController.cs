@@ -32,7 +32,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh nộp đơn xin chuyển lớp
     /// </summary>
     [HttpPost("class-transfer")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> SubmitClassTransfer(
         [FromBody] ClassTransferRequestDto request,
         CancellationToken cancellationToken)
@@ -49,7 +49,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh nộp đơn xin cấp giấy tờ / chứng nhận
     /// </summary>
     [HttpPost("document")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> SubmitDocument(
         [FromBody] DocumentIssuanceRequestDto request,
         CancellationToken cancellationToken)
@@ -66,7 +66,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh nộp loại đơn khác / kiến nghị
     /// </summary>
     [HttpPost("other")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> SubmitOtherRequest(
         [FromBody] OtherRequestDto request,
         CancellationToken cancellationToken)
@@ -83,7 +83,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh xem danh sách các đơn đã gửi của con
     /// </summary>
     [HttpGet("my-requests")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> GetMyRequests(
         [FromQuery] int? studentId,
         CancellationToken cancellationToken)
@@ -99,7 +99,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh xem danh sách các đơn đã gửi của con (phân trang)
     /// </summary>
     [HttpGet("my-requests/paged")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> GetMyRequestsPaged(
         [FromQuery] int? studentId,
         [FromQuery] string? requestType,
@@ -119,7 +119,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh nộp lại đơn sau khi bổ sung thông tin theo yêu cầu của Giáo vụ
     /// </summary>
     [HttpPut("{id:int}/resubmit")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> ResubmitRequest(
         int id,
         [FromBody] ResubmitRequestDto request,
@@ -137,7 +137,7 @@ public class RequestsController : ControllerBase
     /// Phụ huynh hủy yêu cầu hành chính (khi đơn còn ở trạng thái Chờ thẩm định)
     /// </summary>
     [HttpPost("{id:int}/cancel")]
-    [Authorize(Roles = "Parent,Admin")]
+    [Authorize(Roles = "Parent")]
     public async Task<IActionResult> CancelRequest(int id, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
@@ -184,7 +184,7 @@ public class RequestsController : ControllerBase
     /// Báo cáo thống kê đơn từ hành chính (UC-52)
     /// </summary>
     [HttpGet("statistics")]
-    [Authorize(Roles = "OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetStatistics(CancellationToken cancellationToken)
     {
         var result = await _workflowEngine.GetRequestStatisticsAsync(cancellationToken);
@@ -195,7 +195,7 @@ public class RequestsController : ControllerBase
     /// Tải lên tệp/ảnh minh chứng đính kèm (chỉ chấp nhận ảnh PNG/JPG hoặc PDF tối đa 10MB - BR-50)
     /// </summary>
     [HttpPost("upload-attachment")]
-    [Authorize(Roles = "Parent,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Parent,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> UploadAttachment(
         IFormFile file,
         [FromServices] IFileStorageService fileStorageService,
@@ -491,7 +491,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ lấy danh sách đơn hành chính cần thẩm định
     /// </summary>
     [HttpGet("office")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> GetOfficeRequests(
         [FromQuery] string? requestType,
         [FromQuery] string? status,
@@ -505,7 +505,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ lấy danh sách đơn hành chính (phân trang + thống kê)
     /// </summary>
     [HttpGet("office/paged")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> GetOfficeRequestsPaged(
         [FromQuery] string? requestType,
         [FromQuery] string? status,
@@ -522,7 +522,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ yêu cầu phụ huynh bổ sung/sửa đổi hồ sơ
     /// </summary>
     [HttpPost("{id:int}/request-amendment")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> RequestAmendment(
         int id,
         [FromBody] StaffAmendmentDto request,
@@ -540,7 +540,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ thẩm định sức chứa và gửi đề xuất chuyển lớp lên BGH
     /// </summary>
     [HttpPost("{id:int}/endorse-transfer")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> EndorseTransfer(
         int id,
         [FromBody] StaffEndorseTransferDto request,
@@ -558,7 +558,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ chuẩn bị dự thảo văn bản và gửi lên BGH phê duyệt
     /// </summary>
     [HttpPost("{id:int}/endorse-document")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> EndorseDocument(
         int id,
         [FromBody] StaffEndorseDocumentDto request,
@@ -576,7 +576,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ trực tiếp phát hành các giấy tờ theo thẩm quyền (BR-41)
     /// </summary>
     [HttpPost("{id:int}/direct-issue")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> DirectIssue(
         int id,
         [FromBody] StaffDirectIssueDocumentDto request,
@@ -594,7 +594,7 @@ public class RequestsController : ControllerBase
     /// Giáo vụ từ chối tiếp nhận đơn không hợp lệ hoặc bị lỗi (BUG9)
     /// </summary>
     [HttpPost("{id:int}/staff-reject")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> StaffReject(
         int id,
         [FromBody] StaffRejectDto request,
@@ -612,15 +612,16 @@ public class RequestsController : ControllerBase
     /// Giáo vụ thực thi bấm "Áp dụng chuyển lớp" sau khi BGH đã phê duyệt
     /// </summary>
     [HttpPost("{id:int}/execute-transfer")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> ExecuteClassTransfer(
         int id,
-        CancellationToken cancellationToken)
+        [FromQuery] bool confirmEarly = false,
+        CancellationToken cancellationToken = default)
     {
         var userId = User.GetUserId();
         if (!userId.HasValue) return Unauthorized();
 
-        var result = await _workflowEngine.ExecuteClassTransferAsync(id, userId.Value, cancellationToken);
+        var result = await _workflowEngine.ExecuteClassTransferAsync(id, userId.Value, confirmEarly, cancellationToken);
         if (!result.Success) return BadRequest(result);
         return Ok(result);
     }
@@ -633,7 +634,7 @@ public class RequestsController : ControllerBase
     /// Ban Giám Hiệu lấy danh sách các đề xuất chờ phê duyệt
     /// </summary>
     [HttpGet("board")]
-    [Authorize(Roles = "SchoolBoard,Admin")]
+    [Authorize(Roles = "SchoolBoard")]
     public async Task<IActionResult> GetBoardRequests(
         [FromQuery] string? requestType,
         [FromQuery] string? status,
@@ -647,7 +648,7 @@ public class RequestsController : ControllerBase
     /// Ban Giám Hiệu lấy danh sách các đề xuất (phân trang + thống kê)
     /// </summary>
     [HttpGet("board/paged")]
-    [Authorize(Roles = "SchoolBoard,Admin")]
+    [Authorize(Roles = "SchoolBoard")]
     public async Task<IActionResult> GetBoardRequestsPaged(
         [FromQuery] string? requestType,
         [FromQuery] string? status,
@@ -664,7 +665,7 @@ public class RequestsController : ControllerBase
     /// Ban Giám Hiệu ra quyết định phê duyệt hoặc từ chối đề xuất
     /// </summary>
     [HttpPost("{id:int}/board-decision")]
-    [Authorize(Roles = "SchoolBoard,Admin")]
+    [Authorize(Roles = "SchoolBoard")]
     public async Task<IActionResult> ProcessBoardDecision(
         int id,
         [FromBody] BoardDecisionDto request,

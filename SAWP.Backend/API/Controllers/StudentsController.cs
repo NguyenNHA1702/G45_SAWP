@@ -22,7 +22,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpPost]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateStudent([FromBody] CreateStudentDto request, CancellationToken cancellationToken)
@@ -41,7 +41,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpGet]
-    [Authorize]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard")]
     [ProducesResponseType(typeof(ApiResponse<PaginatedResult<StudentProfileDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetStudents([FromQuery] StudentFilterDto filter, CancellationToken cancellationToken)
     {
@@ -50,14 +50,19 @@ public class StudentsController : BaseApiController
     }
 
     [HttpGet("{id}")]
-    [Authorize]
+    [Authorize(Roles = "Parent,Teacher,OfficeStaff,SchoolBoard")]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetStudentProfile(int id, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();
-        var userRole = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+        var roles = User.GetRoles();
+        var userRole = roles.Contains(Core.Enums.UserRoles.OfficeStaff) ? nameof(Core.Enums.UserRoles.OfficeStaff)
+            : roles.Contains(Core.Enums.UserRoles.SchoolBoard) ? nameof(Core.Enums.UserRoles.SchoolBoard)
+            : roles.Contains(Core.Enums.UserRoles.Teacher) ? nameof(Core.Enums.UserRoles.Teacher)
+            : roles.Contains(Core.Enums.UserRoles.Parent) ? nameof(Core.Enums.UserRoles.Parent)
+            : User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
 
         var result = await _studentService.GetStudentProfileAsync(id, userId, userRole, cancellationToken);
         if (!result.Success)
@@ -73,7 +78,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status404NotFound)]
@@ -93,7 +98,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpPost("{id}/activate")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ActivateStudent(int id, CancellationToken cancellationToken)
@@ -103,7 +108,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpGet("check-duplicate")]
-    [Authorize]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<DuplicateCheckResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<DuplicateCheckResultDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CheckDuplicate([FromQuery] string studentCode, CancellationToken cancellationToken)
@@ -113,7 +118,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpPost("resolve-duplicate")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<StudentProfileDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResolveDuplicate([FromBody] ResolveDuplicateStudentDto request, CancellationToken cancellationToken)
@@ -127,7 +132,7 @@ public class StudentsController : BaseApiController
     private const long MaxImportFileBytes = 5 * 1024 * 1024;
 
     [HttpPost("import/parse")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [RequestSizeLimit(MaxImportFileBytes)]
     [ProducesResponseType(typeof(ApiResponse<List<ImportStudentRowDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<List<ImportStudentRowDto>>), StatusCodes.Status400BadRequest)]
@@ -167,7 +172,7 @@ public class StudentsController : BaseApiController
     }
 
     [HttpPost("import/confirm")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     [ProducesResponseType(typeof(ApiResponse<ImportStudentsResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ImportStudentsResultDto>), StatusCodes.Status400BadRequest)]
@@ -181,27 +186,59 @@ public class StudentsController : BaseApiController
 
     /// <summary>Guardian records by name, email, identity card number or phone, for linking (UC-10 step 2).</summary>
     [HttpGet("guardian-records")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> SearchGuardianRecords([FromQuery] string? search, CancellationToken cancellationToken)
         => ToActionResult(await _studentService.SearchGuardianRecordsAsync(search, cancellationToken));
 
     /// <summary>Links an existing guardian record or a new one (reused on an exact identity card / email match).</summary>
     [HttpPost("{id:int}/guardians")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> LinkGuardian(int id, [FromBody] LinkGuardianRequestDto request, CancellationToken cancellationToken)
         => ToActionResult(await _studentService.LinkGuardianAsync(id, request, User.GetUserId(), cancellationToken));
 
     /// <summary>Changes the relationship type or the primary contact of a link.</summary>
     [HttpPut("{id:int}/guardians/{guardianId:int}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> UpdateGuardianLink(int id, int guardianId, [FromBody] UpdateGuardianLinkRequestDto request, CancellationToken cancellationToken)
         => ToActionResult(await _studentService.UpdateGuardianLinkAsync(id, guardianId, request, User.GetUserId(), cancellationToken));
 
     /// <summary>Removes a link (A1); the guardian record stays. The primary guardian of an active student cannot be removed (E1).</summary>
     [HttpDelete("{id:int}/guardians/{guardianId:int}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> UnlinkGuardian(int id, int guardianId, CancellationToken cancellationToken)
         => ToActionResult(await _studentService.UnlinkGuardianAsync(id, guardianId, User.GetUserId(), cancellationToken));
+
+    /// <summary>Updates a guardian record's contact details (UC-11).</summary>
+    [HttpPut("guardians/{guardianId:int}")]
+    [Authorize(Roles = "OfficeStaff")]
+    public async Task<IActionResult> UpdateGuardianContact(int guardianId, [FromBody] UpdateGuardianContactDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _studentService.UpdateGuardianContactAsync(guardianId, request, User.GetUserId(), cancellationToken));
+
+    /// <summary>Aggregated student history timeline (GAP-02, UC-12).</summary>
+    [HttpGet("{id:int}/history")]
+    [Authorize(Roles = "Parent,Teacher,OfficeStaff,SchoolBoard")]
+    public async Task<IActionResult> GetStudentHistory(int id, CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        var roles = User.GetRoles();
+        var userRole = roles.Contains(Core.Enums.UserRoles.OfficeStaff) ? nameof(Core.Enums.UserRoles.OfficeStaff)
+            : roles.Contains(Core.Enums.UserRoles.SchoolBoard) ? nameof(Core.Enums.UserRoles.SchoolBoard)
+            : roles.Contains(Core.Enums.UserRoles.Teacher) ? nameof(Core.Enums.UserRoles.Teacher)
+            : roles.Contains(Core.Enums.UserRoles.Parent) ? nameof(Core.Enums.UserRoles.Parent)
+            : User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+
+        var result = await _studentService.GetStudentHistoryAsync(id, userId, userRole, cancellationToken);
+        if (!result.Success)
+        {
+            if (result.Code == SystemMessages.MSG10.Code)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, result);
+            }
+            return NotFound(result);
+        }
+
+        return Ok(result);
+    }
 
     #endregion
 

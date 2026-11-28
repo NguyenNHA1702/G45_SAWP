@@ -26,7 +26,7 @@ public class AttendanceController : BaseApiController
     /// </summary>
     [HttpGet("my-classes")]
     [HttpGet("classes")]
-    [Authorize(Roles = "Teacher,OfficeStaff,Admin,SchoolBoard")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetMyClasses(
         [FromQuery] DateTime? date,
         [FromQuery] AttendanceSession session = AttendanceSession.Morning,
@@ -43,7 +43,7 @@ public class AttendanceController : BaseApiController
     /// </summary>
     [HttpGet("classes/{classId}/sheet")]
     [HttpGet("classes/{classId}")]
-    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetAttendanceSheet(
         int classId,
         [FromQuery] DateTime? date,
@@ -147,7 +147,7 @@ public class AttendanceController : BaseApiController
     /// API-5: Báo cáo chuyên cần tổng hợp của lớp
     /// </summary>
     [HttpGet("classes/{classId}/summary")]
-    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetClassSummary(
         int classId, 
         [FromQuery] DateTime? from, 
@@ -166,7 +166,7 @@ public class AttendanceController : BaseApiController
     /// API-5b: Ma trận điểm danh theo ngày của cả lớp (tối đa 31 ngày)
     /// </summary>
     [HttpGet("classes/{classId}/matrix")]
-    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetClassMatrix(
         int classId,
         [FromQuery] DateTime? from,
@@ -185,7 +185,7 @@ public class AttendanceController : BaseApiController
     /// API-6: Lịch sử điểm danh chi tiết của một học sinh
     /// </summary>
     [HttpGet("students/{studentId}/history")]
-    [Authorize(Roles = "Parent,Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Parent,Teacher,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetStudentHistory(
         int studentId, 
         [FromQuery] DateTime? from, 
@@ -219,7 +219,7 @@ public class AttendanceController : BaseApiController
     /// Giáo vụ/Admin xem danh sách yêu cầu mở khóa điểm danh lại từ Giáo viên
     /// </summary>
     [HttpGet("reattendance-requests")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> GetReattendanceRequests([FromQuery] string? status = null, CancellationToken ct = default)
     {
         var result = await _attendanceService.GetReattendanceRequestsAsync(status, ct);
@@ -230,7 +230,7 @@ public class AttendanceController : BaseApiController
     /// Giáo vụ/Admin mở khóa bảng điểm danh cả lớp cho Giáo viên chỉnh sửa lại
     /// </summary>
     [HttpPost("classes/{classId}/unlock")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> UnlockAttendanceSheet(
         int classId,
         [FromBody] UnlockAttendanceSheetDto dto,
@@ -245,7 +245,7 @@ public class AttendanceController : BaseApiController
     /// Giáo vụ/Admin khóa lại bảng điểm danh đang mở khóa
     /// </summary>
     [HttpPost("classes/{classId}/lock")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> LockAttendanceSheet(
         int classId,
         [FromBody] LockAttendanceSheetDto dto,
@@ -260,7 +260,7 @@ public class AttendanceController : BaseApiController
     /// Giáo vụ/Admin từ chối yêu cầu mở khóa điểm danh lại
     /// </summary>
     [HttpPost("reattendance-requests/{requestId:int}/reject")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     public async Task<IActionResult> RejectReattendanceRequest(
         int requestId,
         [FromBody] RejectReattendanceRequestDto dto,

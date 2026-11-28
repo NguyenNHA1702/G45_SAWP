@@ -703,7 +703,7 @@ export default function AdministrativeRequestsPage() {
                           <History size={13} /> Lịch sử
                         </button>
 
-                        {req.status === 'Submitted' && !req.requiresAmendment && (
+                        {(req.status === 'Submitted' || req.status === 'NeedMoreInfo') && (
                           <button
                             type="button"
                             onClick={() => handleCancelRequest(req)}
@@ -727,7 +727,7 @@ export default function AdministrativeRequestsPage() {
                           </button>
                         )}
 
-                        {req.requiresAmendment ? (
+                        {req.requiresAmendment || req.status === 'NeedMoreInfo' ? (
                           <span
                             style={{
                               backgroundColor: '#FEF3C7',
@@ -762,7 +762,7 @@ export default function AdministrativeRequestsPage() {
                           >
                             <Clock size={14} /> Chờ giáo vụ tiếp nhận
                           </span>
-                        ) : req.status === 'UnderReview' || req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? (
+                        ) : req.status === 'UnderReview' || req.status === 'ReturnedToStaff' ? (
                           <span
                             style={{
                               backgroundColor: '#F3E8FF',

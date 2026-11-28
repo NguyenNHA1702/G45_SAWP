@@ -123,7 +123,7 @@ public class EContactBookService : IEContactBookService
             .Select(ur => ur.Role.Name)
             .ToListAsync(cancellationToken);
 
-        if (roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard"))
+        if (roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard"))
         {
             return true;
         }
@@ -150,7 +150,7 @@ public class EContactBookService : IEContactBookService
             .Select(ur => ur.Role.Name)
             .ToListAsync(cancellationToken);
 
-        if (roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard"))
+        if (roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard"))
         {
             return true;
         }
@@ -330,7 +330,7 @@ public class EContactBookService : IEContactBookService
             CreatedAt = DateTime.UtcNow
         };
 
-        var allowedExts = new[] { ".jpg", ".jpeg", ".png", ".pdf" };
+        var allowedExts = new[] { ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx", ".xls", ".xlsx" };
 
         var totalAttachmentCount = (request.Attachments?.Count ?? 0)
             + (request.AttachmentUrls?.Count(u => !string.IsNullOrWhiteSpace(u)) ?? 0);
@@ -546,7 +546,7 @@ public class EContactBookService : IEContactBookService
         }
 
         var staff = await _context.StaffProfiles.FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
-        if (staff == null || (post.Class.HomeroomTeacherId != staff.Id && post.AuthorUserId != teacherUserId))
+        if (staff == null || post.Class.HomeroomTeacherId != staff.Id)
         {
             return ApiResponse<ClassPostDto>.Fail(SystemMessages.MSG20);
         }
@@ -636,7 +636,7 @@ public class EContactBookService : IEContactBookService
         }
 
         var staff = await _context.StaffProfiles.FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
-        if (staff == null || (post.Class.HomeroomTeacherId != staff.Id && post.AuthorUserId != teacherUserId))
+        if (staff == null || post.Class.HomeroomTeacherId != staff.Id)
         {
             return ApiResponse<bool>.Fail(SystemMessages.MSG20);
         }
@@ -810,7 +810,14 @@ public class EContactBookService : IEContactBookService
         var existing = await _context.PostReactions.FirstOrDefaultAsync(r => r.PostId == postId && r.UserId == userId, cancellationToken);
         if (existing != null)
         {
-            _context.PostReactions.Remove(existing);
+            if (string.Equals(existing.ReactionType, normalizedReaction, StringComparison.OrdinalIgnoreCase))
+            {
+                _context.PostReactions.Remove(existing);
+            }
+            else
+            {
+                existing.ReactionType = normalizedReaction;
+            }
         }
         else
         {
@@ -844,7 +851,7 @@ public class EContactBookService : IEContactBookService
             .Select(ur => ur.Role.Name)
             .ToListAsync(cancellationToken);
 
-        bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
+        bool isPrivileged = roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
         if (!isPrivileged)
         {
             var staff = await _context.StaffProfiles.AsNoTracking().FirstOrDefaultAsync(sp => sp.UserId == teacherUserId, cancellationToken);
@@ -897,7 +904,7 @@ public class EContactBookService : IEContactBookService
             .Select(ur => ur.Role.Name)
             .ToListAsync(cancellationToken);
 
-        bool isPrivileged = roleNames.Contains("Admin") || roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
+        bool isPrivileged = roleNames.Contains("OfficeStaff") || roleNames.Contains("SchoolBoard");
 
         if (!isPrivileged)
         {
@@ -1013,9 +1020,14 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG20);
         }
 
-        // BR-61: Check existing evaluation for this week
-        var existing = await _context.StudentEvaluations.FirstOrDefaultAsync(e =>
-            e.StudentId == request.StudentId && e.WeekNumber == request.WeekNumber, cancellationToken);
+        // BR-61 (BUG-CB-04): Check existing evaluation for this week scoped by SchoolYearId
+        var existing = await _context.StudentEvaluations
+            .Include(e => e.Class)
+            .FirstOrDefaultAsync(e =>
+                e.StudentId == request.StudentId
+                && e.WeekNumber == request.WeekNumber
+                && ((e.SchoolYearId ?? e.Class.SchoolYearId) == targetClass.SchoolYearId),
+                cancellationToken);
 
         if (existing != null)
         {
@@ -1031,6 +1043,7 @@ public class EContactBookService : IEContactBookService
                 return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG09);
             }
 
+            existing.SchoolYearId ??= targetClass.SchoolYearId;
             existing.Rating = rating;
             existing.BadgesJson = JsonSerializer.Serialize(request.Badges ?? new List<string>());
             existing.TeacherNote = request.TeacherNote.Trim();
@@ -1085,6 +1098,7 @@ public class EContactBookService : IEContactBookService
         {
             StudentId = request.StudentId,
             ClassId = request.ClassId,
+            SchoolYearId = targetClass.SchoolYearId,
             TeacherUserId = teacherUserId,
             EvaluationDate = request.EvaluationDate,
             WeekNumber = request.WeekNumber,
@@ -1156,10 +1170,18 @@ public class EContactBookService : IEContactBookService
             return ApiResponse<StudentEvaluationDto>.Fail(SystemMessages.MSG09);
         }
 
+        var cleanFeedback = request.ParentFeedback?.Trim();
+        if (!string.IsNullOrEmpty(cleanFeedback) && cleanFeedback.Length > 500)
+        {
+            return ApiResponse<StudentEvaluationDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Phản hồi của phụ huynh không được vượt quá 500 ký tự." });
+        }
+
         eval.IsAcknowledged = true;
         eval.AcknowledgedAt = DateTime.UtcNow;
         eval.AcknowledgedByGuardianId = guardian.Id;
-        eval.ParentFeedback = request.ParentFeedback?.Trim();
+        eval.ParentFeedback = string.IsNullOrEmpty(cleanFeedback) ? null : cleanFeedback;
         eval.UpdatedAt = DateTime.UtcNow;
 
         // Thông báo lại cho GVCN

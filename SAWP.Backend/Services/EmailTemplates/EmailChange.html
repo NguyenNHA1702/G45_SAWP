@@ -1,0 +1,9 @@
+Subject: SAWP - Xác nhận thay đổi địa chỉ email
+
+<!-- Email change confirmation link (BR-69, UC-11, UC-53). Values: FullName, OldEmail, NewEmail, Link, Hours. -->
+<p>Xin chào {{FullName}},</p>
+<p>Nhà trường đã tiếp nhận yêu cầu thay đổi địa chỉ email đăng nhập hệ thống SAWP của bạn từ <b>{{OldEmail}}</b> sang <b>{{NewEmail}}</b>.</p>
+<p>Vui lòng mở đường liên kết dưới đây để xác nhận địa chỉ email mới này. Địa chỉ email đăng nhập cũ vẫn tiếp tục hoạt động cho đến khi bạn xác nhận.</p>
+<p><a href="{{Link}}" style="display:inline-block;padding:10px 18px;background:#6d28d9;color:#ffffff;text-decoration:none;border-radius:6px">Xác nhận đổi email</a></p>
+<p>Nếu nút không hoạt động, hãy sao chép đường liên kết sau vào trình duyệt:<br>{{Link}}</p>
+<p style="color:#555555">Đường liên kết chỉ dùng được một lần và hết hạn sau {{Hours}} giờ.</p>

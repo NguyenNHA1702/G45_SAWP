@@ -39,6 +39,7 @@ public class ClassImportStudentRowDto
     public string? FullName { get; set; }
 
     public string ClassName { get; set; } = string.Empty;
+    public bool RequiresAgeException { get; set; }
     public bool IsValid { get; set; } = true;
     public List<string> Errors { get; set; } = new();
 }
@@ -47,6 +48,7 @@ public class ClassImportStudentRowDto
 public class ClassImportRowsDto
 {
     public string Mode { get; set; } = ClassImportModes.Merge;
+    public bool AllowAgeException { get; set; }
     public List<ClassImportClassRowDto> Classes { get; set; } = new();
     public List<ClassImportStudentRowDto> Students { get; set; } = new();
 }

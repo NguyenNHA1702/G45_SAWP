@@ -151,6 +151,7 @@ public class RequestHistoryItemDto
     public string Action { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string? PerformedBy { get; set; }
+    public string? PerformedByRole { get; set; }
     public RequestStatus Status { get; set; }
 }
 

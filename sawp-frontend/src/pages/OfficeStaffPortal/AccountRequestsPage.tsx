@@ -1,23 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
-import { FilePlus2, RefreshCw, Search, Send, Trash2, UserCheck } from 'lucide-react';
+import { FilePlus2, Mail, RefreshCw, Search, Send, Trash2, UserCheck } from 'lucide-react';
 import { accountRequestApi } from '../../services/implementations/accountRequestApi';
 import { PaginationBar } from '../../components/common/PaginationBar';
 import { asApiError } from '../../utils/apiError';
 import { formatViDateTime, formatViDate, todayIso } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import {
+  EMAIL_CHANGE_STATUS,
   ITEM_STATUS,
   REASON_LABEL,
   REQUEST_STATUS,
   type AccountRequestDto,
   type AccountRequestReason,
   type AccountRequestRowCheckDto,
+  type EmailChangeRequestDto,
+  type GuardianWithAccountDto,
   type GuardianWithoutAccountDto,
 } from '../../types/accountRequest.types';
 
-type Tab = 'guardians' | 'form' | 'mine';
+type Tab = 'guardians' | 'form' | 'mine' | 'email-change';
 
 interface FormState {
   draftId?: number;
@@ -63,6 +66,37 @@ export default function AccountRequestsPage() {
   const [minePage, setMinePage] = useState(1);
   const [detail, setDetail] = useState<AccountRequestDto | null>(null);
   const [rowSel, setRowSel] = useState<number[]>([]);
+
+  // Email change request tab (BR-69, UC-11)
+  const [ecSearch, setEcSearch] = useState('');
+  const [ecGuardians, setEcGuardians] = useState<GuardianWithAccountDto[]>([]);
+  const [ecGuardiansTotal, setEcGuardiansTotal] = useState(0);
+  const [ecGuardiansPage, setEcGuardiansPage] = useState(1);
+  const [ecRequests, setEcRequests] = useState<EmailChangeRequestDto[]>([]);
+  const [ecReqTotal, setEcReqTotal] = useState(0);
+  const [ecReqPage, setEcReqPage] = useState(1);
+  const [ecTarget, setEcTarget] = useState<GuardianWithAccountDto | null>(null);
+  const [ecNewEmail, setEcNewEmail] = useState('');
+  const [ecReason, setEcReason] = useState('');
+
+  const loadEmailChangeData = useCallback(async (q?: string, gPage = 1, rPage = 1) => {
+    try {
+      const [gRes, rRes] = await Promise.all([
+        accountRequestApi.guardiansWithAccountPaged(q, gPage, 15),
+        accountRequestApi.myEmailChangePaged(rPage, 15),
+      ]);
+      if (gRes.data) {
+        setEcGuardians(gRes.data.items);
+        setEcGuardiansTotal(gRes.data.totalCount);
+      }
+      if (rRes.data) {
+        setEcRequests(rRes.data.items);
+        setEcReqTotal(rRes.data.totalCount);
+      }
+    } catch (err) {
+      showError(err);
+    }
+  }, []);
 
   const loadGuardians = useCallback(async (q?: string, page = 1) => {
     try {
@@ -120,10 +154,13 @@ export default function AccountRequestsPage() {
       void startForm(ids, params.get('source') === 'Import' ? 'Import' : 'Manual', params.get('ref') ?? undefined);
     } else if (id > 0) {
       void loadMine().then(() => openDetail(id));
+    } else if (params.get('tab') === 'email-change') {
+      setTab('email-change');
+      void loadEmailChangeData();
     } else {
       void loadGuardians();
     }
-  }, [params, startForm, openDetail, loadMine, loadGuardians]);
+  }, [params, startForm, openDetail, loadMine, loadGuardians, loadEmailChangeData]);
 
   const save = async (submit: boolean) => {
     if (!form.title.trim()) {
@@ -232,7 +269,7 @@ export default function AccountRequestsPage() {
         </p>
       </header>
 
-      <div style={{ display: 'flex', gap: 8 }} role="tablist">
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} role="tablist">
         <button role="tab" aria-selected={tab === 'guardians'} className={`btn btn--sm ${tab === 'guardians' ? 'btn--primary' : 'btn--secondary'}`}
           onClick={() => { setTab('guardians'); void loadGuardians(search); }}>
           <UserCheck size={15} /> Phụ huynh chưa có tài khoản
@@ -244,6 +281,10 @@ export default function AccountRequestsPage() {
         <button role="tab" aria-selected={tab === 'mine'} className={`btn btn--sm ${tab === 'mine' ? 'btn--primary' : 'btn--secondary'}`}
           onClick={() => { setTab('mine'); setDetail(null); void loadMine(); }}>
           <Send size={15} /> Yêu cầu của tôi
+        </button>
+        <button role="tab" aria-selected={tab === 'email-change'} className={`btn btn--sm ${tab === 'email-change' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => { setTab('email-change'); void loadEmailChangeData(ecSearch, 1, 1); }}>
+          <Mail size={15} /> Yêu cầu đổi email Phụ huynh
         </button>
       </div>
 
@@ -442,6 +483,187 @@ export default function AccountRequestsPage() {
             )}
           </div>
         </section>
+      )}
+
+      {tab === 'email-change' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <h2 style={{ margin: 0, fontSize: 'var(--fs-md)' }}>Phụ huynh đã có tài khoản</h2>
+              <form
+                style={{ display: 'flex', gap: 8 }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setEcGuardiansPage(1);
+                  void loadEmailChangeData(ecSearch, 1, ecReqPage);
+                }}
+              >
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted-fg)' }} />
+                  <input
+                    className="input"
+                    style={{ paddingLeft: 30, minWidth: 240 }}
+                    placeholder="Tìm phụ huynh, email, học sinh..."
+                    value={ecSearch}
+                    onChange={(e) => setEcSearch(e.target.value)}
+                  />
+                </div>
+                <button type="submit" className="btn btn--secondary btn--sm">Tìm</button>
+              </form>
+            </div>
+
+            {ecTarget && (
+              <form
+                className="card"
+                style={{ background: '#FFFBEB', border: '2px solid var(--color-fg)', display: 'flex', flexDirection: 'column', gap: 10 }}
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!ecNewEmail.trim() || ecReason.trim().length < 5) {
+                    toast.error('Vui lòng nhập email mới hợp lệ và lý do từ 5 ký tự trở lên.');
+                    return;
+                  }
+                  setBusy(true);
+                  try {
+                    const res = await accountRequestApi.createEmailChange({
+                      guardianId: ecTarget.guardianId,
+                      newEmail: ecNewEmail.trim(),
+                      reason: ecReason.trim(),
+                    });
+                    toast.success(res.message || 'Đã gửi yêu cầu đổi email tới Quản trị viên.');
+                    setEcTarget(null);
+                    setEcNewEmail('');
+                    setEcReason('');
+                    void loadEmailChangeData(ecSearch, ecGuardiansPage, 1);
+                  } catch (err) {
+                    showError(err);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                <strong>Đề xuất đổi email cho: {ecTarget.fullName} (Hiện tại: {ecTarget.currentEmail})</strong>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <input
+                    type="email"
+                    className="input"
+                    style={{ flex: '1 1 220px' }}
+                    placeholder="Địa chỉ email mới *"
+                    value={ecNewEmail}
+                    onChange={(e) => setEcNewEmail(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ flex: '2 1 280px' }}
+                    placeholder="Lý do đổi email (vd: Phụ huynh mất quyền truy cập email cũ) *"
+                    value={ecReason}
+                    onChange={(e) => setEcReason(e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn--secondary btn--sm" onClick={() => setEcTarget(null)}>Hủy</button>
+                  <button type="submit" className="btn btn--primary btn--sm" disabled={busy}>Gửi Admin duyệt</button>
+                </div>
+              </form>
+            )}
+
+            <div className="data-table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Phụ huynh</th><th>Email hiện tại</th><th>Học sinh</th><th>Trạng thái TK</th><th /></tr>
+                </thead>
+                <tbody>
+                  {ecGuardians.map((g) => (
+                    <tr key={g.guardianId}>
+                      <td><strong>{g.fullName}</strong></td>
+                      <td>{g.currentEmail}</td>
+                      <td>{g.students.join(', ')}</td>
+                      <td>{g.accountStatus}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          disabled={g.hasPendingEmailChange}
+                          onClick={() => {
+                            setEcTarget(g);
+                            setEcNewEmail('');
+                            setEcReason('');
+                          }}
+                        >
+                          <Mail size={14} /> {g.hasPendingEmailChange ? 'Đang chờ duyệt' : 'Đề xuất đổi email'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {ecGuardians.length === 0 && <tr><td colSpan={5}>Không có phụ huynh đã cấp tài khoản phù hợp.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar
+              pageIndex={ecGuardiansPage}
+              pageSize={15}
+              totalCount={ecGuardiansTotal}
+              onPageChange={(p) => {
+                setEcGuardiansPage(p);
+                void loadEmailChangeData(ecSearch, p, ecReqPage);
+              }}
+              itemLabel="phụ huynh"
+            />
+          </section>
+
+          <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 'var(--fs-md)' }}>Yêu cầu đổi email tôi đã gửi</h2>
+            <div className="data-table-wrapper">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Phụ huynh</th><th>Email cũ → Email mới</th><th>Lý do</th><th>Trạng thái</th><th /></tr>
+                </thead>
+                <tbody>
+                  {ecRequests.map((r) => (
+                    <tr key={r.id}>
+                      <td><strong>{r.targetFullName}</strong></td>
+                      <td>{r.oldEmail} → <strong>{r.newEmail}</strong></td>
+                      <td>{r.reason}</td>
+                      <td>
+                        <span className={EMAIL_CHANGE_STATUS[r.status].badge}>{EMAIL_CHANGE_STATUS[r.status].label}</span>
+                        {r.reviewNote && <div style={{ fontSize: 'var(--fs-xs)', marginTop: 2 }}>{r.reviewNote}</div>}
+                      </td>
+                      <td>
+                        {(r.status === 'Approved' || r.status === 'EmailFailed') && (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            onClick={async () => {
+                              try {
+                                const res = await accountRequestApi.resendEmailChangeLink(r.id);
+                                toast.success(res.message || 'Đã gửi lại liên kết xác nhận.');
+                              } catch (err) {
+                                showError(err);
+                              }
+                            }}
+                          >
+                            <RefreshCw size={14} /> Gửi lại link
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {ecRequests.length === 0 && <tr><td colSpan={5}>Chưa có yêu cầu đổi email nào.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar
+              pageIndex={ecReqPage}
+              pageSize={15}
+              totalCount={ecReqTotal}
+              onPageChange={(p) => {
+                setEcReqPage(p);
+                void loadEmailChangeData(ecSearch, ecGuardiansPage, p);
+              }}
+              itemLabel="yêu cầu"
+            />
+          </section>
+        </div>
       )}
     </div>
   );

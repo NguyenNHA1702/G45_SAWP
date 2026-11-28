@@ -3,6 +3,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import LoginPage from './pages/Auth/LoginPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 import SetPasswordPage from './pages/Auth/SetPasswordPage';
+import ConfirmEmailChangePage from './pages/Auth/ConfirmEmailChangePage';
 import ChangeTemporaryPasswordPage from './pages/Auth/ChangeTemporaryPasswordPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import AttendancePage from './pages/TeacherPortal/AttendancePage';
@@ -27,6 +28,7 @@ import UsersManagementPage from './pages/AdminPortal/UsersManagementPage';
 import StaffListPage from './pages/AdminPortal/StaffListPage';
 import AccountRequestReviewPage from './pages/AdminPortal/AccountRequestReviewPage';
 import AccountRequestsPage from './pages/OfficeStaffPortal/AccountRequestsPage';
+import BroadcastNotificationsPage from './pages/Shared/BroadcastNotificationsPage';
 import SystemConfigPage from './pages/AdminPortal/SystemConfigPage';
 import { MainLayout } from './layouts/MainLayout';
 import { clearAuthSession, getAuthUser, TOKEN_KEY } from './services/apiClient';
@@ -125,6 +127,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<SetPasswordPage />} />
         <Route path="/activate" element={<SetPasswordPage />} />
+        <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
         <Route
           path="/change-password"
           element={
@@ -146,7 +149,7 @@ export default function App() {
           <Route
             path="/teacher/attendance"
             element={
-              <RequireRole roles={['Teacher', 'OfficeStaff', 'SchoolBoard', 'Admin']}>
+              <RequireRole roles={['Teacher', 'OfficeStaff', 'SchoolBoard']}>
                 <AttendancePage />
               </RequireRole>
             }
@@ -154,7 +157,7 @@ export default function App() {
           <Route
             path="/teacher/leave-requests"
             element={
-              <RequireRole roles={['Teacher', 'SchoolBoard', 'Admin']}>
+              <RequireRole roles={['Teacher', 'SchoolBoard']}>
                 <LeaveApprovalPage />
               </RequireRole>
             }
@@ -170,7 +173,7 @@ export default function App() {
           <Route
             path="/parent/attendance"
             element={
-              <RequireRole roles={['Parent', 'Admin']}>
+              <RequireRole roles={['Parent']}>
                 <ChildAttendancePage />
               </RequireRole>
             }
@@ -178,7 +181,7 @@ export default function App() {
           <Route
             path="/parent/leave-requests"
             element={
-              <RequireRole roles={['Parent', 'Admin']}>
+              <RequireRole roles={['Parent']}>
                 <LeaveRequestPage />
               </RequireRole>
             }
@@ -186,7 +189,7 @@ export default function App() {
           <Route
             path="/parent/requests"
             element={
-              <RequireRole roles={['Parent', 'Admin']}>
+              <RequireRole roles={['Parent']}>
                 <AdministrativeRequestsPage />
               </RequireRole>
             }
@@ -194,7 +197,7 @@ export default function App() {
           <Route
             path="/parent/lunch"
             element={
-              <RequireRole roles={['Parent', 'Admin']}>
+              <RequireRole roles={['Parent']}>
                 <ParentLunchPage />
               </RequireRole>
             }
@@ -202,7 +205,7 @@ export default function App() {
           <Route
             path="/parent/contact-book"
             element={
-              <RequireRole roles={['Parent', 'Admin']}>
+              <RequireRole roles={['Parent']}>
                 <EContactBookPage />
               </RequireRole>
             }
@@ -210,7 +213,7 @@ export default function App() {
           <Route
             path="/service/headcount"
             element={
-              <RequireRole roles={['ServiceStaff', 'SchoolBoard']}>
+              <RequireRole roles={['ServiceStaff', 'SchoolBoard', 'OfficeStaff']}>
                 <MealHeadcountPage />
               </RequireRole>
             }
@@ -218,7 +221,7 @@ export default function App() {
           <Route
             path="/students"
             element={
-              <RequireRole roles={['OfficeStaff', 'Admin']}>
+              <RequireRole roles={['OfficeStaff']}>
                 <StudentsPage />
               </RequireRole>
             }
@@ -226,7 +229,7 @@ export default function App() {
           <Route
             path="/classes"
             element={
-              <RequireRole roles={['OfficeStaff', 'SchoolBoard', 'Admin']}>
+              <RequireRole roles={['OfficeStaff', 'SchoolBoard']}>
                 <ClassesPage />
               </RequireRole>
             }
@@ -234,7 +237,7 @@ export default function App() {
           <Route
             path="/office/requests"
             element={
-              <RequireRole roles={['OfficeStaff', 'Admin']}>
+              <RequireRole roles={['OfficeStaff']}>
                 <AdminRequestsManagementPage />
               </RequireRole>
             }
@@ -242,7 +245,7 @@ export default function App() {
           <Route
             path="/board/requests"
             element={
-              <RequireRole roles={['SchoolBoard', 'Admin']}>
+              <RequireRole roles={['SchoolBoard']}>
                 <AdministrativeApprovalPage />
               </RequireRole>
             }
@@ -250,7 +253,7 @@ export default function App() {
           <Route
             path="/teacher/roster"
             element={
-              <RequireRole roles={['Teacher', 'Admin']}>
+              <RequireRole roles={['Teacher']}>
                 <HomeroomRosterPage />
               </RequireRole>
             }
@@ -258,7 +261,7 @@ export default function App() {
           <Route
             path="/teacher/boarding"
             element={
-              <RequireRole roles={['Teacher', 'Admin']}>
+              <RequireRole roles={['Teacher']}>
                 <TeacherBoardingPage />
               </RequireRole>
             }
@@ -266,7 +269,7 @@ export default function App() {
           <Route
             path="/parent/children"
             element={
-              <RequireRole roles={['Parent', 'Admin']}>
+              <RequireRole roles={['Parent']}>
                 <ChildDashboardPage />
               </RequireRole>
             }
@@ -306,7 +309,7 @@ export default function App() {
           <Route
             path="/office/account-requests"
             element={
-              <RequireRole roles={['OfficeStaff', 'Admin']}>
+              <RequireRole roles={['OfficeStaff']}>
                 <AccountRequestsPage />
               </RequireRole>
             }
@@ -316,6 +319,14 @@ export default function App() {
             element={
               <RequireRole roles={['Admin', 'OfficeStaff']}>
                 <SystemConfigPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/notifications/broadcast"
+            element={
+              <RequireRole roles={['OfficeStaff', 'SchoolBoard']}>
+                <BroadcastNotificationsPage />
               </RequireRole>
             }
           />

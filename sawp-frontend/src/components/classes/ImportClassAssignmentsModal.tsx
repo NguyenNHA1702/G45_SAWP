@@ -41,6 +41,7 @@ export const ImportClassAssignmentsModal: React.FC<ImportClassAssignmentsModalPr
   const [step, setStep] = useState<Step>('select');
   const [file, setFile] = useState<File | null>(null);
   const [mode, setMode] = useState<ClassImportMode>('Merge');
+  const [allowAgeException, setAllowAgeException] = useState(false);
   const [preview, setPreview] = useState<ClassImportPreviewDto | null>(null);
   const [result, setResult] = useState<ClassImportResultDto | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,6 +51,7 @@ export const ImportClassAssignmentsModal: React.FC<ImportClassAssignmentsModalPr
       setStep('select');
       setFile(null);
       setMode('Merge');
+      setAllowAgeException(false);
       setPreview(null);
       setResult(null);
     }
@@ -59,6 +61,7 @@ export const ImportClassAssignmentsModal: React.FC<ImportClassAssignmentsModalPr
 
   const rowsOf = (p: ClassImportPreviewDto, m: ClassImportMode): ClassImportRowsDto => ({
     mode: m,
+    allowAgeException,
     classes: p.classes,
     students: p.students,
   });
@@ -341,6 +344,22 @@ export const ImportClassAssignmentsModal: React.FC<ImportClassAssignmentsModalPr
             </div>
           )}
 
+          {preview.students.some((s) => s.requiresAgeException) && (
+            <label
+              className="banner banner--warning"
+              style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 'var(--fs-sm)' }}
+            >
+              <input
+                type="checkbox"
+                checked={allowAgeException}
+                onChange={(e) => setAllowAgeException(e.target.checked)}
+              />
+              <span>
+                Tệp có học sinh <strong>vượt quá 15 tuổi</strong>. Tôi xác nhận cho phép ngoại lệ quá tuổi để xếp lớp cho các học sinh này (và đồng ý ghi nhật ký hệ thống).
+              </span>
+            </label>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn--secondary" onClick={onClose} disabled={busy}>
               Hủy
@@ -348,7 +367,12 @@ export const ImportClassAssignmentsModal: React.FC<ImportClassAssignmentsModalPr
             <button type="button" className="btn btn--secondary" onClick={() => setStep('select')} disabled={busy}>
               Chọn tệp khác
             </button>
-            <button type="button" className="btn btn--primary" onClick={handleConfirm} disabled={busy || validRows === 0}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleConfirm}
+              disabled={busy || validRows === 0 || (preview.students.some((s) => s.requiresAgeException) && !allowAgeException)}
+            >
               <CheckCircle2 size={16} /> {busy ? 'Đang nhập...' : `Xác nhận nhập ${validRows} dòng hợp lệ`}
             </button>
           </div>

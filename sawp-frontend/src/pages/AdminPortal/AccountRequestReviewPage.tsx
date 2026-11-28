@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
-import { CheckCheck, Check, X } from 'lucide-react';
+import { CheckCheck, Check, Mail, X } from 'lucide-react';
 import { accountRequestApi } from '../../services/implementations/accountRequestApi';
 import { PaginationBar } from '../../components/common/PaginationBar';
 import { asApiError } from '../../utils/apiError';
 import { formatViDateTime } from '../../utils/date';
 import { SYSTEM_MESSAGES } from '../../constants/messages';
 import {
+  EMAIL_CHANGE_STATUS,
   ITEM_STATUS,
   REASON_LABEL,
   REQUEST_STATUS,
   type AccountRequestDecisionDto,
   type AccountRequestDto,
   type AccountRequestStatus,
+  type EmailChangeRequestDto,
 } from '../../types/accountRequest.types';
 
 const showError = (err: unknown) => {
@@ -28,6 +30,9 @@ const showError = (err: unknown) => {
  */
 export default function AccountRequestReviewPage() {
   const [params] = useSearchParams();
+  const [tab, setTab] = useState<'accounts' | 'email-change'>(() =>
+    params.get('tab') === 'email-change' ? 'email-change' : 'accounts'
+  );
   const [status, setStatus] = useState<string>('');
   const [requests, setRequests] = useState<AccountRequestDto[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -36,6 +41,23 @@ export default function AccountRequestReviewPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const [emailStatus, setEmailStatus] = useState('');
+  const [emailReqs, setEmailReqs] = useState<EmailChangeRequestDto[]>([]);
+  const [emailTotal, setEmailTotal] = useState(0);
+  const [emailPage, setEmailPage] = useState(1);
+
+  const loadEmailReqs = useCallback(async (s?: string, page = 1) => {
+    try {
+      const res = await accountRequestApi.reviewEmailChangePaged(s || undefined, undefined, page, 15);
+      if (res.data) {
+        setEmailReqs(res.data.items);
+        setEmailTotal(res.data.totalCount);
+      }
+    } catch (err) {
+      showError(err);
+    }
+  }, []);
 
   const load = useCallback(async (s?: string, page = 1) => {
     try {
@@ -61,9 +83,10 @@ export default function AccountRequestReviewPage() {
 
   useEffect(() => {
     void load();
+    void loadEmailReqs();
     const id = Number(params.get('id'));
     if (id > 0) void open(id);
-  }, [params, load, open]);
+  }, [params, load, loadEmailReqs, open]);
 
   const decide = async (partial: Partial<AccountRequestDecisionDto>) => {
     if (!detail) return;
@@ -102,13 +125,35 @@ export default function AccountRequestReviewPage() {
   return (
     <div className="container pop-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <header>
-        <h1 style={{ margin: '0 0 4px' }}>Duyệt yêu cầu cấp tài khoản</h1>
+        <h1 style={{ margin: '0 0 4px' }}>Duyệt yêu cầu tài khoản phụ huynh</h1>
         <p style={{ margin: 0, color: 'var(--color-muted-fg)' }}>
-          Mỗi dòng được duyệt tạo một tài khoản phụ huynh (đăng nhập bằng email, chờ kích hoạt qua email) gắn với hồ sơ người giám hộ.
+          Duyệt cấp tài khoản mới hoặc duyệt yêu cầu đổi email đăng nhập cho Phụ huynh từ Phòng Giáo vụ (BR-66, BR-69).
         </p>
       </header>
 
-      {!detail && (
+      <div style={{ display: 'flex', gap: 8 }} role="tablist">
+        <button
+          role="tab"
+          aria-selected={tab === 'accounts'}
+          className={`btn btn--sm ${tab === 'accounts' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => setTab('accounts')}
+        >
+          Yêu cầu cấp tài khoản mới
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'email-change'}
+          className={`btn btn--sm ${tab === 'email-change' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => {
+            setTab('email-change');
+            void loadEmailReqs(emailStatus, emailPage);
+          }}
+        >
+          <Mail size={14} /> Yêu cầu đổi email Phụ huynh
+        </button>
+      </div>
+
+      {tab === 'accounts' && !detail && (
         <section className="card" aria-label="Danh sách yêu cầu">
           <div style={{ marginBottom: 12 }}>
             <select className="select" aria-label="Lọc theo trạng thái" value={status} onChange={(e) => {
@@ -154,7 +199,7 @@ export default function AccountRequestReviewPage() {
         </section>
       )}
 
-      {detail && (
+      {tab === 'accounts' && detail && (
         <section className="card" aria-label="Chi tiết yêu cầu" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <div>
@@ -225,6 +270,133 @@ export default function AccountRequestReviewPage() {
           <div>
             <button className="btn btn--secondary btn--sm" onClick={() => setDetail(null)}>Quay lại danh sách</button>
           </div>
+        </section>
+      )}
+
+      {tab === 'email-change' && (
+        <section className="card" aria-label="Danh sách yêu cầu đổi email phụ huynh" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <select
+              className="select"
+              aria-label="Lọc trạng thái đổi email"
+              value={emailStatus}
+              onChange={(e) => {
+                setEmailStatus(e.target.value);
+                setEmailPage(1);
+                void loadEmailReqs(e.target.value, 1);
+              }}
+            >
+              <option value="">Tất cả trạng thái</option>
+              {(Object.keys(EMAIL_CHANGE_STATUS) as EmailChangeRequestDto['status'][]).map((s) => (
+                <option key={s} value={s}>{EMAIL_CHANGE_STATUS[s].label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="data-table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Phụ huynh</th>
+                  <th>Email cũ</th>
+                  <th>Email mới</th>
+                  <th>Lý do / Người gửi</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {emailReqs.map((r) => (
+                  <tr key={r.id}>
+                    <td><strong>{r.targetFullName}</strong></td>
+                    <td>{r.oldEmail}</td>
+                    <td><strong>{r.newEmail}</strong></td>
+                    <td>
+                      <div>{r.reason}</div>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>Gửi bởi {r.requestedByName}</div>
+                    </td>
+                    <td>
+                      <span className={EMAIL_CHANGE_STATUS[r.status].badge}>{EMAIL_CHANGE_STATUS[r.status].label}</span>
+                      {r.reviewNote && <div style={{ fontSize: 'var(--fs-xs)', marginTop: 2 }}>{r.reviewNote}</div>}
+                    </td>
+                    <td>
+                      {r.status === 'Pending' && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="btn btn--primary btn--sm"
+                            disabled={busy}
+                            onClick={async () => {
+                              setBusy(true);
+                              try {
+                                const res = await accountRequestApi.decideEmailChange(r.id, { approve: true });
+                                toast.success(res.message || 'Đã duyệt và gửi link xác nhận.');
+                                void loadEmailReqs(emailStatus, emailPage);
+                              } catch (err) {
+                                showError(err);
+                              } finally {
+                                setBusy(false);
+                              }
+                            }}
+                          >
+                            <Check size={14} /> Duyệt & Gửi link
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            disabled={busy}
+                            onClick={async () => {
+                              const rejectReason = window.prompt('Nhập lý do từ chối yêu cầu đổi email:');
+                              if (!rejectReason?.trim()) return;
+                              setBusy(true);
+                              try {
+                                const res = await accountRequestApi.decideEmailChange(r.id, { approve: false, rejectReason: rejectReason.trim() });
+                                toast.success(res.message || 'Đã từ chối yêu cầu.');
+                                void loadEmailReqs(emailStatus, emailPage);
+                              } catch (err) {
+                                showError(err);
+                              } finally {
+                                setBusy(false);
+                              }
+                            }}
+                          >
+                            <X size={14} /> Từ chối
+                          </button>
+                        </div>
+                      )}
+                      {(r.status === 'Approved' || r.status === 'EmailFailed') && (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          disabled={busy}
+                          onClick={async () => {
+                            try {
+                              const res = await accountRequestApi.resendEmailChangeLink(r.id);
+                              toast.success(res.message || 'Đã gửi lại liên kết xác nhận.');
+                            } catch (err) {
+                              showError(err);
+                            }
+                          }}
+                        >
+                          <Mail size={14} /> Gửi lại link
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {emailReqs.length === 0 && <tr><td colSpan={6}>Không có yêu cầu đổi email nào.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar
+            pageIndex={emailPage}
+            pageSize={15}
+            totalCount={emailTotal}
+            onPageChange={(p) => {
+              setEmailPage(p);
+              void loadEmailReqs(emailStatus, p);
+            }}
+            itemLabel="yêu cầu"
+          />
         </section>
       )}
     </div>

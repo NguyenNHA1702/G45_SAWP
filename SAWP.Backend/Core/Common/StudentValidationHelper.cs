@@ -58,8 +58,8 @@ public static class StudentValidationHelper
             return $"Thiếu {fieldLabel}.";
 
         var cleaned = Regex.Replace(fullName.Trim(), @"\s+", " ");
-        if (cleaned.Length < 1 || cleaned.Length > 100)
-            return $"Độ dài {fieldLabel} phải từ 1 đến 100 ký tự.";
+        if (cleaned.Length < 2 || cleaned.Length > 100)
+            return $"Độ dài {fieldLabel} phải từ 2 đến 100 ký tự.";
 
         if (cleaned.Contains('<') || cleaned.Contains('>'))
             return $"Trường {fieldLabel} không được chứa thẻ HTML.";
@@ -110,7 +110,7 @@ public static class StudentValidationHelper
         return false;
     }
 
-    public static string? ValidateBirthDateAndAge(DateTime dob, int? referenceYear = null)
+    public static string? ValidateBirthDateAndAge(DateTime dob, int? referenceYear = null, bool allowAgeException = false)
     {
         if (dob == default || dob.Year < 1900)
             return "Ngày sinh không hợp lệ.";
@@ -121,15 +121,18 @@ public static class StudentValidationHelper
 
         var refYear = (referenceYear.HasValue && referenceYear.Value >= 2000) ? referenceYear.Value : today.Year;
         var age = refYear - dob.Year;
-        if (age < 5 || age > 15)
+        if (age < 5)
             return $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi.";
+
+        if (age > 15 && !allowAgeException)
+            return $"Độ tuổi học sinh tiểu học không hợp lệ ({age} tuổi). Tuổi hợp lệ phải từ 5 đến 15 tuổi. Nếu là trường hợp ngoại lệ quá tuổi, vui lòng xác nhận ngoại lệ.";
 
         return null;
     }
 
-    public static string? ValidateAgeForGrade(DateTime dob, int grade, int? schoolYearStartYear = null, bool isSpecialNeeds = false)
+    public static string? ValidateAgeForGrade(DateTime dob, int grade, int? schoolYearStartYear = null, bool isSpecialNeeds = false, bool allowAgeException = false)
     {
-        var baseError = ValidateBirthDateAndAge(dob, schoolYearStartYear);
+        var baseError = ValidateBirthDateAndAge(dob, schoolYearStartYear, allowAgeException);
         if (baseError != null) return baseError;
 
         if (grade >= 1 && grade <= 5)
@@ -138,13 +141,25 @@ public static class StudentValidationHelper
             var age = refYear - dob.Year;
             var minAge = Math.Max(5, grade + 4);
             var maxAge = isSpecialNeeds ? 15 : Math.Min(15, grade + 9);
-            if (age < minAge || age > maxAge)
+            if (age < minAge)
+            {
+                return $"Độ tuổi của học sinh ({age} tuổi) không phù hợp với Khối {grade} (yêu cầu từ {minAge} đến {maxAge} tuổi).";
+            }
+
+            if (age > maxAge && !(allowAgeException && age > 15))
             {
                 return $"Độ tuổi của học sinh ({age} tuổi) không phù hợp với Khối {grade} (yêu cầu từ {minAge} đến {maxAge} tuổi).";
             }
         }
 
         return null;
+    }
+
+    public static bool IsOverPrimaryAge(DateTime dob, int? referenceYear = null)
+    {
+        if (dob == default || dob.Year < 1900) return false;
+        var refYear = (referenceYear.HasValue && referenceYear.Value >= 2000) ? referenceYear.Value : DateTime.UtcNow.Year;
+        return (refYear - dob.Year) > 15;
     }
 
     public static bool IsValidPhone(string? phone)

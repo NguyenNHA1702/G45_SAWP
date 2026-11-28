@@ -679,7 +679,7 @@ public class ClassServiceTests : TestBase
         ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(1, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Class> { cls, anotherClass });
 
-        var request = new UpdateClassDto { ClassName = "1B", Capacity = 35 }; // Conflict with class 2
+        var request = new UpdateClassDto { ClassName = "1B", Grade = 1, Capacity = 35, Status = "Active" }; // Conflict with class 2
 
         // Act
         var result = await _service.UpdateClassAsync(1, request, 10);
@@ -1512,6 +1512,136 @@ public class ClassServiceTests : TestBase
         // Assert: UC-13 A2 – only a Draft year is discarded (BR-52)
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Theory]
+    [InlineData("2001-2002", 2001, 2002)]
+    [InlineData("2999-3000", 2999, 3000)]
+    public async Task N_CreateSchoolYear_OutOfRangeYears_FailWithMSG01(string yearName, int y1, int y2)
+    {
+        SetupRepository(new List<SchoolYear>());
+        ClassRepoMock.Setup(r => r.GetAllSchoolYearsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<SchoolYear>());
+
+        var result = await _service.CreateSchoolYearAsync(new CreateSchoolYearDto
+        {
+            YearName = yearName,
+            StartDate = new DateTime(y1, 9, 1),
+            EndDate = new DateTime(y2, 5, 31)
+        }, 10);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task N_CreateSchoolYear_OverlappingDates_FailsWithMSG01()
+    {
+        var existing = new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2026-2027", StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31), IsActive = true }
+        };
+        ClassRepoMock.Setup(r => r.GetAllSchoolYearsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var result = await _service.CreateSchoolYearAsync(new CreateSchoolYearDto
+        {
+            YearName = "2027-2028",
+            StartDate = new DateTime(2027, 5, 1), // overlaps 2026-2027
+            EndDate = new DateTime(2028, 5, 31)
+        }, 10);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task N_DeleteSchoolYear_DraftWithClassesWithoutForce_FailsWithMSG09()
+    {
+        var draft = DraftYear();
+        SetupRepository(new List<SchoolYear> { draft });
+        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(draft.Id, null, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Class> { new() { Id = 1, ClassName = "1A", SchoolYearId = draft.Id } });
+
+        var denied = await _service.DeleteSchoolYearAsync(draft.Id, 10, force: false);
+        denied.Success.Should().BeFalse();
+        denied.Code.Should().Be(SystemMessages.MSG09.Code);
+    }
+
+    [Fact]
+    public async Task N_CreateAndUpdateClass_RejectsOverlongRoom_BadCapacity_AndInvalidStatus()
+    {
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, YearName = "2026-2027" } });
+        var longRoom = new string('P', 300);
+
+        var createLong = await _service.CreateClassAsync(new CreateClassDto
+        {
+            SchoolYearId = 1, ClassName = "1A", Grade = 1, Capacity = 35, RoomNumber = longRoom
+        }, 10);
+        createLong.Success.Should().BeFalse();
+        createLong.Code.Should().Be(SystemMessages.MSG01.Code);
+
+        var cls = new Class { Id = 1, ClassName = "1A", Grade = 1, SchoolYearId = 1, Capacity = 35, Status = "Active", ClassAssignments = new List<ClassAssignment>() };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(cls);
+        ClassRepoMock.Setup(r => r.GetClassesBySchoolYearAsync(1, null, null, It.IsAny<CancellationToken>())).ReturnsAsync(new List<Class> { cls });
+
+        var badCap = await _service.UpdateClassAsync(1, new UpdateClassDto { ClassName = "1A", Grade = 1, Capacity = 10, Status = "Active" }, 10);
+        var capHigh = await _service.UpdateClassAsync(1, new UpdateClassDto { ClassName = "1A", Grade = 1, Capacity = 41, Status = "Active" }, 10);
+        var badStatus = await _service.UpdateClassAsync(1, new UpdateClassDto { ClassName = "1A", Grade = 1, Capacity = 35, Status = "Hack" }, 10);
+        var updateLong = await _service.UpdateClassAsync(1, new UpdateClassDto { ClassName = "1A", Grade = 1, Capacity = 35, Status = "Active", RoomNumber = longRoom }, 10);
+
+        badCap.Code.Should().Be(SystemMessages.MSG01.Code);
+        capHigh.Code.Should().Be(SystemMessages.MSG01.Code);
+        badStatus.Code.Should().Be(SystemMessages.MSG01.Code);
+        updateLong.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task BUG_CLS_01_03_DeleteClass_LogsAudit_AndAssignHomeroom_ResetsPriorTeacherFlag()
+    {
+        var emptyCls = new Class { Id = 1, ClassName = "1B", Grade = 1, SchoolYearId = 1, ClassAssignments = new List<ClassAssignment>() };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(emptyCls);
+        SetupRepository(new List<Class> { emptyCls });
+        SetupRepository(new List<AttendanceRecord>());
+        SetupRepository(new List<ClassSchedule>());
+        SetupRepository(new List<ClassAssignment>());
+
+        var delRes = await _service.DeleteClassAsync(1, 10);
+        delRes.Success.Should().BeTrue();
+        AuditServiceMock.Verify(a => a.LogActionAsync(
+            10,
+            AuditActions.ClassDelete,
+            nameof(Class),
+            "1",
+            It.IsAny<object?>(),
+            null,
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // Assign new homeroom teacher resets prior teacher's IsHomeroomTeacher when they have no other classes
+        var oldStaff = new StaffProfile { Id = 5, UserId = 25, IsHomeroomTeacher = true, User = new User { FullName = "Co Cu" } };
+        var newStaff = new StaffProfile { Id = 6, UserId = 26, IsHomeroomTeacher = false, User = new User { FullName = "Co Moi" } };
+        var clsWithTeacher = new Class { Id = 2, ClassName = "2A", Grade = 2, SchoolYearId = 1, HomeroomTeacherId = 5, ClassAssignments = new List<ClassAssignment>() };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(clsWithTeacher);
+        ClassRepoMock.Setup(r => r.IsTeacherAssignedToActiveHomeroomAsync(6, 1, 2, It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        SetupRepository(new List<Class> { clsWithTeacher });
+        SetupRepository(new List<StaffProfile> { oldStaff, newStaff });
+
+        var assignRes = await _service.AssignHomeroomTeacherAsync(2, new AssignTeacherDto { StaffProfileId = 6 }, 10);
+        assignRes.Success.Should().BeTrue();
+        clsWithTeacher.HomeroomTeacherId.Should().Be(6);
+        oldStaff.IsHomeroomTeacher.Should().BeFalse();
+        newStaff.IsHomeroomTeacher.Should().BeTrue();
+
+        var unassignRes = await _service.UnassignHomeroomTeacherAsync(2, 10);
+        unassignRes.Success.Should().BeTrue();
+        AuditServiceMock.Verify(a => a.LogActionAsync(
+            10,
+            AuditActions.ClassUnassignHomeroomTeacher,
+            nameof(Class),
+            "2",
+            It.IsAny<object?>(),
+            It.IsAny<object?>(),
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

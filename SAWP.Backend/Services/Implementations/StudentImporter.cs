@@ -157,10 +157,17 @@ public class StudentImporter : IStudentImporter
                 }
                 else
                 {
-                    var ageError = StudentValidationHelper.ValidateBirthDateAndAge(parsedDob, schoolYearStartYear);
+                    var ageError = StudentValidationHelper.ValidateBirthDateAndAge(parsedDob, schoolYearStartYear, allowAgeException: false);
                     if (ageError != null)
                     {
-                        rowErrors.Add(ageError);
+                        if (StudentValidationHelper.IsOverPrimaryAge(parsedDob, schoolYearStartYear))
+                        {
+                            item.AllowAgeException = true;
+                        }
+                        else
+                        {
+                            rowErrors.Add(ageError);
+                        }
                     }
                 }
 
@@ -184,7 +191,7 @@ public class StudentImporter : IStudentImporter
                     {
                         if (dobParsedOk)
                         {
-                            var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(parsedDob, matchedClass.Grade, schoolYearStartYear, item.IsSpecialNeeds);
+                            var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(parsedDob, matchedClass.Grade, schoolYearStartYear, item.IsSpecialNeeds, allowAgeException: item.AllowAgeException);
                             if (gradeAgeErr != null)
                             {
                                 rowErrors.Add(gradeAgeErr);
@@ -304,6 +311,12 @@ public class StudentImporter : IStudentImporter
             ? await _unitOfWork.Repository<SchoolYear>().GetByIdAsync(request.SchoolYearId.Value, cancellationToken)
             : await _unitOfWork.Classes.GetActiveSchoolYearAsync(cancellationToken);
 
+        if (schoolYear != null && string.Equals(schoolYear.Status, SchoolYearStatuses.Archived, StringComparison.OrdinalIgnoreCase))
+        {
+            return ApiResponse<ImportStudentsResultDto>.Fail(SystemMessages.MSG01, new List<string> { $"Không thể nhập học sinh vào năm học đã lưu trữ ({schoolYear.YearName})." });
+        }
+
+        var isDraftYear = string.Equals(schoolYear?.Status, SchoolYearStatuses.Draft, StringComparison.OrdinalIgnoreCase);
         var schoolYearId = schoolYear?.Id ?? 0;
         var schoolYearName = schoolYear?.YearName ?? DateTime.UtcNow.Year.ToString();
 
@@ -312,7 +325,7 @@ public class StudentImporter : IStudentImporter
             : new List<Class>();
 
         var classMap = classesInYear.ToDictionary(c => c.ClassName, c => c, StringComparer.OrdinalIgnoreCase);
-        var enrolledCountByClassId = classesInYear.ToDictionary(c => c.Id, c => c.ClassAssignments?.Count(ca => ca.IsActive) ?? 0);
+        var enrolledCountByClassId = classesInYear.ToDictionary(c => c.Id, c => c.ClassAssignments?.Count(ca => ca.IsActive || ca.IsDraft) ?? 0);
 
         // Tối ưu hóa hiệu năng: Cache dữ liệu kiểm tra trùng lặp để xử lý mượt mà lên tới 5,000 học sinh
         var studentRepo = _unitOfWork.Repository<Student>();
@@ -366,7 +379,8 @@ public class StudentImporter : IStudentImporter
                     }
 
                     var schoolYearStartYear = schoolYear?.StartDate.Year ?? DateTime.UtcNow.Year;
-                    var ageErr = StudentValidationHelper.ValidateBirthDateAndAge(parsedDob, schoolYearStartYear);
+                    var allowRowAgeException = request.AllowAgeException;
+                    var ageErr = StudentValidationHelper.ValidateBirthDateAndAge(parsedDob, schoolYearStartYear, allowRowAgeException);
                     if (ageErr != null)
                     {
                         result.SkippedCount++;
@@ -425,7 +439,7 @@ public class StudentImporter : IStudentImporter
                             continue;
                         }
 
-                        var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(parsedDob, targetClassCheck.Grade, schoolYearStartYear, row.IsSpecialNeeds);
+                        var gradeAgeErr = StudentValidationHelper.ValidateAgeForGrade(parsedDob, targetClassCheck.Grade, schoolYearStartYear, row.IsSpecialNeeds, allowRowAgeException);
                         if (gradeAgeErr != null)
                         {
                             result.SkippedCount++;
@@ -544,7 +558,8 @@ public class StudentImporter : IStudentImporter
                                 StudentId = student.Id,
                                 AcademicYear = schoolYearName,
                                 StartDate = DateTime.UtcNow.Date,
-                                IsActive = true
+                                IsActive = !isDraftYear,
+                                IsDraft = isDraftYear
                             };
                             await _unitOfWork.Repository<ClassAssignment>().AddAsync(assignment, cancellationToken);
                             enrolledCountByClassId[targetClass.Id] = currentEnrolled + 1;

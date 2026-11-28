@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyRound,
+  Link2,
   Lock,
   Mail,
   Plus,
@@ -14,7 +15,9 @@ import {
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getAuthUser } from '../../services/apiClient';
 import { adminApi } from '../../services/implementations/adminApi';
+import { ProfileLinkModal } from '../../components/admin/ProfileLinkModal';
 import { UserRole, type AdminUserDto, type RoleOptionDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 import {
@@ -50,8 +53,9 @@ export default function UsersManagementPage() {
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  // pub:UC-53 step 3: one initial role per new account
+  // pub:UC-53 step 3: one initial role per new account, EnableNow unchecked by default
   const [newRole, setNewRole] = useState<string>(UserRole.Teacher);
+  const [enableNow, setEnableNow] = useState<boolean>(false);
 
   // Edit roles modal
   const [editingRolesUser, setEditingRolesUser] = useState<AdminUserDto | null>(null);
@@ -60,6 +64,25 @@ export default function UsersManagementPage() {
   // Reset password modal
   const [resettingUser, setResettingUser] = useState<AdminUserDto | null>(null);
   const [resetPasswordVal, setResetPasswordVal] = useState('');
+
+  // Change email modal (BR-69, UC-53 A2: staff only, excluding self & Parents)
+  const [emailChangeUser, setEmailChangeUser] = useState<AdminUserDto | null>(null);
+  const [emailChangeVal, setEmailChangeVal] = useState('');
+
+  // Profile link modal (UC-55)
+  const [linkingUser, setLinkingUser] = useState<AdminUserDto | null>(null);
+
+  const currentUsername = (() => {
+    try {
+      return JSON.parse(getAuthUser() ?? '{}')?.username ?? '';
+    } catch {
+      return '';
+    }
+  })();
+
+  const formatMsg65 = (roleText: string) =>
+    (getSystemMessage('MSG65')?.content || 'Bạn sắp kích hoạt tài khoản với vai trò "{vai trò}". Vui lòng xác nhận.')
+      .replace('{vai trò}', roleText);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,6 +136,10 @@ export default function UsersManagementPage() {
       return;
     }
 
+    if (enableNow && !window.confirm(formatMsg65(newRole))) {
+      return;
+    }
+
     try {
       const res = await adminApi.createUser({
         username: newUsername.trim(),
@@ -120,6 +147,7 @@ export default function UsersManagementPage() {
         email: newEmail.trim(),
         phoneNumber: newPhone.trim() || undefined,
         roles: [newRole],
+        enableNow,
       });
       if (res.success) {
         toast.success(getSystemMessage('MSG38')?.content || res.message);
@@ -131,6 +159,7 @@ export default function UsersManagementPage() {
         setNewEmail('');
         setNewPhone('');
         setNewRole(UserRole.Teacher);
+        setEnableNow(false);
         loadData();
       } else {
         showApiError(res.code, res.message, res.errors);
@@ -143,6 +172,9 @@ export default function UsersManagementPage() {
 
   const handleSaveRoles = async () => {
     if (!editingRolesUser) return;
+    if (selectedRoles.length > 0 && !window.confirm(formatMsg65(selectedRoles.join(', ')))) {
+      return;
+    }
     try {
       const res = await adminApi.updateUserRoles(editingRolesUser.id, selectedRoles);
       if (res.success) {
@@ -160,8 +192,10 @@ export default function UsersManagementPage() {
 
   const handleToggleStatus = async (user: AdminUserDto) => {
     const targetIsActive = user.status === 'Deactivated';
-    const confirmText = getSystemMessage('MSG45')?.content || 'Bạn có chắc chắn muốn thực hiện thao tác này?';
-    if (!window.confirm(`${confirmText}\n(${targetIsActive ? 'Mở khóa' : 'Khóa'} tài khoản ${user.username})`)) {
+    const confirmText = targetIsActive
+      ? formatMsg65(user.roles.join(', ') || 'Chưa phân vai trò')
+      : `${getSystemMessage('MSG45')?.content || 'Bạn có chắc chắn muốn thực hiện thao tác này?'}\n(Khóa tài khoản ${user.email})`;
+    if (!window.confirm(confirmText)) {
       return;
     }
     try {
@@ -388,7 +422,14 @@ export default function UsersManagementPage() {
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
-                          title="Phân quyền vai trò"
+                          disabled={u.username === currentUsername || u.status === 'Active'}
+                          title={
+                            u.username === currentUsername
+                              ? 'Không thể tự sửa vai trò của chính mình'
+                              : u.status === 'Active'
+                                ? (getSystemMessage('MSG64')?.content || 'Tài khoản đã kích hoạt/có dữ liệu liên kết')
+                                : 'Phân quyền vai trò'
+                          }
                           onClick={() => {
                             setEditingRolesUser(u);
                             setSelectedRoles(u.roles);
@@ -396,6 +437,27 @@ export default function UsersManagementPage() {
                         >
                           <Shield size={14} /> Quyền
                         </button>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          title="Liên kết thủ công với hồ sơ Phụ huynh hoặc Nhân sự (UC-55)"
+                          onClick={() => setLinkingUser(u)}
+                        >
+                          <Link2 size={14} /> Hồ sơ
+                        </button>
+                        {!u.roles.includes('Parent') && u.username !== currentUsername && u.status !== 'Deactivated' && (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            title="Đổi email đăng nhập (gửi link xác nhận qua email mới)"
+                            onClick={() => {
+                              setEmailChangeUser(u);
+                              setEmailChangeVal('');
+                            }}
+                          >
+                            <Mail size={14} /> Đổi Email
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
@@ -421,10 +483,13 @@ export default function UsersManagementPage() {
                         <button
                           type="button"
                           className="btn btn--secondary btn--sm"
+                          disabled={u.username === currentUsername}
                           title={
-                            u.status === 'Deactivated'
-                              ? 'Mở khóa tài khoản'
-                              : 'Khóa tài khoản'
+                            u.username === currentUsername
+                              ? 'Không thể tự khóa tài khoản đang đăng nhập'
+                              : u.status === 'Deactivated'
+                                ? 'Mở khóa tài khoản'
+                                : 'Khóa tài khoản'
                           }
                           onClick={() => handleToggleStatus(u)}
                         >
@@ -478,8 +543,18 @@ export default function UsersManagementPage() {
             <input className="input" placeholder="Họ và tên *" value={newFullName} onChange={(e) => setNewFullName(e.target.value)} />
             <input className="input" type="email" placeholder="Email *" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             <input className="input" placeholder="Số điện thoại" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)', cursor: 'pointer', fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={enableNow}
+                onChange={(e) => setEnableNow(e.target.checked)}
+              />
+              Kích hoạt tài khoản ngay (gửi liên kết đặt mật khẩu tới email)
+            </label>
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              Tài khoản được tạo ở trạng thái chờ kích hoạt. Hệ thống gửi đường liên kết kích hoạt đến email để người dùng tự đặt mật khẩu.
+              {enableNow
+                ? 'Tài khoản sẽ ở trạng thái Chờ kích hoạt và gửi ngay liên kết đặt mật khẩu tới email trên.'
+                : 'Mặc định tài khoản được tạo ở trạng thái Vô hiệu hóa (chưa gửi email). Bạn có thể bật kích hoạt sau.'}
             </p>
             <div>
               <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', marginBottom: 6 }}>Vai trò:</div>
@@ -566,6 +641,59 @@ export default function UsersManagementPage() {
           </form>
         </div>
       )}
+
+      {/* Change Staff Email Modal (BR-69, UC-53 A2) */}
+      {emailChangeUser && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: 16 }}>
+          <form
+            noValidate
+            className="card"
+            style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 14 }}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const err = validateEmailAddress(emailChangeVal, true);
+              if (err) {
+                toast.error(err);
+                return;
+              }
+              try {
+                const res = await adminApi.changeUserEmail(emailChangeUser.id, emailChangeVal.trim());
+                if (res.success) {
+                  toast.success(res.message || 'Đã gửi liên kết xác nhận tới email mới.');
+                  setEmailChangeUser(null);
+                  setEmailChangeVal('');
+                } else {
+                  showApiError(res.code, res.message, res.errors);
+                }
+              } catch (err2: unknown) {
+                const msg = (err2 as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+                toast.error(msg?.errors?.[0] || msg?.message || 'Không thể gửi yêu cầu đổi email.');
+              }
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Đổi email: {emailChangeUser.fullName}</h3>
+              <button type="button" className="btn btn--secondary btn--sm" onClick={() => setEmailChangeUser(null)}><X size={15} /></button>
+            </div>
+            <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
+              Email hiện tại: <strong>{emailChangeUser.email}</strong>. Hệ thống sẽ gửi link xác nhận tới email mới; email cũ vẫn hoạt động cho đến khi người dùng xác nhận (BR-69).
+            </p>
+            <input
+              type="email"
+              className="input"
+              placeholder="Nhập địa chỉ email mới *"
+              value={emailChangeVal}
+              onChange={(e) => setEmailChangeVal(e.target.value)}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" className="btn btn--secondary btn--sm" onClick={() => setEmailChangeUser(null)}>Hủy</button>
+              <button type="submit" className="btn btn--primary btn--sm">Gửi liên kết xác nhận</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <ProfileLinkModal user={linkingUser} onClose={() => setLinkingUser(null)} onSaved={loadData} />
     </div>
   );
 }

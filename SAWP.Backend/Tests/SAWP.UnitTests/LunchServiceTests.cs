@@ -1962,7 +1962,7 @@ public class LunchServiceTests : TestBase
     [Fact]
     public async Task UpdateRegistrationMealType_InvalidStudentId_FailsWithMSG01()
     {
-        var res = await _service.UpdateRegistrationMealTypeAsync(15, new[] { UserRoles.Admin }, new UpdateLunchRegistrationMealTypeDto
+        var res = await _service.UpdateRegistrationMealTypeAsync(15, new[] { UserRoles.ServiceStaff }, new UpdateLunchRegistrationMealTypeDto
         {
             StudentId = 0,
             Date = new DateTime(2026, 10, 28),
@@ -2146,24 +2146,24 @@ public class LunchServiceTests : TestBase
         exact92.Success.Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(UserRoles.OfficeStaff)]
-    [InlineData(UserRoles.Admin)]
-    public async Task GetDailyMealBoard_And_GetPeriodReport_DeniedForOfficeStaffAndAdmin(UserRoles deniedRole)
+    [Fact]
+    public async Task GetDailyMealBoard_And_GetPeriodReport_DeniedForAdmin()
     {
         var day = new DateTime(2026, 11, 18);
         SetupRepository(new List<LunchServiceDay>());
         SetupRepository(new List<SchoolCalendarDay>());
 
-        var boardRes = await _service.GetDailyMealBoardAsync(day, 10, new[] { deniedRole });
-        var reportRes = await _service.GetPeriodReportAsync(day, day, null, 10, new[] { deniedRole });
+        var boardRes = await _service.GetDailyMealBoardAsync(day, 10, new[] { UserRoles.Admin });
+        var reportRes = await _service.GetPeriodReportAsync(day, day, null, 10, new[] { UserRoles.Admin });
 
         boardRes.Success.Should().BeFalse();
         reportRes.Success.Should().BeFalse();
     }
 
-    [Fact]
-    public async Task GetDailyMealBoard_SchoolBoard_CanViewReadOnly()
+    [Theory]
+    [InlineData(UserRoles.SchoolBoard)]
+    [InlineData(UserRoles.OfficeStaff)]
+    public async Task GetDailyMealBoard_SchoolBoardAndOfficeStaff_CanViewReadOnly(UserRoles viewerRole)
     {
         var day = new DateTime(2026, 11, 18);
         SetupRepository(new List<SchoolYear> { new() { Id = 1, IsActive = true } });
@@ -2173,7 +2173,7 @@ public class LunchServiceTests : TestBase
         SetupRepository(new List<LunchRegistration>());
         SetupRepository(new List<AttendanceRecord>());
 
-        var res = await _service.GetDailyMealBoardAsync(day, 20, new[] { UserRoles.SchoolBoard });
+        var res = await _service.GetDailyMealBoardAsync(day, 20, new[] { viewerRole });
 
         res.Success.Should().BeTrue();
         res.Data!.CanManage.Should().BeFalse();
@@ -2366,5 +2366,154 @@ public class LunchServiceTests : TestBase
 
         res.Success.Should().BeFalse();
         res.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    [Fact]
+    public async Task N05_RegisterLunchBatch_Year2099_FailsWithMSG01()
+    {
+        _clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 11, 28));
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 28, 7, 30, 0));
+        SetupRepository(new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) }
+        });
+        SetupRepository(new List<Student> { new() { Id = 1, FullName = "Em A" } });
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+
+        var res = await _service.RegisterLunchBatchAsync(20, new[] { UserRoles.Parent }, new BatchLunchRegistrationRequestDto
+        {
+            StudentId = 1,
+            Dates = new List<DateTime> { new DateTime(2099, 1, 5) },
+            MealType = MealType.StandardLunch
+        });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task N06_GetStudentSchedule_ExcludesRegistrationsOnNonServingDays()
+    {
+        _clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 11, 28));
+        SetupRepository(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A", ClassAssignments = new List<ClassAssignment>() } });
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+        // 2026-11-16 (Monday) is serving; 2026-11-14 (Saturday) and 2026-11-17 (school holiday) are NOT serving
+        SetupRepository(new List<LunchServiceDay>
+        {
+            new() { Date = new DateTime(2026, 11, 17), IsServing = false, CutoffTime = new TimeSpan(8, 15, 0) }
+        });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchRegistration>
+        {
+            new() { Id = 1, StudentId = 1, Date = new DateTime(2026, 11, 16), IsActive = true },
+            new() { Id = 2, StudentId = 1, Date = new DateTime(2026, 11, 14), IsActive = true }, // weekend
+            new() { Id = 3, StudentId = 1, Date = new DateTime(2026, 11, 17), IsActive = true }  // closed day
+        });
+
+        var res = await _service.GetStudentScheduleAsync(1, "2026-11", 20, new[] { UserRoles.Parent });
+
+        res.Success.Should().BeTrue();
+        res.Data!.TotalRegisteredDays.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task BUG_LUN_02_RestoreMeal_WhenDayIsLocked_BlocksAllRoles_AndClampsRemarks()
+    {
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(10));
+        SetupRepository(new List<LunchServiceDay>
+        {
+            new() { Id = 1, Date = today, IsServing = true, IsLocked = true, CutoffTime = new TimeSpan(8, 15, 0) }
+        });
+        var reg = new LunchRegistration
+        {
+            Id = 1,
+            StudentId = 1,
+            Date = today,
+            IsActive = false,
+            Remarks = new string('A', 220),
+            Student = new Student { Id = 1, FullName = "Trần Gia Bảo" }
+        };
+        SetupRepository(new List<LunchRegistration> { reg });
+        SetupRepository(new List<Role>());
+        SetupRepository(new List<UserRole>());
+        SetupRepository(new List<Notification>());
+
+        var lockedRes = await _service.RestoreMealForStudentAsync(1, today, "Lý do khôi phục", 5, new[] { UserRoles.ServiceStaff });
+        lockedRes.Success.Should().BeFalse();
+        lockedRes.Code.Should().Be(SystemMessages.MSG27.Code);
+        reg.IsActive.Should().BeFalse();
+
+        // After unlocking, restoring with long reason keeps reg.Remarks <= 250 chars
+        SetupRepository(new List<LunchServiceDay>
+        {
+            new() { Id = 1, Date = today, IsServing = true, IsLocked = false, CutoffTime = new TimeSpan(8, 15, 0) }
+        });
+        var unlockedRes = await _service.RestoreMealForStudentAsync(1, today, new string('R', 100), 5, new[] { UserRoles.ServiceStaff });
+        unlockedRes.Success.Should().BeTrue();
+        reg.IsActive.Should().BeTrue();
+        reg.Remarks!.Length.Should().BeLessThanOrEqualTo(250);
+    }
+
+    [Fact]
+    public async Task BUG_LUN_03_LockDailyMeal_StoresLockNotesWithoutOverwritingMenuRemarks()
+    {
+        var today = new DateTime(2026, 10, 28);
+        var day = new LunchServiceDay
+        {
+            Id = 1,
+            Date = today,
+            IsServing = true,
+            CutoffTime = new TimeSpan(8, 30, 0),
+            Remarks = "Thực đơn: Cơm gà xối mỡ",
+            IsLocked = false
+        };
+        SetupRepository(new List<LunchServiceDay> { day });
+
+        var res = await _service.LockDailyMealAsync(new LockMealDayRequestDto
+        {
+            Date = today,
+            Notes = "Đã chốt báo bếp 200 suất"
+        }, userId: 5);
+
+        res.Success.Should().BeTrue();
+        day.IsLocked.Should().BeTrue();
+        day.Remarks.Should().Be("Thực đơn: Cơm gà xối mỡ");
+        day.LockNotes.Should().Be("Đã chốt báo bếp 200 suất");
+    }
+
+    [Fact]
+    public async Task BUG_LUN_04_RegisterLunchBatch_RejectsInactiveStudent()
+    {
+        _clockMock.Setup(c => c.Today).Returns(new DateTime(2026, 11, 2));
+        _clockMock.Setup(c => c.Now).Returns(new DateTime(2026, 11, 2, 7, 30, 0));
+        SetupRepository(new List<SchoolYear>
+        {
+            new() { Id = 1, YearName = "2026-2027", IsActive = true, StartDate = new DateTime(2026, 9, 1), EndDate = new DateTime(2027, 5, 31) }
+        });
+        SetupRepository(new List<Student>
+        {
+            new() { Id = 1, FullName = "Em B", Status = "Inactive" }
+        });
+        SetupRepository(new List<Guardian>
+        {
+            new() { Id = 1, UserId = 20, StudentGuardians = new List<StudentGuardian> { new() { StudentId = 1, GuardianId = 1 } } }
+        });
+
+        var res = await _service.RegisterLunchBatchAsync(20, new[] { UserRoles.Parent }, new BatchLunchRegistrationRequestDto
+        {
+            StudentId = 1,
+            Dates = new List<DateTime> { new DateTime(2026, 11, 3) },
+            MealType = MealType.StandardLunch
+        });
+
+        res.Success.Should().BeFalse();
+        res.Code.Should().Be(SystemMessages.MSG01.Code);
     }
 }

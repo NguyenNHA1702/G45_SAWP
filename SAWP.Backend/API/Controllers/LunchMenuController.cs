@@ -34,7 +34,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpPost("dishes")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> CreateDish([FromBody] UpsertDishRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -43,7 +43,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpPut("dishes/{id}")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> UpdateDish(int id, [FromBody] UpsertDishRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -52,7 +52,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpDelete("dishes/{id}")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> DeleteDish(int id, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -63,7 +63,7 @@ public class LunchMenuController : BaseApiController
     // ==================== MẪU THỰC ĐƠN TUẦN ====================
 
     [HttpGet("menu-templates")]
-    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher,Admin")]
+    [Authorize(Roles = "ServiceStaff,OfficeStaff,SchoolBoard,Teacher")]
     public async Task<IActionResult> GetTemplates([FromQuery] bool includeInactive = false, CancellationToken ct = default)
     {
         var result = await _lunchMenuService.GetTemplatesAsync(includeInactive, ct);
@@ -71,7 +71,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpPost("menu-templates")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> CreateTemplate([FromBody] UpsertWeeklyMenuTemplateRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -80,7 +80,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpPut("menu-templates/{id}")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> UpdateTemplate(int id, [FromBody] UpsertWeeklyMenuTemplateRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -89,7 +89,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpDelete("menu-templates/{id}")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> DeleteTemplate(int id, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -98,7 +98,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpPost("menu-templates/{id}/apply")]
-    [Authorize(Roles = "ServiceStaff,Admin")]
+    [Authorize(Roles = "ServiceStaff")]
     public async Task<IActionResult> ApplyTemplate(int id, [FromBody] ApplyMenuTemplateRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -109,7 +109,7 @@ public class LunchMenuController : BaseApiController
     // ==================== HỒ SƠ CHẾ ĐỘ ĂN HỌC SINH ====================
 
     [HttpGet("students/{studentId}/meal-profile")]
-    [Authorize(Roles = "Parent,Teacher,ServiceStaff,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Parent,Teacher,ServiceStaff,OfficeStaff,SchoolBoard")]
     public async Task<IActionResult> GetStudentMealProfile(int studentId, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();
@@ -119,7 +119,7 @@ public class LunchMenuController : BaseApiController
     }
 
     [HttpPut("students/{studentId}/meal-profile")]
-    [Authorize(Roles = "Parent,ServiceStaff,Admin")]
+    [Authorize(Roles = "Parent,ServiceStaff")]
     public async Task<IActionResult> UpsertStudentMealProfile(int studentId, [FromBody] UpsertStudentMealProfileRequestDto request, CancellationToken ct = default)
     {
         var userId = User.GetRequiredUserId();

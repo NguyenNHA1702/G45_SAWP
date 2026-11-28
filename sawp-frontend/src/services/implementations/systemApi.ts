@@ -12,6 +12,8 @@ export const systemApi: ISystemApi = {
         ...(query.action ? { action: query.action } : {}),
         ...(query.entityName ? { entityName: query.entityName } : {}),
         ...(query.search ? { search: query.search } : {}),
+        ...(query.fromDate ? { fromDate: query.fromDate } : {}),
+        ...(query.toDate ? { toDate: query.toDate } : {}),
       },
     });
     return res.data;

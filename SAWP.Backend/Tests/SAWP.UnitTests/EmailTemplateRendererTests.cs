@@ -14,6 +14,7 @@ public class EmailTemplateRendererTests
     {
         { EmailTemplates.Activation, new() { ["FullName"] = "Nguyễn Văn A", ["Username"] = "gv01", ["Link"] = "http://web.test/activate?token=abc", ["Hours"] = "72" } },
         { EmailTemplates.PasswordRecovery, new() { ["FullName"] = "Nguyễn Văn A", ["Link"] = "http://web.test/reset-password?token=abc", ["Minutes"] = "15" } },
+        { EmailTemplates.EmailChange, new() { ["FullName"] = "Nguyễn Văn A", ["OldEmail"] = "cu@school.vn", ["NewEmail"] = "moi@school.vn", ["Link"] = "http://web.test/confirm-email-change?token=abc", ["Hours"] = "72" } },
     };
 
     [Theory]

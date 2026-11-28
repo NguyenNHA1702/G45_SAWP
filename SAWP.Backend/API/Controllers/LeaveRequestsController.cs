@@ -80,7 +80,7 @@ public class LeaveRequestsController : ControllerBase
     /// GVCN xem danh sách đơn xin nghỉ học của lớp
     /// </summary>
     [HttpGet("class")]
-    [Authorize(Roles = "Teacher,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,SchoolBoard")]
     public async Task<IActionResult> GetClassLeaveRequests(
         [FromQuery] int? classId,
         [FromQuery] string? status,
@@ -101,7 +101,7 @@ public class LeaveRequestsController : ControllerBase
     /// GVCN / BGH xem danh sách đơn xin nghỉ học của lớp (phân trang + thống kê)
     /// </summary>
     [HttpGet("class/paged")]
-    [Authorize(Roles = "Teacher,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,SchoolBoard")]
     public async Task<IActionResult> GetClassLeaveRequestsPaged(
         [FromQuery] int? classId,
         [FromQuery] string? status,
@@ -151,7 +151,7 @@ public class LeaveRequestsController : ControllerBase
     /// GVCN duyệt (Approve) hoặc từ chối (Reject) đơn xin nghỉ kèm đồng bộ bán trú & điểm danh
     /// </summary>
     [HttpPut("{id}/review")]
-    [Authorize(Roles = "Teacher,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,SchoolBoard")]
     public async Task<IActionResult> ReviewLeaveRequest(int id, [FromBody] ReviewLeaveRequestDto review, CancellationToken cancellationToken)
     {
         var userId = User.GetUserId();

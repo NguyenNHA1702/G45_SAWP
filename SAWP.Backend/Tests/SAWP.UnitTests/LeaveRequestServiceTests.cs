@@ -689,8 +689,9 @@ public class LeaveRequestServiceTests : TestBase
     public async Task UTCID01_CancelLeaveRequest_Success()
     {
         // Arrange
-        var req = new AdministrativeRequest { Id = 1, RequesterUserId = 20, Status = RequestStatus.Submitted };
+        var req = new AdministrativeRequest { Id = 1, RequestType = RequestTypes.Leave, RequesterUserId = 20, Status = RequestStatus.Submitted };
         SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<Notification>());
 
         // Act
         var result = await _service.CancelLeaveRequestAsync(1, 20);
@@ -720,7 +721,7 @@ public class LeaveRequestServiceTests : TestBase
     public async Task UTCID03_CancelLeaveRequest_AlreadyApproved_Fails()
     {
         // Arrange
-        var req = new AdministrativeRequest { Id = 2, RequesterUserId = 20, Status = RequestStatus.Approved };
+        var req = new AdministrativeRequest { Id = 2, RequestType = RequestTypes.Leave, RequesterUserId = 20, Status = RequestStatus.Approved };
         SetupRepository(new List<AdministrativeRequest> { req });
 
         // Act
@@ -2575,8 +2576,9 @@ public class LeaveRequestServiceTests : TestBase
     public async Task CancelLeaveRequest_NeedMoreInfoStatus_Succeeds()
     {
         // Arrange
-        var req = new AdministrativeRequest { Id = 230, RequesterUserId = 20, Status = RequestStatus.NeedMoreInfo };
+        var req = new AdministrativeRequest { Id = 230, RequestType = RequestTypes.Leave, RequesterUserId = 20, Status = RequestStatus.NeedMoreInfo };
         SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<Notification>());
 
         // Act
         var res = await _service.CancelLeaveRequestAsync(230, 20);
@@ -2653,11 +2655,12 @@ public class LeaveRequestServiceTests : TestBase
             .ReturnsAsync("attachments\\2026_giaykham.pdf");
         _fileStorageMock.Setup(f => f.SaveFileAsync(It.IsAny<Stream>(), "donthuoc.JPG", "attachments", It.IsAny<CancellationToken>()))
             .ReturnsAsync("attachments/2026_donthuoc.JPG");
-        using var ms = new MemoryStream(new byte[] { 1, 2, 3, 4 });
+        using var pdfMs = new MemoryStream(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D });
+        using var jpgMs = new MemoryStream(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 });
 
         // Act
-        var pdfRes = await _service.UploadAttachmentAsync(ms, "giaykham.pdf", 4);
-        var jpgRes = await _service.UploadAttachmentAsync(ms, "donthuoc.JPG", 4);
+        var pdfRes = await _service.UploadAttachmentAsync(pdfMs, "giaykham.pdf", 5);
+        var jpgRes = await _service.UploadAttachmentAsync(jpgMs, "donthuoc.JPG", 4);
 
         // Assert
         pdfRes.Success.Should().BeTrue();
@@ -2688,7 +2691,7 @@ public class LeaveRequestServiceTests : TestBase
         const long maxBytes = 10 * 1024 * 1024;
         _fileStorageMock.Setup(f => f.SaveFileAsync(It.IsAny<Stream>(), "exact10mb.png", "attachments", It.IsAny<CancellationToken>()))
             .ReturnsAsync("attachments/exact10mb.png");
-        using var ms = new MemoryStream(new byte[] { 1 });
+        using var ms = new MemoryStream(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
 
         // Act
         var tooBigRes = await _service.UploadAttachmentAsync(ms, "big.pdf", maxBytes + 1);
@@ -2796,5 +2799,21 @@ public class LeaveRequestServiceTests : TestBase
         zeroUser.Should().BeNull();
         badExt.Should().BeNull();
         missingFile.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UploadAttachment_PhpDisguisedAsPng_Or300CharFilename_FailsWithMSG41()
+    {
+        var phpBytes = System.Text.Encoding.ASCII.GetBytes("<?php system($_GET['c']); ?>");
+        using var phpStream = new MemoryStream(phpBytes);
+        var phpRes = await _service.UploadAttachmentAsync(phpStream, "avatar.png", phpBytes.Length);
+        phpRes.Success.Should().BeFalse();
+        phpRes.Code.Should().Be(SystemMessages.MSG41.Code);
+
+        var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+        using var pngStream = new MemoryStream(pngBytes);
+        var longNameRes = await _service.UploadAttachmentAsync(pngStream, new string('x', 300) + ".png", pngBytes.Length);
+        longNameRes.Success.Should().BeFalse();
+        longNameRes.Code.Should().Be(SystemMessages.MSG41.Code);
     }
 }

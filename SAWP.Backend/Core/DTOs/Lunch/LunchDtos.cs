@@ -98,6 +98,7 @@ public class DailyMealBoardDto
     public bool IsLocked { get; set; }
     public DateTime? LockedAt { get; set; }
     public string? LockedByName { get; set; }
+    public string? LockNotes { get; set; }
     public string CutoffTime { get; set; } = "08:15";
     public string? ServiceRemarks { get; set; }
     public DailyMenusByMealTypeDto? Menus { get; set; }

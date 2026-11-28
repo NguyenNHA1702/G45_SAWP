@@ -287,7 +287,7 @@ export default function LeaveRequestPage() {
   };
   const hasActiveYearEnd = Boolean(activeSchoolYearEndDate && activeSchoolYearEndDate >= todayStr);
   const maxStartDateStr = hasActiveYearEnd ? activeSchoolYearEndDate! : addDaysIso(todayStr, 180);
-  const rawMaxEndDateStr = startDate ? addDaysIso(startDate, 29) : maxStartDateStr;
+  const rawMaxEndDateStr = startDate ? addDaysIso(startDate, 59) : maxStartDateStr;
   const maxEndDateStr =
     hasActiveYearEnd && rawMaxEndDateStr > maxStartDateStr ? maxStartDateStr : rawMaxEndDateStr;
 
@@ -382,7 +382,17 @@ export default function LeaveRequestPage() {
             : 3;
       return normalized === 3 || newSession === 3 || normalized === newSession;
     };
-    const overlapping = requests.some(
+    let allMyRequests = requests;
+    try {
+      const allRes = await leaveRequestApi.getMyRequests();
+      if (allRes.success && Array.isArray(allRes.data)) {
+        allMyRequests = allRes.data;
+      }
+    } catch {
+      // Fallback to currently loaded list
+    }
+
+    const overlapping = allMyRequests.some(
       (r) =>
         r.id !== editingRequestId &&
         r.studentId === selectedStudentId &&

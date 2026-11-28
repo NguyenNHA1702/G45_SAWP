@@ -13,10 +13,18 @@ namespace Services.Implementations;
 public class AuditService : IAuditService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IClientIpSource? _clientIpSource;
 
-    public AuditService(IUnitOfWork unitOfWork)
+    public AuditService(IUnitOfWork unitOfWork, IClientIpSource? clientIpSource = null)
     {
         _unitOfWork = unitOfWork;
+        _clientIpSource = clientIpSource;
+    }
+
+    private string? ResolveClientIp(string? explicitIp)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitIp)) return explicitIp;
+        return _clientIpSource?.GetClientIp();
     }
 
     // Stored JSON is ASCII only: every non-ASCII character (e.g. Vietnamese) is escaped as \uXXXX
@@ -37,7 +45,7 @@ public class AuditService : IAuditService
             EntityId = entityId,
             OldValues = SerializeValues(oldValues),
             NewValues = SerializeValues(newValues),
-            IpAddress = ipAddress,
+            IpAddress = ResolveClientIp(ipAddress),
             Timestamp = DateTime.UtcNow
         };
         await _unitOfWork.Repository<AuditLog>().AddAsync(log, cancellationToken);
@@ -116,6 +124,19 @@ public class AuditService : IAuditService
                 (x.EntityId != null && x.EntityId.ToLower().Contains(q)) ||
                 (x.NewValues != null && x.NewValues.ToLower().Contains(qInValues)) ||
                 (x.User != null && (x.User.Username.ToLower().Contains(q) || x.User.FullName.ToLower().Contains(q))));
+        }
+
+        if (filter.FromDate.HasValue)
+        {
+            // VN timezone (UTC+7) start of day in UTC
+            var fromUtc = filter.FromDate.Value.Date.AddHours(-7);
+            query = query.Where(x => x.Timestamp >= fromUtc);
+        }
+
+        if (filter.ToDate.HasValue)
+        {
+            var toUtcExclusive = filter.ToDate.Value.Date.AddDays(1).AddHours(-7);
+            query = query.Where(x => x.Timestamp < toUtcExclusive);
         }
 
         query = query.OrderByDescending(x => x.Timestamp).ThenByDescending(x => x.Id);

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   FileSpreadsheet,
+  Pencil,
   Power,
   GraduationCap,
   PlusCircle,
@@ -19,6 +20,7 @@ import toast from 'react-hot-toast';
 import { classApi } from '../../services/implementations/classApi';
 import { CreateSchoolYearModal } from '../../components/classes/CreateSchoolYearModal';
 import { CreateClassModal } from '../../components/classes/CreateClassModal';
+import { EditClassModal } from '../../components/classes/EditClassModal';
 import { AssignTeacherModal } from '../../components/classes/AssignTeacherModal';
 import { AssignStudentsModal } from '../../components/classes/AssignStudentsModal';
 import { ClassDetailModal } from '../../components/classes/ClassDetailModal';
@@ -39,6 +41,7 @@ export default function ClassesPage() {
   // Modals state for Classes & School Year
   const [createYearModalOpen, setCreateYearModalOpen] = useState(false);
   const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
+  const [editClassModalOpen, setEditClassModalOpen] = useState(false);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [studentsModalOpen, setStudentsModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -69,7 +72,7 @@ export default function ClassesPage() {
 
   const userRoles = getUserRoles();
   const canManage = userRoles.some(
-    (r) => typeof r === 'string' && (r.toLowerCase() === 'officestaff' || r.toLowerCase() === 'admin')
+    (r) => typeof r === 'string' && r.toLowerCase() === 'officestaff'
   );
 
   useEffect(() => {
@@ -484,7 +487,7 @@ export default function ClassesPage() {
               Năm học này chưa có lớp học nào cho khối đã chọn. Bạn có thể thêm lớp học mới hoặc nhập xếp lớp từ tệp Excel.
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-              {isDraftYear && (
+              {canManage && isDraftYear && (
                 <button
                   type="button"
                   className="btn btn--secondary"
@@ -493,13 +496,15 @@ export default function ClassesPage() {
                   <FileSpreadsheet size={18} /> Nhập xếp lớp từ tệp
                 </button>
               )}
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={() => setCreateClassModalOpen(true)}
-              >
-                <PlusCircle size={18} /> + Thêm lớp học
-              </button>
+              {canManage && (
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => setCreateClassModalOpen(true)}
+                >
+                  <PlusCircle size={18} /> + Thêm lớp học
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -567,44 +572,69 @@ export default function ClassesPage() {
                           Chưa rà soát
                         </span>
                       )
+                    ) : c.status === 'Inactive' ? (
+                      <span className="badge badge--pink" style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                        Ngừng HĐ
+                      </span>
                     ) : null}
                   </div>
 
-                  {/* Header Row 2: Phòng học & Nút Xóa lớp học */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, minHeight: 28 }}>
+                  {/* Header Row 2: Phòng học & Nút Sửa / Xóa lớp học */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, minHeight: 28, gap: 6 }}>
                     <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
                       Phòng: <strong>{c.roomNumber || 'Chưa xếp'}</strong>
                     </div>
 
                     {canManage && (
-                      <button
-                        type="button"
-                        className="btn btn--secondary btn--sm"
-                        style={{
-                          padding: '3px 8px',
-                          minHeight: 24,
-                          color: enrolled > 0 ? '#94A3B8' : '#DC2626',
-                          borderColor: enrolled > 0 ? '#E2E8F0' : '#FECACA',
-                          backgroundColor: enrolled > 0 ? '#F1F5F9' : '#FEF2F2',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          gap: 4,
-                          borderRadius: 6,
-                          cursor: enrolled > 0 ? 'not-allowed' : 'pointer',
-                          opacity: enrolled > 0 ? 0.6 : 1,
-                        }}
-                        disabled={enrolled > 0}
-                        onClick={() => handleDeleteClass(c)}
-                        title={
-                          enrolled > 0
-                            ? `Không thể xóa vì lớp đang có ${enrolled} học sinh`
-                            : (c.homeroomTeacherStaffId || c.homeroomTeacherUserId || c.homeroomTeacherName)
-                            ? 'Vui lòng gỡ GVCN trước khi xóa lớp'
-                            : 'Xóa lớp học (chỉ khi sĩ số = 0)'
-                        }
-                      >
-                        <Trash2 size={12} /> Xóa lớp học
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{
+                            padding: '3px 8px',
+                            minHeight: 24,
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            gap: 4,
+                            borderRadius: 6,
+                          }}
+                          onClick={() => {
+                            setSelectedClass(c);
+                            setEditClassModalOpen(true);
+                          }}
+                          title="Chỉnh sửa thông tin lớp học (UC-14)"
+                        >
+                          <Pencil size={12} /> Sửa
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          style={{
+                            padding: '3px 8px',
+                            minHeight: 24,
+                            color: enrolled > 0 ? '#94A3B8' : '#DC2626',
+                            borderColor: enrolled > 0 ? '#E2E8F0' : '#FECACA',
+                            backgroundColor: enrolled > 0 ? '#F1F5F9' : '#FEF2F2',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            gap: 4,
+                            borderRadius: 6,
+                            cursor: enrolled > 0 ? 'not-allowed' : 'pointer',
+                            opacity: enrolled > 0 ? 0.6 : 1,
+                          }}
+                          disabled={enrolled > 0}
+                          onClick={() => handleDeleteClass(c)}
+                          title={
+                            enrolled > 0
+                              ? `Không thể xóa vì lớp đang có ${enrolled} học sinh`
+                              : (c.homeroomTeacherStaffId || c.homeroomTeacherUserId || c.homeroomTeacherName)
+                              ? 'Vui lòng gỡ GVCN trước khi xóa lớp'
+                              : 'Xóa lớp học (chỉ khi sĩ số = 0)'
+                          }
+                        >
+                          <Trash2 size={12} /> Xóa
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -664,33 +694,37 @@ export default function ClassesPage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--sm"
-                      style={{ padding: '2px 8px', fontSize: 'var(--fs-xs)' }}
-                      onClick={() => {
-                        setSelectedClass(c);
-                        setTeacherModalOpen(true);
-                      }}
-                    >
-                      {c.homeroomTeacherName ? 'Đổi' : '+ Gán'}
-                    </button>
+                    {canManage && (
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        style={{ padding: '2px 8px', fontSize: 'var(--fs-xs)' }}
+                        onClick={() => {
+                          setSelectedClass(c);
+                          setTeacherModalOpen(true);
+                        }}
+                      >
+                        {c.homeroomTeacherName ? 'Đổi' : '+ Gán'}
+                      </button>
+                    )}
                   </div>
 
                   {/* Card Action Buttons */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 'auto' }}>
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--sm"
-                      onClick={() => {
-                        setSelectedClass(c);
-                        setStudentsModalOpen(true);
-                      }}
-                      disabled={isFull}
-                      title="Tiếp nhận học sinh chuyển trường hoặc bổ sung giữa kỳ"
-                    >
-                      <UserPlus size={14} /> Bổ sung HS
-                    </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: canManage ? '1fr 1fr' : '1fr', gap: 8, marginTop: 'auto' }}>
+                    {canManage && (
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        onClick={() => {
+                          setSelectedClass(c);
+                          setStudentsModalOpen(true);
+                        }}
+                        disabled={isFull}
+                        title="Tiếp nhận học sinh chuyển trường hoặc bổ sung giữa kỳ"
+                      >
+                        <UserPlus size={14} /> Bổ sung HS
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn--primary btn--sm"
@@ -744,6 +778,13 @@ export default function ClassesPage() {
           setSelectedGrade(grade);
           loadClasses(selectedYearId, grade);
         }}
+      />
+
+      <EditClassModal
+        open={editClassModalOpen}
+        onClose={() => setEditClassModalOpen(false)}
+        targetClass={selectedClass}
+        onUpdated={() => loadClasses(selectedYearId, selectedGrade)}
       />
 
       <AssignTeacherModal

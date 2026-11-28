@@ -260,15 +260,23 @@ public class AttendanceService : IAttendanceService
         }
         else
         {
-            var (canRecord, reason) = await CanRecordAsync(classId, targetDate, userId, ct);
-            if (!canRecord)
+            if (hasTeacherSubmittedAttendance && unlockedReq == null)
             {
                 canEdit = false;
-                lockReason = reason ?? "NotAssigned";
+                lockReason = "AlreadySubmitted";
             }
             else
             {
-                canEdit = true;
+                var (canRecord, reason) = await CanRecordAsync(classId, targetDate, userId, ct);
+                if (!canRecord)
+                {
+                    canEdit = false;
+                    lockReason = reason ?? "NotAssigned";
+                }
+                else
+                {
+                    canEdit = true;
+                }
             }
         }
 
@@ -487,7 +495,7 @@ public class AttendanceService : IAttendanceService
         // Tải bản ghi hiện có theo lớp + học sinh trong danh sách lớp (bao gồm HS mới chuyển lớp trong ngày để tránh đụng unique index StudentId+Date+Session)
         var existingRecords = await LoadExistingRecordsForRosterAsync(classId, rosterIds, targetDate, session, track: true, ct);
 
-        // A7: Nếu ngày quá khứ ĐÃ có bản ghi điểm danh do giáo viên nộp -> khóa sửa hàng loạt trừ khi Giáo vụ đã mở khóa cả lớp cho GV
+        // A7 & BR-38 (BUG-ATT-01): Khi bảng điểm danh đã được giáo viên nộp (hôm nay hoặc quá khứ) -> khóa sửa hàng loạt trừ khi Giáo vụ đã mở khóa cả lớp cho GV
         var hasSubmittedRecords = existingRecords.Values.Any(r => r.ClassId == classId && IsTeacherSubmittedRecord(r));
         if (targetDate < _clock.Today && hasSubmittedRecords && (activeUnlock == null || isOfficeStaff))
         {
@@ -496,15 +504,24 @@ public class AttendanceService : IAttendanceService
                 new List<string> { "Bảng điểm danh ngày quá khứ đã có dữ liệu và đã khóa sửa hàng loạt. Vui lòng mở khóa bảng điểm danh cho giáo viên để chỉnh sửa." });
         }
 
-        // AT-11: today's sheet was submitted by the teacher -> Office Staff who are not in charge of the class may not overwrite it in bulk
-        if (targetDate == _clock.Today && hasSubmittedRecords && isOfficeStaff)
+        if (targetDate == _clock.Today && hasSubmittedRecords)
         {
-            var (canRecordToday, _) = await CanRecordAsync(classId, targetDate, userId, ct);
-            if (!canRecordToday)
+            if (isOfficeStaff)
+            {
+                // AT-11: today's sheet was submitted by the teacher -> Office Staff who are not in charge of the class may not overwrite it in bulk
+                var (canRecordToday, _) = await CanRecordAsync(classId, targetDate, userId, ct);
+                if (!canRecordToday)
+                {
+                    return ApiResponse<AttendanceSubmitResultDto>.Fail(
+                        SystemMessages.MSG20,
+                        new List<string> { "Bảng điểm danh hôm nay đã được giáo viên nộp. Vui lòng dùng chức năng điều chỉnh từng bản ghi kèm lý do." });
+                }
+            }
+            else if (activeUnlock == null)
             {
                 return ApiResponse<AttendanceSubmitResultDto>.Fail(
-                    SystemMessages.MSG20,
-                    new List<string> { "Bảng điểm danh hôm nay đã được giáo viên nộp. Vui lòng dùng chức năng điều chỉnh từng bản ghi kèm lý do." });
+                    SystemMessages.MSG19,
+                    new List<string> { "Bảng điểm danh hôm nay đã được nộp và đã khóa chỉnh sửa. Vui lòng gửi yêu cầu mở khóa tới Phòng Giáo vụ nếu cần cập nhật lại." });
             }
         }
 
@@ -630,47 +647,58 @@ public class AttendanceService : IAttendanceService
                 // Hủy suất ăn CHỈ cho HS mới chuyển sang vắng có phép (nếu trước giờ chốt và chưa khóa sổ bếp)
                 foreach (var id in newlyExcused)
                 {
-                    if (lunchRegs.TryGetValue(id, out var r) && r.IsActive && !isMealLocked && now < targetDate.Add(cutoff))
+                    if (lunchRegs.TryGetValue(id, out var r) && r.IsActive)
                     {
-                        r.IsActive = false;
-                        r.CancellationSource = LunchCancellationSource.Attendance;
-                        r.CancelledAt = utcNow;
-                        r.CancelledByUserId = userId;
-                        r.CancellationReason = $"Vắng (có phép) – điểm danh {targetDate:dd/MM}";
-                        result.LunchDeductedCount++;
+                        if (!isMealLocked && now < targetDate.Add(cutoff))
+                        {
+                            r.IsActive = false;
+                            r.CancellationSource = LunchCancellationSource.Attendance;
+                            r.CancelledAt = utcNow;
+                            r.CancelledByUserId = userId;
+                            r.CancellationReason = $"Vắng (có phép) – điểm danh {targetDate:dd/MM}";
+                            result.LunchDeductedCount++;
+                        }
+                        else
+                        {
+                            var studentName = rosterMap.TryGetValue(id, out var st) ? st.FullName : $"HS #{id}";
+                            result.Warnings.Add(isMealLocked
+                                ? $"{studentName}: Sổ bếp đã khóa, không tự động hủy suất ăn."
+                                : $"{studentName}: Bếp đã chốt suất lúc {cutoff:hh\\:mm}, không tự động hủy suất ăn.");
+                        }
                     }
                 }
 
-                // Khôi phục suất ăn cho HS chuyển từ vắng có phép -> đi học/đi muộn,
-                // hoặc HS có đơn nghỉ đã hủy suất nhưng thực tế vẫn đi học
+                // Khôi phục suất ăn CHỈ cho HS chuyển từ vắng có phép -> đi học/đi muộn;
+                // HS có đơn nghỉ đã hủy suất nhưng thực tế đi học -> chỉ cảnh báo MSG75 (không tự bật lại suất ăn)
                 foreach (var id in attendingIds)
                 {
                     if (!lunchRegs.TryGetValue(id, out var r) || r.IsActive) continue;
 
                     var cancelledByLeftExcused = leftExcused.Contains(id) && r.CancellationSource == LunchCancellationSource.Attendance;
                     var cancelledByLeave = r.CancellationSource == LunchCancellationSource.Leave;
-                    if (cancelledByLeftExcused || cancelledByLeave)
-                    {
-                        var studentName = rosterMap.TryGetValue(id, out var st) ? st.FullName : $"HS #{id}";
-                        if (cancelledByLeave)
-                        {
-                            result.Warnings.Add($"{studentName}: có đơn nghỉ đã hủy suất ăn nhưng thực tế đi học.");
-                        }
+                    if (!cancelledByLeftExcused && !cancelledByLeave) continue;
 
-                        if (!isMealLocked && now < targetDate.Add(cutoff))
-                        {
-                            r.IsActive = true;
-                            r.CancellationSource = null;
-                            r.CancelledAt = null;
-                            r.CancelledByUserId = null;
-                            r.CancellationReason = null;
-                            result.LunchRestoredCount++;
-                        }
-                        else
-                        {
-                            result.LunchRestoreSkippedCount++;
-                            result.Warnings.Add($"{studentName}: Bếp đã chốt suất lúc {cutoff:hh\\:mm}, không khôi phục được suất ăn.");
-                        }
+                    var studentName = rosterMap.TryGetValue(id, out var st) ? st.FullName : $"HS #{id}";
+                    if (cancelledByLeave)
+                    {
+                        result.LunchRestoreSkippedCount++;
+                        result.Warnings.Add($"{studentName}: có đơn nghỉ đã hủy suất ăn nhưng thực tế đi học.");
+                        continue;
+                    }
+
+                    if (!isMealLocked && now < targetDate.Add(cutoff))
+                    {
+                        r.IsActive = true;
+                        r.CancellationSource = null;
+                        r.CancelledAt = null;
+                        r.CancelledByUserId = null;
+                        r.CancellationReason = null;
+                        result.LunchRestoredCount++;
+                    }
+                    else
+                    {
+                        result.LunchRestoreSkippedCount++;
+                        result.Warnings.Add($"{studentName}: Bếp đã chốt suất lúc {cutoff:hh\\:mm}, không khôi phục được suất ăn.");
                     }
                 }
             }
@@ -829,11 +857,11 @@ public class AttendanceService : IAttendanceService
             var isMealLocked = correctServiceDay?.IsLocked ?? false;
             var lunchRegs = await _unitOfWork.Lunch.GetRegistrationsForStudentsAsync(new[] { rec.StudentId }, rec.Date, track: true, ct);
 
-            if (rec.Session == AttendanceSession.Morning && lunchRegs.TryGetValue(rec.StudentId, out var lunch))
+            if (rec.Date == _clock.Today && rec.Session == AttendanceSession.Morning && lunchRegs.TryGetValue(rec.StudentId, out var lunch))
             {
                 if (dto.Status == AttendanceStatus.ExcusedAbsence)
                 {
-                    if (lunch.IsActive)
+                    if (lunch.IsActive && !isMealLocked && _clock.Now < rec.Date.Add(cutoff))
                     {
                         lunch.IsActive = false;
                         lunch.CancellationSource = LunchCancellationSource.Staff;
@@ -842,7 +870,7 @@ public class AttendanceService : IAttendanceService
                         lunch.CancellationReason = $"Điều chỉnh điểm danh (Vắng có phép): {reason}";
                     }
                 }
-                else if (oldStatus == AttendanceStatus.ExcusedAbsence && (dto.Status == AttendanceStatus.Present || dto.Status == AttendanceStatus.Late || dto.Status == AttendanceStatus.UnexcusedAbsence))
+                else if (oldStatus == AttendanceStatus.ExcusedAbsence && (dto.Status == AttendanceStatus.Present || dto.Status == AttendanceStatus.Late))
                 {
                     if (!lunch.IsActive && (lunch.CancellationSource == LunchCancellationSource.Attendance || lunch.CancellationSource == LunchCancellationSource.Staff))
                     {
@@ -1223,7 +1251,8 @@ public class AttendanceService : IAttendanceService
             : await _unitOfWork.Attendance.GetClassStatusCountsAsync(classId, fromDate, effectiveTo, ct);
 
         // ATT-11 (UC-23 E1): Không có dữ liệu điểm danh trong khoảng thời gian -> trả 404 MSG43
-        if (rows.Count == 0)
+        var markedTotalCheck = rows.Sum(r => r.Present + r.Late + r.ExcusedAbsence + r.UnexcusedAbsence);
+        if (rows.Count == 0 || markedTotalCheck == 0)
         {
             return ApiResponse<ClassAttendanceSummaryDto>.Fail(SystemMessages.MSG43);
         }
@@ -1237,7 +1266,7 @@ public class AttendanceService : IAttendanceService
             .Select(r => r.Date.Date)
             .Distinct()
             .Count(d => IsSchoolDayByMap(d, calMap));
-        var markedTotal = rows.Sum(r => r.Present + r.Late + r.ExcusedAbsence + r.UnexcusedAbsence);
+        var markedTotal = markedTotalCheck;
         var notMarked = rows.Sum(r => r.NotMarked);
 
         var totals = new AttendanceSummaryDto
@@ -1278,7 +1307,7 @@ public class AttendanceService : IAttendanceService
         var fromDate = from.Date;
         var toDate = to.Date;
 
-        if (toDate < fromDate || (toDate - fromDate).TotalDays > 31)
+        if (toDate < fromDate || (toDate - fromDate).TotalDays >= 31)
         {
             return ApiResponse<ClassAttendanceMatrixDto>.Fail(
                 SystemMessages.MSG01,
@@ -1301,7 +1330,7 @@ public class AttendanceService : IAttendanceService
             ? new List<ClassMatrixStudentDto>()
             : await _unitOfWork.Attendance.GetClassMatrixAsync(classId, fromDate, effectiveTo, ct);
 
-        if (students.Count == 0)
+        if (students.Count == 0 || students.All(s => s.Cells.Count == 0))
         {
             return ApiResponse<ClassAttendanceMatrixDto>.Fail(SystemMessages.MSG43);
         }
@@ -1720,10 +1749,28 @@ public class AttendanceService : IAttendanceService
             return ApiResponse<bool>.Fail(SystemMessages.MSG43);
         }
 
+        // BUG-ATT-05: Chỉ GVCN của lớp mới được gửi yêu cầu điểm danh lại
+        var (canRecord, _) = await CanRecordAsync(classId, targetDate, requesterUserId, ct);
+        if (!canRecord)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG10);
+        }
+
         var schoolYearId = cls.SchoolYearId > 0 ? cls.SchoolYearId : (int?)null;
         if (!await ValidateSchoolDayAsync(targetDate, schoolYearId, ct))
         {
             return ApiResponse<bool>.Fail("MSG01", "Ngày đã chọn không phải ngày học.");
+        }
+
+        // Nếu là hôm nay, chỉ cho phép gửi yêu cầu khi bảng đã bị khóa (GV đã nộp)
+        if (targetDate == _clock.Today)
+        {
+            var todayRecords = await _unitOfWork.Attendance.GetDailyClassAttendanceAsync(classId, targetDate, dto.Session, track: false, ct);
+            var hasSubmitted = todayRecords != null && todayRecords.Any(IsTeacherSubmittedRecord);
+            if (!hasSubmitted)
+            {
+                return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Bảng điểm danh hôm nay chưa bị khóa; bạn có thể chấm trực tiếp không cần gửi yêu cầu mở khóa." });
+            }
         }
 
         var officeStaffUserIds = await _unitOfWork.Repository<User>()
@@ -1756,23 +1803,19 @@ public class AttendanceService : IAttendanceService
 
             if (pendingReq != null)
             {
-                pendingReq.Reason = reason;
-                pendingReq.RequestedByUserId = requesterUserId;
-                pendingReq.CreatedAt = utcNow;
+                return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Đã có yêu cầu điểm danh lại đang chờ Giáo vụ phê duyệt cho buổi này." });
             }
-            else
+
+            await reqRepo.AddAsync(new AttendanceReattendanceRequest
             {
-                await reqRepo.AddAsync(new AttendanceReattendanceRequest
-                {
-                    ClassId = classId,
-                    Date = targetDate,
-                    Session = dto.Session,
-                    RequestedByUserId = requesterUserId,
-                    Reason = reason,
-                    Status = ReattendanceRequestStatus.Pending,
-                    CreatedAt = utcNow
-                }, ct);
-            }
+                ClassId = classId,
+                Date = targetDate,
+                Session = dto.Session,
+                RequestedByUserId = requesterUserId,
+                Reason = reason,
+                Status = ReattendanceRequestStatus.Pending,
+                CreatedAt = utcNow
+            }, ct);
         }
 
         var sessionLabel = dto.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";

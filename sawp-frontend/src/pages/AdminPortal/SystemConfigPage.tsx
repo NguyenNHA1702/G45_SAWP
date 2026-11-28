@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, Clock, Save, Settings } from 'lucide-react';
+import { Bell, BookOpen, CalendarDays, Clock, Save, Settings, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAuthUser } from '../../services/apiClient';
 import { adminApi } from '../../services/implementations/adminApi';
@@ -7,7 +7,8 @@ import { asApiError } from '../../utils/apiError';
 import type { LunchCutoffDayDto, SchoolCalendarDayDto } from '../../types/admin.types';
 import { getSystemMessage } from '../../constants/messages';
 import { DateInput } from '../../components/common/DateInput';
-import { formatDateDDMMYYYY } from '../../utils/date';
+import { NotificationTemplatesTab, PermissionsMatrixTab, ReferenceItemsTab } from '../../components/admin/AdminMetadataTabs';
+import { formatDateDDMMYYYY, todayIso } from '../../utils/date';
 
 export default function SystemConfigPage() {
   const isAdmin = (() => {
@@ -21,21 +22,21 @@ export default function SystemConfigPage() {
     }
   })();
 
-  const [activeTab, setActiveTab] = useState<'calendar' | 'lunch'>('calendar');
-  const [month, setMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [activeTab, setActiveTab] = useState<'calendar' | 'lunch' | 'permissions' | 'references' | 'templates'>('calendar');
+  const [month, setMonth] = useState<string>(() => todayIso().slice(0, 7));
 
   // Calendar tab
   const [calendarDays, setCalendarDays] = useState<SchoolCalendarDayDto[]>([]);
-  const [calStartDate, setCalStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [calEndDate, setCalEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [calStartDate, setCalStartDate] = useState<string>(() => todayIso());
+  const [calEndDate, setCalEndDate] = useState<string>(() => todayIso());
   const [calIsSchoolDay, setCalIsSchoolDay] = useState<boolean>(true);
   const [calNote, setCalNote] = useState<string>('');
   const [savingCalendar, setSavingCalendar] = useState(false);
 
   // Lunch cutoff tab
   const [lunchDays, setLunchDays] = useState<LunchCutoffDayDto[]>([]);
-  const [lunchStartDate, setLunchStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [lunchEndDate, setLunchEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [lunchStartDate, setLunchStartDate] = useState<string>(() => todayIso());
+  const [lunchEndDate, setLunchEndDate] = useState<string>(() => todayIso());
   const [lunchServing, setLunchServing] = useState<boolean>(true);
   const [lunchCutoff, setLunchCutoff] = useState<string>('08:15');
   const [lunchRemarks, setLunchRemarks] = useState<string>('');
@@ -169,20 +170,32 @@ export default function SystemConfigPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <div>
+        <div style={{ minWidth: 0, flex: '1 1 320px' }}>
           <span className="badge badge--amber" style={{ marginBottom: 8 }}>
-            <Settings size={13} /> Cấu hình hệ thống (UC-58 – UC-60)
+            <Settings size={13} /> {isAdmin ? 'Cấu hình hệ thống (UC-54, UC-56 – UC-60)' : 'Cấu hình lịch năm học (UC-58 – UC-60)'}
           </span>
-          <h1 style={{ margin: '4px 0 4px' }}>Lịch năm học & Giờ chốt bán trú</h1>
+          <h1 style={{ margin: '4px 0 4px' }}>
+            {activeTab === 'permissions'
+              ? 'Phân quyền chi tiết theo vai trò'
+              : activeTab === 'references'
+              ? 'Danh mục tham chiếu hệ thống'
+              : activeTab === 'templates'
+              ? 'Mẫu thông báo hệ thống'
+              : 'Lịch năm học & Giờ chốt bán trú'}
+          </h1>
           <p style={{ margin: 0, color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
-            Thiết lập ngày học / ngày nghỉ lễ và mốc giờ chốt suất ăn theo ngày.
+            {activeTab === 'calendar' || activeTab === 'lunch'
+              ? 'Thiết lập ngày học / ngày nghỉ lễ và mốc giờ chốt suất ăn theo ngày.'
+              : 'Quản trị phân quyền RBAC, danh mục tham chiếu dropdown và mẫu thông báo toàn hệ thống.'}
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>Tháng:</label>
-          <input type="month" className="input" value={month} onChange={(e) => setMonth(e.target.value)} />
-        </div>
+        {(activeTab === 'calendar' || activeTab === 'lunch') && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, whiteSpace: 'nowrap' }}>Tháng:</label>
+            <input type="month" className="input" style={{ minWidth: 160 }} value={month} onChange={(e) => setMonth(e.target.value)} />
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -195,17 +208,46 @@ export default function SystemConfigPage() {
           <CalendarDays size={15} /> Lịch ngày học / Ngày nghỉ
         </button>
         {isAdmin && (
-          <button
-            type="button"
-            className={activeTab === 'lunch' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
-            onClick={() => setActiveTab('lunch')}
-          >
-            <Clock size={15} /> Giờ chốt bán trú (Cutoff)
-          </button>
+          <>
+            <button
+              type="button"
+              className={activeTab === 'lunch' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+              onClick={() => setActiveTab('lunch')}
+            >
+              <Clock size={15} /> Giờ chốt bán trú (Cutoff)
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'permissions' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+              onClick={() => setActiveTab('permissions')}
+            >
+              <ShieldCheck size={15} /> Phân quyền vai trò (UC-54)
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'references' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+              onClick={() => setActiveTab('references')}
+            >
+              <BookOpen size={15} /> Danh mục tham chiếu (UC-56)
+            </button>
+            <button
+              type="button"
+              className={activeTab === 'templates' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm'}
+              onClick={() => setActiveTab('templates')}
+            >
+              <Bell size={15} /> Mẫu thông báo (UC-57)
+            </button>
+          </>
         )}
       </div>
 
-      {activeTab === 'calendar' ? (
+      {activeTab === 'permissions' && isAdmin ? (
+        <PermissionsMatrixTab />
+      ) : activeTab === 'references' && isAdmin ? (
+        <ReferenceItemsTab />
+      ) : activeTab === 'templates' && isAdmin ? (
+        <NotificationTemplatesTab />
+      ) : activeTab === 'calendar' ? (
         <div className="responsive-split">
           <form onSubmit={handleSaveCalendarDay} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <h3 style={{ margin: 0 }}>Cập nhật lịch ngày học / nghỉ</h3>

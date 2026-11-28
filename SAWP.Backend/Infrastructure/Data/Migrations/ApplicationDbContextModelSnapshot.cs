@@ -592,8 +592,8 @@ namespace Infrastructure.Data.Migrations
 
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
+                        .HasMaxLength(5000)
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -818,6 +818,72 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("DocumentRequestDetails");
                 });
 
+            modelBuilder.Entity("Core.Entities.EmailChangeRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("GuardianId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("OldEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("RequestedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TargetUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GuardianId");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("TargetUserId");
+
+                    b.HasIndex("Status", "CreatedAt");
+
+                    b.ToTable("EmailChangeRequests");
+                });
+
             modelBuilder.Entity("Core.Entities.Guardian", b =>
                 {
                     b.Property<int>("Id")
@@ -1011,13 +1077,17 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("time");
 
                     b.Property<DateTime>("Date")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("date");
 
                     b.Property<bool>("IsLocked")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsServing")
                         .HasColumnType("bit");
+
+                    b.Property<string>("LockNotes")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
 
                     b.Property<DateTime?>("LockedAt")
                         .HasColumnType("datetime2");
@@ -1027,6 +1097,9 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(250)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Date")
+                        .IsUnique();
 
                     b.ToTable("LunchServiceDays");
                 });
@@ -1112,6 +1185,78 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("Core.Entities.NotificationTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BodyTemplate")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("TitleTemplate")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("NotificationTemplates");
+                });
+
+            modelBuilder.Entity("Core.Entities.Permission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Module")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Permissions");
+                });
+
             modelBuilder.Entity("Core.Entities.PostAttachment", b =>
                 {
                     b.Property<int>("Id")
@@ -1163,8 +1308,8 @@ namespace Infrastructure.Data.Migrations
 
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -1218,6 +1363,46 @@ namespace Infrastructure.Data.Migrations
                     b.ToTable("PostReactions");
                 });
 
+            modelBuilder.Entity("Core.Entities.ReferenceItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ReferenceItems");
+                });
+
             modelBuilder.Entity("Core.Entities.Role", b =>
                 {
                     b.Property<int>("Id")
@@ -1238,6 +1423,36 @@ namespace Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Roles");
+                });
+
+            modelBuilder.Entity("Core.Entities.RolePermission", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("IsGranted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("PermissionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RoleId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PermissionId");
+
+                    b.HasIndex("RoleId", "PermissionId")
+                        .IsUnique();
+
+                    b.ToTable("RolePermissions");
                 });
 
             modelBuilder.Entity("Core.Entities.SchoolCalendarDay", b =>
@@ -1458,6 +1673,9 @@ namespace Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasDefaultValue("Good");
 
+                    b.Property<int?>("SchoolYearId")
+                        .HasColumnType("int");
+
                     b.Property<int>("StudentId")
                         .HasColumnType("int");
 
@@ -1479,11 +1697,17 @@ namespace Infrastructure.Data.Migrations
 
                     b.HasIndex("AcknowledgedByGuardianId");
 
+                    b.HasIndex("SchoolYearId");
+
                     b.HasIndex("TeacherUserId");
 
                     b.HasIndex("ClassId", "WeekNumber");
 
                     b.HasIndex("StudentId", "WeekNumber");
+
+                    b.HasIndex("StudentId", "SchoolYearId", "WeekNumber")
+                        .IsUnique()
+                        .HasFilter("[SchoolYearId] IS NOT NULL");
 
                     b.ToTable("StudentEvaluations");
                 });
@@ -1601,10 +1825,12 @@ namespace Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[Status] <> 3");
 
                     b.HasIndex("Username")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[Status] <> 3");
 
                     b.HasIndex("CreatedAt", "Id");
 
@@ -2068,6 +2294,39 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("AdministrativeRequest");
                 });
 
+            modelBuilder.Entity("Core.Entities.EmailChangeRequest", b =>
+                {
+                    b.HasOne("Core.Entities.Guardian", "Guardian")
+                        .WithMany()
+                        .HasForeignKey("GuardianId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Core.Entities.User", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.User", "ReviewedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Core.Entities.User", "TargetUser")
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Guardian");
+
+                    b.Navigation("RequestedByUser");
+
+                    b.Navigation("ReviewedByUser");
+
+                    b.Navigation("TargetUser");
+                });
+
             modelBuilder.Entity("Core.Entities.Guardian", b =>
                 {
                     b.HasOne("Core.Entities.User", "User")
@@ -2196,6 +2455,25 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Core.Entities.RolePermission", b =>
+                {
+                    b.HasOne("Core.Entities.Permission", "Permission")
+                        .WithMany("RolePermissions")
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Core.Entities.Role", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Permission");
+
+                    b.Navigation("Role");
+                });
+
             modelBuilder.Entity("Core.Entities.SchoolCalendarDay", b =>
                 {
                     b.HasOne("Core.Entities.SchoolYear", "SchoolYear")
@@ -2231,6 +2509,11 @@ namespace Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Core.Entities.SchoolYear", "SchoolYear")
+                        .WithMany()
+                        .HasForeignKey("SchoolYearId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Core.Entities.Student", "Student")
                         .WithMany()
                         .HasForeignKey("StudentId")
@@ -2246,6 +2529,8 @@ namespace Infrastructure.Data.Migrations
                     b.Navigation("AcknowledgedByGuardian");
 
                     b.Navigation("Class");
+
+                    b.Navigation("SchoolYear");
 
                     b.Navigation("Student");
 
@@ -2398,6 +2683,11 @@ namespace Infrastructure.Data.Migrations
             modelBuilder.Entity("Core.Entities.LunchServiceDay", b =>
                 {
                     b.Navigation("Dishes");
+                });
+
+            modelBuilder.Entity("Core.Entities.Permission", b =>
+                {
+                    b.Navigation("RolePermissions");
                 });
 
             modelBuilder.Entity("Core.Entities.Role", b =>

@@ -556,18 +556,26 @@ public class LunchService : ILunchService
             return ApiResponse<StudentLunchScheduleDto>.Fail(SystemMessages.MSG11);
         }
 
-        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) ||
-                             roles.Contains(UserRoles.ServiceStaff) ||
-                             roles.Contains(UserRoles.OfficeStaff) ||
-                             roles.Contains(UserRoles.SchoolBoard) ||
-                             roles.Contains(UserRoles.Teacher);
+        var isSchoolWideStaff = roles.Contains(UserRoles.ServiceStaff) ||
+                                roles.Contains(UserRoles.OfficeStaff) ||
+                                roles.Contains(UserRoles.SchoolBoard);
 
-        if (!isStaffOrAdmin)
+        if (!isSchoolWideStaff)
         {
-            var isLinked = await IsParentLinkedToStudentAsync(userId, studentId, cancellationToken);
-            if (!isLinked)
+            var isTeacherAllowed = false;
+            if (roles.Contains(UserRoles.Teacher))
             {
-                return ApiResponse<StudentLunchScheduleDto>.Fail(SystemMessages.MSG10);
+                var homeroomClassIds = await GetTeacherHomeroomClassIdsAsync(userId, cancellationToken);
+                isTeacherAllowed = student.ClassAssignments.Any(ca => ca.IsActive && homeroomClassIds.Contains(ca.ClassId));
+            }
+
+            if (!isTeacherAllowed)
+            {
+                var isLinked = roles.Contains(UserRoles.Parent) && await IsParentLinkedToStudentAsync(userId, studentId, cancellationToken);
+                if (!isLinked)
+                {
+                    return ApiResponse<StudentLunchScheduleDto>.Fail(SystemMessages.MSG10);
+                }
             }
         }
 
@@ -773,6 +781,13 @@ public class LunchService : ILunchService
         if (student == null)
         {
             return ApiResponse<BatchLunchRegistrationResultDto>.Fail(SystemMessages.MSG11);
+        }
+
+        if (!string.Equals(student.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
+                SystemMessages.MSG01,
+                new List<string> { "Học sinh không ở trạng thái đang học (Active), không thể đăng ký suất ăn bán trú." });
         }
 
         if (!isStaffOrAdmin && userId > 0)
@@ -1070,13 +1085,46 @@ public class LunchService : ILunchService
         return ApiResponse<bool>.Ok(true, SystemMessages.MSG26);
     }
 
-    public async Task<ApiResponse<DailyMealCountReportDto>> GetDailyMealCountAsync(DateTime date, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<DailyMealCountReportDto>> GetDailyMealCountAsync(
+        DateTime date,
+        int? userId = null,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default)
     {
+        if (roles != null &&
+            !roles.Contains(UserRoles.ServiceStaff) &&
+            !roles.Contains(UserRoles.OfficeStaff) &&
+            !roles.Contains(UserRoles.SchoolBoard) &&
+            !roles.Contains(UserRoles.Teacher))
+        {
+            return ApiResponse<DailyMealCountReportDto>.Fail(SystemMessages.MSG10);
+        }
+
+        bool isTeacherOnly = roles != null &&
+                             roles.Contains(UserRoles.Teacher) &&
+                             !roles.Contains(UserRoles.ServiceStaff) &&
+                             !roles.Contains(UserRoles.OfficeStaff) &&
+                             !roles.Contains(UserRoles.SchoolBoard);
+
+        HashSet<int>? allowedClassIds = null;
+        if (isTeacherOnly)
+        {
+            allowedClassIds = userId.HasValue
+                ? await GetTeacherHomeroomClassIdsAsync(userId.Value, cancellationToken)
+                : new HashSet<int>();
+        }
+
         var targetDate = date.Date;
-        var activeRegs = (await _unitOfWork.Repository<LunchRegistration>()
+        var activeQuery = _unitOfWork.Repository<LunchRegistration>()
             .Query()
-            .Where(r => r.Date == targetDate && r.IsActive && !r.IsWaitlisted)
-            .ToListAsync(cancellationToken))
+            .Where(r => r.Date == targetDate && r.IsActive && !r.IsWaitlisted);
+
+        if (allowedClassIds != null)
+        {
+            activeQuery = activeQuery.Where(r => r.Student.ClassAssignments.Any(ca => ca.IsActive && allowedClassIds.Contains(ca.ClassId)));
+        }
+
+        var activeRegs = (await activeQuery.ToListAsync(cancellationToken))
             .GroupBy(r => r.StudentId)
             .Select(g => g.OrderByDescending(x => x.Id).First())
             .ToList();
@@ -1137,17 +1185,24 @@ public class LunchService : ILunchService
             ? await serviceDayRepo.Query().FirstOrDefaultAsync(d => d.Date == targetDate, cancellationToken)
             : null;
         var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
+        if (resolved.IsLocked)
+        {
+            return ApiResponse<bool>.Fail(
+                SystemMessages.MSG27,
+                new List<string> { "Ngày bán trú đã khóa sổ nấu, vui lòng mở khóa sổ trước khi khôi phục suất ăn." });
+        }
+
         var afterCutoff = IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked);
 
-        // Phương án A (SSAWP-135): Sau giờ chốt / đã khóa ngày, chặn Teacher/OfficeStaff; chỉ ServiceStaff/Admin được khôi phục ngoại lệ kèm lý do + AuditLog + thông báo bếp
+        // Phương án A (SSAWP-135): Sau giờ chốt, chặn Teacher/OfficeStaff; chỉ ServiceStaff được khôi phục ngoại lệ kèm lý do + AuditLog + thông báo bếp
         if (afterCutoff)
         {
-            var isKitchenOrAdmin = roles != null && (roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.Admin));
-            if (!isKitchenOrAdmin)
+            var isKitchen = roles != null && roles.Contains(UserRoles.ServiceStaff);
+            if (!isKitchen)
             {
                 return ApiResponse<bool>.Fail(
                     SystemMessages.MSG27,
-                    new List<string> { $"Đã qua giờ chốt ({resolved.Cutoff:hh\\:mm}) hoặc ngày đã khóa. Chỉ Nhân viên bán trú / Quản trị viên mới được phép khôi phục ngoại lệ." });
+                    new List<string> { $"Đã qua giờ chốt ({resolved.Cutoff:hh\\:mm}). Chỉ Nhân viên bán trú mới được phép khôi phục ngoại lệ." });
             }
 
             if (string.IsNullOrWhiteSpace(reason))
@@ -1155,6 +1210,29 @@ public class LunchService : ILunchService
                 return ApiResponse<bool>.Fail(
                     SystemMessages.MSG01,
                     new List<string> { "Bắt buộc phải nhập lý do khi khôi phục suất ăn sau giờ chốt." });
+            }
+        }
+
+        if (roles != null)
+        {
+            bool isTeacherOnlyRestore = roles.Contains(UserRoles.Teacher) &&
+                                        !roles.Contains(UserRoles.ServiceStaff) &&
+                                        !roles.Contains(UserRoles.OfficeStaff);
+            if (isTeacherOnlyRestore)
+            {
+                var allowedClassIds = userId > 0
+                    ? await GetTeacherHomeroomClassIdsAsync(userId, cancellationToken)
+                    : new HashSet<int>();
+
+                var caRepo = _unitOfWork.Repository<ClassAssignment>();
+                var studentInHomeroom = caRepo != null && await caRepo.Query()
+                    .AnyAsync(ca => ca.StudentId == studentId && ca.IsActive && allowedClassIds.Contains(ca.ClassId), cancellationToken);
+                if (!studentInHomeroom)
+                {
+                    return ApiResponse<bool>.Fail(
+                        SystemMessages.MSG20,
+                        new List<string> { "Giáo viên chỉ được phép khôi phục suất ăn cho học sinh thuộc lớp mình chủ nhiệm." });
+                }
             }
         }
 
@@ -1174,9 +1252,12 @@ public class LunchService : ILunchService
             reg.CancellationReason = null;
             var restoreTag = $"[Khôi phục suất ăn: {cleanReason} - {_clock.Now:HH:mm dd/MM/yyyy}]";
             var existingRemarks = reg.Remarks?.Trim();
-            reg.Remarks = !string.IsNullOrWhiteSpace(existingRemarks) && !existingRemarks.StartsWith("[Khôi phục", StringComparison.OrdinalIgnoreCase)
+            var combinedRemarks = !string.IsNullOrWhiteSpace(existingRemarks) && !existingRemarks.StartsWith("[Khôi phục", StringComparison.OrdinalIgnoreCase)
                 ? $"{existingRemarks} | {restoreTag}"
                 : restoreTag;
+            reg.Remarks = combinedRemarks.Length > MaxRemarksLength
+                ? combinedRemarks.Substring(0, MaxRemarksLength)
+                : combinedRemarks;
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             await _auditService.LogActionAsync(
@@ -1226,6 +1307,25 @@ public class LunchService : ILunchService
         }
 
         return ApiResponse<bool>.Ok(false, "Học sinh chưa có bản ghi đăng ký bán trú bị hủy cho ngày này");
+    }
+
+    private async Task<HashSet<int>> GetTeacherHomeroomClassIdsAsync(int userId, CancellationToken cancellationToken)
+    {
+        var staffRepo = _unitOfWork.Repository<StaffProfile>();
+        var classRepo = _unitOfWork.Repository<Class>();
+        if (staffRepo == null || classRepo == null) return new HashSet<int>();
+
+        var staff = await staffRepo.Query()
+            .FirstOrDefaultAsync(sp => sp.UserId == userId, cancellationToken);
+
+        if (staff == null) return new HashSet<int>();
+
+        var homeroomIds = await classRepo.Query()
+            .Where(c => c.HomeroomTeacherId == staff.Id && c.Status == "Active")
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+
+        return homeroomIds.ToHashSet();
     }
 
     private static ClassAssignment? GetPrimaryClassAssignment(LunchRegistration reg, HashSet<int>? scopedClassIds = null)
@@ -1295,9 +1395,10 @@ public class LunchService : ILunchService
 
         var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
 
-        // Xác định phạm vi quyền (UC-33: Nhân viên bán trú vận hành; BGH xem toàn trường; Giáo viên xem lớp mình phụ trách)
+        // Xác định phạm vi quyền (UC-33: Nhân viên bán trú vận hành; BGH & Giáo vụ xem toàn trường; Giáo viên xem lớp mình phụ trách)
         if (roles != null &&
             !roles.Contains(UserRoles.ServiceStaff) &&
+            !roles.Contains(UserRoles.OfficeStaff) &&
             !roles.Contains(UserRoles.SchoolBoard) &&
             !roles.Contains(UserRoles.Teacher))
         {
@@ -1308,6 +1409,7 @@ public class LunchService : ILunchService
         bool isTeacherOnly = roles != null &&
                              roles.Contains(UserRoles.Teacher) &&
                              !canManage &&
+                             !roles.Contains(UserRoles.OfficeStaff) &&
                              !roles.Contains(UserRoles.SchoolBoard);
 
         HashSet<int>? allowedClassIds = null;
@@ -1520,6 +1622,7 @@ public class LunchService : ILunchService
             IsLocked = resolved.IsLocked,
             LockedAt = resolved.LockedAt,
             LockedByName = lockedByName,
+            LockNotes = serviceDay?.LockNotes,
             CutoffTime = resolved.Cutoff.ToString(@"hh\:mm"),
             ServiceRemarks = resolved.Remarks,
             Menus = todayMenusDto,
@@ -1581,7 +1684,7 @@ public class LunchService : ILunchService
                 CutoffTime = cutoff,
                 IsLocked = true,
                 LockedAt = DateTime.UtcNow,
-                Remarks = request.Notes
+                LockNotes = trimmedLockNotes
             };
             await _unitOfWork.Repository<LunchServiceDay>().AddAsync(serviceDay, cancellationToken);
         }
@@ -1589,9 +1692,9 @@ public class LunchService : ILunchService
         {
             serviceDay.IsLocked = true;
             serviceDay.LockedAt = DateTime.UtcNow;
-            if (!string.IsNullOrEmpty(request.Notes))
+            if (!string.IsNullOrEmpty(trimmedLockNotes))
             {
-                serviceDay.Remarks = request.Notes;
+                serviceDay.LockNotes = trimmedLockNotes;
             }
         }
 
@@ -1651,8 +1754,35 @@ public class LunchService : ILunchService
         return ApiResponse<bool>.Ok(true, $"Đã mở khóa ngày bán trú {targetDate:dd/MM/yyyy} thành công.");
     }
 
-    public async Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, CancellationToken cancellationToken = default)
+    public async Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(
+        DateTime date,
+        int? userId = null,
+        IReadOnlyList<UserRoles>? roles = null,
+        CancellationToken cancellationToken = default)
     {
+        if (roles != null &&
+            !roles.Contains(UserRoles.ServiceStaff) &&
+            !roles.Contains(UserRoles.OfficeStaff) &&
+            !roles.Contains(UserRoles.SchoolBoard) &&
+            !roles.Contains(UserRoles.Teacher))
+        {
+            return ApiResponse<MealHeadcountDto>.Fail(SystemMessages.MSG10);
+        }
+
+        bool isTeacherOnly = roles != null &&
+                             roles.Contains(UserRoles.Teacher) &&
+                             !roles.Contains(UserRoles.ServiceStaff) &&
+                             !roles.Contains(UserRoles.OfficeStaff) &&
+                             !roles.Contains(UserRoles.SchoolBoard);
+
+        HashSet<int>? allowedClassIds = null;
+        if (isTeacherOnly)
+        {
+            allowedClassIds = userId.HasValue
+                ? await GetTeacherHomeroomClassIdsAsync(userId.Value, cancellationToken)
+                : new HashSet<int>();
+        }
+
         var targetDate = date.Date;
         var serviceDays = await _unitOfWork.Repository<LunchServiceDay>()
             .FindAsync(d => d.Date == targetDate, cancellationToken);
@@ -1675,6 +1805,10 @@ public class LunchService : ILunchService
         }
 
         var rows = await _unitOfWork.Lunch.GetHeadcountRowsAsync(targetDate, cancellationToken);
+        if (allowedClassIds != null)
+        {
+            rows = rows.Where(r => allowedClassIds.Contains(r.ClassId)).ToList();
+        }
         var allClassIds = rows.Select(r => r.ClassId).Distinct().ToList();
         var submittedClassIds = await _unitOfWork.Attendance.GetSubmittedClassIdsAsync(allClassIds, targetDate, AttendanceSession.Morning, cancellationToken);
 
@@ -1713,9 +1847,9 @@ public class LunchService : ILunchService
         UpdateLunchRegistrationMealTypeDto request,
         CancellationToken cancellationToken = default)
     {
-        var isStaffOrAdmin = roles.Contains(UserRoles.Admin) || roles.Contains(UserRoles.ServiceStaff);
+        var isKitchen = roles.Contains(UserRoles.ServiceStaff);
         var isParent = roles.Contains(UserRoles.Parent);
-        if (!isStaffOrAdmin && !isParent)
+        if (!isKitchen && !isParent)
         {
             return ApiResponse<bool>.Fail(
                 SystemMessages.MSG10,
@@ -1727,7 +1861,7 @@ public class LunchService : ILunchService
             return ApiResponse<bool>.Fail(SystemMessages.MSG01);
         }
 
-        if (!isStaffOrAdmin && userId > 0)
+        if (!isKitchen && userId > 0)
         {
             var isLinked = await IsParentLinkedToStudentAsync(userId, request.StudentId, cancellationToken);
             if (!isLinked)
@@ -1748,7 +1882,7 @@ public class LunchService : ILunchService
         var targetDate = request.Date.Date;
 
         // Phụ huynh chọn Chế độ đặc biệt (1-click) có thể fallback từ hồ sơ dị ứng đã khai báo
-        if (!isStaffOrAdmin && request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
+        if (!isKitchen && request.MealType == MealType.SpecialDiet && string.IsNullOrWhiteSpace(trimmedRemarks))
         {
             var profileMap = await GetStudentMealProfileMapAsync(new[] { request.StudentId }, cancellationToken);
             profileMap.TryGetValue(request.StudentId, out var mealProfile);
@@ -1823,7 +1957,7 @@ public class LunchService : ILunchService
                 new List<string> { "Ngày bán trú đã khóa sổ nấu, vui lòng mở khóa trước khi điều chỉnh chế độ khẩu phần." });
         }
 
-        if (!isStaffOrAdmin && IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
+        if (!isKitchen && IsCutoffPassed(targetDate, resolved.Cutoff, resolved.IsLocked))
         {
             return ApiResponse<bool>.Fail(
                 SystemMessages.MSG27,
@@ -1832,7 +1966,11 @@ public class LunchService : ILunchService
 
         var oldVal = new { reg.MealType, reg.Remarks };
         reg.MealType = request.MealType;
-        if (isStaffOrAdmin || request.Remarks != null || (request.MealType == MealType.SpecialDiet && trimmedRemarks != null))
+        if (request.MealType != MealType.SpecialDiet)
+        {
+            reg.Remarks = trimmedRemarks;
+        }
+        else if (isKitchen || request.Remarks != null || trimmedRemarks != null)
         {
             reg.Remarks = trimmedRemarks;
         }
@@ -1868,6 +2006,7 @@ public class LunchService : ILunchService
 
         if (roles != null &&
             !roles.Contains(UserRoles.ServiceStaff) &&
+            !roles.Contains(UserRoles.OfficeStaff) &&
             !roles.Contains(UserRoles.SchoolBoard) &&
             !roles.Contains(UserRoles.Teacher))
         {
@@ -1878,6 +2017,7 @@ public class LunchService : ILunchService
         bool isTeacherOnly = roles != null &&
                              roles.Contains(UserRoles.Teacher) &&
                              !roles.Contains(UserRoles.ServiceStaff) &&
+                             !roles.Contains(UserRoles.OfficeStaff) &&
                              !roles.Contains(UserRoles.SchoolBoard);
 
         HashSet<int>? allowedClassIds = null;

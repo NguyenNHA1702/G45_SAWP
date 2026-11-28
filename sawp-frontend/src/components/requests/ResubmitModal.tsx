@@ -34,18 +34,23 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
   if (!request) return null;
 
   const isClassTransfer = request.requestType === 'ClassTransfer';
+  const isOtherRequest = request.requestType === 'Other';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isClassTransfer && !reason.trim()) {
-      toast.error('Vui lòng nhập lý do xin chuyển lớp cập nhật.');
+    if (isClassTransfer && reason.trim().length < 5) {
+      toast.error('Vui lòng nhập lý do xin chuyển lớp cập nhật (tối thiểu 5 ký tự).');
       return;
     }
-    if (!isClassTransfer && !purpose.trim()) {
-      toast.error('Vui lòng nhập mục đích xin cấp giấy tờ cập nhật.');
+    if (!isClassTransfer && purpose.trim().length < 5) {
+      toast.error(
+        isOtherRequest
+          ? 'Vui lòng nhập nội dung đề xuất / kiến nghị cập nhật (tối thiểu 5 ký tự).'
+          : 'Vui lòng nhập mục đích xin cấp giấy tờ cập nhật (tối thiểu 5 ký tự).'
+      );
       return;
     }
-    if (!isClassTransfer && (numberOfCopies < 1 || numberOfCopies > 10)) {
+    if (!isClassTransfer && !isOtherRequest && (numberOfCopies < 1 || numberOfCopies > 10)) {
       toast.error('Số lượng bản sao phải từ 1 đến 10 bản.');
       return;
     }
@@ -55,7 +60,7 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
       const res = await administrativeRequestApi.resubmitRequest(request.id, {
         transferReason: isClassTransfer ? reason.trim() : undefined,
         purpose: !isClassTransfer ? purpose.trim() : undefined,
-        numberOfCopies: !isClassTransfer ? numberOfCopies : undefined,
+        numberOfCopies: !isClassTransfer && !isOtherRequest ? numberOfCopies : undefined,
         additionalNotes: additionalNotes.trim() || undefined,
         attachmentUrl: attachmentUrl.trim() || undefined,
       });
@@ -119,6 +124,20 @@ export function ResubmitModal({ open, onClose, request, onSuccess }: ResubmitMod
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Nhập lý do chuyển lớp chi tiết theo hướng dẫn của giáo vụ..."
+                required
+              />
+            </div>
+          ) : isOtherRequest ? (
+            <div>
+              <label style={{ display: 'block', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                Nội dung đề xuất / kiến nghị (Cập nhật rõ ràng): <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <textarea
+                className="input"
+                style={{ width: '100%', minHeight: 90, borderRadius: 10, padding: '10px 12px' }}
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="Cập nhật nội dung đơn đề xuất / kiến nghị theo hướng dẫn của giáo vụ..."
                 required
               />
             </div>

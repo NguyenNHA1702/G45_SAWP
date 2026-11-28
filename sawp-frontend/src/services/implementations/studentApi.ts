@@ -96,6 +96,26 @@ export const studentApi = {
     return res.data;
   },
 
+  async updateGuardianContact(
+    guardianId: number,
+    payload: {
+      fullName: string;
+      phoneNumber?: string;
+      email?: string;
+      identityCardNumber?: string;
+      occupation?: string;
+      address?: string;
+    },
+  ): Promise<ApiResponse<GuardianRecordDto>> {
+    const res = await apiClient.put<ApiResponse<GuardianRecordDto>>(`/students/guardians/${guardianId}`, payload);
+    return res.data;
+  },
+
+  async getStudentHistory(studentId: number): Promise<ApiResponse<import('../../types/student.types').StudentHistoryDto>> {
+    const res = await apiClient.get<ApiResponse<import('../../types/student.types').StudentHistoryDto>>(`/students/${studentId}/history`);
+    return res.data;
+  },
+
   async downloadTemplate(): Promise<Blob> {
     const res = await apiClient.get('/students/import/template', {
       responseType: 'blob',

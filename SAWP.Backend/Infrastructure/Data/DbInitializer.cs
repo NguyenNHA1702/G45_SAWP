@@ -30,6 +30,106 @@ public static class DbInitializer
             }
         }
         await context.SaveChangesAsync();
+        await SeedSystemMetadataAsync(context);
+    }
+
+    private static async Task SeedSystemMetadataAsync(ApplicationDbContext context)
+    {
+        var permSeed = new (string Code, string Name, string Module, string Desc)[]
+        {
+            ("STUDENTS_VIEW", "Xem hồ sơ học sinh", "Học sinh", "Xem danh sách và thông tin học sinh"),
+            ("STUDENTS_MANAGE", "Quản lý hồ sơ học sinh", "Học sinh", "Thêm, sửa, nhập Excel và cập nhật phụ huynh"),
+            ("CLASSES_MANAGE", "Quản lý lớp học & năm học", "Lớp học", "Tạo, sửa lớp, gán GVCN và xếp lớp"),
+            ("ATTENDANCE_RECORD", "Điểm danh học sinh", "Chuyên cần", "Thực hiện điểm danh và chỉnh sửa theo quy định"),
+            ("LEAVE_APPROVE", "Duyệt đơn xin nghỉ học", "Đơn nghỉ", "GVCN duyệt <= 3 ngày; BGH duyệt > 3 ngày"),
+            ("REQUESTS_PROCESS", "Xử lý đơn hành chính", "Đơn hành chính", "Tiếp nhận, thẩm định, phát hành hoặc phê duyệt"),
+            ("LUNCH_OPERATE", "Vận hành bếp ăn bán trú", "Bán trú", "Cấu hình thực đơn, ngày phục vụ và chốt suất"),
+            ("CONTACT_BOOK_POST", "Đăng bảng tin & nhận xét lớp", "Sổ liên lạc", "GVCN đăng bài và viết phiếu nhận xét tuần"),
+            ("REPORTS_VIEW", "Xem báo cáo thống kê", "Báo cáo", "Tra cứu báo cáo chuyên cần, bán trú, đơn từ"),
+            ("BROADCAST_SEND", "Phát thông báo nhà trường", "Thông báo", "Gửi thông báo chung toàn trường/khối/lớp"),
+            ("USERS_MANAGE", "Quản lý tài khoản & vai trò", "Quản trị", "Tạo tài khoản, gán vai trò, khóa/mở và liên kết hồ sơ"),
+            ("SYSTEM_CONFIG", "Cấu hình danh mục & mẫu thông báo", "Quản trị", "Quản lý lịch năm học, danh mục tham chiếu và mẫu thông báo"),
+        };
+
+        foreach (var p in permSeed)
+        {
+            if (!await context.Permissions.AnyAsync(x => x.Code == p.Code))
+            {
+                context.Permissions.Add(new Permission { Code = p.Code, Name = p.Name, Module = p.Module, Description = p.Desc });
+            }
+        }
+        await context.SaveChangesAsync();
+
+        if (!await context.RolePermissions.AnyAsync())
+        {
+            var roleMap = await context.Roles.ToDictionaryAsync(r => r.Name, r => r.Id);
+            var permMap = await context.Permissions.ToDictionaryAsync(p => p.Code, p => p.Id);
+
+            var defaultGrants = new Dictionary<string, string[]>
+            {
+                ["Admin"] = new[] { "USERS_MANAGE", "SYSTEM_CONFIG" },
+                ["SchoolBoard"] = new[] { "STUDENTS_VIEW", "LEAVE_APPROVE", "REQUESTS_PROCESS", "REPORTS_VIEW", "BROADCAST_SEND" },
+                ["OfficeStaff"] = new[] { "STUDENTS_VIEW", "STUDENTS_MANAGE", "CLASSES_MANAGE", "ATTENDANCE_RECORD", "REQUESTS_PROCESS", "REPORTS_VIEW", "BROADCAST_SEND" },
+                ["Teacher"] = new[] { "STUDENTS_VIEW", "ATTENDANCE_RECORD", "LEAVE_APPROVE", "CONTACT_BOOK_POST", "REPORTS_VIEW" },
+                ["ServiceStaff"] = new[] { "LUNCH_OPERATE", "REPORTS_VIEW" },
+                ["Parent"] = Array.Empty<string>()
+            };
+
+            foreach (var (rName, pCodes) in defaultGrants)
+            {
+                if (!roleMap.TryGetValue(rName, out var rId)) continue;
+                foreach (var pCode in pCodes)
+                {
+                    if (permMap.TryGetValue(pCode, out var pId))
+                    {
+                        context.RolePermissions.Add(new RolePermission { RoleId = rId, PermissionId = pId, IsGranted = true });
+                    }
+                }
+            }
+            await context.SaveChangesAsync();
+        }
+
+        var refSeed = new (string Category, string Code, string Label, int Sort)[]
+        {
+            ("DocumentType", "DOC_XAC_NHAN_HS", "Giấy xác nhận học sinh", 1),
+            ("DocumentType", "DOC_BANG_DIEM_REN_LUYEN", "Giấy xác nhận kết quả rèn luyện", 2),
+            ("DocumentType", "DOC_CHUYEN_TRUONG", "Đơn xin chuyển trường", 3),
+            ("DocumentType", "DOC_MIEN_GIAM_HOC_PHI", "Đơn đề nghị miễn, giảm học phí", 4),
+            ("Relationship", "REL_CHA", "Cha", 1),
+            ("Relationship", "REL_ME", "Mẹ", 2),
+            ("Relationship", "REL_ONG_BA", "Ông/Bà", 3),
+            ("Relationship", "REL_NGUOI_GIAM_HO", "Người giám hộ", 4),
+            ("Allergen", "ALG_HAI_SAN", "Hải sản (Tôm, Cua, Cá)", 1),
+            ("Allergen", "ALG_DAU_PHONG", "Đậu phộng / Hạt", 2),
+            ("Allergen", "ALG_TRUNG_SUA", "Trứng & Sữa", 3),
+            ("Allergen", "ALG_DAU_NANH", "Đậu nành", 4),
+        };
+
+        foreach (var r in refSeed)
+        {
+            if (!await context.ReferenceItems.AnyAsync(x => x.Category == r.Category && x.Code == r.Code))
+            {
+                context.ReferenceItems.Add(new ReferenceItem { Category = r.Category, Code = r.Code, Label = r.Label, SortOrder = r.Sort, IsActive = true });
+            }
+        }
+
+        var tplSeed = new (string Code, string Title, string Body)[]
+        {
+            ("LEAVE_APPROVED", "Đơn xin nghỉ học đã được duyệt", "Đơn {RequestNumber} cho học sinh {StudentName} đã được phê duyệt."),
+            ("LUNCH_WINDOW_OPEN", "Mở kỳ đăng ký suất ăn bán trú", "Kính mời phụ huynh đăng ký suất ăn tháng {TargetMonth} cho học sinh trước ngày 28 hàng tháng."),
+            ("EVALUATION_CREATED", "Phiếu nhận xét tuần mới", "GVCN đã gửi phiếu nhận xét tuần {WeekNumber} của em {StudentName}. Vui lòng xem và ký xác nhận."),
+            ("REQUEST_AMENDMENT", "Yêu cầu bổ sung hồ sơ đơn hành chính", "Đơn {RequestNumber} cần bổ sung thông tin: {AmendmentNotes}."),
+            ("EMAIL_CHANGE_CONFIRM", "Xác nhận thay đổi Email đăng nhập", "Yêu cầu đổi email sang {NewEmail} đang chờ xác nhận qua liên kết bảo mật."),
+        };
+
+        foreach (var t in tplSeed)
+        {
+            if (!await context.NotificationTemplates.AnyAsync(x => x.Code == t.Code))
+            {
+                context.NotificationTemplates.Add(new NotificationTemplate { Code = t.Code, TitleTemplate = t.Title, BodyTemplate = t.Body, IsActive = true });
+            }
+        }
+        await context.SaveChangesAsync();
     }
 
     // Creates the first Admin account from configuration while no Admin account exists.

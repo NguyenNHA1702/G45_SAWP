@@ -132,3 +132,46 @@ public class ResendActivationDto
 {
     public string? Email { get; set; }
 }
+
+public class GuardianWithAccountDto
+{
+    public int GuardianId { get; set; }
+    public int UserId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string CurrentEmail { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string AccountStatus { get; set; } = string.Empty;
+    public List<string> Students { get; set; } = new();
+    public bool HasPendingEmailChange { get; set; }
+}
+
+public class CreateEmailChangeRequestDto
+{
+    public int GuardianId { get; set; }
+    public string NewEmail { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class DecideEmailChangeRequestDto
+{
+    public bool Approve { get; set; }
+    public string? RejectReason { get; set; }
+}
+
+public class EmailChangeRequestDto
+{
+    public int Id { get; set; }
+    public int TargetUserId { get; set; }
+    public int? GuardianId { get; set; }
+    public string TargetFullName { get; set; } = string.Empty;
+    public string OldEmail { get; set; } = string.Empty;
+    public string NewEmail { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string RequestedByName { get; set; } = string.Empty;
+    public string? ReviewedByName { get; set; }
+    public string? ReviewNote { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+}

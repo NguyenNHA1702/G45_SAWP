@@ -42,3 +42,9 @@ export interface CurrentUser {
   email: string;
   roles: string[];
 }
+
+export interface EmailChangeLinkCheckResult {
+  currentEmail: string;
+  newEmail: string;
+  fullName: string;
+}

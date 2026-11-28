@@ -773,6 +773,7 @@ public class StudentServiceTests : TestBase
             ProfileData = new CreateStudentDto
             {
                 FullName = "Nguyen Van Renamed",
+                DateOfBirth = new DateTime(2018, 1, 1),
                 Gender = "Nam"
             }
         };
@@ -1162,7 +1163,7 @@ public class StudentServiceTests : TestBase
 
         var result = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto
         {
-            NewGuardian = new GuardianInputDto { FullName = "X", IdentityCardNumber = "001100000005", Email = "chu@example.com" },
+            NewGuardian = new GuardianInputDto { FullName = "Phu Huynh X", IdentityCardNumber = "001100000005", Email = "chu@example.com" },
             Relationship = 3
         });
 
@@ -1309,6 +1310,225 @@ public class StudentServiceTests : TestBase
 
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG15.Code);
+    }
+
+    #endregion
+
+    #region Phase 4 Fixes (BUG-STU-01..05, GAP-02)
+
+    [Fact]
+    public async Task BUG_STU_01_CreateStudent_EmptyDob_And_1CharName_Fail()
+    {
+        var emptyDobResult = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_NO_DOB",
+            FullName = "Nguyen Van An",
+            Gender = "Nam"
+        });
+        emptyDobResult.Success.Should().BeFalse();
+        emptyDobResult.Code.Should().Be(SystemMessages.MSG01.Code);
+
+        var shortNameResult = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_SHORT",
+            FullName = "A",
+            DateOfBirth = new DateTime(2019, 1, 1),
+            Gender = "Nam"
+        });
+        shortNameResult.Success.Should().BeFalse();
+        shortNameResult.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task BUG_STU_01_CreateStudent_OverAge15_SucceedsOnlyWhenAllowAgeExceptionTrue()
+    {
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync("HS_OVER60", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        StudentRepoMock.Setup(r => r.AddAsync(It.IsAny<Student>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Student s, CancellationToken _) => { s.Id = 99; return s; });
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 99, StudentCode = "HS_OVER60", FullName = "Nguyen Van Lon", Status = "Active" });
+
+        var blocked = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_OVER60",
+            FullName = "Nguyen Van Lon",
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-60),
+            Gender = "Nam",
+            AllowAgeException = false
+        });
+        blocked.Success.Should().BeFalse();
+        blocked.Code.Should().Be(SystemMessages.MSG01.Code);
+
+        var allowed = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_OVER60",
+            FullName = "Nguyen Van Lon",
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-60),
+            Gender = "Nam",
+            AllowAgeException = true,
+            AgeExceptionReason = "Xac nhan ngoai le"
+        }, 10);
+        allowed.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task BUG_STU_02_CreateStudent_DraftAndArchivedSchoolYearBehavior()
+    {
+        StudentRepoMock.Setup(r => r.ExistsByStudentCodeAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        StudentRepoMock.Setup(r => r.AddAsync(It.IsAny<Student>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Student s, CancellationToken _) => { s.Id = 50; return s; });
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Student { Id = 50, StudentCode = "HS_DRAFT", FullName = "Nguyen Draft", Status = "Active" });
+        var assignmentRepo = SetupRepository(new List<ClassAssignment>());
+
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Class
+            {
+                Id = 20,
+                ClassName = "1A",
+                Grade = 1,
+                Capacity = 35,
+                SchoolYear = new SchoolYear { YearName = "2027-2028", Status = SchoolYearStatuses.Draft, StartDate = new DateTime(2027, 9, 1) },
+                ClassAssignments = new List<ClassAssignment>()
+            });
+
+        var draftResult = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_DRAFT",
+            FullName = "Nguyen Draft",
+            DateOfBirth = new DateTime(2020, 5, 1),
+            Gender = "Nam",
+            InitialClassId = 20
+        }, 10);
+
+        draftResult.Success.Should().BeTrue();
+        assignmentRepo.Verify(r => r.AddAsync(It.Is<ClassAssignment>(ca => ca.ClassId == 20 && ca.IsDraft && !ca.IsActive), It.IsAny<CancellationToken>()), Times.Once);
+
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(21, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Class
+            {
+                Id = 21,
+                ClassName = "1B",
+                Grade = 1,
+                Capacity = 35,
+                SchoolYear = new SchoolYear { YearName = "2024-2025", Status = SchoolYearStatuses.Archived, StartDate = new DateTime(2024, 9, 1) },
+                ClassAssignments = new List<ClassAssignment>()
+            });
+
+        var archivedResult = await _service.CreateStudentAsync(new CreateStudentDto
+        {
+            StudentCode = "HS_ARCH",
+            FullName = "Nguyen Arch",
+            DateOfBirth = new DateTime(2018, 5, 1),
+            Gender = "Nam",
+            InitialClassId = 21
+        }, 10);
+
+        archivedResult.Success.Should().BeFalse();
+        archivedResult.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task BUG_STU_03_ResolveDuplicate_ValidatesNameAndCapacity()
+    {
+        var existing = new Student { Id = 1, StudentCode = "HS001", FullName = "Old Name", DateOfBirth = new DateTime(2019, 1, 1), Gender = "Nam", Status = "Active" };
+        StudentRepoMock.Setup(r => r.GetByStudentCodeAsync("HS001", It.IsAny<CancellationToken>())).ReturnsAsync(existing);
+
+        var badName = await _service.ResolveDuplicateAsync(new ResolveDuplicateStudentDto
+        {
+            StudentCode = "HS001",
+            Action = "Overwrite",
+            ProfileData = new CreateStudentDto { FullName = "123Invalid", Gender = "Nam" }
+        });
+        badName.Success.Should().BeFalse();
+
+        var fullClass = new Class
+        {
+            Id = 30,
+            ClassName = "2A",
+            Grade = 2,
+            Capacity = 1,
+            SchoolYear = new SchoolYear { YearName = "2026-2027", Status = SchoolYearStatuses.Active, StartDate = new DateTime(2026, 9, 1) },
+            ClassAssignments = new List<ClassAssignment> { new() { IsActive = true } }
+        };
+        ClassRepoMock.Setup(r => r.GetClassWithDetailsAsync(30, It.IsAny<CancellationToken>())).ReturnsAsync(fullClass);
+
+        var fullResult = await _service.ResolveDuplicateAsync(new ResolveDuplicateStudentDto
+        {
+            StudentCode = "HS001",
+            Action = "Merge",
+            ProfileData = new CreateStudentDto { FullName = "Valid Name", DateOfBirth = new DateTime(2019, 1, 1), Gender = "Nam", InitialClassId = 30 }
+        });
+        fullResult.Success.Should().BeFalse();
+        fullResult.Code.Should().Be(SystemMessages.MSG15.Code);
+    }
+
+    [Fact]
+    public async Task BUG_STU_04_GuardianInvalidCccdFails_And_UpdateGuardianContactWorks()
+    {
+        var (guardians, _, _) = SetupStudentWithGuardians();
+
+        var badCccd = await _service.LinkGuardianAsync(1, new LinkGuardianRequestDto
+        {
+            NewGuardian = new GuardianInputDto { FullName = "Le Van B", IdentityCardNumber = "12345" },
+            Relationship = 3
+        });
+        badCccd.Success.Should().BeFalse();
+        badCccd.Code.Should().Be(SystemMessages.MSG01.Code);
+
+        var updated = await _service.UpdateGuardianContactAsync(6, new UpdateGuardianContactDto
+        {
+            FullName = "Nguyen Van Chu Updated",
+            PhoneNumber = "0912345678",
+            Email = "chu.new@example.com",
+            IdentityCardNumber = "001200999888"
+        }, 10);
+
+        updated.Success.Should().BeTrue();
+        guardians.Single(g => g.Id == 6).PhoneNumber.Should().Be("0912345678");
+    }
+
+    [Fact]
+    public async Task GAP_02_GetStudentHistory_RespectsScopeAndAggregatesData()
+    {
+        var student = new Student
+        {
+            Id = 70,
+            StudentCode = "HS070",
+            FullName = "Pham Gia Huy",
+            Status = "Active",
+            ClassAssignments = new List<ClassAssignment>
+            {
+                new() { Id = 1, ClassId = 1, AcademicYear = "2026-2027", IsActive = true, Class = new Class { Id = 1, ClassName = "1A", Grade = 1, HomeroomTeacher = new StaffProfile { UserId = 200 } } }
+            },
+            StudentGuardians = new List<StudentGuardian>
+            {
+                new() { Guardian = new Guardian { Id = 9, UserId = 300, FullName = "Pham Van Cha" } }
+            }
+        };
+        StudentRepoMock.Setup(r => r.GetStudentWithProfileAsync(70, It.IsAny<CancellationToken>())).ReturnsAsync(student);
+        SetupRepository(new List<AttendanceRecord> { new() { StudentId = 70, ClassId = 1, Date = DateTime.UtcNow.Date, Status = AttendanceStatus.Present } });
+        SetupRepository(new List<AdministrativeRequest>());
+        SetupRepository(new List<LunchRegistration> { new() { StudentId = 70, Date = DateTime.UtcNow.Date, IsActive = true } });
+        SetupRepository(new List<AuditLog> { new() { EntityName = nameof(Student), EntityId = "70", Action = AuditActions.StudentCreate, Timestamp = DateTime.UtcNow } });
+
+        var deniedAdmin = await _service.GetStudentHistoryAsync(70, 1, UserRoles.Admin.ToString());
+        deniedAdmin.Success.Should().BeFalse();
+        deniedAdmin.Code.Should().Be(SystemMessages.MSG10.Code);
+
+        var deniedOtherTeacher = await _service.GetStudentHistoryAsync(70, 999, UserRoles.Teacher.ToString());
+        deniedOtherTeacher.Success.Should().BeFalse();
+
+        var okParent = await _service.GetStudentHistoryAsync(70, 300, UserRoles.Parent.ToString());
+        okParent.Success.Should().BeTrue();
+        okParent.Data!.AttendanceSummary.PresentCount.Should().Be(1);
+        okParent.Data.AuditLogs.Should().BeEmpty();
+
+        var okOffice = await _service.GetStudentHistoryAsync(70, 10, UserRoles.OfficeStaff.ToString());
+        okOffice.Success.Should().BeTrue();
+        okOffice.Data!.AuditLogs.Should().HaveCount(1);
     }
 
     #endregion

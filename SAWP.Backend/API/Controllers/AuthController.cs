@@ -80,6 +80,25 @@ public class AuthController : BaseApiController
     public async Task<IActionResult> SetPasswordWithLink([FromBody] SetPasswordWithLinkRequestDto request, CancellationToken cancellationToken)
         => ToActionResult(await _authService.SetPasswordWithLinkAsync(request, cancellationToken));
 
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+        if (!userId.HasValue) return Unauthorized(ApiResponse<bool>.Fail(SystemMessages.MSG07));
+        return ToActionResult(await _authService.LogoutAsync(userId.Value, cancellationToken));
+    }
+
+    [HttpPost("email-change-link/check")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CheckEmailChangeLink([FromBody] EmailChangeLinkTokenDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _authService.CheckEmailChangeLinkAsync(request.Token, cancellationToken));
+
+    [HttpPost("confirm-email-change")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ConfirmEmailChange([FromBody] EmailChangeLinkTokenDto request, CancellationToken cancellationToken)
+        => ToActionResult(await _authService.ConfirmEmailChangeAsync(request.Token, cancellationToken));
+
     [HttpGet("me")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]

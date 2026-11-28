@@ -65,6 +65,7 @@ builder.Services.AddMemoryCache();
 builder.Services.Configure<AccountLinkOptions>(builder.Configuration.GetSection(AccountLinkOptions.SectionName));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestOriginSource, HttpRequestOriginSource>();
+builder.Services.AddScoped<IClientIpSource, HttpClientIpSource>();
 
 // Emailed activation / recovery links point to the web client. Its addresses must be listed
 // (AccountLinks:FrontendOrigins, e.g. environment variables AccountLinks__FrontendOrigins__0, __1, ...);
@@ -160,30 +161,6 @@ builder.Services.AddAuthorization();
 
 // 6. API Controllers & Swagger with JWT support
 builder.Services.AddControllers()
-    .ConfigureApiBehaviorOptions(options =>
-    {
-        options.InvalidModelStateResponseFactory = context =>
-        {
-            var errors = context.ModelState
-                .Where(kvp => kvp.Value?.Errors.Count > 0)
-                .SelectMany(kvp => kvp.Value!.Errors.Select(err =>
-                {
-                    var msg = err.ErrorMessage;
-                    if (string.IsNullOrWhiteSpace(msg)
-                        || msg.Contains("Core.Enums.", StringComparison.Ordinal)
-                        || msg.Contains("could not be converted to", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return $"Giá trị trường '{kvp.Key}' không hợp lệ.";
-                    }
-                    return msg;
-                }))
-                .Distinct()
-                .ToList();
-
-            var response = Core.DTOs.ApiResponse<object>.Fail(Core.Constants.SystemMessages.MSG01, errors);
-            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
-        };
-    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());

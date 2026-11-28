@@ -22,7 +22,7 @@ public interface IRequestWorkflowEngine
     Task<ApiResponse<bool>> EndorseDocumentAsync(int requestId, int staffUserId, StaffEndorseDocumentDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> DirectIssueDocumentAsync(int requestId, int staffUserId, StaffDirectIssueDocumentDto request, CancellationToken cancellationToken = default);
     Task<ApiResponse<bool>> StaffRejectRequestAsync(int requestId, int staffUserId, StaffRejectDto request, CancellationToken cancellationToken = default);
-    Task<ApiResponse<bool>> ExecuteClassTransferAsync(int requestId, int staffUserId, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> ExecuteClassTransferAsync(int requestId, int staffUserId, bool confirmEarly = false, CancellationToken cancellationToken = default);
 
     // School Board operations
     Task<ApiResponse<IReadOnlyList<AdministrativeRequestSummaryDto>>> GetSchoolBoardRequestsAsync(string? requestType = null, string? status = null, CancellationToken cancellationToken = default);

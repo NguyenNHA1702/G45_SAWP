@@ -253,6 +253,10 @@ public class AttendanceServiceTests : TestBase
         SetupRepository(new List<SchoolCalendarDay>());
         SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
         SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<AttendanceReattendanceRequest>
+        {
+            new() { Id = 1, ClassId = 1, Date = today, Session = AttendanceSession.Morning, Status = ReattendanceRequestStatus.Unlocked, RequestedByUserId = 30 }
+        });
         SetupRepository(new List<LunchServiceDay>());
         var notificationRepo = SetupRepository(new List<Notification>());
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
@@ -310,6 +314,10 @@ public class AttendanceServiceTests : TestBase
         SetupRepository(new List<SchoolCalendarDay>());
         SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
         SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<AttendanceReattendanceRequest>
+        {
+            new() { Id = 1, ClassId = 1, Date = today, Session = AttendanceSession.Morning, Status = ReattendanceRequestStatus.Unlocked, RequestedByUserId = 30 }
+        });
         SetupRepository(new List<LunchServiceDay>());
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
@@ -333,10 +341,12 @@ public class AttendanceServiceTests : TestBase
         // Act
         var result = await _service.RecordDailyAttendanceAsync(1, dto, 30, new[] { UserRoles.Teacher });
 
-        // Assert
+        // Assert (BUG-ATT-04: Không tự bật lại suất ăn đã bị hủy do đơn nghỉ; chỉ cảnh báo MSG75)
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
-        result.Data!.LunchRestoredCount.Should().Be(1);
+        result.Data!.LunchRestoredCount.Should().Be(0);
+        result.Data.LunchRestoreSkippedCount.Should().Be(1);
+        result.Data.Warnings.Should().Contain(w => w.Contains("đơn nghỉ"));
     }
 
     [Fact]
@@ -1468,6 +1478,10 @@ public class AttendanceServiceTests : TestBase
         SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 20 } });
         SetupRepository(new List<SchoolCalendarDay>());
         SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<AttendanceReattendanceRequest>
+        {
+            new() { Id = 1, ClassId = 1, Date = today, Session = AttendanceSession.Morning, Status = ReattendanceRequestStatus.Unlocked, RequestedByUserId = 20 }
+        });
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Student>
             {
@@ -2135,14 +2149,21 @@ public class AttendanceServiceTests : TestBase
         SetupRepository(new List<SchoolCalendarDay>());
         SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 30 } });
         SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", HomeroomTeacherId = 10, Status = "Active" } });
+        SetupRepository(new List<AttendanceReattendanceRequest>
+        {
+            new() { Id = 1, ClassId = 1, Date = today, Session = AttendanceSession.Morning, Status = ReattendanceRequestStatus.Unlocked, RequestedByUserId = 30 }
+        });
         SetupRepository(new List<LunchServiceDay>());
         StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "Em A" } });
         AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
         AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AttendanceRecord>());
-        var lunch = new LunchRegistration { Id = 100, StudentId = 1, Date = today, IsActive = false, CancellationSource = LunchCancellationSource.Leave };
+            .ReturnsAsync(new List<AttendanceRecord>
+            {
+                new() { Id = 10, StudentId = 1, ClassId = 1, Date = today, Session = AttendanceSession.Morning, Status = AttendanceStatus.ExcusedAbsence }
+            });
+        var lunch = new LunchRegistration { Id = 100, StudentId = 1, Date = today, IsActive = false, CancellationSource = LunchCancellationSource.Attendance };
         LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<int, LunchRegistration> { [1] = lunch });
 
@@ -2474,5 +2495,89 @@ public class AttendanceServiceTests : TestBase
         var relockedSheet = await _service.GetAttendanceSheetAsync(1, pastDate, AttendanceSession.Morning, 30, new[] { UserRoles.Teacher });
         relockedSheet.Data!.CanEdit.Should().BeFalse();
         relockedSheet.Data.LockReason.Should().Be("PastDay");
+    }
+
+    [Fact]
+    public async Task N02_AddContactNote_Year2020For2026Absence_FailsWithMSG01()
+    {
+        var rec = UnexcusedRecord();
+        rec.Date = new DateTime(2026, 11, 28);
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupHomeroom();
+        SetupRepository(new List<AbsenceContactNote>());
+
+        var dto = ValidNote();
+        dto.ContactedAt = new DateTime(2020, 5, 1, 9, 0, 0, DateTimeKind.Utc);
+        var result = await _service.AddContactNoteAsync(10, dto, 30, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG01.Code);
+        result.Errors.Should().Contain(e => e.Contains("quá 7 ngày"));
+    }
+
+    [Fact]
+    public async Task N03_RejectReattendanceRequest_EmptyOrShortNote_FailsWithMSG01()
+    {
+        SetupRepository(new List<AttendanceReattendanceRequest>
+        {
+            new() { Id = 1, ClassId = 1, Date = new DateTime(2026, 11, 26), Session = AttendanceSession.Morning, Status = ReattendanceRequestStatus.Pending, RequestedByUserId = 30 }
+        });
+
+        var emptyRes = await _service.RejectReattendanceRequestAsync(1, new RejectReattendanceRequestDto { Note = "   " }, 20);
+        emptyRes.Success.Should().BeFalse();
+        emptyRes.Code.Should().Be(SystemMessages.MSG01.Code);
+    }
+
+    [Fact]
+    public async Task N04_AddContactNote_NonUnexcusedRecord_ReturnsClearDomainMessage()
+    {
+        var rec = UnexcusedRecord();
+        rec.Status = AttendanceStatus.Present;
+        AttendanceRepoMock.Setup(a => a.GetByIdWithStudentClassAsync(10, It.IsAny<CancellationToken>())).ReturnsAsync(rec);
+        SetupHomeroom();
+
+        var result = await _service.AddContactNoteAsync(10, ValidNote(), 30, new[] { UserRoles.Teacher });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG09.Code);
+        result.Errors.Should().ContainSingle(e => e.Contains("Vắng không phép"));
+    }
+
+    [Fact]
+    public async Task BUG_ATT_01_TeacherTodaySubmittedWithoutUnlock_LocksSheetAndBlocksResubmit()
+    {
+        var today = new DateTime(2026, 10, 28);
+        _clockMock.Setup(c => c.Today).Returns(today);
+        _clockMock.Setup(c => c.Now).Returns(today.AddHours(9));
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", Status = "Active", SchoolYearId = 1, HomeroomTeacherId = 10 } });
+        SetupRepository(new List<StaffProfile> { new() { Id = 10, UserId = 20 } });
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<AttendanceReattendanceRequest>());
+        StudentRepoMock.Setup(s => s.GetActiveRosterAsync(1, today, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Student> { new() { Id = 1, StudentCode = "HS001", FullName = "HS A" } });
+        var submitted = new AttendanceRecord { Id = 55, StudentId = 1, ClassId = 1, Date = today, Session = AttendanceSession.Morning, Status = AttendanceStatus.Present, RecordedByUserId = 20, UpdatedByUserId = 20 };
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { submitted });
+        AttendanceRepoMock.Setup(a => a.GetDailyClassAttendanceAsync(1, today, AttendanceSession.Morning, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { submitted });
+        AttendanceRepoMock.Setup(a => a.GetActiveLeavesCoveringDateAsync(It.IsAny<IEnumerable<int>>(), today, AttendanceSession.Morning, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LeaveIndicatorDto>());
+        LunchRepoMock.Setup(l => l.GetRegistrationsForStudentsAsync(It.IsAny<IEnumerable<int>>(), today, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, LunchRegistration>());
+
+        var sheetResult = await _service.GetAttendanceSheetAsync(1, today, AttendanceSession.Morning, 20, new[] { UserRoles.Teacher });
+        sheetResult.Success.Should().BeTrue();
+        sheetResult.Data!.CanEdit.Should().BeFalse();
+        sheetResult.Data.LockReason.Should().Be("AlreadySubmitted");
+
+        var submitResult = await _service.RecordDailyAttendanceAsync(1, new SubmitAttendanceSheetDto
+        {
+            Date = today,
+            Session = AttendanceSession.Morning,
+            Entries = new List<DailyAttendanceEntryDto> { new() { StudentId = 1, Status = AttendanceStatus.Late } }
+        }, 20, new[] { UserRoles.Teacher });
+        submitResult.Success.Should().BeFalse();
+        submitResult.Code.Should().Be(SystemMessages.MSG19.Code);
     }
 }

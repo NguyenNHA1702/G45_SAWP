@@ -33,9 +33,9 @@ public class AdminServiceTests : TestBase
         _service = new AdminService(UnitOfWorkMock.Object, AuditServiceMock.Object, _linksMock.Object);
     }
 
-    private static CreateUserRequestDto NewTeacher(string role = "Teacher") => new()
+    private static CreateUserRequestDto NewTeacher(string role = "Teacher", bool enableNow = true) => new()
     {
-        Username = "gv01", Email = "gv01@school.vn", FullName = "Giáo viên Một", Roles = new List<string> { role }
+        Username = "gv01", Email = "gv01@school.vn", FullName = "Giáo viên Một", Roles = new List<string> { role }, EnableNow = enableNow
     };
 
     private static User Account(int id, string role, AccountStatus status, string hash = "hash") => new()
@@ -45,9 +45,9 @@ public class AdminServiceTests : TestBase
     };
 
     [Fact]
-    public async Task UTCID01_CreateUser_StartsPendingActivationWithoutPassword_SendsActivationLink()
+    public async Task UTCID01_CreateUser_EnableNowTrue_StartsPendingActivationWithoutPassword_SendsActivationLink()
     {
-        var result = await _service.CreateUserAsync(1, NewTeacher());
+        var result = await _service.CreateUserAsync(1, NewTeacher(enableNow: true));
 
         result.Code.Should().Be(SystemMessages.MSG38.Code);
         result.Errors.Should().BeNull();
@@ -58,11 +58,23 @@ public class AdminServiceTests : TestBase
     }
 
     [Fact]
+    public async Task UTCID01b_CreateUser_DefaultDisabled_StaysDeactivatedWithoutSendingLink()
+    {
+        var result = await _service.CreateUserAsync(1, NewTeacher(enableNow: false));
+
+        result.Code.Should().Be(SystemMessages.MSG38.Code);
+        var user = _users.Should().ContainSingle().Subject;
+        user.Status.Should().Be(AccountStatus.Deactivated);
+        user.PasswordHash.Should().BeEmpty();
+        _linksMock.Verify(l => l.SendActivationLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task UTCID02_CreateUser_EmailFails_AccountKeptAndMSG59Reported()
     {
         _linksMock.Setup(l => l.SendActivationLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
-        var result = await _service.CreateUserAsync(1, NewTeacher());
+        var result = await _service.CreateUserAsync(1, NewTeacher(enableNow: true));
 
         result.Success.Should().BeTrue();
         result.Code.Should().Be(SystemMessages.MSG38.Code);
@@ -305,5 +317,125 @@ public class AdminServiceTests : TestBase
         result.Success.Should().BeFalse();
         result.Code.Should().Be(SystemMessages.MSG09.Code);
         _linksMock.Verify(l => l.SendActivationLinkAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task N08_DeleteUser_PendingActivationAdmin_DeletesDirectlyWithoutDemotingRole()
+    {
+        var adminDraft = Account(300, "Admin", AccountStatus.PendingActivation, hash: "");
+        _users.Add(adminDraft);
+
+        var result = await _service.DeleteUserAsync(1, 300);
+
+        result.Success.Should().BeTrue();
+        _users.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task BUG_AUTH_03_CreateUser_AllowsReusingEmailOfDeactivatedAccount()
+    {
+        var oldUser = Account(90, "Teacher", AccountStatus.Deactivated, hash: "hash");
+        oldUser.Email = "reused@school.vn";
+        _users.Add(oldUser);
+
+        var req = NewTeacher(enableNow: true);
+        req.Username = "gv_new";
+        req.Email = "reused@school.vn";
+
+        var result = await _service.CreateUserAsync(1, req);
+
+        result.Success.Should().BeTrue();
+        _users.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task BUG_AUTH_04_UpdateUserRoles_ActiveAccountWithData_ReturnsMSG64()
+    {
+        var user = Account(77, "Teacher", AccountStatus.Active, hash: "hash");
+        _users.Add(user);
+
+        var result = await _service.UpdateUserRolesAsync(1, 77, new UpdateUserRolesRequestDto { Roles = new List<string> { "Admin" } });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG64.Code);
+    }
+
+    [Fact]
+    public async Task BUG_AUTH_04_UpdateUserRoles_SelfChange_ReturnsMSG10()
+    {
+        var admin = Account(1, "Admin", AccountStatus.Active, hash: "hash");
+        _users.Add(admin);
+
+        var result = await _service.UpdateUserRolesAsync(1, 1, new UpdateUserRolesRequestDto { Roles = new List<string> { "Admin", "Teacher" } });
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG10.Code);
+    }
+
+    [Fact]
+    public async Task GAP_05_UC54_57_Permissions_ProfileLink_ReferenceItem_AndNotificationTemplate()
+    {
+        SetupRepository(new List<Permission> { new() { Id = 1, Code = "STUDENTS_VIEW", Name = "Xem HS", Module = "HS" } });
+        var rolePerms = new List<RolePermission>();
+        SetupRepository(rolePerms);
+
+        var permRes = await _service.UpdateRolePermissionsAsync(1, 4, new UpdateRolePermissionsDto
+        {
+            GrantedPermissionCodes = new List<string> { "STUDENTS_VIEW" }
+        });
+        permRes.Success.Should().BeTrue();
+        rolePerms.Should().ContainSingle(rp => rp.RoleId == 4 && rp.PermissionId == 1 && rp.IsGranted);
+
+        var user = Account(88, "Parent", AccountStatus.Active);
+        _users.Add(user);
+        var guardian = new Guardian { Id = 5, FullName = "PH Test", PhoneNumber = "0909123123" };
+        SetupRepository(new List<Guardian> { guardian });
+        var linkRes = await _service.UpdateUserProfileLinkAsync(1, 88, new UpdateUserProfileLinkDto { ProfileType = "Guardian", ProfileId = 5 });
+        linkRes.Success.Should().BeTrue();
+        guardian.UserId.Should().Be(88);
+
+        var refItems = new List<ReferenceItem>();
+        SetupRepository(refItems);
+        var refRes = await _service.UpsertReferenceItemAsync(1, null, new UpsertReferenceItemDto
+        {
+            Category = "DocumentType", Code = "DOC_NEW", Label = "Giấy mới", SortOrder = 1, IsActive = true
+        });
+        refRes.Success.Should().BeTrue();
+        refItems.Should().ContainSingle(r => r.Code == "DOC_NEW");
+
+        var tpl = new NotificationTemplate { Id = 1, Code = "LEAVE_APPROVED", TitleTemplate = "Old", BodyTemplate = "OldBody", IsActive = true };
+        SetupRepository(new List<NotificationTemplate> { tpl });
+        var tplRes = await _service.UpdateNotificationTemplateAsync(1, 1, new UpdateNotificationTemplateDto
+        {
+            TitleTemplate = "New Title", BodyTemplate = "New Body", IsActive = true
+        });
+        tplRes.Success.Should().BeTrue();
+        tpl.TitleTemplate.Should().Be("New Title");
+    }
+
+    [Fact]
+    public async Task GAP_03_BroadcastNotification_SendsToTargetRoleUsers()
+    {
+        var users = new List<User>
+        {
+            new() { Id = 20, Status = AccountStatus.Active, UserRoles = new List<UserRole> { new() { Role = new Role { Name = "Parent" } } } },
+            new() { Id = 21, Status = AccountStatus.Active, UserRoles = new List<UserRole> { new() { Role = new Role { Name = "Teacher" } } } },
+        };
+        SetupRepository(users);
+        var notifs = new List<Notification>();
+        SetupRepository(notifs);
+
+        var notifService = new NotificationService(UnitOfWorkMock.Object, AuditServiceMock.Object);
+        var res = await notifService.BroadcastAsync(10, new BroadcastNotificationRequestDto
+        {
+            TargetScope = "Role",
+            TargetRole = "Parent",
+            Title = "Thông báo họp phụ huynh",
+            Content = "Kính mời quý phụ huynh tham dự họp đầu năm học."
+        });
+
+        res.Success.Should().BeTrue();
+        res.Data!.RecipientCount.Should().Be(1);
+        notifs.Should().ContainSingle(n => n.UserId == 20 && n.Type == "SchoolBroadcast");
     }
 }

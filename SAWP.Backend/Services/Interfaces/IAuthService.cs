@@ -16,6 +16,9 @@ public interface IAuthService
 
     /// <summary>UC-66 steps 7-10 and A3: set the password with the link.</summary>
     Task<ApiResponse<bool>> SetPasswordWithLinkAsync(SetPasswordWithLinkRequestDto request, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> LogoutAsync(int userId, CancellationToken cancellationToken = default);
+    Task<ApiResponse<EmailChangeLinkCheckResultDto>> CheckEmailChangeLinkAsync(string rawToken, CancellationToken cancellationToken = default);
+    Task<ApiResponse<bool>> ConfirmEmailChangeAsync(string rawToken, CancellationToken cancellationToken = default);
     Task<ApiResponse<UserProfileDto>> GetProfileAsync(int userId, CancellationToken ct = default);
     Task<ApiResponse<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileRequestDto request, CancellationToken ct = default);
 }

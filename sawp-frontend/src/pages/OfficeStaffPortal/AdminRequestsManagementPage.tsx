@@ -81,24 +81,26 @@ export default function AdminRequestsManagementPage() {
     fetchRequests();
   }, [fetchRequests]);
 
-  // Thực thi chuyển lớp (Execute Apply Class Transfer)
+  // Thực thi chuyển lớp (Execute Apply Class Transfer - BUG-REQ-03 hỗ trợ xác nhận sớm MSG245)
   const handleExecuteTransfer = async (req: AdministrativeRequestSummary) => {
-    const isFuture = req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999);
-    const effDateStr = req.classTransfer?.effectiveDate ? new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN') : '';
+    const isFuture = Boolean(
+      req.classTransfer?.effectiveDate &&
+      new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999)
+    );
+    const effDateStr = req.classTransfer?.effectiveDate
+      ? new Date(req.classTransfer.effectiveDate).toLocaleDateString('vi-VN')
+      : '';
 
-    if (isFuture) {
-      toast.error(`Chưa đến ngày hiệu lực (${effDateStr}). Chỉ có thể áp dụng chuyển lớp từ ngày hiệu lực trở đi.`);
-      return;
-    }
-
-    const confirmMsg = `Xác nhận thực thi chuyển lớp cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName}? Hệ thống sẽ tự động gán lớp mới và hoàn tất hồ sơ.`;
+    const confirmMsg = isFuture
+      ? `Chưa đến ngày hiệu lực (${effDateStr}). Bạn có chắc chắn muốn thực thi chuyển lớp SỚM cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName} ngay hôm nay không?`
+      : `Xác nhận thực thi chuyển lớp cho học sinh ${req.studentName} sang lớp ${req.classTransfer?.toClassName}? Hệ thống sẽ tự động gán lớp mới và hoàn tất hồ sơ.`;
     if (!window.confirm(confirmMsg)) {
       return;
     }
 
     try {
       setExecutingId(req.id);
-      const res = await administrativeRequestApi.executeClassTransfer(req.id);
+      const res = await administrativeRequestApi.executeClassTransfer(req.id, isFuture);
       if (res.success) {
         toast.success(res.message || 'Đã áp dụng chuyển lớp thành công cho học sinh!');
         fetchRequests();
@@ -511,6 +513,24 @@ export default function AdminRequestsManagementPage() {
                           >
                             <UserCheck size={13} /> BGH đã duyệt (Chờ thực thi)
                           </span>
+                        ) : req.status === 'NeedMoreInfo' && req.requiresAmendment ? (
+                          <span
+                            style={{
+                              backgroundColor: '#FEF3C7',
+                              color: '#92400E',
+                              border: '1.5px solid #F59E0B',
+                              borderRadius: 16,
+                              padding: '3px 10px',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <AlertCircle size={13} color="#D97706" /> Cần bổ sung hồ sơ
+                          </span>
                         ) : req.status === 'ReturnedToStaff' || req.status === 'NeedMoreInfo' ? (
                           <span
                             style={{
@@ -692,7 +712,7 @@ export default function AdminRequestsManagementPage() {
                               {executingId === req.id
                                 ? 'Đang thực thi...'
                                 : req.classTransfer?.effectiveDate && new Date(req.classTransfer.effectiveDate).getTime() > new Date().setHours(23, 59, 59, 999)
-                                ? `Chờ hiệu lực (${formatDDMMYYYY(req.classTransfer.effectiveDate)})`
+                                ? `Thực thi sớm (HL ${formatDDMMYYYY(req.classTransfer.effectiveDate)})`
                                 : 'Áp dụng chuyển lớp'}
                             </button>
                           ) : req.requiresAmendment ? (

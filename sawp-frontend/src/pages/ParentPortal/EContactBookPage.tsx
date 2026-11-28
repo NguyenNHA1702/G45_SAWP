@@ -7,13 +7,13 @@ import {
   CalendarCheck2,
   CheckCircle2,
   Clock,
-  Heart,
   MessageCircle,
   Newspaper,
   Pin,
   RefreshCw,
   Send,
   Sparkles,
+  Trash2,
   User,
   UtensilsCrossed,
 } from 'lucide-react';
@@ -151,14 +151,27 @@ export default function EContactBookPage() {
   };
 
   // Reactions
-  const handleToggleReaction = async (postId: number) => {
+  const handleToggleReaction = async (postId: number, reactionType = 'Heart') => {
     try {
-      await contactBookApi.toggleReaction(postId, 'Heart');
+      await contactBookApi.toggleReaction(postId, reactionType);
       if (activeChild?.currentClassId) {
         loadFeed(activeChild.currentClassId);
       }
     } catch {
       toast.error('Không thể thực hiện thao tác.');
+    }
+  };
+
+  const handleDeleteComment = async (commentId: number) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa bình luận này không?')) return;
+    try {
+      await contactBookApi.deleteComment(commentId);
+      toast.success('Đã xóa bình luận.');
+      if (activeChild?.currentClassId) {
+        loadFeed(activeChild.currentClassId);
+      }
+    } catch {
+      toast.error('Không thể xóa bình luận.');
     }
   };
 
@@ -434,33 +447,51 @@ export default function EContactBookPage() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 16,
+                      flexWrap: 'wrap',
+                      gap: 10,
                       paddingTop: 12,
                       borderTop: '1px solid var(--color-border)',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => handleToggleReaction(post.id)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        background: post.userHasReacted ? '#FEE2E2' : '#F1F5F9',
-                        color: post.userHasReacted ? '#DC2626' : '#475569',
-                        border: '1.5px solid #CBD5E1',
-                        borderRadius: 999,
-                        padding: '6px 14px',
-                        cursor: 'pointer',
-                        fontWeight: 700,
-                        fontSize: '0.875rem',
-                      }}
-                    >
-                      <Heart size={16} fill={post.userHasReacted ? '#DC2626' : 'none'} />
-                      <span>{post.reactionCount} Thả tim</span>
-                    </button>
+                    {[
+                      { type: 'Heart', emoji: '❤️', label: 'Thả tim', activeBg: '#FEE2E2', activeColor: '#DC2626' },
+                      { type: 'Like', emoji: '👍', label: 'Thích', activeBg: '#DBEAFE', activeColor: '#1D4ED8' },
+                      { type: 'Clap', emoji: '👏', label: 'Vỗ tay', activeBg: '#FEF3C7', activeColor: '#B45309' },
+                      { type: 'Smile', emoji: '😊', label: 'Vui', activeBg: '#DCFCE7', activeColor: '#15803D' },
+                    ].map((rx) => {
+                      const isActive =
+                        post.userHasReacted &&
+                        (post.userReactionType?.toLowerCase() === rx.type.toLowerCase() ||
+                          (!post.userReactionType && rx.type === 'Heart'));
+                      return (
+                        <button
+                          key={rx.type}
+                          type="button"
+                          onClick={() => handleToggleReaction(post.id, rx.type)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            background: isActive ? rx.activeBg : '#F1F5F9',
+                            color: isActive ? rx.activeColor : '#475569',
+                            border: isActive ? `1.5px solid ${rx.activeColor}` : '1.5px solid #CBD5E1',
+                            borderRadius: 999,
+                            padding: '5px 12px',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '0.82rem',
+                          }}
+                        >
+                          <span>{rx.emoji}</span>
+                          <span>{rx.label}</span>
+                        </button>
+                      );
+                    })}
+                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569' }}>
+                      ({post.reactionCount} cảm xúc)
+                    </span>
 
-                    <span style={{ fontSize: '0.875rem', color: 'var(--color-muted-fg)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: '0.875rem', color: 'var(--color-muted-fg)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
                       <MessageCircle size={16} /> {post.comments.length} bình luận
                     </span>
                   </div>
@@ -478,18 +509,38 @@ export default function EContactBookPage() {
                             border: '1px solid #E2E8F0',
                           }}
                         >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                             <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>
                               {cm.authorName}{' '}
                               <span style={{ fontWeight: 500, fontSize: '0.75rem', color: 'var(--color-muted-fg)' }}>
                                 ({cm.authorRoleLabel})
                               </span>
                             </div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-muted-fg)' }}>
-                              {formatViTime(cm.createdAt)}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--color-muted-fg)' }}>
+                                {formatViTime(cm.createdAt)}
+                              </span>
+                              {cm.canDelete && (
+                                <button
+                                  type="button"
+                                  title="Xóa bình luận của bạn"
+                                  onClick={() => handleDeleteComment(cm.id)}
+                                  style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#DC2626',
+                                    cursor: 'pointer',
+                                    padding: 2,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
-                          <div style={{ fontSize: '0.9rem', color: '#334155' }}>{cm.content}</div>
+                          <div style={{ fontSize: '0.9rem', color: '#334155', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{cm.content}</div>
                         </div>
                       ))}
                     </div>
@@ -694,11 +745,15 @@ export default function EContactBookPage() {
                         <input
                           type="text"
                           className="input"
-                          placeholder="Nhập lời nhắn gửi cô giáo (ví dụ: Gia đình đã nắm thông tin và sẽ nhắc nhở con...)"
+                          maxLength={500}
+                          placeholder="Nhập lời nhắn gửi cô giáo (tối đa 500 ký tự)..."
                           value={parentFeedbackInputs[ev.id] || ''}
                           onChange={(e) => setParentFeedbackInputs({ ...parentFeedbackInputs, [ev.id]: e.target.value })}
-                          style={{ marginBottom: 10 }}
+                          style={{ marginBottom: 6 }}
                         />
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-muted-fg)', marginBottom: 10 }}>
+                          {(parentFeedbackInputs[ev.id] || '').length}/500 ký tự
+                        </div>
                         <button
                           type="button"
                           className="btn btn--primary"

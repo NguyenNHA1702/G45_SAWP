@@ -53,6 +53,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [parsedRows, setParsedRows] = useState<ImportStudentRowDto[]>([]);
   const [parsing, setParsing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [allowOverAgeException, setAllowOverAgeException] = useState(false);
   const [importResult, setImportResult] = useState<ImportStudentsResultDto | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,12 +95,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const handleClose = () => {
     setSelectedFile(null);
     setParsedRows([]);
+    setAllowOverAgeException(false);
     setImportResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     onClose();
   };
 
   const validRows = parsedRows.filter((r) => r.isValid && !r.isDuplicate);
+  const hasOverAgeRows = validRows.some((r) => r.allowAgeException);
   const duplicateRows = parsedRows.filter((r) => r.isDuplicate);
   const invalidRows = parsedRows.filter((r) => !r.isValid);
 
@@ -108,10 +111,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       toast.error('Không có bản ghi hợp lệ nào để nhập!');
       return;
     }
+    if (hasOverAgeRows && !allowOverAgeException) {
+      toast.error('Vui lòng đánh dấu xác nhận ngoại lệ cho học sinh quá 15 tuổi trước khi nhập!');
+      return;
+    }
 
     setConfirming(true);
     try {
-      const res = await studentApi.confirmImport({ validRows });
+      const res = await studentApi.confirmImport({ validRows, allowAgeException: allowOverAgeException });
       if (res.success && res.data) {
         toast.success(res.message || `Nhập thành công ${res.data.successCount} học sinh mới vào hệ thống!`);
         // UC-09 step 6: show the totals and the error list before closing
@@ -256,6 +263,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                         <span className="badge badge--amber" title={r.errorMessage}>
                           Không hợp lệ
                         </span>
+                      ) : r.allowAgeException ? (
+                        <span className="badge badge--amber" title="Học sinh vượt quá 15 tuổi — cần xác nhận ngoại lệ trước khi nhập">
+                          Hợp lệ (Quá tuổi - Ngoại lệ)
+                        </span>
                       ) : (
                         <span className="badge badge--mint">Hợp lệ</span>
                       )}
@@ -265,6 +276,22 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               </tbody>
             </table>
           </div>
+        )}
+
+        {hasOverAgeRows && importResult === null && (
+          <label
+            className="banner banner--warning"
+            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 'var(--fs-sm)' }}
+          >
+            <input
+              type="checkbox"
+              checked={allowOverAgeException}
+              onChange={(e) => setAllowOverAgeException(e.target.checked)}
+            />
+            <span>
+              Danh sách có học sinh <strong>quá 15 tuổi</strong> (vượt trần tiểu học). Tôi xác nhận nhập theo diện ngoại lệ quá tuổi và đồng ý ghi nhật ký hệ thống.
+            </span>
+          </label>
         )}
 
         {importResult && (

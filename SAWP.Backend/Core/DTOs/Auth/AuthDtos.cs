@@ -49,3 +49,15 @@ public class SetPasswordWithLinkRequestDto
     public string NewPassword { get; set; } = string.Empty;
     public string ConfirmPassword { get; set; } = string.Empty;
 }
+
+public class EmailChangeLinkTokenDto
+{
+    public string Token { get; set; } = string.Empty;
+}
+
+public class EmailChangeLinkCheckResultDto
+{
+    public string CurrentEmail { get; set; } = string.Empty;
+    public string NewEmail { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link2, Plus, Search, Star, Unlink, Users } from 'lucide-react';
+import { Link2, Pencil, Plus, Save, Search, Star, Unlink, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router';
 import { studentApi } from '../../services/implementations/studentApi';
@@ -37,6 +37,81 @@ export const StudentGuardiansSection: React.FC<Props> = ({ student, canManage, o
   const [newGuardian, setNewGuardian] = useState({ fullName: '', phoneNumber: '', email: '', identityCardNumber: '' });
   const [relationship, setRelationship] = useState(3);
   const [isPrimary, setIsPrimary] = useState(false);
+
+  // UC-11: Inline edit contact details of an existing Guardian record
+  const [editingGuardian, setEditingGuardian] = useState<StudentGuardianItemDto | null>(null);
+  const [editContact, setEditContact] = useState({
+    fullName: '',
+    phoneNumber: '',
+    email: '',
+    identityCardNumber: '',
+    occupation: '',
+    address: '',
+  });
+
+  const startEditContact = (g: StudentGuardianItemDto) => {
+    setEditingGuardian(g);
+    setEditContact({
+      fullName: g.fullName || '',
+      phoneNumber: g.phoneNumber || '',
+      email: g.email || '',
+      identityCardNumber: g.identityCardNumber || '',
+      occupation: g.occupation || '',
+      address: g.address || '',
+    });
+  };
+
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGuardian) return;
+    const cleanedName = editContact.fullName.trim().replace(/\s+/g, ' ');
+    if (cleanedName.length < 2 || cleanedName.length > 100) {
+      toast.error('Họ tên người giám hộ phải có độ dài từ 2 đến 100 ký tự.');
+      return;
+    }
+    const phone = editContact.phoneNumber.trim();
+    if (phone && !/^0\d{9}$/.test(phone)) {
+      toast.error('Số điện thoại phải gồm đúng 10 chữ số (bắt đầu bằng số 0).');
+      return;
+    }
+    const cccd = editContact.identityCardNumber.trim();
+    if (cccd && !/^\d{9}(\d{3})?$/.test(cccd)) {
+      toast.error('Số CCCD/CMND phải gồm 9 hoặc 12 chữ số.');
+      return;
+    }
+    const email = editContact.email.trim();
+    if (!editingGuardian.userId && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Email người giám hộ không đúng định dạng!');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await studentApi.updateGuardianContact(editingGuardian.guardianId, {
+        fullName: cleanedName,
+        phoneNumber: phone || undefined,
+        email: editingGuardian.userId ? editingGuardian.email : (email || undefined),
+        identityCardNumber: cccd || undefined,
+        occupation: editContact.occupation.trim() || undefined,
+        address: editContact.address.trim() || undefined,
+      });
+      if (res.success) {
+        toast.success('Đã cập nhật thông tin liên hệ người giám hộ!');
+        const refreshed = await studentApi.getStudentProfile(student.id);
+        if (refreshed.success && refreshed.data) {
+          onChanged(refreshed.data);
+        }
+        setEditingGuardian(null);
+      } else {
+        toast.error(res.errors?.[0] || res.message || 'Cập nhật thất bại.');
+      }
+    } catch (err) {
+      const apiErr = asApiError(err);
+      toast.error(apiErr.errors?.[0] || apiErr.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const run = async (action: () => Promise<{ data?: StudentProfileDto | null; message?: string }>, done?: () => void) => {
     setBusy(true);
@@ -190,6 +265,15 @@ export const StudentGuardiansSection: React.FC<Props> = ({ student, canManage, o
                       Yêu cầu cấp tài khoản
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    disabled={busy}
+                    onClick={() => startEditContact(g)}
+                    aria-label={`Sửa liên hệ ${g.fullName}`}
+                  >
+                    <Pencil size={14} /> Sửa liên hệ
+                  </button>
                   {!g.isPrimaryContact && (
                     <button type="button" className="btn btn--secondary btn--sm" disabled={busy} onClick={() => handleMakePrimary(g)}>
                       <Star size={14} /> Đặt làm liên hệ chính
@@ -209,6 +293,79 @@ export const StudentGuardiansSection: React.FC<Props> = ({ student, canManage, o
                 <span style={{ fontSize: 'var(--fs-sm)' }}>{g.relationshipName}</span>
               )}
             </div>
+            {canManage && editingGuardian?.guardianId === g.guardianId && (
+              <form
+                onSubmit={handleSaveContact}
+                style={{
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: '1px dashed var(--color-border)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--color-accent)', textTransform: 'uppercase' }}>
+                  Cập nhật thông tin liên hệ (UC-11)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input
+                    className="input input--sm"
+                    placeholder="Họ và tên *"
+                    required
+                    value={editContact.fullName}
+                    onChange={(e) => setEditContact({ ...editContact, fullName: e.target.value })}
+                  />
+                  <input
+                    className="input input--sm"
+                    placeholder="Số điện thoại (10 số)"
+                    maxLength={10}
+                    value={editContact.phoneNumber}
+                    onChange={(e) => setEditContact({ ...editContact, phoneNumber: e.target.value })}
+                  />
+                  <input
+                    className="input input--sm"
+                    placeholder="Số CCCD/CMND (9 hoặc 12 số)"
+                    value={editContact.identityCardNumber}
+                    onChange={(e) => setEditContact({ ...editContact, identityCardNumber: e.target.value })}
+                  />
+                  <input
+                    className="input input--sm"
+                    type="email"
+                    placeholder="Email"
+                    disabled={!!g.userId}
+                    title={g.userId ? 'Người giám hộ đã có tài khoản — dùng luồng Yêu cầu đổi Email (BR-69).' : undefined}
+                    value={editContact.email}
+                    onChange={(e) => setEditContact({ ...editContact, email: e.target.value })}
+                  />
+                  <input
+                    className="input input--sm"
+                    placeholder="Nghề nghiệp"
+                    value={editContact.occupation}
+                    onChange={(e) => setEditContact({ ...editContact, occupation: e.target.value })}
+                  />
+                  <input
+                    className="input input--sm"
+                    placeholder="Địa chỉ"
+                    value={editContact.address}
+                    onChange={(e) => setEditContact({ ...editContact, address: e.target.value })}
+                  />
+                </div>
+                {g.userId && (
+                  <small style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--fs-xs)' }}>
+                    Người giám hộ đã có tài khoản đăng nhập nên không sửa trực tiếp Email tại đây (BR-69).
+                  </small>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                  <button type="button" className="btn btn--secondary btn--sm" onClick={() => setEditingGuardian(null)} disabled={busy}>
+                    <X size={13} /> Hủy
+                  </button>
+                  <button type="submit" className="btn btn--primary btn--sm" disabled={busy}>
+                    <Save size={13} /> Lưu liên hệ
+                  </button>
+                </div>
+              </form>
+            )}
           </li>
         ))}
       </ul>

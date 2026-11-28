@@ -13,6 +13,9 @@ public class StudentEvaluation
     public int ClassId { get; set; }
     public virtual Class Class { get; set; } = null!;
 
+    public int? SchoolYearId { get; set; }
+    public virtual SchoolYear? SchoolYear { get; set; }
+
     public int TeacherUserId { get; set; }
     public virtual User TeacherUser { get; set; } = null!;
 

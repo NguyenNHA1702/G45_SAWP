@@ -7,6 +7,8 @@ import type {
   AccountRequestDto,
   AccountRequestItemDto,
   AccountRequestRowCheckDto,
+  EmailChangeRequestDto,
+  GuardianWithAccountDto,
   GuardianWithoutAccountDto,
   SaveAccountRequestDto,
   SaveAccountRequestResultDto,
@@ -62,4 +64,26 @@ export const accountRequestApi = {
 
   decide: (id: number, decision: AccountRequestDecisionDto): Promise<ApiResponse<AccountRequestDecisionResultDto>> =>
     unwrap(apiClient.post(`/account-requests/${id}/decisions`, decision)),
+
+  guardiansWithAccountPaged: (search?: string, pageIndex = 1, pageSize = 25): Promise<ApiResponse<PaginatedResult<GuardianWithAccountDto>>> =>
+    unwrap(apiClient.get('/account-requests/guardians-with-account/paged', {
+      params: { ...(search ? { search } : {}), pageIndex, pageSize },
+    })),
+
+  createEmailChange: (payload: { guardianId: number; newEmail: string; reason: string }): Promise<ApiResponse<EmailChangeRequestDto>> =>
+    unwrap(apiClient.post('/account-requests/email-change', payload)),
+
+  myEmailChangePaged: (pageIndex = 1, pageSize = 20): Promise<ApiResponse<PaginatedResult<EmailChangeRequestDto>>> =>
+    unwrap(apiClient.get('/account-requests/email-change/mine', { params: { pageIndex, pageSize } })),
+
+  reviewEmailChangePaged: (status?: string, search?: string, pageIndex = 1, pageSize = 20): Promise<ApiResponse<PaginatedResult<EmailChangeRequestDto>>> =>
+    unwrap(apiClient.get('/account-requests/email-change/review', {
+      params: { ...(status ? { status } : {}), ...(search ? { search } : {}), pageIndex, pageSize },
+    })),
+
+  decideEmailChange: (id: number, decision: { approve: boolean; rejectReason?: string }): Promise<ApiResponse<EmailChangeRequestDto>> =>
+    unwrap(apiClient.post(`/account-requests/email-change/${id}/decide`, decision)),
+
+  resendEmailChangeLink: (id: number): Promise<ApiResponse<boolean>> =>
+    unwrap(apiClient.post(`/account-requests/email-change/${id}/resend`)),
 };

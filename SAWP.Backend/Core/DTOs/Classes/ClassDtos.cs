@@ -50,6 +50,7 @@ public class ClassSummaryDto
     public int EnrolledCount { get; set; }
     public string Status { get; set; } = "Active";
     public int? HomeroomTeacherId { get; set; }
+    public int? HomeroomTeacherUserId { get; set; }
     public string? HomeroomTeacherName { get; set; }
     public string? HomeroomTeacherStaffCode { get; set; }
 

@@ -43,6 +43,8 @@ export interface CreateStudentDto {
   isSpecialNeeds?: boolean;
   specialNeedsNotes?: string;
   initialClassId?: number;
+  allowAgeException?: boolean;
+  ageExceptionReason?: string;
   initialGuardian?: GuardianInputDto;
 }
 
@@ -56,6 +58,8 @@ export interface UpdateStudentDto {
   specialNeedsNotes?: string;
   avatarUrl?: string;
   status?: string;
+  allowAgeException?: boolean;
+  ageExceptionReason?: string;
   parentFullName?: string;
   parentPhone?: string;
   parentIdentityCard?: string;
@@ -105,6 +109,7 @@ export interface ImportStudentRowDto {
   guardianMatchNote?: string;
   /** Has an email address and no account: an account can be requested later (BR-64). */
   guardianEligibleForAccount?: boolean;
+  allowAgeException?: boolean;
   isValid: boolean;
   isDuplicate: boolean;
   errorMessage?: string;
@@ -112,6 +117,7 @@ export interface ImportStudentRowDto {
 
 export interface ImportStudentsConfirmDto {
   schoolYearId?: number;
+  allowAgeException?: boolean;
   validRows: ImportStudentRowDto[];
 }
 
@@ -146,6 +152,8 @@ export interface StudentGuardianItemDto {
   phoneNumber?: string;
   email?: string;
   identityCardNumber?: string;
+  occupation?: string;
+  address?: string;
   relationship: number;
   relationshipName: string;
   isPrimaryContact: boolean;
@@ -157,4 +165,80 @@ export interface LinkGuardianRequestDto {
   newGuardian?: GuardianInputDto;
   relationship: number;
   isPrimaryContact: boolean;
+}
+
+export interface StudentEnrollmentHistoryItemDto {
+  assignmentId: number;
+  academicYear: string;
+  classId: number;
+  className: string;
+  grade: number;
+  homeroomTeacherName?: string;
+  startDate: string;
+  endDate?: string;
+  isActive: boolean;
+  isDraft: boolean;
+}
+
+export interface StudentAttendanceHistoryItemDto {
+  date: string;
+  session: string;
+  status: string;
+  className?: string;
+  remarks?: string;
+}
+
+export interface StudentAttendanceHistorySummaryDto {
+  totalDays: number;
+  presentCount: number;
+  absentExcusedCount: number;
+  absentUnexcusedCount: number;
+  lateCount: number;
+  recentRecords: StudentAttendanceHistoryItemDto[];
+}
+
+export interface StudentRequestHistoryItemDto {
+  requestId: number;
+  requestNumber: string;
+  requestType: string;
+  status: string;
+  submissionDate: string;
+  processedDate?: string;
+  summary?: string;
+}
+
+export interface StudentLunchHistoryItemDto {
+  date: string;
+  mealType: string;
+  isActive: boolean;
+  isWaitlisted: boolean;
+  cancellationSource?: string;
+}
+
+export interface StudentLunchHistorySummaryDto {
+  activeRegistrationsCount: number;
+  cancelledCount: number;
+  waitlistedCount: number;
+  recentRegistrations: StudentLunchHistoryItemDto[];
+}
+
+export interface StudentAuditHistoryItemDto {
+  timestamp: string;
+  action: string;
+  actorName?: string;
+  oldValues?: string;
+  newValues?: string;
+}
+
+export interface StudentHistoryDto {
+  studentId: number;
+  studentCode: string;
+  fullName: string;
+  status: string;
+  enrollmentDate: string;
+  enrollmentHistory: StudentEnrollmentHistoryItemDto[];
+  attendanceSummary: StudentAttendanceHistorySummaryDto;
+  requests: StudentRequestHistoryItemDto[];
+  lunchSummary: StudentLunchHistorySummaryDto;
+  auditLogs: StudentAuditHistoryItemDto[];
 }

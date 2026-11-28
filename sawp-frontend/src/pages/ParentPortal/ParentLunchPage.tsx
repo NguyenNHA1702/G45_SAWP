@@ -1566,7 +1566,18 @@ export default function ParentLunchPage() {
 
                   <div className="mobile-item-card__foot">
                     {canCancel ? (
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%' }}>
+                      <div style={{ display: 'flex', gap: 8, flexDirection: 'column', width: '100%' }}>
+                        <select
+                          className="select"
+                          aria-label={`Đổi chế độ ăn ngày ${dKey}`}
+                          value={normalizeMealTypeNumber(day.mealType ?? schedule?.mealProfile?.defaultMealType)}
+                          onChange={(e) => handleInlineMealTypeChange(day, Number(e.target.value))}
+                          style={{ width: '100%', minHeight: 36, fontSize: 'var(--fs-xs)' }}
+                        >
+                          <option value={1}>Tiêu chuẩn (Mặn)</option>
+                          <option value={2}>Ăn chay</option>
+                          <option value={3}>Đặc biệt (Dị ứng)</option>
+                        </select>
                         <button
                           type="button"
                           className="btn btn--sm"
@@ -1575,7 +1586,7 @@ export default function ParentLunchPage() {
                             setCancelReason('');
                           }}
                           style={{
-                            flex: 1,
+                            width: '100%',
                             border: '1.5px solid #F43F5E',
                             boxShadow: '2px 2px 0 0 var(--color-fg)',
                             background: '#FFE4E6',

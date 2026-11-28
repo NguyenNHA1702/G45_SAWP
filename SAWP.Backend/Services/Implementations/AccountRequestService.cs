@@ -1,3 +1,4 @@
+using Core.Common;
 using Core.Constants;
 using Core.DTOs;
 using Core.Entities;
@@ -723,7 +724,8 @@ public class AccountRequestService : IAccountRequestService
             ? new List<User>()
             : await _unitOfWork.Users.Query()
                 .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-                .Where(u => emails.Contains(u.Email.ToLower()) || emails.Contains(u.Username.ToLower()))
+                .Where(u => u.Status != AccountStatus.Deactivated
+                            && (emails.Contains(u.Email.ToLower()) || emails.Contains(u.Username.ToLower())))
                 .ToListAsync(ct);
 
         var seen = new HashSet<string>();
@@ -938,6 +940,357 @@ public class AccountRequestService : IAccountRequestService
         && i.CreatedUser?.Status == AccountStatus.Active
             ? AccountRequestItemStatus.Active
             : i.Status;
+
+    #endregion
+
+    #region Parent Email Change Requests (Office Staff -> Admin review, BR-69)
+
+    public async Task<ApiResponse<PaginatedResult<GuardianWithAccountDto>>> GetGuardiansWithAccountPagedAsync(
+        string? search,
+        int pageIndex = 1,
+        int pageSize = 25,
+        CancellationToken ct = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var q = search?.Trim().ToLower() ?? string.Empty;
+        var baseQuery = _unitOfWork.Repository<Guardian>().Query().AsNoTracking()
+            .Where(g => g.UserId != null && g.User != null && g.User.Status != AccountStatus.Deactivated);
+        if (q.Length > 0)
+        {
+            baseQuery = baseQuery.Where(g => g.FullName.ToLower().Contains(q)
+                                             || (g.Email != null && g.Email.ToLower().Contains(q))
+                                             || g.User!.Email.ToLower().Contains(q)
+                                             || g.StudentGuardians.Any(sg => sg.Student.StudentCode.ToLower().Contains(q) || sg.Student.FullName.ToLower().Contains(q)));
+        }
+
+        var totalCount = await baseQuery.CountAsync(ct);
+        if (totalCount == 0 || (pageIndex - 1) * pageSize >= totalCount)
+        {
+            return ApiResponse<PaginatedResult<GuardianWithAccountDto>>.Ok(
+                new PaginatedResult<GuardianWithAccountDto>(new List<GuardianWithAccountDto>(), totalCount, pageIndex, pageSize));
+        }
+
+        var pageIds = await baseQuery
+            .OrderBy(g => g.FullName)
+            .ThenBy(g => g.Id)
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+
+        var guardians = await GuardianQuery()
+            .Include(g => g.User)
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Where(g => pageIds.Contains(g.Id))
+            .ToListAsync(ct);
+        guardians = OrderLike(guardians, pageIds);
+
+        var userIds = guardians.Where(g => g.UserId.HasValue).Select(g => g.UserId!.Value).Distinct().ToList();
+        var pendingUserIds = (await _unitOfWork.Repository<EmailChangeRequest>().Query()
+                .AsNoTracking()
+                .Where(r => userIds.Contains(r.TargetUserId) && r.Status == EmailChangeRequestStatus.Pending)
+                .Select(r => r.TargetUserId)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        var items = guardians.Select(g => new GuardianWithAccountDto
+        {
+            GuardianId = g.Id,
+            UserId = g.UserId!.Value,
+            FullName = g.FullName,
+            CurrentEmail = g.User?.Email ?? g.Email ?? string.Empty,
+            PhoneNumber = g.PhoneNumber,
+            AccountStatus = g.User?.Status.ToString() ?? string.Empty,
+            Students = StudentLabels(g),
+            HasPendingEmailChange = pendingUserIds.Contains(g.UserId!.Value)
+        }).ToList();
+
+        return ApiResponse<PaginatedResult<GuardianWithAccountDto>>.Ok(
+            new PaginatedResult<GuardianWithAccountDto>(items, totalCount, pageIndex, pageSize));
+    }
+
+    public async Task<ApiResponse<EmailChangeRequestDto>> CreateEmailChangeRequestAsync(
+        int staffUserId,
+        CreateEmailChangeRequestDto request,
+        CancellationToken ct = default)
+    {
+        var newEmail = request.NewEmail?.Trim() ?? string.Empty;
+        var reason = request.Reason?.Trim() ?? string.Empty;
+        if (!GuardianMatcher.IsValidEmail(newEmail))
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Địa chỉ email mới không hợp lệ." });
+        }
+        if (reason.Length < 5 || reason.Length > 500)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Lý do đổi email phải từ 5 đến 500 ký tự." });
+        }
+
+        var guardian = await _unitOfWork.Repository<Guardian>().Query()
+            .Include(g => g.User!).ThenInclude(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .FirstOrDefaultAsync(g => g.Id == request.GuardianId, ct);
+
+        if (guardian == null || guardian.User == null)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG11, new List<string> { "Người giám hộ chưa có tài khoản đăng nhập." });
+        }
+
+        var targetUser = guardian.User;
+        if (targetUser.Status == AccountStatus.Deactivated)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Tài khoản phụ huynh đang bị vô hiệu hóa." });
+        }
+
+        if (string.Equals(targetUser.Email, newEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Email mới phải khác email hiện tại của phụ huynh." });
+        }
+
+        var emailTaken = await _unitOfWork.Users.Query()
+            .AnyAsync(u => u.Id != targetUser.Id && u.Status != AccountStatus.Deactivated && u.Email.ToLower() == newEmail.ToLower(), ct);
+        if (emailTaken)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Email mới đã được sử dụng cho một tài khoản khác." });
+        }
+
+        var hasPending = await _unitOfWork.Repository<EmailChangeRequest>().Query()
+            .AnyAsync(r => r.TargetUserId == targetUser.Id && r.Status == EmailChangeRequestStatus.Pending, ct);
+        if (hasPending)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Phụ huynh này đang có một yêu cầu đổi email chờ quản trị viên duyệt." });
+        }
+
+        var entity = new EmailChangeRequest
+        {
+            TargetUserId = targetUser.Id,
+            GuardianId = guardian.Id,
+            OldEmail = targetUser.Email,
+            NewEmail = newEmail,
+            Reason = reason,
+            Status = EmailChangeRequestStatus.Pending,
+            RequestedByUserId = staffUserId,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _unitOfWork.Repository<EmailChangeRequest>().AddAsync(entity, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        await _auditService.LogActionAsync(staffUserId, AuditActions.EmailChangeRequestSubmit, nameof(EmailChangeRequest), entity.Id.ToString(),
+            new { OldEmail = entity.OldEmail }, new { entity.NewEmail, entity.GuardianId, entity.Reason }, null, ct);
+
+        // Notify active Admins
+        var adminIds = await _unitOfWork.Users.Query()
+            .Where(u => u.Status == AccountStatus.Active && u.UserRoles.Any(ur => ur.Role.Name == UserRoles.Admin.ToString()))
+            .Select(u => u.Id)
+            .Distinct()
+            .ToListAsync(ct);
+        foreach (var adminId in adminIds)
+        {
+            await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+            {
+                UserId = adminId,
+                Type = "EMAIL_CHANGE_REQUEST",
+                Title = "Yêu cầu đổi email Phụ huynh",
+                Content = $"Giáo vụ đề xuất đổi email cho phụ huynh {targetUser.FullName} từ {entity.OldEmail} sang {entity.NewEmail}.",
+                LinkUrl = "/admin/account-requests?tab=email-change",
+                ReferenceKey = $"EMAIL_CHANGE_REQ:{entity.Id}",
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+        }
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return ApiResponse<EmailChangeRequestDto>.Ok(await LoadEmailChangeDtoAsync(entity.Id, ct), "Đã gửi yêu cầu đổi email phụ huynh tới Quản trị viên.");
+    }
+
+    public async Task<ApiResponse<PaginatedResult<EmailChangeRequestDto>>> GetMyEmailChangeRequestsPagedAsync(
+        int staffUserId,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var query = _unitOfWork.Repository<EmailChangeRequest>().Query()
+            .AsNoTracking()
+            .Include(r => r.TargetUser)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ReviewedByUser)
+            .Where(r => r.RequestedByUserId == staffUserId)
+            .OrderByDescending(r => r.CreatedAt)
+            .ThenByDescending(r => r.Id);
+
+        var total = await query.CountAsync(ct);
+        var items = await query.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        return ApiResponse<PaginatedResult<EmailChangeRequestDto>>.Ok(
+            new PaginatedResult<EmailChangeRequestDto>(items.Select(MapEmailChangeDto).ToList(), total, pageIndex, pageSize));
+    }
+
+    public async Task<ApiResponse<PaginatedResult<EmailChangeRequestDto>>> GetEmailChangeRequestsForReviewPagedAsync(
+        string? status,
+        string? search = null,
+        int pageIndex = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        pageIndex = Math.Max(1, pageIndex);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var query = _unitOfWork.Repository<EmailChangeRequest>().Query()
+            .AsNoTracking()
+            .Include(r => r.TargetUser)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ReviewedByUser)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<EmailChangeRequestStatus>(status, true, out var parsedStatus))
+        {
+            query = query.Where(r => r.Status == parsedStatus);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var q = search.Trim().ToLower();
+            query = query.Where(r => r.TargetUser.FullName.ToLower().Contains(q)
+                                     || r.OldEmail.ToLower().Contains(q)
+                                     || r.NewEmail.ToLower().Contains(q));
+        }
+
+        var ordered = query.OrderBy(r => r.Status == EmailChangeRequestStatus.Pending ? 0 : 1)
+            .ThenByDescending(r => r.CreatedAt)
+            .ThenByDescending(r => r.Id);
+
+        var total = await ordered.CountAsync(ct);
+        var items = await ordered.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        return ApiResponse<PaginatedResult<EmailChangeRequestDto>>.Ok(
+            new PaginatedResult<EmailChangeRequestDto>(items.Select(MapEmailChangeDto).ToList(), total, pageIndex, pageSize));
+    }
+
+    public async Task<ApiResponse<EmailChangeRequestDto>> DecideEmailChangeRequestAsync(
+        int adminUserId,
+        int requestId,
+        DecideEmailChangeRequestDto decision,
+        CancellationToken ct = default)
+    {
+        var req = await _unitOfWork.Repository<EmailChangeRequest>().Query()
+            .Include(r => r.TargetUser)
+            .FirstOrDefaultAsync(r => r.Id == requestId, ct);
+
+        if (req == null)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG11);
+        }
+        if (req.Status != EmailChangeRequestStatus.Pending)
+        {
+            return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Yêu cầu đổi email này đã được xử lý." });
+        }
+
+        var now = DateTime.UtcNow;
+        req.ReviewedByUserId = adminUserId;
+        req.ReviewedAt = now;
+
+        if (!decision.Approve)
+        {
+            var rejectReason = decision.RejectReason?.Trim();
+            if (string.IsNullOrWhiteSpace(rejectReason))
+            {
+                return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG01, new List<string> { "Vui lòng nhập lý do từ chối." });
+            }
+            req.Status = EmailChangeRequestStatus.Rejected;
+            req.ReviewNote = rejectReason;
+        }
+        else
+        {
+            var emailTaken = await _unitOfWork.Users.Query()
+                .AnyAsync(u => u.Id != req.TargetUserId && u.Status != AccountStatus.Deactivated && u.Email.ToLower() == req.NewEmail.ToLower(), ct);
+            if (emailTaken)
+            {
+                return ApiResponse<EmailChangeRequestDto>.Fail(SystemMessages.MSG09, new List<string> { "Email mới hiện đã được sử dụng bởi một tài khoản khác." });
+            }
+
+            var sent = await _accountLinks.SendEmailChangeLinkAsync(req.TargetUser, req.NewEmail, ct);
+            req.Status = sent ? EmailChangeRequestStatus.Approved : EmailChangeRequestStatus.EmailFailed;
+            req.ReviewNote = sent
+                ? $"Đã gửi link xác nhận tới {req.NewEmail}."
+                : "Đã duyệt nhưng gửi email xác nhận thất bại; có thể gửi lại liên kết.";
+        }
+
+        await _auditService.LogActionAsync(adminUserId, AuditActions.EmailChangeRequestDecide, nameof(EmailChangeRequest), req.Id.ToString(),
+            new { req.OldEmail }, new { req.NewEmail, Status = req.Status.ToString(), req.ReviewNote }, null, ct);
+
+        await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+        {
+            UserId = req.RequestedByUserId,
+            Type = "EMAIL_CHANGE_DECISION",
+            Title = decision.Approve ? "Yêu cầu đổi email Phụ huynh đã được duyệt" : "Yêu cầu đổi email Phụ huynh bị từ chối",
+            Content = decision.Approve
+                ? $"Quản trị viên đã duyệt đổi email của {req.TargetUser.FullName} sang {req.NewEmail} và gửi liên kết xác nhận."
+                : $"Yêu cầu đổi email cho {req.TargetUser.FullName} bị từ chối. Lý do: {req.ReviewNote}",
+            LinkUrl = "/office/account-requests?tab=email-change",
+            ReferenceKey = $"EMAIL_CHANGE_DONE:{req.Id}",
+            CreatedAt = now
+        }, ct);
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        var dto = await LoadEmailChangeDtoAsync(req.Id, ct);
+        return req.Status == EmailChangeRequestStatus.EmailFailed
+            ? ApiResponse<EmailChangeRequestDto>.Ok(dto, SystemMessages.MSG59)
+            : ApiResponse<EmailChangeRequestDto>.Ok(dto, SystemMessages.MSG08);
+    }
+
+    public async Task<ApiResponse<bool>> ResendEmailChangeLinkAsync(int actorUserId, int requestId, CancellationToken ct = default)
+    {
+        var req = await _unitOfWork.Repository<EmailChangeRequest>().Query()
+            .Include(r => r.TargetUser)
+            .FirstOrDefaultAsync(r => r.Id == requestId, ct);
+        if (req == null)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG11);
+        }
+        if (req.Status is not (EmailChangeRequestStatus.Approved or EmailChangeRequestStatus.EmailFailed))
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG09, new List<string> { "Chỉ có thể gửi lại liên kết cho yêu cầu đã duyệt và chưa hoàn tất xác nhận." });
+        }
+
+        var sent = await _accountLinks.SendEmailChangeLinkAsync(req.TargetUser, req.NewEmail, ct);
+        if (!sent)
+        {
+            return ApiResponse<bool>.Fail(SystemMessages.MSG59);
+        }
+        req.Status = EmailChangeRequestStatus.Approved;
+        req.ReviewNote = $"Đã gửi lại liên kết xác nhận tới {req.NewEmail}.";
+        await _auditService.LogActionAsync(actorUserId, AuditActions.UserChangeEmail, nameof(EmailChangeRequest), req.Id.ToString(),
+            null, new { ResentTo = req.NewEmail }, null, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+        return ApiResponse<bool>.Ok(true, $"Đã gửi lại liên kết xác nhận tới {req.NewEmail}.");
+    }
+
+    private async Task<EmailChangeRequestDto> LoadEmailChangeDtoAsync(int id, CancellationToken ct)
+    {
+        var item = await _unitOfWork.Repository<EmailChangeRequest>().Query()
+            .AsNoTracking()
+            .Include(r => r.TargetUser)
+            .Include(r => r.RequestedByUser)
+            .Include(r => r.ReviewedByUser)
+            .FirstAsync(r => r.Id == id, ct);
+        return MapEmailChangeDto(item);
+    }
+
+    private static EmailChangeRequestDto MapEmailChangeDto(EmailChangeRequest r) => new()
+    {
+        Id = r.Id,
+        TargetUserId = r.TargetUserId,
+        GuardianId = r.GuardianId,
+        TargetFullName = r.TargetUser?.FullName ?? string.Empty,
+        OldEmail = r.OldEmail,
+        NewEmail = r.NewEmail,
+        Reason = r.Reason,
+        Status = r.Status.ToString(),
+        RequestedByName = r.RequestedByUser?.FullName ?? string.Empty,
+        ReviewedByName = r.ReviewedByUser?.FullName,
+        ReviewNote = r.ReviewNote,
+        CreatedAt = UtcDateTimeHelper.Normalize(r.CreatedAt),
+        ReviewedAt = UtcDateTimeHelper.Normalize(r.ReviewedAt),
+        CompletedAt = UtcDateTimeHelper.Normalize(r.CompletedAt)
+    };
 
     #endregion
 }

@@ -10,7 +10,7 @@ public class ClassPostConfiguration : IEntityTypeConfiguration<ClassPost>
     {
         builder.HasKey(cp => cp.Id);
         builder.Property(cp => cp.Title).HasMaxLength(250).IsRequired();
-        builder.Property(cp => cp.Content).HasMaxLength(4000).IsRequired();
+        builder.Property(cp => cp.Content).HasMaxLength(5000).IsRequired();
         builder.Property(cp => cp.Category).HasMaxLength(50).HasDefaultValue("General");
 
         builder.HasIndex(cp => new { cp.ClassId, cp.CreatedAt });
@@ -49,7 +49,7 @@ public class PostCommentConfiguration : IEntityTypeConfiguration<PostComment>
     public void Configure(EntityTypeBuilder<PostComment> builder)
     {
         builder.HasKey(pc => pc.Id);
-        builder.Property(pc => pc.Content).HasMaxLength(500).IsRequired();
+        builder.Property(pc => pc.Content).HasMaxLength(1000).IsRequired();
 
         builder.HasIndex(pc => new { pc.PostId, pc.CreatedAt });
 
@@ -99,6 +99,9 @@ public class StudentEvaluationConfiguration : IEntityTypeConfiguration<StudentEv
         builder.Property(se => se.BadgesJson).HasMaxLength(1000).HasDefaultValue("[]");
 
         builder.HasIndex(se => new { se.StudentId, se.WeekNumber });
+        builder.HasIndex(se => new { se.StudentId, se.SchoolYearId, se.WeekNumber })
+               .IsUnique()
+               .HasFilter("[SchoolYearId] IS NOT NULL");
         builder.HasIndex(se => new { se.ClassId, se.WeekNumber });
 
         builder.HasOne(se => se.Student)
@@ -109,6 +112,11 @@ public class StudentEvaluationConfiguration : IEntityTypeConfiguration<StudentEv
         builder.HasOne(se => se.Class)
                .WithMany()
                .HasForeignKey(se => se.ClassId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(se => se.SchoolYear)
+               .WithMany()
+               .HasForeignKey(se => se.SchoolYearId)
                .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(se => se.TeacherUser)

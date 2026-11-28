@@ -46,8 +46,9 @@ export interface CreateUserPayload {
   email: string;
   fullName: string;
   phoneNumber?: string;
-  // No password: the account starts Pending Activation and gets an activation link (BR-63)
+  // No password: the account starts Disabled unless enableNow is checked
   roles: string[];
+  enableNow?: boolean;
   staffCode?: string;
   position?: string;
   department?: string;
@@ -83,4 +84,87 @@ export interface UpdateLunchCutoffPayload {
   isServing: boolean;
   cutoffTime: string;
   remarks?: string;
+}
+
+// ---- GAP-05: Admin UC-54..UC-57 ----
+
+export interface PermissionDto {
+  id: number;
+  code: string;
+  name: string;
+  module: string;
+  description?: string | null;
+}
+
+export interface RolePermissionMatrixItemDto {
+  roleId: number;
+  roleName: string;
+  roleDescription?: string | null;
+  grantedPermissionCodes: string[];
+}
+
+export interface RolePermissionMatrixDto {
+  permissions: PermissionDto[];
+  roles: RolePermissionMatrixItemDto[];
+}
+
+export interface AdminProfileLinkOptionDto {
+  profileId: number;
+  profileType: 'Staff' | 'Guardian' | string;
+  codeOrPhone: string;
+  fullName: string;
+  secondaryInfo?: string | null;
+  linkedUserId?: number | null;
+  linkedUsername?: string | null;
+}
+
+export interface AdminUserProfileLinkInfoDto {
+  userId: number;
+  username: string;
+  fullName: string;
+  email: string;
+  roles: string[];
+  linkedStaffProfileId?: number | null;
+  linkedStaffLabel?: string | null;
+  linkedGuardianId?: number | null;
+  linkedGuardianLabel?: string | null;
+}
+
+export interface AdminProfileLinkingOverviewDto {
+  user?: AdminUserProfileLinkInfoDto | null;
+  staffProfiles: AdminProfileLinkOptionDto[];
+  guardians: AdminProfileLinkOptionDto[];
+}
+
+export interface ReferenceItemDto {
+  id: number;
+  category: string;
+  code: string;
+  label: string;
+  sortOrder: number;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface UpsertReferenceItemPayload {
+  category: string;
+  code: string;
+  label: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface NotificationTemplateDto {
+  id: number;
+  code: string;
+  titleTemplate: string;
+  bodyTemplate: string;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface UpdateNotificationTemplatePayload {
+  titleTemplate: string;
+  bodyTemplate: string;
+  isActive: boolean;
 }

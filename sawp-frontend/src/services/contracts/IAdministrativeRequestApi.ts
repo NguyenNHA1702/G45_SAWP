@@ -36,7 +36,7 @@ export interface IAdministrativeRequestApi {
   endorseDocument(id: number, req: StaffEndorseDocumentRequest): Promise<ApiResponse<boolean>>;
   directIssue(id: number, req: StaffDirectIssueRequest): Promise<ApiResponse<boolean>>;
   staffReject(id: number, reason: string): Promise<ApiResponse<boolean>>;
-  executeClassTransfer(id: number): Promise<ApiResponse<boolean>>;
+  executeClassTransfer(id: number, confirmEarly?: boolean): Promise<ApiResponse<boolean>>;
 
   // School Board
   getBoardRequests(requestType?: string, status?: string): Promise<ApiResponse<AdministrativeRequestSummary[]>>;

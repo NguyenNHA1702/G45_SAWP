@@ -216,6 +216,7 @@ public class ClassRepository : Repository<Class>, IClassRepository
                 EnrolledCount = c.ClassAssignments.Count(ca => ca.IsActive || ca.IsDraft),
                 Status = c.Status,
                 HomeroomTeacherId = c.HomeroomTeacherId,
+                HomeroomTeacherUserId = c.HomeroomTeacher != null ? (int?)c.HomeroomTeacher.UserId : null,
                 HomeroomTeacherName = c.HomeroomTeacher != null && c.HomeroomTeacher.User != null ? c.HomeroomTeacher.User.FullName : null,
                 HomeroomTeacherStaffCode = c.HomeroomTeacher != null ? c.HomeroomTeacher.StaffCode : null,
                 IsReviewed = c.IsReviewed,

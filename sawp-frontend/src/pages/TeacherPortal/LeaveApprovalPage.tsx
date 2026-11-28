@@ -566,7 +566,7 @@ export default function LeaveApprovalPage() {
 
                 {/* ACTION BUTTONS */}
                 {/* 1. Branch: <= 3 ngày học (GVCN xem xét đơn nghỉ thông thường) */}
-                {r.status === 'Submitted' && !isEscalated && !noHomeroom && (
+                {r.status === 'Submitted' && !isEscalated && !noHomeroom && !isBoardOrAdmin && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     <button
                       type="button"
@@ -603,8 +603,8 @@ export default function LeaveApprovalPage() {
                   </div>
                 )}
 
-                {/* 2. Branch: > 3 ngày học (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu) */}
-                {r.status === 'Submitted' && isEscalated && !noHomeroom && (
+                {/* 2. Branch: > 3 ngày học (GVCN xác nhận yêu cầu và chuyển lên Ban Giám hiệu; không được từ chối thay BGH) */}
+                {r.status === 'Submitted' && isEscalated && !noHomeroom && !isBoardOrAdmin && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
                     <button
                       type="button"
@@ -616,18 +616,6 @@ export default function LeaveApprovalPage() {
                       }}
                     >
                       <HelpCircle size={15} /> Yêu cầu bổ sung
-                    </button>
-                    <button
-                      type="button"
-                      disabled={processing}
-                      className="btn btn--secondary btn--sm"
-                      style={{ color: '#e11d48', borderColor: '#fda4af' }}
-                      onClick={() => {
-                        setRejectingItem(r);
-                        setRejectReason('');
-                      }}
-                    >
-                      <X size={15} /> Từ chối
                     </button>
                     <button
                       type="button"
@@ -646,7 +634,7 @@ export default function LeaveApprovalPage() {
                 {/* 3. Branch: Đơn tại Ban Giám Hiệu (Status == UnderReview hoặc lớp chưa có GVCN) */}
                 {(r.status === 'UnderReview' || (r.status === 'Submitted' && noHomeroom)) && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 10, paddingTop: 12, borderTop: '1px solid var(--color-border)', marginTop: 8 }}>
-                    {isSchoolBoard || isAdmin ? (
+                    {isSchoolBoard ? (
                       <>
                         <button
                           type="button"

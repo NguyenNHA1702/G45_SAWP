@@ -51,8 +51,10 @@ export interface CreateClassDto {
 
 export interface UpdateClassDto {
   className: string;
+  grade: number;
+  roomNumber?: string;
   capacity: number;
-  status?: string;
+  status: string;
 }
 
 export interface TeacherOptionDto {

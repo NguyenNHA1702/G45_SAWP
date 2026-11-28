@@ -14,4 +14,13 @@ public interface INotificationService
     Task<bool> MarkAsReadAsync(int userId, int notificationId, CancellationToken cancellationToken = default);
 
     Task MarkAllReadAsync(int userId, CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<BroadcastNotificationResultDto>> BroadcastAsync(
+        int senderUserId,
+        BroadcastNotificationRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<ApiResponse<List<BroadcastHistoryItemDto>>> GetBroadcastHistoryAsync(
+        int limit = 25,
+        CancellationToken cancellationToken = default);
 }

@@ -1349,7 +1349,7 @@ public class RequestWorkflowEngineTests : TestBase
         // Assert
         result.Should().NotBeNull();
         result.Success.Should().BeTrue();
-        req.Status.Should().Be(RequestStatus.Approved);
+        req.Status.Should().Be(RequestStatus.Completed);
         docDetail.CertificateNumber.Should().StartWith("SAWP-");
         docDetail.IssuedDocumentUrl.Should().Be("/api/requests/attachment-file?path=request_attachments/signed.pdf");
     }
@@ -1507,7 +1507,7 @@ public class RequestWorkflowEngineTests : TestBase
         });
 
         result.Success.Should().BeTrue();
-        req.Status.Should().Be(RequestStatus.Approved);
+        req.Status.Should().Be(RequestStatus.Completed);
         req.DocumentRequestDetail.IssuedDocumentUrl.Should().BeNull();
     }
 
@@ -2037,6 +2037,82 @@ public class RequestWorkflowEngineTests : TestBase
         result.Success.Should().BeTrue();
         details.Should().HaveCount(1);
         details[0].EffectiveDate.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task BUG17_ExecuteClassTransfer_BeforeEffectiveDate_FailsWithMSG09()
+    {
+        var futureDate = DateTime.UtcNow.Date.AddDays(5);
+        var fromClass = new Class { Id = 1, ClassName = "1A", Grade = 1 };
+        var toClass = new Class { Id = 2, ClassName = "1B", Grade = 1, Capacity = 35 };
+        var detail = new ClassTransferDetail
+        {
+            FromClassId = 1,
+            ToClassId = 2,
+            FromClass = fromClass,
+            ToClass = toClass,
+            EffectiveDate = futureDate,
+            IsExecuted = false
+        };
+        var req = new AdministrativeRequest
+        {
+            Id = 99,
+            StudentId = 10,
+            SchoolBoardApprovedAt = DateTime.UtcNow,
+            Status = RequestStatus.Approved,
+            ClassTransferDetail = detail
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<ClassAssignment> { new() { Id = 1, StudentId = 10, ClassId = 1, IsActive = true } });
+
+        var result = await _service.ExecuteClassTransferAsync(99, 5);
+
+        result.Success.Should().BeFalse();
+        result.Code.Should().Be(SystemMessages.MSG245.Code);
+        detail.IsExecuted.Should().BeFalse();
+        req.Status.Should().Be(RequestStatus.Approved);
+
+        var earlyConfirmResult = await _service.ExecuteClassTransferAsync(99, 5, confirmEarly: true);
+        earlyConfirmResult.Success.Should().BeTrue();
+        detail.IsExecuted.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.Completed);
+    }
+
+    [Fact]
+    public async Task BUG_REQ_01_04_AmendmentSetsNeedMoreInfo_ResubmitRestoresSubmitted_AndRejectClearsFlag()
+    {
+        var stu = new Student { Id = 10, FullName = "Em A" };
+        var req = new AdministrativeRequest
+        {
+            Id = 50,
+            RequestNumber = "REQ-OTH-1",
+            RequesterUserId = 20,
+            StudentId = 10,
+            Student = stu,
+            RequestType = RequestTypes.Other,
+            Status = RequestStatus.Submitted,
+            DocumentRequestDetail = new DocumentRequestDetail { DocumentType = "Đề xuất", Purpose = "Nội dung ban đầu" }
+        };
+        SetupRepository(new List<AdministrativeRequest> { req });
+        SetupRepository(new List<StudentGuardian>());
+        SetupRepository(new List<UserRole>());
+        SetupRepository(new List<Notification>());
+
+        var amend = await _service.RequestAmendmentAsync(50, 10, new StaffAmendmentDto { AmendmentNotes = "Vui lòng ghi rõ hơn" });
+        amend.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.NeedMoreInfo);
+        req.RequiresAmendment.Should().BeTrue();
+
+        var resubmit = await _service.ResubmitRequestAsync(50, 20, new ResubmitRequestDto { Purpose = "Nội dung chi tiết đã được bổ sung đầy đủ" });
+        resubmit.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.Submitted);
+        req.RequiresAmendment.Should().BeFalse();
+
+        await _service.RequestAmendmentAsync(50, 10, new StaffAmendmentDto { AmendmentNotes = "Thiếu giấy tờ kèm" });
+        var reject = await _service.StaffRejectRequestAsync(50, 10, new StaffRejectDto { Reason = "Không thuộc phạm vi giải quyết" });
+        reject.Success.Should().BeTrue();
+        req.Status.Should().Be(RequestStatus.Rejected);
+        req.RequiresAmendment.Should().BeFalse();
     }
 
     #endregion

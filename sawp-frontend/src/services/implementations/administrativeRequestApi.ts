@@ -158,8 +158,12 @@ class AdministrativeRequestApi implements IAdministrativeRequestApi {
     return res.data;
   }
 
-  async executeClassTransfer(id: number): Promise<ApiResponse<boolean>> {
-    const res = await apiClient.post<ApiResponse<boolean>>(`/requests/${id}/execute-transfer`, {});
+  async executeClassTransfer(id: number, confirmEarly = false): Promise<ApiResponse<boolean>> {
+    const res = await apiClient.post<ApiResponse<boolean>>(
+      `/requests/${id}/execute-transfer`,
+      {},
+      { params: confirmEarly ? { confirmEarly: true } : {} }
+    );
     return res.data;
   }
 

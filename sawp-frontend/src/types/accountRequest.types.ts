@@ -120,3 +120,39 @@ export const ITEM_STATUS: Record<AccountRequestItemStatus, { label: string; badg
   Failed: { label: 'Lỗi', badge: 'badge badge--pink' },
   Closed: { label: 'Đã đóng', badge: 'badge' },
 };
+
+export interface GuardianWithAccountDto {
+  guardianId: number;
+  userId: number;
+  fullName: string;
+  currentEmail: string;
+  phoneNumber?: string;
+  accountStatus: string;
+  students: string[];
+  hasPendingEmailChange: boolean;
+}
+
+export interface EmailChangeRequestDto {
+  id: number;
+  targetUserId: number;
+  guardianId?: number;
+  targetFullName: string;
+  oldEmail: string;
+  newEmail: string;
+  reason: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Completed' | 'EmailFailed';
+  requestedByName: string;
+  reviewedByName?: string;
+  reviewNote?: string;
+  createdAt: string;
+  reviewedAt?: string;
+  completedAt?: string;
+}
+
+export const EMAIL_CHANGE_STATUS: Record<EmailChangeRequestDto['status'], { label: string; badge: string }> = {
+  Pending: { label: 'Chờ Admin duyệt', badge: 'badge badge--violet' },
+  Approved: { label: 'Đã duyệt, chờ PH xác nhận', badge: 'badge badge--amber' },
+  Rejected: { label: 'Bị từ chối', badge: 'badge badge--pink' },
+  Completed: { label: 'Đã đổi email', badge: 'badge badge--mint' },
+  EmailFailed: { label: 'Lỗi gửi email', badge: 'badge badge--pink' },
+};

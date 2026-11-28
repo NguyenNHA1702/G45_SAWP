@@ -23,10 +23,13 @@ public class ClassesController : ControllerBase
         _classImporter = classImporter;
     }
 
+    private bool CanViewDraftSchoolYears()
+        => User.IsInRole("OfficeStaff") || User.IsInRole("SchoolBoard");
+
     #region Academic Year (UC-13)
 
     [HttpPost("school-years")]
-    [Authorize(Roles = "OfficeStaff,Admin,SchoolBoard")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<SchoolYearDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<SchoolYearDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateSchoolYear([FromBody] CreateSchoolYearDto request, CancellationToken cancellationToken)
@@ -40,7 +43,7 @@ public class ClassesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<List<SchoolYearDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSchoolYears(CancellationToken cancellationToken)
     {
-        var result = await _classService.GetSchoolYearsAsync(cancellationToken);
+        var result = await _classService.GetSchoolYearsAsync(CanViewDraftSchoolYears(), cancellationToken);
         return Ok(result);
     }
 
@@ -55,7 +58,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpPut("school-years/{id}/activate")]
-    [Authorize(Roles = "OfficeStaff,Admin")] // BR-72: Office Staff activate a Draft school year
+    [Authorize(Roles = "OfficeStaff")] // BR-72: Office Staff activate a Draft school year
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ActivateSchoolYear(int id, CancellationToken cancellationToken)
@@ -65,7 +68,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpDelete("school-years/{id}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
@@ -84,7 +87,7 @@ public class ClassesController : ControllerBase
 
     /// <summary>Reads the uploaded .xlsx file and previews the import into the Draft school year (steps 1-3).</summary>
     [HttpPost("school-years/{id}/import/preview")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> PreviewClassImport(int id, IFormFile? file, [FromForm] string? mode, CancellationToken cancellationToken)
@@ -109,7 +112,7 @@ public class ClassesController : ControllerBase
 
     /// <summary>Previews already parsed rows again, e.g. after choosing Replace or Merge (A2).</summary>
     [HttpPost("school-years/{id}/import/preview-rows")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassImportPreviewDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> PreviewClassImportRows(int id, [FromBody] ClassImportRowsDto request, CancellationToken cancellationToken)
@@ -120,7 +123,7 @@ public class ClassesController : ControllerBase
 
     /// <summary>Imports the valid rows (steps 4-6); the rows are validated again.</summary>
     [HttpPost("school-years/{id}/import/confirm")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<ClassImportResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassImportResultDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ConfirmClassImport(int id, [FromBody] ClassImportRowsDto request, CancellationToken cancellationToken)
@@ -130,7 +133,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpGet("import/template")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
     public IActionResult DownloadClassImportTemplate()
         => File(_classImporter.GenerateTemplate(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Mau_Xep_Lop_SAWP.xlsx");
@@ -140,7 +143,7 @@ public class ClassesController : ControllerBase
     #region Classes Management (UC-14)
 
     [HttpPost]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateClass([FromBody] CreateClassDto request, CancellationToken cancellationToken)
@@ -150,7 +153,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard,Teacher")]
     [ProducesResponseType(typeof(ApiResponse<List<ClassSummaryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetClasses(
         [FromQuery] int? schoolYearId,
@@ -158,22 +161,26 @@ public class ClassesController : ControllerBase
         [FromQuery] string? status,
         CancellationToken cancellationToken)
     {
-        var result = await _classService.GetClassesAsync(schoolYearId, grade, status, cancellationToken);
+        var result = await _classService.GetClassesAsync(schoolYearId, grade, status, CanViewDraftSchoolYears(), cancellationToken);
         return Ok(result);
     }
 
     [HttpGet("{id}")]
-    [Authorize]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard,Teacher")]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetClassDetails(int id, CancellationToken cancellationToken)
     {
-        var result = await _classService.GetClassDetailsAsync(id, cancellationToken);
-        return result.Success ? Ok(result) : NotFound(result);
+        var result = await _classService.GetClassDetailsAsync(id, CanViewDraftSchoolYears(), cancellationToken);
+        if (result.Success) return Ok(result);
+        return result.Code == SystemMessages.MSG10.Code
+            ? StatusCode(StatusCodes.Status403Forbidden, result)
+            : NotFound(result);
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateClass(int id, [FromBody] UpdateClassDto request, CancellationToken cancellationToken)
@@ -184,7 +191,7 @@ public class ClassesController : ControllerBase
 
     /// <summary>Marks a class of a Draft school year as Reviewed (UC-14 A2, BR-72).</summary>
     [HttpPost("{id}/mark-reviewed")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassSummaryDto>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> MarkClassReviewed(int id, CancellationToken cancellationToken)
@@ -194,7 +201,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
@@ -212,7 +219,7 @@ public class ClassesController : ControllerBase
     #region Homeroom Teacher Assignment (UC-15)
 
     [HttpGet("eligible-teachers")]
-    [Authorize(Roles = "OfficeStaff,Admin,SchoolBoard")]
+    [Authorize(Roles = "OfficeStaff,SchoolBoard")]
     [ProducesResponseType(typeof(ApiResponse<List<TeacherOptionDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetEligibleTeachers([FromQuery] int? schoolYearId, CancellationToken cancellationToken)
     {
@@ -221,7 +228,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpPost("{id}/assign-homeroom-teacher")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> AssignHomeroomTeacher(int id, [FromBody] AssignTeacherDto request, CancellationToken cancellationToken)
@@ -231,7 +238,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpPost("{id}/unassign-homeroom-teacher")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UnassignHomeroomTeacher(int id, CancellationToken cancellationToken)
@@ -245,7 +252,7 @@ public class ClassesController : ControllerBase
     #region Student Class Assignment (UC-16)
 
     [HttpGet("{id}/eligible-students/paged")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<PaginatedResult<RosterStudentItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetEligibleStudentsPaged(
         int id,
@@ -259,7 +266,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpPost("{id}/assign-students")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> AssignStudents(int id, [FromBody] AssignStudentsDto request, CancellationToken cancellationToken)
@@ -269,7 +276,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpDelete("{id}/remove-student/{studentId}")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> RemoveStudent(int id, int studentId, CancellationToken cancellationToken)
@@ -279,7 +286,7 @@ public class ClassesController : ControllerBase
     }
 
     [HttpPost("{id}/remove-students-batch")]
-    [Authorize(Roles = "OfficeStaff,Admin")]
+    [Authorize(Roles = "OfficeStaff")]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> RemoveStudentsBatch(int id, [FromBody] RemoveStudentsBatchDto request, CancellationToken cancellationToken)
@@ -293,7 +300,7 @@ public class ClassesController : ControllerBase
     #region Class Roster (UC-17)
 
     [HttpGet("{id}/roster")]
-    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard,Admin")]
+    [Authorize(Roles = "Teacher,OfficeStaff,SchoolBoard")]
     [ProducesResponseType(typeof(ApiResponse<ClassRosterDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ClassRosterDto>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<ClassRosterDto>), StatusCodes.Status404NotFound)]
@@ -302,7 +309,7 @@ public class ClassesController : ControllerBase
         var userId = User.GetUserId();
         var userRole = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
 
-        var result = await _classService.GetClassRosterAsync(id, userId, userRole, cancellationToken);
+        var result = await _classService.GetClassRosterAsync(id, userId, userRole, CanViewDraftSchoolYears(), cancellationToken);
         if (!result.Success)
         {
             if (result.Code == SystemMessages.MSG10.Code || result.Code == SystemMessages.MSG20.Code)

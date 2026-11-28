@@ -20,4 +20,7 @@ public interface IAccountLinkService
 
     /// <summary>Issues a password recovery link and emails it. False when the email could not be sent (logged).</summary>
     Task<bool> SendRecoveryLinkAsync(User user, CancellationToken ct = default);
+
+    /// <summary>Issues an email-change confirmation link and emails it to the new address (BR-69).</summary>
+    Task<bool> SendEmailChangeLinkAsync(User user, string newEmail, CancellationToken ct = default);
 }

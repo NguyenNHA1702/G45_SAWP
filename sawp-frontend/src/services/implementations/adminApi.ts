@@ -69,6 +69,11 @@ export const adminApi: IAdminApi = {
     return res.data;
   },
 
+  changeUserEmail: async (userId: number, newEmail: string): Promise<ApiResponse<boolean>> => {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/admin/users/${userId}/change-email`, { newEmail });
+    return res.data;
+  },
+
   resetUserPassword: async (userId: number, newPassword: string): Promise<ApiResponse<boolean>> => {
     const res = await apiClient.post<ApiResponse<boolean>>(`/admin/users/${userId}/reset-password`, { newPassword });
     return res.data;
@@ -107,6 +112,48 @@ export const adminApi: IAdminApi = {
 
   upsertLunchCutoff: async (payload: UpdateLunchCutoffPayload): Promise<ApiResponse<LunchCutoffDayDto>> => {
     const res = await apiClient.put<ApiResponse<LunchCutoffDayDto>>('/admin/lunch-cutoff', payload);
+    return res.data;
+  },
+
+  // GAP-05: UC-54..UC-57
+  getPermissionsMatrix: async () => {
+    const res = await apiClient.get('/admin/permissions');
+    return res.data;
+  },
+  updateRolePermissions: async (roleId: number, grantedPermissionCodes: string[]) => {
+    const res = await apiClient.put(`/admin/roles/${roleId}/permissions`, { grantedPermissionCodes });
+    return res.data;
+  },
+  getUserProfileLinks: async (userId: number, search?: string) => {
+    const res = await apiClient.get(`/admin/users/${userId}/profile-links`, {
+      params: search ? { search } : {},
+    });
+    return res.data;
+  },
+  updateUserProfileLink: async (userId: number, profileType: 'Staff' | 'Guardian', profileId: number | null) => {
+    const res = await apiClient.put(`/admin/users/${userId}/profile-link`, { profileType, profileId });
+    return res.data;
+  },
+  getReferenceItems: async (category?: string, activeOnly = false) => {
+    const res = await apiClient.get('/admin/reference-items', {
+      params: { ...(category ? { category } : {}), ...(activeOnly ? { activeOnly: true } : {}) },
+    });
+    return res.data;
+  },
+  createReferenceItem: async (payload) => {
+    const res = await apiClient.post('/admin/reference-items', payload);
+    return res.data;
+  },
+  updateReferenceItem: async (id: number, payload) => {
+    const res = await apiClient.put(`/admin/reference-items/${id}`, payload);
+    return res.data;
+  },
+  getNotificationTemplates: async () => {
+    const res = await apiClient.get('/admin/notification-templates');
+    return res.data;
+  },
+  updateNotificationTemplate: async (id: number, payload) => {
+    const res = await apiClient.put(`/admin/notification-templates/${id}`, payload);
     return res.data;
   },
 };

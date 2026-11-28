@@ -27,6 +27,8 @@ public class CreateStudentDto
     public string? ResidentialArea { get; set; }
     public bool IsSpecialNeeds { get; set; } = false;
     public string? SpecialNeedsNotes { get; set; }
+    public bool AllowAgeException { get; set; } = false;
+    public string? AgeExceptionReason { get; set; }
     public GuardianInputDto? InitialGuardian { get; set; }
 }
 
@@ -41,6 +43,8 @@ public class UpdateStudentDto
     public bool IsSpecialNeeds { get; set; } = false;
     public string? SpecialNeedsNotes { get; set; }
     public int? CurrentClassId { get; set; }
+    public bool AllowAgeException { get; set; } = false;
+    public string? AgeExceptionReason { get; set; }
 }
 
 public class StudentGuardianItemDto
@@ -142,6 +146,7 @@ public class ImportStudentRowDto
     /// <summary>Preview only: the guardian has an email address and no account, so an account can be requested later (BR-64).</summary>
     public bool GuardianEligibleForAccount { get; set; }
 
+    public bool AllowAgeException { get; set; } = false;
     public bool IsValid { get; set; } = true;
     public bool IsDuplicate { get; set; } = false;
     public string? ErrorMessage { get; set; }
@@ -151,6 +156,7 @@ public class ImportStudentsConfirmDto
 {
     public List<ImportStudentRowDto> ValidRows { get; set; } = new();
     public int? SchoolYearId { get; set; }
+    public bool AllowAgeException { get; set; } = false;
 }
 
 public class ImportStudentsResultDto
@@ -198,4 +204,100 @@ public class UpdateGuardianLinkRequestDto
 {
     public int Relationship { get; set; } = 3;
     public bool IsPrimaryContact { get; set; }
+}
+
+/// <summary>UC-11: Office Staff updates contact info of a Guardian record.</summary>
+public class UpdateGuardianContactDto
+{
+    public string FullName { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? Email { get; set; }
+    public string? IdentityCardNumber { get; set; }
+    public string? Occupation { get; set; }
+    public string? Address { get; set; }
+}
+
+/// <summary>GAP-02 (UC-12): Aggregated chronological student history timeline.</summary>
+public class StudentHistoryDto
+{
+    public int StudentId { get; set; }
+    public string StudentCode { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime EnrollmentDate { get; set; }
+    public List<StudentEnrollmentHistoryItemDto> EnrollmentHistory { get; set; } = new();
+    public StudentAttendanceHistorySummaryDto AttendanceSummary { get; set; } = new();
+    public List<StudentRequestHistoryItemDto> Requests { get; set; } = new();
+    public StudentLunchHistorySummaryDto LunchSummary { get; set; } = new();
+    public List<StudentAuditHistoryItemDto> AuditLogs { get; set; } = new();
+}
+
+public class StudentEnrollmentHistoryItemDto
+{
+    public int AssignmentId { get; set; }
+    public string AcademicYear { get; set; } = string.Empty;
+    public int ClassId { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+    public int Grade { get; set; }
+    public string? HomeroomTeacherName { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public bool IsActive { get; set; }
+    public bool IsDraft { get; set; }
+}
+
+public class StudentAttendanceHistorySummaryDto
+{
+    public int TotalDays { get; set; }
+    public int PresentCount { get; set; }
+    public int AbsentExcusedCount { get; set; }
+    public int AbsentUnexcusedCount { get; set; }
+    public int LateCount { get; set; }
+    public List<StudentAttendanceHistoryItemDto> RecentRecords { get; set; } = new();
+}
+
+public class StudentAttendanceHistoryItemDto
+{
+    public DateTime Date { get; set; }
+    public string Session { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? ClassName { get; set; }
+    public string? Remarks { get; set; }
+}
+
+public class StudentRequestHistoryItemDto
+{
+    public int RequestId { get; set; }
+    public string RequestNumber { get; set; } = string.Empty;
+    public string RequestType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime SubmissionDate { get; set; }
+    public DateTime? ProcessedDate { get; set; }
+    public string? Summary { get; set; }
+}
+
+public class StudentLunchHistorySummaryDto
+{
+    public int ActiveRegistrationsCount { get; set; }
+    public int CancelledCount { get; set; }
+    public int WaitlistedCount { get; set; }
+    public List<StudentLunchHistoryItemDto> RecentRegistrations { get; set; } = new();
+}
+
+public class StudentLunchHistoryItemDto
+{
+    public DateTime Date { get; set; }
+    public string MealType { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public bool IsWaitlisted { get; set; }
+    public string? CancellationSource { get; set; }
+}
+
+public class StudentAuditHistoryItemDto
+{
+    public DateTime Timestamp { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string? ActorName { get; set; }
+    public string? OldValues { get; set; }
+    public string? NewValues { get; set; }
 }

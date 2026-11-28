@@ -22,4 +22,12 @@ public interface IAccountRequestService
     Task<ApiResponse<List<AccountRequestDto>>> GetRequestsForReviewAsync(string? status, CancellationToken ct = default);
     Task<ApiResponse<PaginatedResult<AccountRequestDto>>> GetRequestsForReviewPagedAsync(string? status, string? search = null, int pageIndex = 1, int pageSize = 20, CancellationToken ct = default);
     Task<ApiResponse<AccountRequestDecisionResultDto>> DecideAsync(int adminUserId, int requestId, AccountRequestDecisionDto decision, CancellationToken ct = default);
+
+    // Parent Email Change Requests (Office Staff -> Admin review, BR-69)
+    Task<ApiResponse<PaginatedResult<GuardianWithAccountDto>>> GetGuardiansWithAccountPagedAsync(string? search, int pageIndex = 1, int pageSize = 25, CancellationToken ct = default);
+    Task<ApiResponse<EmailChangeRequestDto>> CreateEmailChangeRequestAsync(int staffUserId, CreateEmailChangeRequestDto request, CancellationToken ct = default);
+    Task<ApiResponse<PaginatedResult<EmailChangeRequestDto>>> GetMyEmailChangeRequestsPagedAsync(int staffUserId, int pageIndex = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<ApiResponse<PaginatedResult<EmailChangeRequestDto>>> GetEmailChangeRequestsForReviewPagedAsync(string? status, string? search = null, int pageIndex = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<ApiResponse<EmailChangeRequestDto>> DecideEmailChangeRequestAsync(int adminUserId, int requestId, DecideEmailChangeRequestDto decision, CancellationToken ct = default);
+    Task<ApiResponse<bool>> ResendEmailChangeLinkAsync(int actorUserId, int requestId, CancellationToken ct = default);
 }
