@@ -38,11 +38,11 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  Parent: 'Phụ huynh hủy trực tiếp (UC-30)',
+  Parent: 'Phụ huynh hủy trực tiếp',
   Leave: `Tự hủy từ Đơn xin nghỉ trước ${LUNCH_CUTOFF_LABEL}`,
   Attendance: 'Giảm trừ từ Điểm danh vắng phép',
   Staff: 'Nhân viên bán trú điều chỉnh',
-  '1': 'Phụ huynh hủy trực tiếp (UC-30)',
+  '1': 'Phụ huynh hủy trực tiếp',
   '2': `Tự hủy từ Đơn xin nghỉ trước ${LUNCH_CUTOFF_LABEL}`,
   '3': 'Giảm trừ từ Điểm danh vắng phép',
   '4': 'Nhân viên bán trú điều chỉnh',
@@ -332,7 +332,7 @@ export default function ParentLunchPage() {
               Lịch & Đăng Ký <span className="squiggle">Bán Trú Của Con</span>
             </h1>
             <p style={{ color: 'var(--color-muted-fg)', margin: 0, fontSize: 'var(--fs-base)' }}>
-              Chọn một hoặc nhiều ngày còn mở để đăng ký suất ăn độc lập cho từng ngày (UC-29), xem thực đơn (UC-31) hoặc hủy trực tiếp trước hạn chốt (UC-30).
+              Chọn một hoặc nhiều ngày còn mở để đăng ký suất ăn độc lập cho từng ngày, xem thực đơn hoặc hủy trực tiếp trước hạn chốt.
             </p>
           </div>
 
@@ -500,7 +500,7 @@ export default function ParentLunchPage() {
               </span>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              • Đăng ký mới (UC-29) hoặc hủy trực tiếp (UC-30) cần thực hiện trước <strong>giờ chốt của ngày phục vụ</strong> (mặc định {LUNCH_CUTOFF_LABEL}, có thể thay đổi theo từng ngày).<br />
+              • Đăng ký mới hoặc hủy trực tiếp cần thực hiện trước <strong>giờ chốt của ngày phục vụ</strong> (mặc định {LUNCH_CUTOFF_LABEL}, có thể thay đổi theo từng ngày).<br />
               • <strong>Tích hợp Đơn xin nghỉ (WFL 1.2.3)</strong>: Đơn nghỉ có bữa trưa được duyệt trước giờ chốt ngày áp dụng (không tích &ldquo;Vẫn giữ suất ăn&rdquo;) sẽ tự động hủy suất ăn ngày đó.
             </p>
           </div>
@@ -643,7 +643,7 @@ export default function ParentLunchPage() {
                         border: '1px solid #FCA5A5',
                       }}
                     >
-                      ⚠️ {getAllergenShortLabel(tag)}
+                      {getAllergenShortLabel(tag)}
                     </span>
                   ))}
                   {schedule.mealProfile?.allergyNotes && (
@@ -904,6 +904,10 @@ export default function ParentLunchPage() {
           </div>
         </div>
 
+        {/* Mobile swipe hint + Calendar Grid Wrapper */}
+        <div className="mobile-only-hint">Vuốt ngang để xem đủ các ngày trong tuần →</div>
+        <div className="calendar-mobile-scroll">
+          <div className="calendar-mobile-scroll__inner">
         {/* Day of Week Headers */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
           {['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'CN'].map((dow, i) => (
@@ -1074,10 +1078,10 @@ export default function ParentLunchPage() {
                         }}
                       >
                         {day.mealType === 'VegetarianLunch' || day.mealType === 2
-                          ? '🥗 Chay'
+                          ? 'Chay'
                           : day.mealType === 'SpecialDiet' || day.mealType === 3
-                          ? '⚕️ Đặc biệt'
-                          : '🍱 Tiêu chuẩn'}
+                          ? 'Đặc biệt'
+                          : 'Tiêu chuẩn'}
                       </span>
                     </div>
                   ) : isCancelled ? (
@@ -1211,9 +1215,11 @@ export default function ParentLunchPage() {
             );
           })}
         </div>
+          </div>
+        </div>
       </div>
 
-      {/* Detailed Registration & Cancellation History Table (UC-31 & UC-30) */}
+      {/* Detailed Registration & Cancellation History Table */}
       <div
         className="card"
         style={{
@@ -1245,7 +1251,7 @@ export default function ParentLunchPage() {
                   <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 800 }}>Thực đơn / Ghi chú ngày</th>
                   <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Hạn chốt</th>
                   <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: 800 }}>Trạng thái</th>
-                  <th style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 800 }}>Thao tác (UC-30)</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 800 }}>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -1405,7 +1411,7 @@ export default function ParentLunchPage() {
       <GeometricModal
         open={showRegisterModal}
         onClose={() => setShowRegisterModal(false)}
-        title="Xác nhận Đăng ký Bán trú (UC-29)"
+        title="Xác nhận Đăng ký Bán trú"
         badgeText="Tạo đăng ký độc lập từng ngày"
         badgeColor="mint"
         icon={<UtensilsCrossed size={22} color="var(--color-fg)" />}
@@ -1460,7 +1466,7 @@ export default function ParentLunchPage() {
               color: '#065F46',
             }}
           >
-            <strong>🍱 Thực đơn thống nhất của nhà trường:</strong> Khẩu phần ăn áp dụng theo lịch thực đơn tuần chung của trường{' '}
+            <strong>Thực đơn thống nhất của nhà trường:</strong> Khẩu phần ăn áp dụng theo lịch thực đơn tuần chung của trường{' '}
             (chế độ hiện tại của bé:{' '}
             <strong>{MEAL_TYPE_LABELS[String(schedule?.mealProfile?.defaultMealType ?? 1)] ?? 'Suất tiêu chuẩn'}</strong>). Nếu bé có dị ứng thực phẩm, Tổ Bán trú sẽ chủ động bố trí khẩu phần phù hợp.
           </div>
@@ -1534,7 +1540,7 @@ export default function ParentLunchPage() {
       <GeometricModal
         open={Boolean(cancelTargetDay)}
         onClose={() => setCancelTargetDay(null)}
-        title="Hủy đăng ký suất ăn bán trú (UC-30)"
+        title="Hủy đăng ký suất ăn bán trú"
         badgeText={`Trước giờ chốt ${cancelTargetDay?.cutoffTime ?? LUNCH_CUTOFF_LABEL}`}
         badgeColor="pink"
         icon={<ShieldAlert size={22} color="#FFFFFF" />}
@@ -1655,17 +1661,17 @@ export default function ParentLunchPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--fs-xs)' }}>
                     {detailDay.menus.standard.length > 0 && (
                       <div>
-                        <strong>🍱 Tiêu chuẩn:</strong> {detailDay.menus.standard.map((d) => d.name).join(', ')}
+                        <strong>Tiêu chuẩn:</strong> {detailDay.menus.standard.map((d) => d.name).join(', ')}
                       </div>
                     )}
                     {detailDay.menus.vegetarian.length > 0 && (
                       <div>
-                        <strong>🥗 Ăn chay:</strong> {detailDay.menus.vegetarian.map((d) => d.name).join(', ')}
+                        <strong>Ăn chay:</strong> {detailDay.menus.vegetarian.map((d) => d.name).join(', ')}
                       </div>
                     )}
                     {detailDay.menus.special.length > 0 && (
                       <div>
-                        <strong>⚕️ Đặc biệt:</strong> {detailDay.menus.special.map((d) => d.name).join(', ')}
+                        <strong>Đặc biệt:</strong> {detailDay.menus.special.map((d) => d.name).join(', ')}
                       </div>
                     )}
                   </div>
@@ -1688,7 +1694,7 @@ export default function ParentLunchPage() {
                       fontWeight: 800,
                     }}
                   >
-                    ⚠️ Cảnh báo trùng dị ứng của con: {detailDay.allergyConflicts!.join(' • ')}
+                    Cảnh báo trùng dị ứng của con: {detailDay.allergyConflicts!.join(' • ')}
                   </div>
                 )}
               </div>
@@ -1770,7 +1776,7 @@ export default function ParentLunchPage() {
                       cursor: 'pointer',
                     }}
                   >
-                    {active ? '⚠️ ' : '+ '}
+                    {active ? '• ' : '+ '}
                     {al.label}
                   </button>
                 );

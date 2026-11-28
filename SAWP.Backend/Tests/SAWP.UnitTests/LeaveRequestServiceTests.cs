@@ -1630,7 +1630,7 @@ public class LeaveRequestServiceTests : TestBase
         // Assert
         res.Success.Should().BeFalse();
         res.Code.Should().Be(SystemMessages.MSG01.Code);
-        res.Errors.Should().Contain(e => e.Contains("31-05-2027"));
+        res.Errors.Should().Contain(e => e.Contains("31/05/2027"));
     }
 
     [Fact]

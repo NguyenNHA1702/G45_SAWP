@@ -1243,7 +1243,7 @@ public class LunchServiceTests : TestBase
 
         res.Success.Should().BeFalse();
         res.Code.Should().Be(SystemMessages.MSG09.Code);
-        res.Errors.Should().Contain(e => e.Contains("29-10-2026"));
+        res.Errors.Should().Contain(e => e.Contains("29/10/2026"));
     }
 
     [Fact]
@@ -1331,7 +1331,7 @@ public class LunchServiceTests : TestBase
         res.Success.Should().BeTrue();
         reg.IsActive.Should().BeFalse();
         reg.CancellationSource.Should().Be(LunchCancellationSource.Staff);
-        reg.CancellationReason.Should().Contain("29-10-2026");
+        reg.CancellationReason.Should().Contain("29/10/2026");
         notifRepoMock.Verify(n => n.AddAsync(It.Is<Notification>(x => x.UserId == 20), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -2144,5 +2144,38 @@ public class LunchServiceTests : TestBase
         endBeforeStart.Success.Should().BeFalse();
         exceeds92.Success.Should().BeFalse();
         exact92.Success.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(UserRoles.OfficeStaff)]
+    [InlineData(UserRoles.Admin)]
+    public async Task GetDailyMealBoard_And_GetPeriodReport_DeniedForOfficeStaffAndAdmin(UserRoles deniedRole)
+    {
+        var day = new DateTime(2026, 11, 18);
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+
+        var boardRes = await _service.GetDailyMealBoardAsync(day, 10, new[] { deniedRole });
+        var reportRes = await _service.GetPeriodReportAsync(day, day, null, 10, new[] { deniedRole });
+
+        boardRes.Success.Should().BeFalse();
+        reportRes.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetDailyMealBoard_SchoolBoard_CanViewReadOnly()
+    {
+        var day = new DateTime(2026, 11, 18);
+        SetupRepository(new List<SchoolYear> { new() { Id = 1, IsActive = true } });
+        SetupRepository(new List<Class> { new() { Id = 1, ClassName = "1A", Grade = 1, SchoolYearId = 1, Status = "Active" } });
+        SetupRepository(new List<LunchServiceDay>());
+        SetupRepository(new List<SchoolCalendarDay>());
+        SetupRepository(new List<LunchRegistration>());
+        SetupRepository(new List<AttendanceRecord>());
+
+        var res = await _service.GetDailyMealBoardAsync(day, 20, new[] { UserRoles.SchoolBoard });
+
+        res.Success.Should().BeTrue();
+        res.Data!.CanManage.Should().BeFalse();
     }
 }

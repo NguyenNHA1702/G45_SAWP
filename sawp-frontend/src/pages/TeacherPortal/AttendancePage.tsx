@@ -25,7 +25,7 @@ import { GeometricModal } from '../../components/common/GeometricModal';
 
 const formatDashDate = (iso: string): string => {
   const [y, m, d] = iso.slice(0, 10).split('-');
-  return d && m && y ? `${d}-${m}-${y}` : iso;
+  return d && m && y ? `${d}/${m}/${y}` : iso;
 };
 
 const defaultSummaryFromIso = (): string => {
@@ -786,7 +786,7 @@ export default function AttendancePage() {
                   }}
                   role="alert"
                 >
-                  <div style={{ fontWeight: 800, marginBottom: 4 }}>⚠️ Cảnh báo đồng bộ suất ăn:</div>
+                  <div style={{ fontWeight: 800, marginBottom: 4 }}>Cảnh báo đồng bộ suất ăn:</div>
                   <ul style={{ margin: 0, paddingLeft: 18 }}>
                     {result.warnings.map((w, idx) => (
                       <li key={idx}>{w}</li>

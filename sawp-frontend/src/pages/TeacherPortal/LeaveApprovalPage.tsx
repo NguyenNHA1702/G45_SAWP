@@ -315,7 +315,7 @@ export default function LeaveApprovalPage() {
               >
                 {/* Header card */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span className="badge badge--muted" style={{ fontFamily: 'monospace', fontWeight: 700 }}>
                       {r.requestNumber}
                     </span>

@@ -1,10 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarCheck2, Copy, Edit3, Plus, Sparkles, Trash2 } from 'lucide-react';
+import {
+  CalendarCheck2,
+  CalendarRange,
+  Check,
+  Clock,
+  Copy,
+  Edit3,
+  Leaf,
+  Plus,
+  Search,
+  Sparkles,
+  Stethoscope,
+  Trash2,
+  UtensilsCrossed,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GeometricModal } from '../common/GeometricModal';
+import { DatePickerPill } from '../common/DatePickerPill';
 import { lunchApi } from '../../services/implementations/lunchApi';
 import { formatDateDDMMYYYY } from '../../constants/lunch';
-import { getDishCategoryInfo, normalizeMealTypeNumber } from '../../constants/allergens';
+import { normalizeMealTypeNumber } from '../../constants/allergens';
 import type { Dish, WeeklyMenuTemplate, WeeklyMenuTemplateItemInput } from '../../types/lunch.types';
 
 interface WeeklyMenuTemplateModalProps {
@@ -24,9 +39,9 @@ const WEEKDAYS = [
 ];
 
 const MEAL_TABS = [
-  { value: 1, label: '🍱 Tiêu chuẩn' },
-  { value: 2, label: '🥗 Ăn chay' },
-  { value: 3, label: '⚕️ Đặc biệt' },
+  { value: 1, label: 'Tiêu chuẩn', icon: UtensilsCrossed },
+  { value: 2, label: 'Ăn chay', icon: Leaf },
+  { value: 3, label: 'Đặc biệt', icon: Stethoscope },
 ];
 
 function addDaysIso(iso: string, days: number): string {
@@ -266,21 +281,21 @@ export function WeeklyMenuTemplateModal({
       iconBg="#EDE9FE"
       maxWidth="xl"
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 18 }}>
+      <div className="responsive-split-sidebar">
         {/* Cột trái: Danh sách thực đơn tuần */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button type="button" className="btn btn--primary btn--sm" onClick={startCreateTemplate} style={{ justifyContent: 'center' }}>
-            <Plus size={14} /> Tạo thực đơn tuần mới
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button type="button" className="btn btn--primary btn--sm" onClick={startCreateTemplate} style={{ justifyContent: 'center', height: 40 }}>
+            <Plus size={15} /> Tạo thực đơn tuần mới
           </button>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 430, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 450, overflowY: 'auto', paddingRight: 4, paddingBottom: 4 }}>
             {loading ? (
-              <div style={{ padding: 16, textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>Đang tải...</div>
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700 }}>Đang tải...</div>
             ) : templates.length === 0 ? (
-              <div style={{ padding: 16, textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>Chưa có thực đơn tuần nào.</div>
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700 }}>Chưa có thực đơn tuần nào.</div>
             ) : (
               templates.map((tpl) => {
-                const isSelected = selectedTplId === tpl.id && (editingMode === 'apply' || selectedTplId === tpl.id);
+                const isSelected = selectedTplId === tpl.id && editingMode === 'apply';
                 return (
                   <div
                     key={tpl.id}
@@ -291,28 +306,43 @@ export function WeeklyMenuTemplateModal({
                     style={{
                       padding: 12,
                       borderRadius: 'var(--radius-md)',
-                      border: isSelected ? '2px solid var(--color-fg)' : '1.5px solid var(--color-border)',
+                      border: '2px solid var(--color-fg)',
                       background: isSelected ? '#F5F3FF' : '#FFFFFF',
-                      boxShadow: isSelected ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                      boxShadow: isSelected ? '4px 4px 0 0 var(--color-fg)' : '2px 2px 0 0 var(--color-fg)',
                       cursor: 'pointer',
+                      transition: 'transform 0.12s ease, box-shadow 0.12s ease',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
-                      <strong style={{ fontSize: 'var(--fs-sm)' }}>{tpl.name}</strong>
-                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                        <button type="button" className="btn btn--secondary btn--sm" onClick={() => startEditTemplate(tpl)} title="Sửa thực đơn tuần">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <strong style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>{tpl.name}</strong>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => startEditTemplate(tpl)}
+                          title="Sửa thực đơn tuần"
+                          style={{ padding: '4px 8px', border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', background: '#FFFFFF' }}
+                        >
                           <Edit3 size={12} />
                         </button>
-                        <button type="button" className="btn btn--secondary btn--sm" onClick={() => handleDeleteTemplate(tpl)} title="Xóa thực đơn tuần" style={{ color: '#DC2626' }}>
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => handleDeleteTemplate(tpl)}
+                          title="Xóa thực đơn tuần"
+                          style={{ padding: '4px 8px', border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', background: '#FFF1F2', color: '#DC2626' }}
+                        >
                           <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
                     {tpl.description && (
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 4 }}>{tpl.description}</div>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', marginTop: 4, lineHeight: 1.4 }}>{tpl.description}</div>
                     )}
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-accent)', marginTop: 6 }}>
-                      {tpl.items.length} lượt món cấu hình
+                    <div style={{ marginTop: 8 }}>
+                      <span className="badge badge--violet" style={{ fontSize: 11, padding: '2px 8px' }}>
+                        {tpl.items.length} lượt món cấu hình
+                      </span>
                     </div>
                   </div>
                 );
@@ -327,25 +357,26 @@ export function WeeklyMenuTemplateModal({
             background: '#FFFDF5',
             border: '2px solid var(--color-fg)',
             borderRadius: 'var(--radius-md)',
-            padding: 16,
+            boxShadow: '4px 4px 0 0 var(--color-fg)',
+            padding: 18,
             display: 'flex',
             flexDirection: 'column',
-            gap: 14,
+            gap: 16,
             minWidth: 0,
           }}
         >
           {editingMode === 'apply' ? (
             selectedTemplate ? (
               <>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 900 }}>{selectedTemplate.name}</h3>
+                <div style={{ paddingBottom: 10, borderBottom: '1.5px dashed var(--color-border)' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>{selectedTemplate.name}</h3>
                   <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
                     {selectedTemplate.description || 'Xem trước các món theo thứ trong tuần và áp dụng nhanh cho khoảng ngày.'}
                   </p>
                 </div>
 
                 {/* Xem trước T2-T6 */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: 10, maxHeight: 235, overflowY: 'auto', paddingRight: 4, paddingBottom: 4 }}>
                   {WEEKDAYS.slice(0, 5).map((wd) => {
                     const stdItems = selectedTemplate.items.filter(
                       (i) => i.dayOfWeek === wd.value && normalizeMealTypeNumber(i.mealType) === 1
@@ -361,19 +392,33 @@ export function WeeklyMenuTemplateModal({
                         key={wd.value}
                         style={{
                           background: '#FFFFFF',
-                          border: '1.5px solid var(--color-fg)',
+                          border: '2px solid var(--color-fg)',
                           borderRadius: 'var(--radius-sm)',
+                          boxShadow: '2px 2px 0 0 var(--color-fg)',
                           padding: 10,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: 8,
                         }}
                       >
-                        <div style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', color: 'var(--color-accent)', marginBottom: 4 }}>
-                          {wd.label}
+                        <div>
+                          <div style={{ marginBottom: 6 }}>
+                            <span className="badge badge--violet" style={{ fontSize: 11, padding: '1px 8px' }}>
+                              {wd.label}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--color-fg)', fontWeight: 600 }}>
+                            {stdItems.length > 0 ? stdItems.map((i) => i.dishName).join(', ') : 'Chưa có món tiêu chuẩn'}
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11.5, lineHeight: 1.45 }}>
-                          {stdItems.length > 0 ? stdItems.map((i) => i.dishName).join(', ') : 'Chưa có món tiêu chuẩn'}
-                        </div>
-                        <div style={{ fontSize: 10.5, color: 'var(--color-muted-fg)', marginTop: 6, fontWeight: 700 }}>
-                          🥗 Chay: {vegCount} món • ⚕️ Đặc biệt: {spcCount} món
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px dashed var(--color-border)' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700, color: '#047857' }}>
+                            <Leaf size={11} /> Chay: {vegCount}
+                          </span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700, color: '#0369A1' }}>
+                            <Stethoscope size={11} /> ĐB: {spcCount}
+                          </span>
                         </div>
                       </div>
                     );
@@ -384,35 +429,106 @@ export function WeeklyMenuTemplateModal({
                 <div
                   style={{
                     background: '#FFFFFF',
-                    border: '2px dashed var(--color-fg)',
+                    border: '2px solid var(--color-fg)',
                     borderRadius: 'var(--radius-md)',
-                    padding: 12,
+                    boxShadow: '3px 3px 0 0 var(--color-fg)',
+                    padding: 14,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 10,
+                    gap: 12,
                   }}
                 >
-                  <strong style={{ fontSize: 'var(--fs-sm)' }}>📅 Áp dụng thực đơn tuần này cho khoảng ngày</strong>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px', gap: 10 }}>
-                    <div>
+                  <strong style={{ fontSize: 'var(--fs-sm)', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-heading)' }}>
+                    <CalendarRange size={16} color="var(--color-accent)" /> Áp dụng thực đơn tuần này cho khoảng ngày
+                  </strong>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>TỪ NGÀY</label>
-                      <input type="date" className="input" value={applyFrom} onChange={(e) => setApplyFrom(e.target.value)} />
+                      <DatePickerPill
+                        value={applyFrom}
+                        size="md"
+                        background="#FFFDF5"
+                        ariaLabel="Chọn từ ngày áp dụng thực đơn"
+                        onChange={(val) => {
+                          setApplyFrom(val);
+                          if (applyTo && val > applyTo) setApplyTo(val);
+                        }}
+                      />
                     </div>
-                    <div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>ĐẾN NGÀY</label>
-                      <input type="date" className="input" value={applyTo} onChange={(e) => setApplyTo(e.target.value)} />
+                      <DatePickerPill
+                        value={applyTo}
+                        min={applyFrom}
+                        size="md"
+                        background="#FFFDF5"
+                        ariaLabel="Chọn đến ngày áp dụng thực đơn"
+                        onChange={(val) => {
+                          setApplyTo(val);
+                          if (applyFrom && val < applyFrom) setApplyFrom(val);
+                        }}
+                      />
                     </div>
-                    <div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 135 }}>
                       <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>GIỜ CHỐT</label>
-                      <input type="time" min="06:00" max="11:00" className="input" value={applyCutoff} onChange={(e) => setApplyCutoff(e.target.value)} />
+                      <div style={{ position: 'relative' }}>
+                        <Clock size={15} color="var(--color-accent)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                        <input
+                          type="time"
+                          min="06:00"
+                          max="11:00"
+                          className="input"
+                          value={applyCutoff}
+                          onChange={(e) => setApplyCutoff(e.target.value)}
+                          style={{ border: '2px solid var(--color-fg)', fontWeight: 800, paddingLeft: 34, minHeight: 42, height: 42, borderRadius: 'var(--radius-full)' }}
+                        />
+                      </div>
                     </div>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-xs)', fontWeight: 700, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={overwriteExisting} onChange={(e) => setOverwriteExisting(e.target.checked)} />
-                    Ghi đè thực đơn những ngày chưa khóa (luôn bỏ qua ngày nghỉ lễ và ngày đã chốt sổ)
-                  </label>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                    <button type="button" className="btn btn--secondary" onClick={() => startEditTemplate(selectedTemplate)}>
+
+                  <button
+                    type="button"
+                    onClick={() => setOverwriteExisting(!overwriteExisting)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '2px solid var(--color-fg)',
+                      background: overwriteExisting ? '#FEF3C7' : '#F8FAFC',
+                      boxShadow: '2px 2px 0 0 var(--color-fg)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 6,
+                        border: '2px solid var(--color-fg)',
+                        background: overwriteExisting ? 'var(--color-accent)' : '#FFFFFF',
+                        color: '#FFFFFF',
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {overwriteExisting && <Check size={13} strokeWidth={3} />}
+                    </span>
+                    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--color-fg)' }}>
+                      Ghi đè thực đơn những ngày chưa khóa (luôn bỏ qua ngày nghỉ lễ và ngày đã chốt sổ)
+                    </span>
+                  </button>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4 }}>
+                    <button
+                      type="button"
+                      className="btn btn--secondary"
+                      onClick={() => startEditTemplate(selectedTemplate)}
+                      style={{ border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', background: '#FFFFFF' }}
+                    >
                       <Edit3 size={14} /> Chỉnh sửa thực đơn tuần
                     </button>
                     <button type="button" className="btn btn--primary" onClick={handleApplyTemplate} disabled={saving}>
@@ -422,16 +538,16 @@ export function WeeklyMenuTemplateModal({
                 </div>
               </>
             ) : (
-              <div style={{ padding: 36, textAlign: 'center', color: 'var(--color-muted-fg)' }}>
+              <div style={{ padding: 36, textAlign: 'center', color: 'var(--color-muted-fg)', fontWeight: 700 }}>
                 Chọn một thực đơn tuần ở bên trái để xem và áp dụng, hoặc bấm <strong>Tạo thực đơn tuần mới</strong>.
               </div>
             )
           ) : (
             /* Chế độ tạo / sửa thực đơn tuần */
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="responsive-grid-2">
                 <div>
-                  <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>TÊN THỰC ĐƠN TUẦN *</label>
+                  <label className="label" style={{ fontSize: 'var(--fs-xs)', marginBottom: 4 }}>TÊN THỰC ĐƠN TUẦN *</label>
                   <input
                     type="text"
                     className="input"
@@ -439,10 +555,11 @@ export function WeeklyMenuTemplateModal({
                     value={tplName}
                     onChange={(e) => setTplName(e.target.value)}
                     placeholder="VD: Thực đơn Tuần C – Hải sản & Canh chua"
+                    style={{ border: '2px solid var(--color-fg)', fontWeight: 700 }}
                   />
                 </div>
                 <div>
-                  <label className="label" style={{ fontSize: 'var(--fs-xs)' }}>MÔ TẢ NGẮN</label>
+                  <label className="label" style={{ fontSize: 'var(--fs-xs)', marginBottom: 4 }}>MÔ TẢ NGẮN</label>
                   <input
                     type="text"
                     className="input"
@@ -450,12 +567,13 @@ export function WeeklyMenuTemplateModal({
                     value={tplDesc}
                     onChange={(e) => setTplDesc(e.target.value)}
                     placeholder="Ghi chú phạm vi áp dụng..."
+                    style={{ border: '2px solid var(--color-fg)', fontWeight: 600 }}
                   />
                 </div>
               </div>
 
               {/* Chọn thứ */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {WEEKDAYS.map((wd) => {
                   const cnt = draftItems.filter((x) => x.dayOfWeek === wd.value).length;
                   const active = activeDay === wd.value;
@@ -465,10 +583,11 @@ export function WeeklyMenuTemplateModal({
                       type="button"
                       onClick={() => setActiveDay(wd.value)}
                       style={{
-                        padding: '5px 11px',
+                        padding: '5px 12px',
                         borderRadius: 'var(--radius-full)',
-                        border: active ? '2px solid var(--color-fg)' : '1.5px solid var(--color-border)',
+                        border: '2px solid var(--color-fg)',
                         background: active ? 'var(--color-tertiary)' : '#FFFFFF',
+                        boxShadow: active ? '2px 2px 0 0 var(--color-fg)' : 'none',
                         fontWeight: 800,
                         fontSize: 'var(--fs-xs)',
                         cursor: 'pointer',
@@ -482,86 +601,115 @@ export function WeeklyMenuTemplateModal({
 
               {/* Chọn chế độ ăn + nút copy */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {MEAL_TABS.map((mt) => {
                     const active = activeMealType === mt.value;
                     const cnt = draftItems.filter((x) => x.dayOfWeek === activeDay && x.mealType === mt.value).length;
+                    const Icon = mt.icon;
                     return (
                       <button
                         key={mt.value}
                         type="button"
                         onClick={() => setActiveMealType(mt.value)}
                         style={{
-                          padding: '5px 12px',
-                          borderRadius: 'var(--radius-md)',
-                          border: active ? '2px solid var(--color-fg)' : '1.5px solid var(--color-border)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 12px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '2px solid var(--color-fg)',
                           background: active ? '#DCFCE7' : '#FFFFFF',
+                          boxShadow: active ? '2px 2px 0 0 var(--color-fg)' : 'none',
+                          color: active ? '#065F46' : 'var(--color-fg)',
                           fontWeight: 800,
                           fontSize: 'var(--fs-xs)',
                           cursor: 'pointer',
                         }}
                       >
-                        {mt.label} ({cnt})
+                        <Icon size={13} /> {mt.label} ({cnt})
                       </button>
                     );
                   })}
                 </div>
-                <button type="button" className="btn btn--secondary btn--sm" onClick={handleCopyDayMealToAllWeekdays}>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  onClick={handleCopyDayMealToAllWeekdays}
+                  style={{ border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', background: '#FFFFFF' }}
+                >
                   <Copy size={13} /> Chép chế độ này cho T2–T6
                 </button>
               </div>
 
               {/* Chọn món từ Thư viện */}
-              <input
-                type="text"
-                className="input"
-                placeholder="Tìm nhanh món trong thư viện để tick chọn..."
-                value={dishSearch}
-                onChange={(e) => setDishSearch(e.target.value)}
-              />
+              <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted-fg)' }} />
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Tìm nhanh món trong thư viện để tick chọn..."
+                  value={dishSearch}
+                  onChange={(e) => setDishSearch(e.target.value)}
+                  style={{ paddingLeft: 36, border: '2px solid var(--color-fg)', fontWeight: 600 }}
+                />
+              </div>
 
               <div
                 style={{
                   display: 'flex',
                   flexWrap: 'wrap',
-                  gap: 6,
-                  maxHeight: 165,
+                  gap: 8,
+                  maxHeight: 175,
                   overflowY: 'auto',
-                  padding: 10,
+                  padding: 12,
                   background: '#FFFFFF',
-                  border: '1.5px solid var(--color-border)',
-                  borderRadius: 'var(--radius-sm)',
+                  border: '2px solid var(--color-fg)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
                 }}
               >
                 {filteredDishesForEdit.map((d) => {
                   const selected = draftItems.some(
                     (x) => x.dayOfWeek === activeDay && x.mealType === activeMealType && x.dishId === d.id
                   );
-                  const cat = getDishCategoryInfo(d.category);
                   return (
                     <button
                       key={d.id}
                       type="button"
                       onClick={() => toggleDraftDish(d.id)}
                       style={{
-                        padding: '5px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: selected ? '2px solid var(--color-fg)' : '1.5px dashed var(--color-border)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '5px 11px',
+                        borderRadius: 'var(--radius-full)',
+                        border: selected ? '2px solid var(--color-fg)' : '1.5px dashed var(--color-muted-fg)',
                         background: selected ? '#FEF3C7' : '#FFFDF5',
+                        boxShadow: selected ? '2px 2px 0 0 var(--color-fg)' : 'none',
                         fontWeight: selected ? 800 : 600,
                         fontSize: 'var(--fs-xs)',
                         cursor: 'pointer',
                       }}
                     >
-                      {cat.emoji} {d.name} {selected ? '✓' : ''}
+                      {selected && <Check size={12} strokeWidth={3} />}
+                      {d.name}
                     </button>
                   );
                 })}
               </div>
 
-              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
+              <div
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--color-muted-fg)',
+                  padding: '8px 12px',
+                  background: '#FFFFFF',
+                  border: '1.5px dashed var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
                 Đang chọn:{' '}
-                <strong>
+                <strong style={{ color: 'var(--color-fg)' }}>
                   {draftItems
                     .filter((x) => x.dayOfWeek === activeDay && x.mealType === activeMealType)
                     .map((x) => dishById.get(x.dishId)?.name)
@@ -571,7 +719,12 @@ export function WeeklyMenuTemplateModal({
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button type="button" className="btn btn--secondary" onClick={() => setEditingMode('apply')}>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => setEditingMode('apply')}
+                  style={{ border: '2px solid var(--color-fg)', boxShadow: '2px 2px 0 0 var(--color-fg)', background: '#FFFFFF' }}
+                >
                   Quay lại
                 </button>
                 <button type="button" className="btn btn--primary" onClick={handleSaveTemplate} disabled={saving}>

@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarRange,
-  Calendar,
   BookOpen,
   Sparkles,
   AlertTriangle,
@@ -43,6 +42,7 @@ import {
   normalizeMealTypeNumber,
 } from '../../constants/allergens';
 import { GeometricModal } from '../../components/common/GeometricModal';
+import { DatePickerPill } from '../../components/common/DatePickerPill';
 import { DishLibraryModal } from '../../components/lunch/DishLibraryModal';
 import { WeeklyMenuTemplateModal } from '../../components/lunch/WeeklyMenuTemplateModal';
 import { formatViTime } from '../../utils/date';
@@ -60,12 +60,12 @@ const COURSE_SLOTS = [
 ];
 
 const MEAL_TYPE_TEXT: Record<string, string> = {
-  StandardLunch: '🍱 Tiêu chuẩn',
-  VegetarianLunch: '🥗 Ăn chay',
-  SpecialDiet: '⚕️ Đặc biệt',
-  '1': '🍱 Tiêu chuẩn',
-  '2': '🥗 Ăn chay',
-  '3': '⚕️ Đặc biệt',
+  StandardLunch: 'Tiêu chuẩn',
+  VegetarianLunch: 'Ăn chay',
+  SpecialDiet: 'Đặc biệt',
+  '1': 'Tiêu chuẩn',
+  '2': 'Ăn chay',
+  '3': 'Đặc biệt',
 };
 
 function getMealTypeBadgeClass(mealType: string | number): string {
@@ -692,41 +692,14 @@ export default function MealHeadcountPage() {
             </p>
           </div>
 
-          {/* Controls: Capsule Date Picker & Tactile Action Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {/* Capsule Date Picker with icon */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                background: '#FFFFFF',
-                border: '2px solid var(--color-fg)',
-                borderRadius: 'var(--radius-full)',
-                boxShadow: '3px 3px 0 0 var(--color-fg)',
-                padding: '6px 14px 6px 16px',
-                height: 42,
-                boxSizing: 'border-box',
-              }}
-            >
-              <Calendar size={16} color="var(--color-accent)" style={{ flexShrink: 0 }} />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  fontWeight: 800,
-                  fontSize: 'var(--fs-sm)',
-                  color: 'var(--color-fg)',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  padding: 0,
-                }}
-              />
-            </div>
+          {/* Controls: Capsule Date Picker & Tactile Action Buttons (chỉ áp dụng cho Tab 1-3 theo ngày) */}
+          {activeTab !== 'report' && (
+          <div className="mobile-header-actions">
+            <DatePickerPill
+              value={selectedDate}
+              onChange={setSelectedDate}
+              ariaLabel="Chọn ngày xem suất ăn"
+            />
 
             <button
               type="button"
@@ -909,6 +882,7 @@ export default function MealHeadcountPage() {
               </button>
             )}
           </div>
+          )}
         </div>
       </header>
 
@@ -950,16 +924,14 @@ export default function MealHeadcountPage() {
       {/* TAB NAVIGATION PILLS - Clean, Sleek, Unified */}
       <div style={{ marginBottom: 24 }}>
         <div
+          className="responsive-tabs"
           style={{
-            display: 'inline-flex',
             gap: 6,
             background: 'var(--color-muted)',
             padding: '4px',
             borderRadius: 'var(--radius-full)',
             border: '2px solid var(--color-fg)',
             boxShadow: '3px 3px 0 0 var(--color-fg)',
-            maxWidth: '100%',
-            overflowX: 'auto',
           }}
         >
           <button
@@ -1051,7 +1023,7 @@ export default function MealHeadcountPage() {
             }}
           >
             <CalendarRange size={15} />
-            4. Báo Cáo Thống Kê (Lunch Report)
+            4. Báo Cáo Thống Kê
           </button>
         </div>
       </div>
@@ -1150,10 +1122,8 @@ export default function MealHeadcountPage() {
           {/* 4 Live KPI Cards - Harmonious, Clean, Balanced Grid */}
           {board && (
             <div
+              className="mobile-stat-grid"
               style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap: 16,
                 marginBottom: 28,
               }}
             >
@@ -1283,13 +1253,13 @@ export default function MealHeadcountPage() {
 
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <span className="badge badge--mint" style={{ border: '1px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
-                    🍱 {mealBreakdownStats.standard} Tiêu chuẩn
+                    {mealBreakdownStats.standard} Tiêu chuẩn
                   </span>
                   <span className="badge badge--amber" style={{ border: '1px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
-                    🥗 {mealBreakdownStats.vegetarian} Chay
+                    {mealBreakdownStats.vegetarian} Chay
                   </span>
                   <span className="badge badge--pink" style={{ border: '1px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
-                    ⚕️ {mealBreakdownStats.special} Đặc biệt
+                    {mealBreakdownStats.special} Đặc biệt
                   </span>
                 </div>
               </div>
@@ -1606,7 +1576,7 @@ export default function MealHeadcountPage() {
                   color: dietFilter === 'SPECIAL_ALLERGY' ? '#FFFFFF' : '#9D174D',
                 }}
               >
-                ⚕️ Khay riêng &amp; Dị ứng ({mealBreakdownStats.specialOrAllergy})
+                Khay riêng &amp; Dị ứng ({mealBreakdownStats.specialOrAllergy})
               </button>
               {mealBreakdownStats.unresolvedConflicts > 0 && (
                 <button
@@ -1624,7 +1594,7 @@ export default function MealHeadcountPage() {
                     color: dietFilter === 'CONFLICT_ONLY' ? '#FFFFFF' : '#991B1B',
                   }}
                 >
-                  ⚠️ Trùng món dị ứng ({mealBreakdownStats.unresolvedConflicts})
+                  Trùng món dị ứng ({mealBreakdownStats.unresolvedConflicts})
                 </button>
               )}
             </div>
@@ -1646,7 +1616,7 @@ export default function MealHeadcountPage() {
             }}
           >
             {/* Search Input */}
-            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+            <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
               <Search
                 size={16}
                 color="var(--color-muted-fg)"
@@ -1746,8 +1716,9 @@ export default function MealHeadcountPage() {
             )}
           </div>
 
-          {/* Student Table */}
-          <div style={{ overflowX: 'auto', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)' }}>
+          {/* Student Table (Desktop) & Cards (Mobile) */}
+          <div style={{ border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#FFFFFF' }}>
+            <div className="desktop-only-table" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
@@ -1781,7 +1752,7 @@ export default function MealHeadcountPage() {
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>{formatClassLabel(item.className, item.classId)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                         <span className={`badge ${getMealTypeBadgeClass(item.mealType)}`} style={{ border: '1px solid var(--color-fg)', fontWeight: 800 }}>
-                          {MEAL_TYPE_TEXT[String(item.mealType)] ?? '🍱 Tiêu chuẩn'}
+                          {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
                         </span>
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'center' }}>
@@ -1866,7 +1837,7 @@ export default function MealHeadcountPage() {
                                   color: '#9F1239',
                                 }}
                               >
-                                ⚠️ {getAllergenShortLabel(tag)}
+                                {getAllergenShortLabel(tag)}
                               </span>
                             ))}
                             {item.studentAllergyNotes && (
@@ -1895,6 +1866,103 @@ export default function MealHeadcountPage() {
                 )}
               </tbody>
             </table>
+            </div>
+
+            {/* Mobile Card List for Tab 2 (<= 768px) */}
+            <div className="mobile-only-cards" style={{ padding: 12 }}>
+              {pagedStudents.length > 0 ? (
+                pagedStudents.map((item, idx) => (
+                  <div
+                    key={item.registrationId}
+                    style={{
+                      border: '2px solid var(--color-fg)',
+                      borderRadius: 'var(--radius-md)',
+                      boxShadow: '2px 2px 0 0 var(--color-fg)',
+                      background: '#FFFDF5',
+                      padding: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                          {(pageIndex - 1) * pageSize + idx + 1}. {item.studentName}
+                        </div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 700, marginTop: 2 }}>
+                          <span style={{ color: 'var(--color-accent)' }}>{item.studentCode}</span> • {formatClassLabel(item.className, item.classId)}
+                        </div>
+                      </div>
+                      <span
+                        className={`badge ${item.isActive ? 'badge--mint' : 'badge--pink'}`}
+                        style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: 11, flexShrink: 0 }}
+                      >
+                        {item.isActive ? 'Thực ăn' : 'Đã hủy'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span className={`badge ${getMealTypeBadgeClass(item.mealType)}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: 11 }}>
+                        {MEAL_TYPE_TEXT[String(item.mealType)] ?? 'Tiêu chuẩn'}
+                      </span>
+                      {(item.studentAllergenTags ?? []).map((tag: string) => (
+                        <span
+                          key={tag}
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-full)',
+                            background: '#FEE2E2',
+                            color: '#991B1B',
+                            border: '1.5px solid var(--color-fg)',
+                          }}
+                        >
+                          {getAllergenShortLabel(tag)}
+                        </span>
+                      ))}
+                    </div>
+
+                    {(item.cancellationReason || item.remarks) && (
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.4 }}>
+                        {item.cancellationReason || item.remarks}
+                      </div>
+                    )}
+
+                    {item.isActive && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentTray(item)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          padding: '8px 14px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '2px solid var(--color-fg)',
+                          background: '#FFFFFF',
+                          boxShadow: '2px 2px 0 0 var(--color-fg)',
+                          fontWeight: 800,
+                          fontSize: 'var(--fs-xs)',
+                          color: 'var(--color-fg)',
+                          cursor: 'pointer',
+                          width: '100%',
+                        }}
+                      >
+                        <UtensilsCrossed size={13} color="var(--color-accent)" strokeWidth={2.5} />
+                        Xem khay ăn
+                      </button>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: 28, textAlign: 'center', color: 'var(--color-muted-fg)', fontWeight: 700 }}>
+                  Không tìm thấy học sinh nào khớp với điều kiện lọc.
+                </div>
+              )}
+            </div>
 
             {/* PAGINATION BAR */}
             <div
@@ -2011,7 +2079,7 @@ export default function MealHeadcountPage() {
             }}
           >
             {/* Search Input */}
-            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+            <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
               <Search
                 size={16}
                 color="var(--color-muted-fg)"
@@ -2237,7 +2305,7 @@ export default function MealHeadcountPage() {
             <div>
               <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarRange size={18} color="var(--color-accent)" />
-                Báo Cáo Thống Kê Suất Ăn Bán Trú Theo Kỳ (Lunch Report)
+                Báo Cáo Thống Kê Suất Ăn Bán Trú Theo Kỳ
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)' }}>
                 Tổng hợp số ngày phục vụ, tổng suất đăng ký, suất hủy và phân loại chế độ ăn (Mặn / Chay / Đặc biệt) theo từng lớp.
@@ -2245,23 +2313,33 @@ export default function MealHeadcountPage() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#FFFDF5', border: '2px solid var(--color-fg)', borderRadius: 'var(--radius-full)', padding: '4px 12px' }}>
-                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 800 }}>Từ:</span>
-                <input
-                  type="date"
-                  value={reportFrom}
-                  onChange={(e) => setReportFrom(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', fontWeight: 700, fontSize: 'var(--fs-xs)', outline: 'none' }}
-                />
-                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 800 }}>Đến:</span>
-                <input
-                  type="date"
-                  value={reportTo}
-                  min={reportFrom}
-                  onChange={(e) => setReportTo(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', fontWeight: 700, fontSize: 'var(--fs-xs)', outline: 'none' }}
-                />
-              </div>
+              <DatePickerPill
+                label="Từ:"
+                size="sm"
+                background="#FFFDF5"
+                value={reportFrom}
+                ariaLabel="Chọn từ ngày báo cáo"
+                onChange={(val) => {
+                  setReportFrom(val);
+                  if (reportTo && val > reportTo) {
+                    setReportTo(val);
+                  }
+                }}
+              />
+              <DatePickerPill
+                label="Đến:"
+                size="sm"
+                background="#FFFDF5"
+                value={reportTo}
+                min={reportFrom}
+                ariaLabel="Chọn đến ngày báo cáo"
+                onChange={(val) => {
+                  setReportTo(val);
+                  if (reportFrom && val < reportFrom) {
+                    setReportFrom(val);
+                  }
+                }}
+              />
 
               <button
                 type="button"
@@ -2278,7 +2356,7 @@ export default function MealHeadcountPage() {
 
           {periodReport && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+              <div className="mobile-stat-grid" style={{ marginBottom: 20 }}>
                 <div className="card" style={{ background: '#FFFDF5', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
                   <div className="label">NGÀY PHỤC VỤ</div>
                   <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>{periodReport.totalServiceDays} ngày</div>
@@ -2288,9 +2366,17 @@ export default function MealHeadcountPage() {
                   <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 900, color: '#065F46', fontFamily: 'var(--font-heading)' }}>{periodReport.totalActualMeals} suất</div>
                 </div>
                 <div className="card" style={{ background: '#F0F9FF', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
-                  <div className="label">TIÊU CHUẨN / CHAY / ĐB</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, marginTop: 4 }}>
-                    🍱 {periodReport.totalStandard} Mặn • 🥗 {periodReport.totalVegetarian} Chay • ⚕️ {periodReport.totalSpecialDiet} ĐB
+                  <div className="label">CƠ CẤU CHẾ ĐỘ ĂN</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    <span className="badge badge--mint" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, padding: '3px 9px' }}>
+                      {periodReport.totalStandard} Mặn
+                    </span>
+                    <span className="badge badge--amber" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, padding: '3px 9px' }}>
+                      {periodReport.totalVegetarian} Chay
+                    </span>
+                    <span className="badge badge--violet" style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, padding: '3px 9px' }}>
+                      {periodReport.totalSpecialDiet} Đặc biệt
+                    </span>
                   </div>
                 </div>
                 <div className="card" style={{ background: '#FFF1F2', border: '2px solid var(--color-fg)', padding: '14px 16px' }}>
@@ -2361,13 +2447,13 @@ export default function MealHeadcountPage() {
                 <>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
                     <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                      🍱 Tiêu chuẩn: {activeMeals.filter((s) => s.mealType === 'StandardLunch' || s.mealType === 1).length}
+                      Tiêu chuẩn: {activeMeals.filter((s) => s.mealType === 'StandardLunch' || s.mealType === 1).length}
                     </span>
                     <span className="badge badge--amber" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                      🥗 Ăn chay: {activeMeals.filter((s) => s.mealType === 'VegetarianLunch' || s.mealType === 2).length}
+                      Ăn chay: {activeMeals.filter((s) => s.mealType === 'VegetarianLunch' || s.mealType === 2).length}
                     </span>
                     <span className="badge badge--pink" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800 }}>
-                      ⚕️ Đặc biệt: {activeMeals.filter((s) => s.mealType === 'SpecialDiet' || s.mealType === 3).length}
+                      Đặc biệt: {activeMeals.filter((s) => s.mealType === 'SpecialDiet' || s.mealType === 3).length}
                     </span>
                     <span className="badge badge--muted" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700 }}>
                       Đã hủy: {classMeals.filter((s) => !s.isActive).length}
@@ -2401,7 +2487,7 @@ export default function MealHeadcountPage() {
                               <td style={{ padding: '8px 12px', fontWeight: 700 }}>{s.studentName}</td>
                               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                 <span className={`badge ${getMealTypeBadgeClass(s.mealType)}`} style={{ border: '1px solid var(--color-fg)', fontWeight: 800 }}>
-                                  {MEAL_TYPE_TEXT[String(s.mealType)] ?? '🍱 Tiêu chuẩn'}
+                                  {MEAL_TYPE_TEXT[String(s.mealType)] ?? 'Tiêu chuẩn'}
                                 </span>
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
@@ -2466,7 +2552,7 @@ export default function MealHeadcountPage() {
         onClose={() => setSelectedStudentTray(null)}
         title={`Khay Ăn Bán Trú • ${selectedStudentTray?.studentName ?? ''}`}
         subtitle={`${selectedStudentTray ? formatClassLabel(selectedStudentTray.className, selectedStudentTray.classId) : ''} • Mã HS: ${selectedStudentTray?.studentCode ?? ''} • Ngày ${formatDateDDMMYYYY(selectedDate)}`}
-        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(trayMealType)] ?? '🍱 Tiêu chuẩn') : ''}
+        badgeText={selectedStudentTray ? (MEAL_TYPE_TEXT[String(trayMealType)] ?? 'Tiêu chuẩn') : ''}
         badgeColor={trayMealType === 3 ? 'pink' : trayMealType === 2 ? 'amber' : 'mint'}
         icon={<Soup size={22} color="var(--color-fg)" strokeWidth={2.5} />}
         iconBg="var(--color-tertiary)"
@@ -2568,7 +2654,7 @@ export default function MealHeadcountPage() {
                     Các món trong khay ({dishes.length} món)
                   </span>
                   <span className={`badge ${getMealTypeBadgeClass(trayMealType)}`} style={{ border: '1.5px solid var(--color-fg)', fontWeight: 800, fontSize: '11px' }}>
-                    {isPreviewingNewDiet ? 'Xem trước: ' : ''}{MEAL_TYPE_TEXT[String(trayMealType)] ?? '🍱 Tiêu chuẩn'}
+                    {isPreviewingNewDiet ? 'Xem trước: ' : ''}{MEAL_TYPE_TEXT[String(trayMealType)] ?? 'Tiêu chuẩn'}
                   </span>
                 </div>
 
@@ -2656,7 +2742,7 @@ export default function MealHeadcountPage() {
                           fontSize: '11px',
                         }}
                       >
-                        ⚠️ {getAllergenFullLabel(tag)}
+                        {getAllergenFullLabel(tag)}
                       </span>
                     ))}
                   </div>
@@ -2700,21 +2786,21 @@ export default function MealHeadcountPage() {
                   }}
                 >
                   <div style={{ fontWeight: 800, fontSize: 'var(--fs-xs)', textTransform: 'uppercase', color: 'var(--color-accent)' }}>
-                    ⚙️ Phân bổ chế độ khẩu phần (Tổ Bán trú)
+                    Phân bổ chế độ khẩu phần (Tổ Bán trú)
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
+                  <div className="responsive-grid-2">
                     <div>
                       <label className="label" style={{ fontSize: 11 }}>LOẠI KHẨU PHẦN</label>
                       <select
-                        className="input"
+                        className="select"
                         value={trayMealType}
                         onChange={(e) => setTrayMealType(Number(e.target.value))}
-                        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}
+                        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, border: '2px solid var(--color-fg)' }}
                       >
-                        <option value={1}>🍱 Suất tiêu chuẩn</option>
-                        <option value={2}>🥗 Suất ăn chay</option>
-                        <option value={3}>⚕️ Đặc biệt (Kiêng dị ứng / Cháo ốm)</option>
+                        <option value={1}>Suất tiêu chuẩn</option>
+                        <option value={2}>Suất ăn chay</option>
+                        <option value={3}>Đặc biệt (Kiêng dị ứng / Cháo ốm)</option>
                       </select>
                     </div>
                     <div>
@@ -2806,21 +2892,22 @@ export default function MealHeadcountPage() {
               <label className="label" style={{ marginBottom: 0, fontSize: 'var(--fs-xs)', letterSpacing: '0.05em' }}>
                 1. TRẠNG THÁI PHỤC VỤ TRONG NGÀY
               </label>
-              <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: cfgIsServing ? '#059669' : '#E11D48' }}>
-                {cfgIsServing ? '🟢 Đang mở phục vụ' : '🔴 Tạm nghỉ phục vụ'}
+              <span className={cfgIsServing ? 'badge badge--mint' : 'badge badge--pink'} style={{ fontSize: 11, padding: '2px 8px' }}>
+                {cfgIsServing ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                {cfgIsServing ? 'Đang mở phục vụ' : 'Tạm nghỉ phục vụ'}
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="responsive-grid-2">
               <button
                 type="button"
                 onClick={() => setCfgIsServing(true)}
                 style={{
                   padding: '12px 14px',
                   borderRadius: 'var(--radius-md)',
-                  border: cfgIsServing ? '2.5px solid var(--color-quaternary)' : '2px solid var(--color-border)',
+                  border: '2px solid var(--color-fg)',
                   background: cfgIsServing ? '#ECFDF5' : 'var(--color-card)',
-                  boxShadow: cfgIsServing ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                  boxShadow: cfgIsServing ? '4px 4px 0 0 var(--color-fg)' : 'none',
                   textAlign: 'left',
                   cursor: 'pointer',
                   transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -2830,9 +2917,9 @@ export default function MealHeadcountPage() {
                   transform: cfgIsServing ? 'translate(-1px, -1px)' : 'none',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: '#065F46', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>🟢</span> Phục vụ bán trú
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: '#065F46', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={15} color="#059669" /> Phục vụ bán trú
                   </span>
                   {cfgIsServing && (
                     <span className="badge badge--mint" style={{ fontSize: 10, padding: '2px 6px' }}>
@@ -2851,9 +2938,9 @@ export default function MealHeadcountPage() {
                 style={{
                   padding: '12px 14px',
                   borderRadius: 'var(--radius-md)',
-                  border: !cfgIsServing ? '2.5px solid #F43F5E' : '2px solid var(--color-border)',
+                  border: '2px solid var(--color-fg)',
                   background: !cfgIsServing ? '#FFF1F2' : 'var(--color-card)',
-                  boxShadow: !cfgIsServing ? '3px 3px 0 0 var(--color-fg)' : 'none',
+                  boxShadow: !cfgIsServing ? '4px 4px 0 0 var(--color-fg)' : 'none',
                   textAlign: 'left',
                   cursor: 'pointer',
                   transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -2863,9 +2950,9 @@ export default function MealHeadcountPage() {
                   transform: !cfgIsServing ? 'translate(-1px, -1px)' : 'none',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: '#9F1239', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>🔴</span> Nghỉ phục vụ
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: '#9F1239', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <AlertTriangle size={15} color="#E11D48" /> Nghỉ phục vụ
                   </span>
                   {!cfgIsServing && (
                     <span className="badge badge--pink" style={{ fontSize: 10, padding: '2px 6px' }}>
@@ -2901,21 +2988,22 @@ export default function MealHeadcountPage() {
                 value={cfgCutoffTime}
                 onChange={(e) => setCfgCutoffTime(e.target.value)}
                 style={{
-                  fontWeight: 700,
+                  fontWeight: 800,
                   fontSize: 'var(--fs-base)',
                   letterSpacing: '0.05em',
                   paddingLeft: 40,
+                  border: '2px solid var(--color-fg)',
                 }}
               />
               <Clock
                 size={18}
-                color="var(--color-muted-fg)"
+                color="var(--color-accent)"
                 style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
               />
             </div>
 
             {/* Quick preset chips */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--color-muted-fg)' }}>Gợi ý nhanh:</span>
               {[
                 { time: '08:00', label: '08:00' },
@@ -2928,12 +3016,12 @@ export default function MealHeadcountPage() {
                   type="button"
                   onClick={() => setCfgCutoffTime(preset.time)}
                   style={{
-                    padding: '3px 10px',
+                    padding: '4px 12px',
                     borderRadius: 'var(--radius-full)',
-                    border: cfgCutoffTime === preset.time ? '2px solid var(--color-fg)' : '1.5px solid var(--color-border)',
+                    border: '2px solid var(--color-fg)',
                     background: cfgCutoffTime === preset.time ? 'var(--color-tertiary)' : 'var(--color-card)',
                     boxShadow: cfgCutoffTime === preset.time ? '2px 2px 0 0 var(--color-fg)' : 'none',
-                    fontWeight: 700,
+                    fontWeight: 800,
                     fontSize: 'var(--fs-xs)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
@@ -2966,15 +3054,15 @@ export default function MealHeadcountPage() {
 
               <select
                 id="cfg-template-select"
-                className="input"
+                className="select"
                 value={cfgSelectedTemplateId}
                 onChange={(e) => setCfgSelectedTemplateId(e.target.value ? Number(e.target.value) : '')}
-                style={{ fontWeight: 700, marginBottom: 10 }}
+                style={{ fontWeight: 700, marginBottom: 10, border: '2px solid var(--color-fg)' }}
               >
                 <option value="">-- Giữ nguyên thực đơn hiện tại --</option>
                 {menuTemplates.map((tpl) => (
                   <option key={tpl.id} value={tpl.id}>
-                    🍱 {tpl.name}
+                    {tpl.name}
                   </option>
                 ))}
               </select>
@@ -2982,9 +3070,10 @@ export default function MealHeadcountPage() {
               {/* Khung xem trước trực quan */}
               <div
                 style={{
-                  border: '1.5px solid var(--color-fg)',
+                  border: '2px solid var(--color-fg)',
                   borderRadius: 'var(--radius-md)',
-                  padding: '10px 12px',
+                  boxShadow: '3px 3px 0 0 var(--color-fg)',
+                  padding: '12px 14px',
                   background: '#FFFDF5',
                   fontSize: 'var(--fs-xs)',
                   display: 'flex',
@@ -2996,7 +3085,7 @@ export default function MealHeadcountPage() {
                   cfgApplyFullWeek ? (
                     <>
                       <div style={{ fontWeight: 800, color: 'var(--color-accent)' }}>
-                        📋 Xem trước cả tuần sẽ áp dụng từ &ldquo;{selectedConfigTemplate.name}&rdquo;:
+                        Xem trước cả tuần sẽ áp dụng từ &ldquo;{selectedConfigTemplate.name}&rdquo;:
                       </div>
                       {[1, 2, 3, 4, 5].map((dow) => {
                         const stdNames = selectedConfigTemplate.items
@@ -3018,16 +3107,16 @@ export default function MealHeadcountPage() {
                       return (
                         <>
                           <div style={{ fontWeight: 800, color: 'var(--color-accent)' }}>
-                            📋 Xem trước món ngày {formatDateDDMMYYYY(selectedDate)} theo &ldquo;{selectedConfigTemplate.name}&rdquo;:
+                            Xem trước món ngày {formatDateDDMMYYYY(selectedDate)} theo &ldquo;{selectedConfigTemplate.name}&rdquo;:
                           </div>
                           <div>
-                            <strong>🍱 Tiêu chuẩn:</strong> {preview.standard.join(', ') || 'Chưa có món'}
+                            <strong>Tiêu chuẩn:</strong> {preview.standard.join(', ') || 'Chưa có món'}
                           </div>
                           <div>
-                            <strong>🥗 Ăn chay:</strong> {preview.vegetarian.join(', ') || 'Chưa có món'}
+                            <strong>Ăn chay:</strong> {preview.vegetarian.join(', ') || 'Chưa có món'}
                           </div>
                           <div>
-                            <strong>⚕️ Đặc biệt:</strong> {preview.special.join(', ') || 'Chưa có món'}
+                            <strong>Đặc biệt:</strong> {preview.special.join(', ') || 'Chưa có món'}
                           </div>
                         </>
                       );
@@ -3039,13 +3128,13 @@ export default function MealHeadcountPage() {
                       ✓ Thực đơn đang áp dụng cho ngày {formatDateDDMMYYYY(selectedDate)}:
                     </div>
                     <div>
-                      <strong>🍱 Tiêu chuẩn:</strong> {board.menus.standard.map((d) => d.name).join(', ') || '—'}
+                      <strong>Tiêu chuẩn:</strong> {board.menus.standard.map((d) => d.name).join(', ') || '—'}
                     </div>
                     <div>
-                      <strong>🥗 Ăn chay:</strong> {board.menus.vegetarian.map((d) => d.name).join(', ') || '—'}
+                      <strong>Ăn chay:</strong> {board.menus.vegetarian.map((d) => d.name).join(', ') || '—'}
                     </div>
                     <div>
-                      <strong>⚕️ Đặc biệt:</strong> {board.menus.special.map((d) => d.name).join(', ') || '—'}
+                      <strong>Đặc biệt:</strong> {board.menus.special.map((d) => d.name).join(', ') || '—'}
                     </div>
                   </>
                 ) : (
@@ -3070,7 +3159,7 @@ export default function MealHeadcountPage() {
                 placeholder="VD: Nhà trường tổ chức hoạt động ngoại khóa cả ngày..."
                 value={cfgRemarks}
                 onChange={(e) => setCfgRemarks(e.target.value)}
-                style={{ resize: 'vertical', minHeight: 60, width: '100%', boxSizing: 'border-box' }}
+                style={{ resize: 'vertical', minHeight: 68, width: '100%', boxSizing: 'border-box', border: '2px solid var(--color-fg)', fontWeight: 600 }}
               />
             </div>
           )}
@@ -3086,7 +3175,7 @@ export default function MealHeadcountPage() {
               background: cfgApplyFullWeek ? '#FEF3C7' : '#FFFDF5',
               borderRadius: 'var(--radius-md)',
               border: '2px solid var(--color-fg)',
-              boxShadow: cfgApplyFullWeek ? '3px 3px 0 0 var(--color-fg)' : '2px 2px 0 0 var(--color-fg)',
+              boxShadow: cfgApplyFullWeek ? '4px 4px 0 0 var(--color-fg)' : '2px 2px 0 0 var(--color-fg)',
               cursor: 'pointer',
               transition: 'all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
               userSelect: 'none',
@@ -3116,18 +3205,23 @@ export default function MealHeadcountPage() {
               </div>
             </div>
 
-            <input
-              type="checkbox"
-              checked={cfgApplyFullWeek}
-              onChange={(e) => setCfgApplyFullWeek(e.target.checked)}
-              onClick={(e) => e.stopPropagation()}
+            <span
+              aria-hidden="true"
               style={{
-                width: 18,
-                height: 18,
-                accentColor: 'var(--color-accent)',
-                cursor: 'pointer',
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                border: '2px solid var(--color-fg)',
+                background: cfgApplyFullWeek ? 'var(--color-accent)' : '#FFFFFF',
+                color: '#FFFFFF',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+                boxShadow: cfgApplyFullWeek ? '2px 2px 0 0 var(--color-fg)' : 'none',
               }}
-            />
+            >
+              {cfgApplyFullWeek && <CheckCircle2 size={15} />}
+            </span>
           </div>
 
           {/* 5. Candy Action Buttons */}

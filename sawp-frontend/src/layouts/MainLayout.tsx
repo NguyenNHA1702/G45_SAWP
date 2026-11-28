@@ -11,6 +11,7 @@ import {
   HeartHandshake,
   LayoutDashboard,
   LogOut,
+  Menu,
   Newspaper,
   School,
   Sparkles,
@@ -24,6 +25,7 @@ import {
   UserCog,
   ShieldAlert,
   UserPlus,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clearAuthSession, getAuthUser } from '../services/apiClient';
@@ -60,12 +62,12 @@ const NAV_ITEMS: NavItem[] = [
     path: '/dashboard',
     icon: LayoutDashboard,
   },
-  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; OfficeStaff/SchoolBoard xem) ---
+  // --- Bếp ăn bán trú & Báo cáo (ServiceStaff vận hành; SchoolBoard xem) ---
   {
     id: 'kitchen-reports',
     label: 'Báo cáo suất ăn Bếp',
     icon: UtensilsCrossed,
-    roles: ['ServiceStaff', 'OfficeStaff', 'SchoolBoard'],
+    roles: ['ServiceStaff', 'SchoolBoard'],
     children: [
       {
         id: 'kitchen-summary',
@@ -75,7 +77,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'kitchen-students',
-        label: 'Danh sách nhận suất (UC-33)',
+        label: 'Danh sách nhận suất',
         path: '/service/headcount?tab=students',
         icon: Users,
       },
@@ -87,7 +89,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'kitchen-report',
-        label: 'Báo cáo thống kê (Lunch Report)',
+        label: 'Báo cáo thống kê',
         path: '/service/headcount?tab=report',
         icon: ClipboardList,
       },
@@ -308,7 +310,13 @@ export function MainLayout() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // Tự đóng mobile drawer khi chuyển trang
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname, location.search]);
 
   // Expanded submenus state
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
@@ -436,18 +444,37 @@ export function MainLayout() {
   return (
     <ParentChildProvider userId={currentUser?.id} userRoles={userRoles}>
       <div className="layout-root">
+        {/* MOBILE DRAWER BACKDROP */}
+        {mobileMenuOpen && (
+          <div
+            className="mobile-sidebar-backdrop"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
         {/* SIDEBAR */}
-        <aside className="layout-sidebar">
+        <aside className={`layout-sidebar${mobileMenuOpen ? ' layout-sidebar--open' : ''}`}>
           <div className="sidebar-brand">
-            <div className="brand-icon">
-              <School size={24} color="#1E293B" />
-            </div>
-            <div>
-              <div className="brand-title">
-                SAWP <Sparkles size={14} className="brand-sparkle" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="brand-icon">
+                <School size={24} color="#1E293B" />
               </div>
-              <div className="brand-subtitle">Primary School</div>
+              <div>
+                <div className="brand-title">
+                  SAWP <Sparkles size={14} className="brand-sparkle" />
+                </div>
+                <div className="brand-subtitle">Primary School</div>
+              </div>
             </div>
+            <button
+              type="button"
+              className="mobile-drawer-close"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Đóng menu"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           <nav className="sidebar-nav">
@@ -580,6 +607,14 @@ export function MainLayout() {
           {/* TOP HEADER */}
           <header className="layout-header">
             <div className="header-left">
+              <button
+                type="button"
+                className="mobile-menu-toggle"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Mở menu điều hướng"
+              >
+                <Menu size={20} />
+              </button>
               <span className="badge badge--violet header-pill">
                 Hệ thống Quản trị & Bán trú Tiểu học
               </span>

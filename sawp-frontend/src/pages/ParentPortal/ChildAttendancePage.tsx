@@ -94,7 +94,9 @@ export default function ChildAttendancePage() {
       {data && data.days.length === 0 && <div className="card empty-state">{SYSTEM_MESSAGES.MSG43.content}</div>}
 
       <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+        <div className="mobile-only-hint">Vuốt ngang nếu cần xem rộng hơn →</div>
+        <div className="calendar-mobile-scroll">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(38px, 1fr))', gap: 6 }}>
           {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((d) => (
             <div key={d} style={{ textAlign: 'center', fontWeight: 800, padding: '4px 0', color: 'var(--color-muted-fg)', fontSize: 'var(--fs-sm)' }}>
               {d}
@@ -136,6 +138,7 @@ export default function ChildAttendancePage() {
               </div>
             );
           })}
+          </div>
         </div>
 
         {/* Chú thích màu sắc */}

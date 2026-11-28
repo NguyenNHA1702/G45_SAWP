@@ -233,7 +233,7 @@ public class LeaveRequestService : ILeaveRequestService
         {
             if (start > activeYear.EndDate.Date || end > activeYear.EndDate.Date)
             {
-                return (false, $"Thời gian xin nghỉ không được vượt quá ngày kết thúc năm học hiện tại ({activeYear.EndDate:dd-MM-yyyy}).", SystemMessages.MSG01, new List<DateTime>());
+                return (false, $"Thời gian xin nghỉ không được vượt quá ngày kết thúc năm học hiện tại ({activeYear.EndDate:dd/MM/yyyy}).", SystemMessages.MSG01, new List<DateTime>());
             }
         }
         else if (start > CurrentToday.AddDays(FallbackMaxAdvanceDays))
@@ -480,7 +480,7 @@ public class LeaveRequestService : ILeaveRequestService
         await NotifyHomeroomTeacherAsync(
             request.StudentId,
             "Đơn xin nghỉ học mới",
-            $"Phụ huynh học sinh đã gửi đơn xin nghỉ từ {request.StartDate:dd-MM-yyyy} đến {request.EndDate:dd-MM-yyyy} ({validation.SchoolDays.Count} ngày học). Mã đơn: {requestNumber}",
+            $"Phụ huynh học sinh đã gửi đơn xin nghỉ từ {request.StartDate:dd/MM/yyyy} đến {request.EndDate:dd/MM/yyyy} ({validation.SchoolDays.Count} ngày học). Mã đơn: {requestNumber}",
             $"/teacher/leave-requests?requestId={adminRequest.Id}",
             cancellationToken);
 
@@ -607,7 +607,7 @@ public class LeaveRequestService : ILeaveRequestService
             await NotifyHomeroomTeacherAsync(
                 req.StudentId.Value,
                 "Phụ huynh đã cập nhật đơn xin nghỉ học",
-                $"Đơn xin nghỉ {req.RequestNumber} của học sinh {req.Student?.FullName} đã được phụ huynh bổ sung/chỉnh sửa ({request.StartDate:dd-MM-yyyy} - {request.EndDate:dd-MM-yyyy}, {validation.SchoolDays.Count} ngày học).",
+                $"Đơn xin nghỉ {req.RequestNumber} của học sinh {req.Student?.FullName} đã được phụ huynh bổ sung/chỉnh sửa ({request.StartDate:dd/MM/yyyy} - {request.EndDate:dd/MM/yyyy}, {validation.SchoolDays.Count} ngày học).",
                 $"/teacher/leave-requests?requestId={req.Id}",
                 cancellationToken);
         }
@@ -1380,7 +1380,7 @@ public class LeaveRequestService : ILeaveRequestService
                     {
                         var statusText = c.Status == AttendanceStatus.Present ? "Có mặt" : "Đi muộn";
                         var sesText = c.Session == AttendanceSession.Morning ? "Buổi sáng" : "Buổi chiều";
-                        attendanceWarnings.Add($"Ngày {c.Date:dd-MM-yyyy} ({sesText}) học sinh đã được chấm {statusText}, hệ thống giữ nguyên và đã gửi cảnh báo tới giáo viên.");
+                        attendanceWarnings.Add($"Ngày {c.Date:dd/MM/yyyy} ({sesText}) học sinh đã được chấm {statusText}, hệ thống giữ nguyên và đã gửi cảnh báo tới giáo viên.");
                         if (c.Session == AttendanceSession.Morning) skippedMealDates.Add(c.Date.Date);
                         if (homeroomUserId.HasValue && homeroomUserId.Value > 0)
                         {
@@ -1407,7 +1407,7 @@ public class LeaveRequestService : ILeaveRequestService
                 {
                     UserId = alert.TargetUserId,
                     Title = "Kiểm tra điểm danh trùng đơn xin nghỉ",
-                    Content = $"Học sinh {req.Student?.FullName} có đơn nghỉ {req.RequestNumber} vừa được duyệt, nhưng ngày {alert.Date:dd-MM-yyyy} ({sesLabel}) bạn đã chấm \"{statusLabel}\". Vui lòng kiểm tra lại.",
+                    Content = $"Học sinh {req.Student?.FullName} có đơn nghỉ {req.RequestNumber} vừa được duyệt, nhưng ngày {alert.Date:dd/MM/yyyy} ({sesLabel}) bạn đã chấm \"{statusLabel}\". Vui lòng kiểm tra lại.",
                     LinkUrl = alert.ClassId.HasValue
                         ? $"/teacher/attendance?classId={alert.ClassId.Value}&date={alert.Date:yyyy-MM-dd}"
                         : "/teacher/attendance",
@@ -1463,7 +1463,7 @@ public class LeaveRequestService : ILeaveRequestService
         // L-B: Phân biệt rõ lý do không hủy suất (nghỉ buổi chiều / ngày chưa qua giờ chốt chưa đăng ký bán trú / đã qua giờ chốt)
         var allDaysBeforeCutoff = schoolDays.Count > 0 && schoolDays.All(d => !IsCutoffPassed(d, serviceDayMap));
         var mealNote = cancelledDates.Any()
-            ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd-MM-yyyy")))}) đã được tự động ghi nhận hủy trước giờ chốt ({effectiveCutoffLabel})."
+            ? $"Suất ăn bán trú ngày ({string.Join(", ", cancelledDates.Select(d => d.ToString("dd/MM/yyyy")))}) đã được tự động ghi nhận hủy trước giờ chốt ({effectiveCutoffLabel})."
             : (req.LeaveRequest.KeepLunchService
                 ? "Suất ăn bán trú được giữ nguyên theo yêu cầu trên đơn."
                 : (req.LeaveRequest.Session == LeaveSession.Afternoon
@@ -1646,7 +1646,7 @@ public class LeaveRequestService : ILeaveRequestService
             {
                 req.LeaveRequest.IsLunchCancelled = false;
             }
-            req.ReviewerNotes = $"{req.ReviewerNotes} | Thu hồi các ngày ({string.Join(", ", withdrawableDates.Select(d => d.ToString("dd-MM-yyyy")))}): {cleanReason}".Trim();
+            req.ReviewerNotes = $"{req.ReviewerNotes} | Thu hồi các ngày ({string.Join(", ", withdrawableDates.Select(d => d.ToString("dd/MM/yyyy")))}): {cleanReason}".Trim();
         }
 
         await _auditService.LogActionAsync(
@@ -1662,7 +1662,7 @@ public class LeaveRequestService : ILeaveRequestService
 
         if (req.StudentId.HasValue)
         {
-            var datesText = string.Join(", ", withdrawableDates.Select(d => d.ToString("dd-MM-yyyy")));
+            var datesText = string.Join(", ", withdrawableDates.Select(d => d.ToString("dd/MM/yyyy")));
             await NotifyHomeroomTeacherAsync(
                 req.StudentId.Value,
                 "Phụ huynh đã thu hồi đơn nghỉ đã duyệt",

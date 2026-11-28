@@ -54,7 +54,7 @@ export function AttendanceRosterTable({
         marginBottom: 24,
       }}
     >
-      <div style={{ overflowX: 'auto' }}>
+      <div className="desktop-only-table" style={{ overflowX: 'auto' }}>
         <table className="table roster-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--color-fg)', background: '#F8FAFC' }}>
@@ -247,6 +247,120 @@ export function AttendanceRosterTable({
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card List (<= 768px) */}
+      <div className="mobile-only-cards" style={{ padding: 12 }}>
+        {entries.map((e, i) => {
+          const row = draft[e.studentId];
+          const isUnmarked = !row?.status;
+          return (
+            <div
+              key={e.studentId}
+              style={{
+                border: '2px solid var(--color-fg)',
+                borderLeft: isUnmarked ? '5px solid var(--color-secondary)' : '2px solid var(--color-fg)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: '2px 2px 0 0 var(--color-fg)',
+                background: '#FFFFFF',
+                padding: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      border: '1.5px solid var(--color-fg)',
+                      background: '#EDE9FE',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontWeight: 800,
+                      fontSize: '0.8rem',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {initials(e.fullName)}
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', color: 'var(--color-fg)' }}>
+                      {i + 1}. {e.fullName}
+                    </div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--color-muted-fg)', fontWeight: 600 }}>
+                      {e.studentCode}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {e.hasLunch ? (
+                    <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontWeight: 700, fontSize: 11 }}>
+                      <Utensils size={11} /> Có ăn
+                    </span>
+                  ) : (
+                    <span className="badge badge--muted" style={{ fontSize: 11 }}>Không ăn</span>
+                  )}
+                  <LeaveBadge leave={e.leave} />
+                </div>
+              </div>
+
+              <AttendanceStatusToggle
+                label={`Trạng thái điểm danh của ${e.fullName}`}
+                value={row?.status ?? null}
+                excusedAllowed={e.leave?.status === 'Approved'}
+                disabled={disabled}
+                onChange={(st) => onStatusChange(e.studentId, st)}
+              />
+
+              <input
+                type="text"
+                className="input input--sm"
+                placeholder="Ghi chú điểm danh..."
+                value={row?.remarks ?? ''}
+                disabled={disabled}
+                onChange={(ev) => onRemarksChange(e.studentId, ev.target.value)}
+                style={{ border: '1.5px solid var(--color-fg)', fontSize: 'var(--fs-xs)' }}
+              />
+
+              {(onCorrect || (showNotice && (e.absenceNoticeSentAt || (canSendAbsenceNotice(e) && canSendNoticeForDate)))) && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {onCorrect && e.recordId !== null && (
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => onCorrect(e)}
+                      style={{ flex: 1, justifyContent: 'center', border: '1.5px solid var(--color-fg)' }}
+                    >
+                      <PencilLine size={13} /> Điều chỉnh
+                    </button>
+                  )}
+                  {showNotice && e.absenceNoticeSentAt && (
+                    <span className="badge badge--mint" style={{ border: '1.5px solid var(--color-fg)', fontSize: 11 }}>
+                      Đã gửi TB · {formatViDateTime(e.absenceNoticeSentAt)}
+                    </span>
+                  )}
+                  {showNotice && !e.absenceNoticeSentAt && canSendAbsenceNotice(e) && canSendNoticeForDate && (
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => onSendAbsenceNotice(e)}
+                      disabled={absenceNoticeDisabled}
+                      style={{ flex: 1, justifyContent: 'center', border: '1.5px solid var(--color-fg)' }}
+                    >
+                      <BellRing size={13} /> Gửi thông báo vắng
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

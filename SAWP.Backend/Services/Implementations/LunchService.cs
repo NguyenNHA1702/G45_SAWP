@@ -318,7 +318,7 @@ public class LunchService : ILunchService
             .ToList();
         if (lockedDates.Count > 0)
         {
-            var lockedLabel = string.Join(", ", lockedDates.Select(d => d.ToString("dd-MM-yyyy")));
+            var lockedLabel = string.Join(", ", lockedDates.Select(d => d.ToString("dd/MM/yyyy")));
             return ApiResponse<List<LunchServiceDayConfigDto>>.Fail(
                 SystemMessages.MSG19,
                 new List<string> { $"Ngày ({lockedLabel}) đã chốt sổ bán trú. Vui lòng mở khóa trước khi thay đổi cấu hình." });
@@ -473,7 +473,7 @@ public class LunchService : ILunchService
                     var utcNow = DateTime.UtcNow;
                     foreach (var reg in activeRegsToCancel)
                     {
-                        var reasonBase = $"Nhà trường đóng phục vụ bán trú ngày {reg.Date:dd-MM-yyyy}";
+                        var reasonBase = $"Nhà trường đóng phục vụ bán trú ngày {reg.Date:dd/MM/yyyy}";
                         var fullReason = !string.IsNullOrWhiteSpace(normalizedRemarks)
                             ? $"{reasonBase}: {normalizedRemarks}"
                             : reasonBase;
@@ -505,7 +505,7 @@ public class LunchService : ILunchService
                                 {
                                     UserId = gUserId,
                                     Title = "Thông báo hủy suất ăn do đóng ngày phục vụ",
-                                    Content = $"Suất ăn bán trú ngày {reg.Date:dd-MM-yyyy} của học sinh {reg.Student?.FullName ?? $"#{reg.StudentId}"} đã được tự động hủy do nhà trường không phục vụ bán trú ngày này.",
+                                    Content = $"Suất ăn bán trú ngày {reg.Date:dd/MM/yyyy} của học sinh {reg.Student?.FullName ?? $"#{reg.StudentId}"} đã được tự động hủy do nhà trường không phục vụ bán trú ngày này.",
                                     LinkUrl = $"/parent/lunch?studentId={reg.StudentId}&month={reg.Date:yyyy-MM}",
                                     CreatedAt = utcNow,
                                     IsRead = false
@@ -793,7 +793,7 @@ public class LunchService : ILunchService
                     .ToList();
                 if (conflictDates.Count > 0)
                 {
-                    var conflictStr = string.Join(", ", conflictDates.Select(d => d.ToString("dd-MM-yyyy")));
+                    var conflictStr = string.Join(", ", conflictDates.Select(d => d.ToString("dd/MM/yyyy")));
                     return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
                         SystemMessages.MSG09,
                         new List<string> { $"Học sinh đã có đơn xin nghỉ được phê duyệt cho ngày {conflictStr}. Vui lòng thu hồi đơn xin nghỉ trước khi đăng ký lại suất ăn." });
@@ -824,14 +824,14 @@ public class LunchService : ILunchService
             {
                 return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
                     SystemMessages.MSG28,
-                    new List<string> { $"Ngày {d:dd-MM-yyyy} không phục vụ ăn trưa." });
+                    new List<string> { $"Ngày {d:dd/MM/yyyy} không phục vụ ăn trưa." });
             }
 
             if (IsCutoffPassed(d, resolved.Cutoff, resolved.IsLocked))
             {
                 return ApiResponse<BatchLunchRegistrationResultDto>.Fail(
                     SystemMessages.MSG27,
-                    new List<string> { $"Đã quá thời hạn đăng ký ({resolved.Cutoff:hh\\:mm}) cho ngày {d:dd-MM-yyyy}." });
+                    new List<string> { $"Đã quá thời hạn đăng ký ({resolved.Cutoff:hh\\:mm}) cho ngày {d:dd/MM/yyyy}." });
             }
         }
 
@@ -890,7 +890,7 @@ public class LunchService : ILunchService
         // Gửi thông báo xác nhận (UC-29)
         if (userId > 0 && registeredDates.Count > 0)
         {
-            var dateListStr = string.Join(", ", registeredDates.Take(5).Select(d => d.ToString("dd-MM-yyyy"))) +
+            var dateListStr = string.Join(", ", registeredDates.Take(5).Select(d => d.ToString("dd/MM/yyyy"))) +
                               (registeredDates.Count > 5 ? $" (+{registeredDates.Count - 5} ngày)" : "");
             var notif = new Notification
             {
@@ -988,7 +988,7 @@ public class LunchService : ILunchService
             {
                 UserId = userId,
                 Title = "Đã hủy đăng ký suất ăn bán trú",
-                Content = $"Đã hủy suất ăn bán trú ngày {targetDate:dd-MM-yyyy} của học sinh {reg.Student?.FullName} trước giờ chốt ({resolved.Cutoff:hh\\:mm}).",
+                Content = $"Đã hủy suất ăn bán trú ngày {targetDate:dd/MM/yyyy} của học sinh {reg.Student?.FullName} trước giờ chốt ({resolved.Cutoff:hh\\:mm}).",
                 LinkUrl = $"/parent/lunch?studentId={request.StudentId}&month={targetDate:yyyy-MM}",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
@@ -1103,7 +1103,7 @@ public class LunchService : ILunchService
             reg.CancelledAt = null;
             reg.CancelledByUserId = null;
             reg.CancellationReason = null;
-            var restoreTag = $"[Khôi phục suất ăn: {cleanReason} - {_clock.Now:HH:mm dd-MM-yyyy}]";
+            var restoreTag = $"[Khôi phục suất ăn: {cleanReason} - {_clock.Now:HH:mm dd/MM/yyyy}]";
             var existingRemarks = reg.Remarks?.Trim();
             reg.Remarks = !string.IsNullOrWhiteSpace(existingRemarks) && !existingRemarks.StartsWith("[Khôi phục", StringComparison.OrdinalIgnoreCase)
                 ? $"{existingRemarks} | {restoreTag}"
@@ -1142,7 +1142,7 @@ public class LunchService : ILunchService
                             {
                                 UserId = kUid,
                                 Title = "Cảnh báo: Khôi phục suất ăn sau giờ chốt",
-                                Content = $"Suất ăn ngày {targetDate:dd-MM-yyyy} của học sinh {reg.Student?.FullName ?? $"#{studentId}"} đã được khôi phục ngoại lệ sau giờ chốt ({resolved.Cutoff:hh\\:mm}). Lý do: {cleanReason}",
+                                Content = $"Suất ăn ngày {targetDate:dd/MM/yyyy} của học sinh {reg.Student?.FullName ?? $"#{studentId}"} đã được khôi phục ngoại lệ sau giờ chốt ({resolved.Cutoff:hh\\:mm}). Lý do: {cleanReason}",
                                 LinkUrl = "/service/headcount?tab=logs",
                                 CreatedAt = DateTime.UtcNow,
                                 IsRead = false
@@ -1226,12 +1226,19 @@ public class LunchService : ILunchService
 
         var resolved = ResolveServiceDay(targetDate, serviceDay, await GetCalendarSchoolDayFlagAsync(targetDate, cancellationToken));
 
-        // Xác định phạm vi quyền (UC-33: Nhân viên bán trú vận hành; Giáo vụ/BGH xem toàn trường; Giáo viên xem lớp mình phụ trách)
-        bool canManage = roles == null || roles.Contains(UserRoles.ServiceStaff) || roles.Contains(UserRoles.Admin);
+        // Xác định phạm vi quyền (UC-33: Nhân viên bán trú vận hành; BGH xem toàn trường; Giáo viên xem lớp mình phụ trách)
+        if (roles != null &&
+            !roles.Contains(UserRoles.ServiceStaff) &&
+            !roles.Contains(UserRoles.SchoolBoard) &&
+            !roles.Contains(UserRoles.Teacher))
+        {
+            return ApiResponse<DailyMealBoardDto>.Fail("Bạn không có quyền xem bảng suất ăn bán trú.");
+        }
+
+        bool canManage = roles == null || roles.Contains(UserRoles.ServiceStaff);
         bool isTeacherOnly = roles != null &&
                              roles.Contains(UserRoles.Teacher) &&
                              !canManage &&
-                             !roles.Contains(UserRoles.OfficeStaff) &&
                              !roles.Contains(UserRoles.SchoolBoard);
 
         HashSet<int>? allowedClassIds = null;
@@ -1572,7 +1579,7 @@ public class LunchService : ILunchService
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<bool>.Ok(true, $"Đã mở khóa ngày bán trú {targetDate:dd-MM-yyyy} thành công.");
+        return ApiResponse<bool>.Ok(true, $"Đã mở khóa ngày bán trú {targetDate:dd/MM/yyyy} thành công.");
     }
 
     public async Task<ApiResponse<MealHeadcountDto>> GetMealHeadcountAsync(DateTime date, CancellationToken cancellationToken = default)
@@ -1745,13 +1752,19 @@ public class LunchService : ILunchService
             return ApiResponse<LunchPeriodReportDto>.Fail("Khoảng thời gian báo cáo không hợp lệ (tối đa 92 ngày).");
         }
 
+        if (roles != null &&
+            !roles.Contains(UserRoles.ServiceStaff) &&
+            !roles.Contains(UserRoles.SchoolBoard) &&
+            !roles.Contains(UserRoles.Teacher))
+        {
+            return ApiResponse<LunchPeriodReportDto>.Fail("Bạn không có quyền xem báo cáo thống kê suất ăn bán trú.");
+        }
+
         // ponytail: nếu là Giáo viên (Teacher), chỉ cho phép xem lớp mình chủ nhiệm
         bool isTeacherOnly = roles != null &&
                              roles.Contains(UserRoles.Teacher) &&
                              !roles.Contains(UserRoles.ServiceStaff) &&
-                             !roles.Contains(UserRoles.OfficeStaff) &&
-                             !roles.Contains(UserRoles.SchoolBoard) &&
-                             !roles.Contains(UserRoles.Admin);
+                             !roles.Contains(UserRoles.SchoolBoard);
 
         HashSet<int>? allowedClassIds = null;
         if (isTeacherOnly && userId.HasValue)

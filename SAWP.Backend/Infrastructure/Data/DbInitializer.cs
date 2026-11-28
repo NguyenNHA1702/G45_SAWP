@@ -282,28 +282,26 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Ngày học hôm nay (chỉ seed khi là Thứ 2 - Thứ 6; dọn bản ghi cuối tuần nếu trước đó bị seed nhầm)
+        // Đảm bảo ngày hôm nay là ngày học (nếu rơi vào cuối tuần thì đánh dấu học bù để luôn có dữ liệu vận hành hôm nay)
         var today = DateTime.Today;
         var existingTodayCal = await context.SchoolCalendarDays
             .FirstOrDefaultAsync(d => d.Date == today && d.SchoolYearId == schoolYear.Id);
-        if (today.DayOfWeek == DayOfWeek.Saturday || today.DayOfWeek == DayOfWeek.Sunday)
-        {
-            if (existingTodayCal != null && existingTodayCal.IsSchoolDay)
-            {
-                existingTodayCal.IsSchoolDay = false;
-                existingTodayCal.Note = "Ngày nghỉ cuối tuần";
-                await context.SaveChangesAsync();
-            }
-        }
-        else if (existingTodayCal == null)
+        bool isWeekendToday = today.DayOfWeek == DayOfWeek.Saturday || today.DayOfWeek == DayOfWeek.Sunday;
+        if (existingTodayCal == null)
         {
             context.SchoolCalendarDays.Add(new SchoolCalendarDay
             {
                 SchoolYearId = schoolYear.Id,
                 Date = today,
                 IsSchoolDay = true,
-                Note = "Ngày học bình thường"
+                Note = isWeekendToday ? "Ngày học bù" : "Ngày học bình thường"
             });
+            await context.SaveChangesAsync();
+        }
+        else if (!existingTodayCal.IsSchoolDay)
+        {
+            existingTodayCal.IsSchoolDay = true;
+            existingTodayCal.Note = isWeekendToday ? "Ngày học bù" : "Ngày học bình thường";
             await context.SaveChangesAsync();
         }
 
@@ -553,28 +551,56 @@ public static class DbInitializer
                 });
                 await context.SaveChangesAsync();
             }
+        }
+        await context.SaveChangesAsync();
 
-            // Đăng ký suất ăn bán trú cho các ngày quanh hôm nay (-3 ngày đến +7 ngày) (UC-29)
-            for (int dOffset = -3; dOffset <= 7; dOffset++)
+        // Đăng ký suất ăn bán trú cho toàn bộ học sinh từ đầu tháng hiện tại đến +7 ngày (các ngày học T2-T6)
+        var lunchSeedStart = new DateTime(today.Year, today.Month, 1);
+        var lunchSeedEnd = today.AddDays(7);
+        var lunchSeedDates = new List<DateTime>();
+        for (var cur = lunchSeedStart; cur <= lunchSeedEnd; cur = cur.AddDays(1))
+        {
+            if (cur == today || (cur.DayOfWeek != DayOfWeek.Saturday && cur.DayOfWeek != DayOfWeek.Sunday))
             {
-                var mealDate = today.AddDays(dOffset);
-                if (mealDate.DayOfWeek == DayOfWeek.Saturday || mealDate.DayOfWeek == DayOfWeek.Sunday) continue;
+                lunchSeedDates.Add(cur);
+            }
+        }
 
-                var existingLunch = await context.LunchRegistrations.FirstOrDefaultAsync(lr => lr.StudentId == student.Id && lr.Date == mealDate);
-                if (existingLunch == null)
+        var existingLunchRows = await context.LunchRegistrations
+            .Where(lr => lr.Date >= lunchSeedStart && lr.Date <= lunchSeedEnd)
+            .ToListAsync();
+        var existingLunchMap = existingLunchRows
+            .GroupBy(lr => (lr.StudentId, lr.Date.Date))
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // Dọn chuỗi thừa (UC-30) nếu còn tồn tại trong dữ liệu cũ
+        foreach (var row in existingLunchRows)
+        {
+            if (!string.IsNullOrEmpty(row.CancellationReason) && row.CancellationReason.Contains(" (UC-30)"))
+            {
+                row.CancellationReason = row.CancellationReason.Replace(" (UC-30)", string.Empty);
+            }
+        }
+
+        foreach (var student in studentEntities)
+        {
+            var code = student.StudentCode;
+            bool isVegetarian = code is "HS004" or "HS017" or "HS022" or "HS035" or "HS062";
+            bool isSpecialDiet = code is "HS006" or "HS015" or "HS028" or "HS040";
+            bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
+
+            string mealDishRemarks = isVegetarian
+                ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
+                : isSpecialDiet
+                    ? (code == "HS006"
+                        ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
+                        : "Cháo dinh dưỡng thịt băm, Cá hồi hấp xì dầu, Bí đỏ hấp mềm, Canh rau mồng tơi, Sữa chua | Ghi chú: Chế độ ăn mềm dễ tiêu hóa")
+                    : string.Empty;
+
+            foreach (var mealDate in lunchSeedDates)
+            {
+                if (!existingLunchMap.TryGetValue((student.Id, mealDate), out var existingLunch))
                 {
-                    bool isVegetarian = code is "HS004" or "HS017" or "HS022" or "HS035" or "HS062";
-                    bool isSpecialDiet = code is "HS006" or "HS015" or "HS028" or "HS040";
-                    bool isCancelled = code is "HS005" or "HS012" or "HS038" or "HS050";
-
-                    string mealDishRemarks = isVegetarian
-                        ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
-                        : isSpecialDiet
-                            ? (code == "HS006"
-                                ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
-                                : "Cháo dinh dưỡng thịt băm, Cá hồi hấp xì dầu, Bí đỏ hấp mềm, Canh rau mồng tơi, Sữa chua | Ghi chú: Chế độ ăn mềm dễ tiêu hóa")
-                            : string.Empty; // Suất tiêu chuẩn dùng trực tiếp thực đơn ngày trong bảng LunchServiceDays
-
                     context.LunchRegistrations.Add(new LunchRegistration
                     {
                         StudentId = student.Id,
@@ -583,16 +609,17 @@ public static class DbInitializer
                         IsActive = !isCancelled,
                         Remarks = mealDishRemarks,
                         CancelledAt = isCancelled ? mealDate.AddHours(7).AddMinutes(45) : null,
-                        CancellationReason = isCancelled ? (code is "HS005" or "HS038" ? "Đơn xin nghỉ ốm đã được GVCN duyệt trước 08h15" : "Phụ huynh hủy trực tiếp trên cổng trước 08h15 (UC-30)") : null
+                        CancellationSource = isCancelled ? (code is "HS005" or "HS038" ? LunchCancellationSource.Leave : LunchCancellationSource.Parent) : null,
+                        CancellationReason = isCancelled ? (code is "HS005" or "HS038" ? "Đơn xin nghỉ ốm đã được GVCN duyệt trước 08h15" : "Phụ huynh hủy trực tiếp trên cổng trước 08h15") : null
                     });
                 }
                 else if (existingLunch.Remarks == "Suất ăn bán trú tiêu chuẩn" || existingLunch.Remarks == "Suất ăn chay dinh dưỡng" || existingLunch.Remarks == "Thực đơn dinh dưỡng đặc biệt")
                 {
-                    bool isVegetarian = existingLunch.MealType == MealType.VegetarianLunch;
-                    bool isSpecialDiet = existingLunch.MealType == MealType.SpecialDiet;
-                    existingLunch.Remarks = isVegetarian
+                    bool existVeg = existingLunch.MealType == MealType.VegetarianLunch;
+                    bool existSpec = existingLunch.MealType == MealType.SpecialDiet;
+                    existingLunch.Remarks = existVeg
                         ? "Cơm trắng dẻo, Đậu phụ sốt cà chua, Nấm đùi gà kho xì dầu, Rau củ quả luộc, Canh nấm hạt sen | Ghi chú: Suất ăn chay thanh đạm"
-                        : isSpecialDiet
+                        : existSpec
                             ? "Cơm mềm dẻo, Thịt gà phi lê áp chảo, Rau củ hấp mềm, Canh rau ngót thịt băm, Sữa chua | Ghi chú: Dị ứng tôm & hải sản có vỏ"
                             : null;
                 }
@@ -610,13 +637,13 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Điểm danh chuyên cần toàn diện cho toàn bộ học sinh (1A, 1B, 1C) từ đầu năm học 2026 đến hết hôm qua (Ca sáng & Ca chiều)
+        // Điểm danh chuyên cần toàn diện cho toàn bộ học sinh (1A, 1B, 1C) từ đầu năm học 2026 đến ngày học gần nhất (Ca sáng & Ca chiều)
         var schoolDays = new List<DateTime>();
         var checkDate = new DateTime(2026, 9, 1);
-        var endSchoolDate = today.AddDays(-1);
+        var endSchoolDate = today;
         while (checkDate <= endSchoolDate)
         {
-            if (checkDate.DayOfWeek != DayOfWeek.Saturday && checkDate.DayOfWeek != DayOfWeek.Sunday && checkDate != new DateTime(2026, 9, 2))
+            if (checkDate == today || (checkDate.DayOfWeek != DayOfWeek.Saturday && checkDate.DayOfWeek != DayOfWeek.Sunday && checkDate != new DateTime(2026, 9, 2)))
             {
                 schoolDays.Add(checkDate);
             }
@@ -859,39 +886,69 @@ public static class DbInitializer
         }
 
         // ====================================================================
-        // 7. MẪU ĐƠN NGHỈ PHÉP (Đã tắt để người dùng tự tạo đơn từ đầu)
+        // 7. MẪU ĐƠN XIN NGHỈ PHÉP (Dữ liệu thật đến hôm nay - idempotent)
         // ====================================================================
-        /*
-        var student2 = studentEntities.FirstOrDefault(s => s.StudentCode == "HS002");
-        if (student2 != null && !await context.AdministrativeRequests.AnyAsync(ar => ar.StudentId == student2.Id && ar.RequestType == RequestTypes.Leave))
+        if (parentUser != null)
         {
-            var adminReq = new AdministrativeRequest
+            DateTime GetNearestSchoolDay(DateTime start, int step)
             {
-                RequestNumber = "DON-2026-001",
-                RequesterUserId = parentUser.Id,
-                StudentId = student2.Id,
-                RequestType = RequestTypes.Leave,
-                Status = RequestStatus.Approved,
-                SubmissionDate = DateTime.UtcNow.AddDays(-1),
-                ProcessedDate = DateTime.UtcNow.AddHours(-12),
-                ReviewerUserId = boardUser.Id,
-                ReviewerNotes = "Đã phê duyệt nghỉ ốm có chỉ định của bác sĩ."
-            };
-            context.AdministrativeRequests.Add(adminReq);
-            await context.SaveChangesAsync();
+                var d = start.Date;
+                while (d.DayOfWeek == DayOfWeek.Saturday || d.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    d = d.AddDays(step);
+                }
+                return d;
+            }
 
-            var leaveReq = new LeaveRequest
+            var lastSchoolDay = GetNearestSchoolDay(today, -1);
+            var prevSchoolDay = GetNearestSchoolDay(lastSchoolDay.AddDays(-1), -1);
+            var nextSchoolDay = GetNearestSchoolDay(today.AddDays(1), 1);
+            var nextSchoolDay2 = GetNearestSchoolDay(nextSchoolDay.AddDays(1), 1);
+            var nextSchoolDay3 = GetNearestSchoolDay(nextSchoolDay2.AddDays(1), 1);
+
+            var leaveSamples = new (string ReqNo, string StudentCode, RequestStatus Status, DateTime Start, DateTime End, LeaveSession Session, bool KeepLunch, bool IsLunchCancelled, string Reason, int? ReviewerId, string? ReviewerNotes)[]
             {
-                AdministrativeRequestId = adminReq.Id,
-                StartDate = today.AddDays(-1),
-                EndDate = today.AddDays(1),
-                Reason = "Học sinh bị cảm sốt, gia đình xin phép nghỉ dưỡng sức 2 ngày.",
-                DoctorNoteAttachmentUrl = "/attachments/giay_kham_benh.pdf"
+                ("DON-2026-001", "HS001", RequestStatus.Approved, prevSchoolDay, prevSchoolDay, LeaveSession.FullDay, false, true, "Học sinh bị cảm sốt nhẹ, gia đình xin phép nghỉ 1 ngày theo dõi tại nhà.", teacherUser?.Id, "Đã phê duyệt nghỉ ốm và tự động hủy suất ăn bán trú."),
+                ("DON-2026-002", "HS001", RequestStatus.Submitted, nextSchoolDay, nextSchoolDay, LeaveSession.Morning, true, false, "Gia đình đưa con đi khám răng định kỳ buổi sáng, chiều con đi học lại bình thường.", null, null),
+                ("DON-2026-003", "HS002", RequestStatus.Approved, prevSchoolDay, lastSchoolDay, LeaveSession.FullDay, false, true, "Học sinh bị viêm họng theo chỉ định bác sĩ, xin nghỉ 2 ngày dưỡng sức.", teacherUser?.Id, "GVCN đã xác nhận và phê duyệt đơn nghỉ."),
+                ("DON-2026-004", "HS003", RequestStatus.Submitted, nextSchoolDay, nextSchoolDay3, LeaveSession.FullDay, false, false, "Gia đình có việc hiếu ở quê, xin phép cho con nghỉ 3 ngày học liên tiếp.", null, null),
+                ("DON-2026-005", "HS005", RequestStatus.Rejected, lastSchoolDay, lastSchoolDay, LeaveSession.Afternoon, false, false, "Xin nghỉ buổi chiều không nêu rõ lý do.", teacherUser?.Id, "Vui lòng bổ sung lý do cụ thể và liên hệ GVCN trước khi gửi lại.")
             };
-            context.LeaveRequests.Add(leaveReq);
-            await context.SaveChangesAsync();
+
+            foreach (var sample in leaveSamples)
+            {
+                var targetStudent = studentEntities.FirstOrDefault(s => s.StudentCode == sample.StudentCode);
+                if (targetStudent == null) continue;
+                if (await context.AdministrativeRequests.AnyAsync(ar => ar.RequestNumber == sample.ReqNo)) continue;
+
+                var adminReq = new AdministrativeRequest
+                {
+                    RequestNumber = sample.ReqNo,
+                    RequesterUserId = parentUser.Id,
+                    StudentId = targetStudent.Id,
+                    RequestType = RequestTypes.Leave,
+                    Status = sample.Status,
+                    SubmissionDate = DateTime.UtcNow.AddDays(-1),
+                    ProcessedDate = sample.Status == RequestStatus.Submitted ? null : DateTime.UtcNow.AddHours(-6),
+                    ReviewerUserId = sample.ReviewerId,
+                    ReviewerNotes = sample.ReviewerNotes
+                };
+                context.AdministrativeRequests.Add(adminReq);
+                await context.SaveChangesAsync();
+
+                context.LeaveRequests.Add(new LeaveRequest
+                {
+                    AdministrativeRequestId = adminReq.Id,
+                    StartDate = sample.Start,
+                    EndDate = sample.End,
+                    Session = sample.Session,
+                    KeepLunchService = sample.KeepLunch,
+                    IsLunchCancelled = sample.IsLunchCancelled,
+                    Reason = sample.Reason
+                });
+                await context.SaveChangesAsync();
+            }
         }
-        */
 
         // ====================================================================
         // 8. LỊCH SỬ ĐIỂM DANH MẪU (Cho HS001 để Phụ huynh xem lịch tháng)
@@ -940,13 +997,15 @@ public static class DbInitializer
             "Cơm trắng dẻo, Bò hầm khoai tây cà rốt, Bắp cải luộc chấm trứng, Canh chua cá lóc, Bánh flan"
         };
 
-        for (int dOffset = -5; dOffset <= 10; dOffset++)
+        var serviceSeedStart = new DateTime(today.Year, today.Month, 1);
+        var serviceSeedEnd = today.AddDays(10);
+        for (var sDate = serviceSeedStart; sDate <= serviceSeedEnd; sDate = sDate.AddDays(1))
         {
-            var sDate = today.AddDays(dOffset);
-            if (sDate.DayOfWeek == DayOfWeek.Saturday || sDate.DayOfWeek == DayOfWeek.Sunday) continue;
+            if (sDate != today && (sDate.DayOfWeek == DayOfWeek.Saturday || sDate.DayOfWeek == DayOfWeek.Sunday)) continue;
 
             var menuIdx = Math.Abs((int)sDate.DayOfWeek - 1) % weekdayMenus.Length;
             var menuStr = weekdayMenus[menuIdx];
+            bool shouldLockPast = sDate < today.AddDays(-1);
 
             var existingServiceDay = await context.LunchServiceDays.FirstOrDefaultAsync(ls => ls.Date == sDate);
             if (existingServiceDay == null)
@@ -956,14 +1015,23 @@ public static class DbInitializer
                     Date = sDate,
                     IsServing = true,
                     CutoffTime = new TimeSpan(8, 15, 0),
+                    IsLocked = shouldLockPast,
+                    LockedAt = shouldLockPast ? DateTime.SpecifyKind(sDate.AddHours(1).AddMinutes(15), DateTimeKind.Utc) : null,
                     Remarks = menuStr
                 });
             }
-            else if (string.IsNullOrWhiteSpace(existingServiceDay.Remarks) ||
-                     existingServiceDay.Remarks == "Phục vụ bán trú bình thường" ||
-                     !existingServiceDay.Remarks.Contains(','))
+            else
             {
-                existingServiceDay.Remarks = menuStr;
+                if (sDate == today && !existingServiceDay.IsServing)
+                {
+                    existingServiceDay.IsServing = true;
+                }
+                if (string.IsNullOrWhiteSpace(existingServiceDay.Remarks) ||
+                    existingServiceDay.Remarks == "Phục vụ bán trú bình thường" ||
+                    !existingServiceDay.Remarks.Contains(','))
+                {
+                    existingServiceDay.Remarks = menuStr;
+                }
             }
         }
         await context.SaveChangesAsync();

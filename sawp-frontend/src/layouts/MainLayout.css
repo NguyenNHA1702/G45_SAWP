@@ -394,25 +394,79 @@
 
 .layout-content {
   flex: 1;
+  min-width: 0;
+}
+
+.mobile-menu-toggle,
+.mobile-drawer-close,
+.mobile-sidebar-backdrop {
+  display: none;
 }
 
 @media (max-width: 900px) {
-  .layout-sidebar {
-    width: 74px;
+  .mobile-menu-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--color-fg);
+    box-shadow: 2px 2px 0 0 var(--color-fg);
+    background: var(--color-tertiary);
+    color: var(--color-fg);
+    cursor: pointer;
+    flex-shrink: 0;
   }
-  .brand-title, .brand-subtitle, .nav-section-label, .nav-link__label, .nav-badge, .nav-chevron, .nav-chevron-toggle, .nav-submenu, .user-info, .sidebar-actions span, .user-greeting {
+  .mobile-drawer-close {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 2px solid var(--color-fg);
+    background: #FFFFFF;
+    color: var(--color-fg);
+    cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .mobile-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+    z-index: 1190;
+  }
+  .layout-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(290px, 84vw);
+    z-index: 1200;
+    transform: translateX(-105%);
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 6px 0 0 0 var(--color-fg);
+  }
+  .layout-sidebar--open {
+    transform: translateX(0);
+  }
+  .layout-main-wrapper {
+    width: 100%;
+    min-width: 0;
+  }
+  .layout-header {
+    padding: 0 12px !important;
+    gap: 8px;
+  }
+  .user-greeting {
     display: none;
   }
-  .sidebar-brand {
-    justify-content: center;
-    padding: var(--space-4) 0;
-  }
-  .nav-link, .nav-parent-btn {
-    justify-content: center;
-    padding: 10px 0;
-  }
-  .user-card {
-    justify-content: center;
-    padding: var(--space-2) 0;
+}
+
+@media (max-width: 560px) {
+  .header-pill {
+    display: none !important;
   }
 }

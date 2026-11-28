@@ -215,7 +215,7 @@ export default function DashboardPage() {
             </div>
             <h3>Đăng ký & Lịch bán trú</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              Chọn ngày đăng ký bán trú (UC-29), xem thực đơn & trạng thái từng ngày (UC-31) hoặc hủy trước 08h15 (UC-30).
+              Chọn ngày đăng ký bán trú, xem thực đơn và trạng thái từng ngày hoặc hủy trực tiếp trước 08h15.
             </p>
             <span className="badge badge--amber">Mở lịch bán trú →</span>
           </Link>
@@ -249,7 +249,7 @@ export default function DashboardPage() {
           </Link>
         )}
 
-        {(roles.includes('ServiceStaff') || roles.includes('SchoolBoard') || roles.includes('OfficeStaff')) && (
+        {(roles.includes('ServiceStaff') || roles.includes('SchoolBoard')) && (
           <Link
             to="/service/headcount"
             className="card card--hover"
@@ -271,7 +271,7 @@ export default function DashboardPage() {
             </div>
             <h3>Vận hành & Báo cáo Bán trú</h3>
             <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--color-muted-fg)' }}>
-              Cấu hình ngày phục vụ & thực đơn (UC-32), tổng hợp suất ăn theo lớp, chốt số liệu 08h15 và xuất danh sách (UC-33).
+              Cấu hình ngày phục vụ & thực đơn, tổng hợp suất ăn theo lớp, chốt số liệu 08h15 và theo dõi thống kê.
             </p>
             <span className="badge badge--amber">Xem thống kê bếp →</span>
           </Link>

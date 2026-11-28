@@ -54,7 +54,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
       aria-modal="true"
     >
       <div
-        className="modal-box"
+        className={`modal-box${icon ? ' modal-box--with-icon' : ''}`}
         style={{
           maxWidth: maxWidthPx,
           position: 'relative',
@@ -65,6 +65,7 @@ export const GeometricModal: React.FC<GeometricModalProps> = ({
         {/* Floating Circle Icon */}
         {icon && (
           <div
+            className="modal-float-icon"
             style={{
               position: 'absolute',
               top: -24,
