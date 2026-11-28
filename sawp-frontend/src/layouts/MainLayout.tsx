@@ -78,7 +78,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'kitchen-students',
-        label: 'Danh sách nhận suất (UC-33)',
+        label: 'Danh sách nhận suất',
         path: '/service/headcount?tab=students',
         icon: Users,
       },
@@ -90,7 +90,7 @@ const NAV_ITEMS: NavItem[] = [
       },
       {
         id: 'kitchen-report',
-        label: 'Báo cáo thống kê (Lunch Report)',
+        label: 'Báo cáo thống kê',
         path: '/service/headcount?tab=report',
         icon: ClipboardList,
       },

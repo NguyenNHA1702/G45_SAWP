@@ -7,7 +7,6 @@ import {
   FileSpreadsheet,
   Power,
   GraduationCap,
-  Layers,
   PlusCircle,
   RefreshCw,
   Sparkles,
@@ -20,7 +19,6 @@ import toast from 'react-hot-toast';
 import { classApi } from '../../services/implementations/classApi';
 import { CreateSchoolYearModal } from '../../components/classes/CreateSchoolYearModal';
 import { CreateClassModal } from '../../components/classes/CreateClassModal';
-import { BatchInitClassesModal } from '../../components/classes/BatchInitClassesModal';
 import { AssignTeacherModal } from '../../components/classes/AssignTeacherModal';
 import { AssignStudentsModal } from '../../components/classes/AssignStudentsModal';
 import { ClassDetailModal } from '../../components/classes/ClassDetailModal';
@@ -41,8 +39,6 @@ export default function ClassesPage() {
   // Modals state for Classes & School Year
   const [createYearModalOpen, setCreateYearModalOpen] = useState(false);
   const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
-  const [batchModalOpen, setBatchModalOpen] = useState(false);
-  const [batchInitialGrade, setBatchInitialGrade] = useState<number>(1);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [studentsModalOpen, setStudentsModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -351,21 +347,11 @@ export default function ClassesPage() {
               )}
                   <button
                     type="button"
-                    className="btn btn--secondary"
+                    className="btn btn--primary"
                     onClick={() => setCreateClassModalOpen(true)}
                     title="Thêm một lớp học đơn lẻ"
                   >
                     <PlusCircle size={18} /> + Thêm lớp học
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--primary"
-                    onClick={() => {
-                      setBatchInitialGrade(1);
-                      setBatchModalOpen(true);
-                    }}
-                  >
-                    <Layers size={18} /> Khởi tạo lớp hàng loạt
                   </button>
             </div>
           )}
@@ -495,18 +481,26 @@ export default function ClassesPage() {
             <GraduationCap size={48} color="var(--color-muted-fg)" style={{ margin: '0 auto 12px' }} />
             <h3 style={{ margin: '0 0 6px' }}>Chưa có lớp học nào</h3>
             <p style={{ color: 'var(--color-muted-fg)', margin: '0 0 16px' }}>
-              Năm học này chưa có lớp học nào cho khối đã chọn. Bạn có thể khởi tạo hàng loạt bằng nút bên dưới.
+              Năm học này chưa có lớp học nào cho khối đã chọn. Bạn có thể thêm lớp học mới hoặc nhập xếp lớp từ tệp Excel.
             </p>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => {
-                setBatchInitialGrade(selectedGrade || 1);
-                setBatchModalOpen(true);
-              }}
-            >
-              <Layers size={18} /> Khởi tạo lớp hàng loạt
-            </button>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {isDraftYear && (
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => setImportModalOpen(true)}
+                >
+                  <FileSpreadsheet size={18} /> Nhập xếp lớp từ tệp
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => setCreateClassModalOpen(true)}
+              >
+                <PlusCircle size={18} /> + Thêm lớp học
+              </button>
+            </div>
           </div>
         ) : (
           <div
@@ -746,17 +740,6 @@ export default function ClassesPage() {
         activeSchoolYear={activeSchoolYear}
         initialGrade={selectedGrade || 1}
         onClassCreated={(_newClass, grade) => {
-          setSelectedGrade(grade);
-          loadClasses(selectedYearId, grade);
-        }}
-      />
-
-      <BatchInitClassesModal
-        open={batchModalOpen}
-        onClose={() => setBatchModalOpen(false)}
-        activeSchoolYear={activeSchoolYear}
-        initialGrade={batchInitialGrade}
-        onClassesCreated={(_classes, grade) => {
           setSelectedGrade(grade);
           loadClasses(selectedYearId, grade);
         }}

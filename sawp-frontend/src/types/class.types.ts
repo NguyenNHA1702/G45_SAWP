@@ -49,16 +49,6 @@ export interface CreateClassDto {
   homeroomTeacherUserId?: number;
 }
 
-export interface InitializeBatchClassesDto {
-  schoolYearId?: number;
-  targetGrade?: number;
-  grades?: number[];
-  sectionNames?: string[];
-  sectionSuffixes?: string[];
-  capacityPerClass?: number;
-  defaultCapacity?: number;
-}
-
 export interface UpdateClassDto {
   className: string;
   capacity: number;
